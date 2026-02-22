@@ -96,6 +96,27 @@ export async function triggerImageSync() {
   return postJSON('/sync/images')
 }
 
+// Sync management (admin)
+export async function triggerSCWikiSync() {
+  return postJSON('/sync/scwiki')
+}
+
+export async function triggerItemSync() {
+  return postJSON('/sync/items')
+}
+
+export async function triggerPaintSync() {
+  return postJSON('/sync/paints')
+}
+
+export async function triggerRSISync() {
+  return postJSON('/sync/rsi')
+}
+
+export async function triggerFullSync() {
+  return postJSON('/sync/all')
+}
+
 export async function importHangarXplor(jsonData) {
   return postJSON('/import/hangarxplor', jsonData)
 }

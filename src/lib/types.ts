@@ -35,8 +35,17 @@ export interface Env {
 export type HonoEnv = {
   Bindings: Env;
   Variables: {
-    user: { id: string; name: string; email: string; role?: string; image?: string | null } | null;
-    session: { id: string; userId: string; expiresAt: Date } | null;
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role?: string | null;
+      image?: string | null;
+      banned?: boolean | null;
+      banReason?: string | null;
+      banExpires?: Date | null;
+    } | null;
+    session: { id: string; userId: string; expiresAt: Date; impersonatedBy?: string | null } | null;
   };
 };
 

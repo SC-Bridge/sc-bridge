@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, User } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, User, Wrench, Users } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
@@ -17,8 +17,11 @@ const AnalysisHistory = lazy(() => import('./pages/AnalysisHistory'))
 const Import = lazy(() => import('./pages/Import'))
 const ShipDB = lazy(() => import('./pages/ShipDB'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Admin = lazy(() => import('./pages/Admin'))
+const UserManagement = lazy(() => import('./pages/UserManagement'))
+const Account = lazy(() => import('./pages/Account'))
 
-const navItems = [
+const baseNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
   { to: '/fleet', icon: Rocket, label: 'Fleet' },
   { to: '/insurance', icon: Shield, label: 'Insurance' },
@@ -36,10 +39,31 @@ const navItems = [
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
 ]
 
+const adminNavItems = [
+  { to: '/admin', icon: Wrench, label: 'Admin' },
+]
+
+const superAdminNavItems = [
+  { to: '/users', icon: Users, label: 'Users' },
+]
+
+function getNavItems(role) {
+  const items = [...baseNavItems]
+  if (role === 'admin' || role === 'super_admin') {
+    items.push(...adminNavItems)
+  }
+  if (role === 'super_admin') {
+    items.push(...superAdminNavItems)
+  }
+  return items
+}
+
 function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { data: session } = useSession()
+  const userRole = session?.user?.role || 'user'
+  const navItems = getNavItems(userRole)
 
   const handleSignOut = async () => {
     await signOut()
@@ -136,11 +160,17 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
       {session?.user && (
         <div className="p-3 border-t border-sc-border">
           <div className="flex items-center gap-2 px-2 py-2">
-            <User className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-400 truncate flex-1">{session.user.name || session.user.email}</span>
+            <NavLink
+              to="/account"
+              onClick={onNavClick}
+              className="flex items-center gap-2 flex-1 min-w-0 hover:text-gray-300 transition-colors"
+            >
+              <User className="w-4 h-4 text-gray-500 shrink-0" />
+              <span className="text-xs text-gray-400 truncate">{session.user.name || session.user.email}</span>
+            </NavLink>
             <button
               onClick={handleSignOut}
-              className="text-gray-500 hover:text-gray-300 transition-colors"
+              className="text-gray-500 hover:text-gray-300 transition-colors shrink-0"
               title="Sign out"
             >
               <LogOut className="w-4 h-4" />
@@ -242,6 +272,9 @@ export default function App() {
                       <Route path="/ships" element={<ShipDB />} />
                       <Route path="/import" element={<Import />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/account" element={<Account />} />
+                      <Route path="/admin" element={<Admin />} />
+                      <Route path="/users" element={<UserManagement />} />
                     </Routes>
                   </Suspense>
                 </div>

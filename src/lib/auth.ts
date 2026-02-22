@@ -1,7 +1,41 @@
 import { betterAuth } from "better-auth";
 import { D1Dialect } from "kysely-d1";
+import { admin } from "better-auth/plugins/admin";
+import { createAccessControl } from "better-auth/plugins/access";
+import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
 import { sendEmail } from "./email";
+
+// Access control: extend default admin statements with app-specific resources
+const ac = createAccessControl({
+  ...defaultStatements,
+  fleet: ["view", "import", "delete"],
+  analysis: ["view", "generate"],
+  sync: ["view", "trigger"],
+});
+
+const superAdminRole = ac.newRole({
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete", "set-password", "get", "update"],
+  session: ["list", "revoke", "delete"],
+  fleet: ["view", "import", "delete"],
+  analysis: ["view", "generate"],
+  sync: ["view", "trigger"],
+});
+
+const adminRole = ac.newRole({
+  user: ["create", "list", "ban", "get"],
+  session: ["list", "revoke"],
+  fleet: ["view", "import", "delete"],
+  analysis: ["view", "generate"],
+  sync: ["view", "trigger"],
+});
+
+const userRole = ac.newRole({
+  user: [],
+  session: [],
+  fleet: ["view", "import"],
+  analysis: ["view", "generate"],
+});
 
 export function createAuth(env: Env) {
   return betterAuth({
@@ -72,6 +106,18 @@ export function createAuth(env: Env) {
         trustedProviders: ["google"],
       },
     },
+    plugins: [
+      admin({
+        ac,
+        roles: {
+          super_admin: superAdminRole,
+          admin: adminRole,
+          user: userRole,
+        },
+        defaultRole: "user",
+        adminRoles: ["admin", "super_admin"],
+      }),
+    ],
   });
 }
 
