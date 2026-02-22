@@ -48,6 +48,14 @@ app.use("*", async (c, next) => {
   });
 });
 
+// Security headers
+app.use("*", async (c, next) => {
+  await next();
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+});
+
 // CORS — strict same-origin in production, localhost in dev
 app.use("/api/*", async (c, next) => {
   const origin = c.req.header("Origin") || "";

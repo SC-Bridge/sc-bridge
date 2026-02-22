@@ -49,7 +49,8 @@ export function createAuth(env: Env) {
     secret: env.BETTER_AUTH_SECRET,
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         await sendEmail(
           env,
@@ -58,6 +59,24 @@ export function createAuth(env: Env) {
           `<p>Click <a href="${url}">here</a> to reset your password.</p>`,
         );
       },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        await sendEmail(
+          env,
+          user.email,
+          "Verify your email",
+          `<p>Click <a href="${url}">here</a> to verify your email address.</p>`,
+        );
+      },
+    },
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 10,
+      storage: "memory",
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
