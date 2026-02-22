@@ -2,17 +2,14 @@
 -- Better Auth creates its own 'user' table with TEXT UUID primary keys.
 -- Existing user data is wiped — fleet data can be re-imported via HangarXplor.
 
--- Defer FK checks until end of transaction so we can drop/recreate tables freely
-PRAGMA defer_foreign_keys = ON;
-
--- Drop dependent tables first (they reference users(id) with INTEGER FK)
-DROP TABLE IF EXISTS user_fleet;
-DROP TABLE IF EXISTS user_paints;
-DROP TABLE IF EXISTS user_llm_configs;
-DROP TABLE IF EXISTS user_settings;
+-- Drop dependent tables first (they have FK references to users(id))
 DROP TABLE IF EXISTS ai_analyses;
+DROP TABLE IF EXISTS user_settings;
+DROP TABLE IF EXISTS user_llm_configs;
+DROP TABLE IF EXISTS user_paints;
+DROP TABLE IF EXISTS user_fleet;
 
--- Drop old users table (Better Auth creates 'user' not 'users')
+-- Now safe to drop old users table (Better Auth creates 'user' not 'users')
 DROP TABLE IF EXISTS users;
 
 -- Recreate user_fleet with TEXT user_id (no FK to users — Better Auth manages its own table)
@@ -73,4 +70,3 @@ CREATE TABLE ai_analyses (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-PRAGMA defer_foreign_keys = OFF;
