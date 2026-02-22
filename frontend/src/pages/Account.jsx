@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { User, Mail, Lock, Shield, Link2, Monitor, AlertCircle, Check } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
+import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2 } from 'lucide-react'
 import { useSession, authClient } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -26,6 +27,19 @@ export default function Account() {
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
 
+  // 2FA
+  const [totpUri, setTotpUri] = useState(null)
+  const [backupCodes, setBackupCodes] = useState(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [twoFALoading, setTwoFALoading] = useState(false)
+  const [twoFAError, setTwoFAError] = useState(null)
+  const [twoFAMsg, setTwoFAMsg] = useState(null)
+
+  // Passkeys
+  const [passkeys, setPasskeys] = useState([])
+  const [passkeysLoading, setPasskeysLoading] = useState(true)
+  const [passkeyError, setPasskeyError] = useState(null)
+
   useEffect(() => {
     if (user) setName(user.name || '')
   }, [user])
@@ -42,7 +56,20 @@ export default function Account() {
     }
   }, [])
 
+  const fetchPasskeys = useCallback(async () => {
+    setPasskeysLoading(true)
+    try {
+      const result = await authClient.passkey.listUserPasskeys()
+      setPasskeys(result.data || [])
+    } catch {
+      // Passkey listing may not be available
+    } finally {
+      setPasskeysLoading(false)
+    }
+  }, [])
+
   useEffect(() => { fetchSessions() }, [fetchSessions])
+  useEffect(() => { fetchPasskeys() }, [fetchPasskeys])
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault()
@@ -89,6 +116,80 @@ export default function Account() {
       setPasswordError(err.message || 'Failed to change password')
     } finally {
       setPasswordSaving(false)
+    }
+  }
+
+  const handleEnable2FA = async () => {
+    setTwoFALoading(true)
+    setTwoFAError(null)
+    try {
+      const result = await authClient.twoFactor.enable({ password: '' })
+      if (result.data?.totpURI) {
+        setTotpUri(result.data.totpURI)
+        setBackupCodes(result.data.backupCodes || null)
+      } else if (result.error) {
+        setTwoFAError(result.error.message || 'Failed to enable 2FA')
+      }
+    } catch (err) {
+      setTwoFAError(err.message || 'Failed to enable 2FA')
+    } finally {
+      setTwoFALoading(false)
+    }
+  }
+
+  const handleVerify2FA = async () => {
+    setTwoFALoading(true)
+    setTwoFAError(null)
+    try {
+      const result = await authClient.twoFactor.verifyTotp({ code: totpCode })
+      if (result.error) {
+        setTwoFAError(result.error.message || 'Invalid code')
+      } else {
+        setTwoFAMsg('Two-factor authentication enabled')
+        setTotpUri(null)
+        setTotpCode('')
+        setTimeout(() => setTwoFAMsg(null), 3000)
+      }
+    } catch (err) {
+      setTwoFAError(err.message || 'Verification failed')
+    } finally {
+      setTwoFALoading(false)
+    }
+  }
+
+  const handleDisable2FA = async () => {
+    if (!window.confirm('Disable two-factor authentication? This reduces account security.')) return
+    setTwoFALoading(true)
+    setTwoFAError(null)
+    try {
+      await authClient.twoFactor.disable({ password: '' })
+      setTwoFAMsg('Two-factor authentication disabled')
+      setTimeout(() => setTwoFAMsg(null), 3000)
+    } catch (err) {
+      setTwoFAError(err.message || 'Failed to disable 2FA')
+    } finally {
+      setTwoFALoading(false)
+    }
+  }
+
+  const handleAddPasskey = async () => {
+    setPasskeyError(null)
+    try {
+      await authClient.passkey.addPasskey()
+      await fetchPasskeys()
+    } catch (err) {
+      setPasskeyError(err.message || 'Failed to add passkey')
+    }
+  }
+
+  const handleDeletePasskey = async (passkeyId) => {
+    if (!window.confirm('Remove this passkey?')) return
+    setPasskeyError(null)
+    try {
+      await authClient.passkey.deletePasskey({ id: passkeyId })
+      await fetchPasskeys()
+    } catch (err) {
+      setPasskeyError(err.message || 'Failed to remove passkey')
     }
   }
 
@@ -244,6 +345,153 @@ export default function Account() {
             {passwordSaving ? 'Changing...' : 'Change Password'}
           </button>
         </form>
+      </PanelSection>
+
+      {/* Two-Factor Authentication */}
+      <PanelSection title="Two-Factor Authentication" icon={Key}>
+        <div className="p-5 max-w-md">
+          {twoFAError && (
+            <div className="flex items-center gap-2 mb-4 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{twoFAError}</span>
+            </div>
+          )}
+          {twoFAMsg && (
+            <div className="flex items-center gap-2 mb-4 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>{twoFAMsg}</span>
+            </div>
+          )}
+
+          {totpUri ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-400">
+                Scan this QR code with your authenticator app, then enter the 6-digit code to verify.
+              </p>
+              <div className="flex justify-center p-4 bg-white rounded">
+                <QRCodeSVG value={totpUri} size={200} />
+              </div>
+
+              {backupCodes && (
+                <div>
+                  <p className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Backup Codes</p>
+                  <p className="text-xs text-gray-500 mb-2">Save these codes in a safe place. Each can be used once if you lose your authenticator.</p>
+                  <div className="grid grid-cols-2 gap-1 p-3 bg-sc-darker border border-sc-border rounded font-mono text-xs text-gray-300">
+                    {backupCodes.map((code, i) => (
+                      <span key={i}>{code}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  placeholder="000000"
+                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  className="flex-1 px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-center text-sm font-mono text-white tracking-[0.3em] placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                />
+                <button
+                  onClick={handleVerify2FA}
+                  disabled={twoFALoading || totpCode.length !== 6}
+                  className="btn-primary px-4 py-2.5 font-display tracking-wider uppercase text-xs disabled:opacity-50"
+                >
+                  Verify
+                </button>
+              </div>
+            </div>
+          ) : user.twoFactorEnabled ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-sm text-sc-success">
+                  <Check className="w-4 h-4" /> Two-factor authentication is enabled
+                </span>
+              </div>
+              <button
+                onClick={handleDisable2FA}
+                disabled={twoFALoading}
+                className="text-xs text-sc-danger hover:text-sc-danger/80 transition-colors font-mono uppercase tracking-wider disabled:opacity-50"
+              >
+                {twoFALoading ? 'Disabling...' : 'Disable 2FA'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">
+                Add an extra layer of security using a TOTP authenticator app.
+              </p>
+              <button
+                onClick={handleEnable2FA}
+                disabled={twoFALoading}
+                className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs disabled:opacity-50"
+              >
+                {twoFALoading ? 'Setting up...' : 'Enable 2FA'}
+              </button>
+            </div>
+          )}
+        </div>
+      </PanelSection>
+
+      {/* Passkeys */}
+      <PanelSection title="Passkeys" icon={Fingerprint}>
+        <div className="p-5">
+          {passkeyError && (
+            <div className="flex items-center gap-2 mb-4 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{passkeyError}</span>
+            </div>
+          )}
+
+          <p className="text-sm text-gray-400 mb-4">
+            Passkeys let you sign in with biometrics (fingerprint, face) or a security key.
+          </p>
+
+          {passkeysLoading ? (
+            <p className="text-sm text-gray-500">Loading passkeys...</p>
+          ) : (
+            <>
+              {passkeys.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {passkeys.map((pk) => (
+                    <div
+                      key={pk.id}
+                      className="flex items-center justify-between p-3 bg-sc-darker border border-sc-border rounded"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Fingerprint className="w-4 h-4 text-sc-accent" />
+                        <div>
+                          <span className="text-sm text-white">{pk.name || 'Passkey'}</span>
+                          <p className="text-xs text-gray-500 font-mono">
+                            Added: {pk.createdAt ? new Date(pk.createdAt).toLocaleDateString() : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePasskey(pk.id)}
+                        title="Remove passkey"
+                        className="p-1.5 rounded text-sc-danger hover:bg-sc-danger/10 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={handleAddPasskey}
+                className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs flex items-center gap-2"
+              >
+                <Fingerprint className="w-3.5 h-3.5" />
+                Add Passkey
+              </button>
+            </>
+          )}
+        </div>
       </PanelSection>
 
       {/* Active Sessions */}

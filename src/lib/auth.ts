@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { D1Dialect } from "kysely-d1";
 import { admin } from "better-auth/plugins/admin";
+import { twoFactor } from "better-auth/plugins/two-factor";
+import { passkey } from "@better-auth/passkey";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
@@ -116,6 +118,22 @@ export function createAuth(env: Env) {
         },
         defaultRole: "user",
         adminRoles: ["admin", "super_admin"],
+      }),
+      twoFactor({
+        issuer: "SC Companion",
+        totpOptions: {
+          digits: 6,
+          period: 30,
+        },
+        backupCodeOptions: {
+          amount: 10,
+          length: 10,
+        },
+      }),
+      passkey({
+        rpID: new URL(env.BETTER_AUTH_URL).hostname,
+        rpName: "SC Companion",
+        origin: env.BETTER_AUTH_URL,
       }),
     ],
   });

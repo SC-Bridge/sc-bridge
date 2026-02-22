@@ -20,6 +20,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
 const Account = lazy(() => import('./pages/Account'))
+const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
 
 const baseNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
@@ -198,6 +199,7 @@ export default function App() {
       {/* Public auth routes — no sidebar */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/2fa" element={<Suspense fallback={<LoadingState fullScreen />}><TwoFactorVerify /></Suspense>} />
 
       {/* Protected routes — with sidebar layout */}
       <Route

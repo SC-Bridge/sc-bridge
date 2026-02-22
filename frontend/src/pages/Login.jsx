@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { signIn } from '../lib/auth-client'
-import { Rocket, Mail, Lock, AlertCircle, Github } from 'lucide-react'
+import { signIn, authClient } from '../lib/auth-client'
+import { Rocket, Mail, Lock, AlertCircle, Github, Fingerprint } from 'lucide-react'
 
 const ssoProviders = [
   { id: 'google', label: 'Google', icon: () => (
@@ -152,6 +152,31 @@ export default function Login() {
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={async () => {
+              setError('')
+              setLoading(true)
+              try {
+                const result = await authClient.signIn.passkey()
+                if (result?.error) {
+                  setError(result.error.message || 'Passkey sign-in failed')
+                } else {
+                  navigate(from, { replace: true })
+                }
+              } catch (err) {
+                setError(err.message || 'Passkey sign-in failed')
+              } finally {
+                setLoading(false)
+              }
+            }}
+            className="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-gray-300 hover:text-white hover:border-gray-500 transition-all disabled:opacity-50"
+          >
+            <Fingerprint className="w-4 h-4" />
+            <span className="font-display tracking-wide text-xs uppercase">Sign in with Passkey</span>
+          </button>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
