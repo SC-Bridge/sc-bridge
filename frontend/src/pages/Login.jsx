@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { authClient } from '../lib/auth-client'
+import { authClient, signIn } from '../lib/auth-client'
 import { Rocket, Mail, Lock, AlertCircle, Fingerprint } from 'lucide-react'
 import SocialLoginButtons from '../components/SocialLoginButtons'
 
