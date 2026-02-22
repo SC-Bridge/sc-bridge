@@ -32,6 +32,46 @@ export function createAuth(env: Env) {
       },
     },
     trustedOrigins: [env.BETTER_AUTH_URL],
+    socialProviders: {
+      ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.GOOGLE_CLIENT_ID,
+              clientSecret: env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: env.GITHUB_CLIENT_ID,
+              clientSecret: env.GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET
+        ? {
+            discord: {
+              clientId: env.DISCORD_CLIENT_ID,
+              clientSecret: env.DISCORD_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET
+        ? {
+            twitch: {
+              clientId: env.TWITCH_CLIENT_ID,
+              clientSecret: env.TWITCH_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
+    account: {
+      accountLinking: {
+        enabled: true,
+        trustedProviders: ["google"],
+      },
+    },
   });
 }
 
