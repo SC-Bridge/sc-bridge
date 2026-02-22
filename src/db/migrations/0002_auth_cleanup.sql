@@ -2,18 +2,21 @@
 -- Better Auth creates its own 'user' table with TEXT UUID primary keys.
 -- Existing user data is wiped — fleet data can be re-imported via HangarXplor.
 
+-- Defer FK checks until end of transaction so we can drop/recreate tables freely
+PRAGMA defer_foreign_keys = ON;
+
+-- Drop dependent tables first (they reference users(id) with INTEGER FK)
+DROP TABLE IF EXISTS user_fleet;
+DROP TABLE IF EXISTS user_paints;
+DROP TABLE IF EXISTS user_llm_configs;
+DROP TABLE IF EXISTS user_settings;
+DROP TABLE IF EXISTS ai_analyses;
+
 -- Drop old users table (Better Auth creates 'user' not 'users')
 DROP TABLE IF EXISTS users;
 
--- Clear existing user-scoped data (old INTEGER user_id references are invalid)
-DELETE FROM user_fleet;
-DELETE FROM user_paints;
-DELETE FROM user_llm_configs;
-DELETE FROM user_settings;
-DELETE FROM ai_analyses;
-
--- Recreate user_fleet with TEXT user_id
-CREATE TABLE IF NOT EXISTS user_fleet_new (
+-- Recreate user_fleet with TEXT user_id (no FK to users — Better Auth manages its own table)
+CREATE TABLE user_fleet (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
@@ -28,23 +31,18 @@ CREATE TABLE IF NOT EXISTS user_fleet_new (
     equipped_paint_id INTEGER REFERENCES paints(id),
     imported_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO user_fleet_new SELECT * FROM user_fleet WHERE 0; -- schema copy, no data
-DROP TABLE user_fleet;
-ALTER TABLE user_fleet_new RENAME TO user_fleet;
 CREATE INDEX IF NOT EXISTS idx_user_fleet_user_id ON user_fleet(user_id);
 
 -- Recreate user_paints with TEXT user_id
-CREATE TABLE IF NOT EXISTS user_paints_new (
+CREATE TABLE user_paints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     paint_id INTEGER NOT NULL REFERENCES paints(id),
     UNIQUE(user_id, paint_id)
 );
-DROP TABLE user_paints;
-ALTER TABLE user_paints_new RENAME TO user_paints;
 
 -- Recreate user_llm_configs with TEXT user_id
-CREATE TABLE IF NOT EXISTS user_llm_configs_new (
+CREATE TABLE user_llm_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -54,22 +52,18 @@ CREATE TABLE IF NOT EXISTS user_llm_configs_new (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, provider)
 );
-DROP TABLE user_llm_configs;
-ALTER TABLE user_llm_configs_new RENAME TO user_llm_configs;
 
 -- Recreate user_settings with TEXT user_id
-CREATE TABLE IF NOT EXISTS user_settings_new (
+CREATE TABLE user_settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,
     UNIQUE(user_id, key)
 );
-DROP TABLE user_settings;
-ALTER TABLE user_settings_new RENAME TO user_settings;
 
 -- Recreate ai_analyses with TEXT user_id
-CREATE TABLE IF NOT EXISTS ai_analyses_new (
+CREATE TABLE ai_analyses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -78,5 +72,5 @@ CREATE TABLE IF NOT EXISTS ai_analyses_new (
     analysis TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-DROP TABLE ai_analyses;
-ALTER TABLE ai_analyses_new RENAME TO ai_analyses;
+
+PRAGMA defer_foreign_keys = OFF;
