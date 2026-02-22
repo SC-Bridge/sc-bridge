@@ -237,8 +237,9 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
 
   switch (cron) {
     case "0 3 * * *":
-      console.log("[cron] SC Wiki vehicles");
-      logEvent("cron_trigger", { schedule: cron, task: "scwiki_vehicles" });
+      console.log("[cron] Session cleanup + SC Wiki vehicles");
+      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup_and_scwiki_vehicles" });
+      await cleanExpiredSessions(env);
       await triggerSCWikiSync(env);
       break;
     case "5 3 * * *":
@@ -260,11 +261,6 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
       console.log("[cron] RSI API images");
       logEvent("cron_trigger", { schedule: cron, task: "rsi_images" });
       await triggerRSISync(env);
-      break;
-    case "0 * * * *":
-      console.log("[cron] Session cleanup");
-      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup" });
-      await cleanExpiredSessions(env);
       break;
     default:
       console.warn(`[cron] Unknown schedule: ${cron}`);

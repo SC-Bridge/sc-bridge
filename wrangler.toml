@@ -21,12 +21,11 @@ migrations_dir = "src/db/migrations"
 # Each step runs as a separate invocation with its own 30s CPU budget
 [triggers]
 crons = [
-  "0 3 * * *",   # SC Wiki vehicles (manufacturers, game versions, vehicles)
+  "0 3 * * *",   # SC Wiki vehicles + session cleanup
   "5 3 * * *",   # SC Wiki items (components, FPS weapons, armour, etc.)
   "15 3 * * *",  # FleetYards ship images
   "30 3 * * *",  # scunpacked paints + FleetYards paint images
   "45 3 * * *",  # RSI API images (if enabled)
-  "0 * * * *",   # Hourly: clean expired sessions + tokens
 ]
 
 # Environment variables (non-secret defaults)
