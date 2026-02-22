@@ -16,7 +16,29 @@ export interface Env {
   API_TOKEN?: string;
   GITHUB_TOKEN?: string;
   LLM_DEFAULT_MODEL?: string;
+  // Better Auth
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  // OAuth providers
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  TWITCH_CLIENT_ID?: string;
+  TWITCH_CLIENT_SECRET?: string;
 }
+
+export type HonoEnv = {
+  Bindings: Env;
+  Variables: {
+    user: { id: string; name: string; email: string; role?: string; image?: string | null } | null;
+    session: { id: string; userId: string; expiresAt: Date } | null;
+  };
+};
 
 // --- Lookup Types ---
 

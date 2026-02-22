@@ -872,17 +872,6 @@ export async function getVehicleSlugsWithPaints(db: D1Database): Promise<string[
 }
 
 // ============================================================
-// User Operations
-// ============================================================
-
-export async function getDefaultUserID(db: D1Database): Promise<number | null> {
-  const row = await db
-    .prepare("SELECT id FROM users WHERE username = 'default'")
-    .first<{ id: number }>();
-  return row?.id ?? null;
-}
-
-// ============================================================
 // User Fleet Operations
 // ============================================================
 

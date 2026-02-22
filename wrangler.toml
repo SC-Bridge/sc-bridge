@@ -1,6 +1,7 @@
 name = "sc-companion"
 main = "src/index.ts"
 compatibility_date = "2025-02-18"
+compatibility_flags = ["nodejs_compat"]
 account_id = "4214879ee537a4840de659aafb7bf201"
 
 # Workers Assets — SPA routing: unmatched paths serve index.html
@@ -25,6 +26,7 @@ crons = [
   "15 3 * * *",  # FleetYards ship images
   "30 3 * * *",  # scunpacked paints + FleetYards paint images
   "45 3 * * *",  # RSI API images (if enabled)
+  "0 * * * *",   # Hourly: clean expired sessions + tokens
 ]
 
 # Environment variables (non-secret defaults)
@@ -38,6 +40,8 @@ RSI_BASE_URL = "https://robertsspaceindustries.com"
 RSI_RATE_LIMIT = "1.0"
 SCUNPACKED_REPO = "StarCitizenWiki/scunpacked-data"
 SCUNPACKED_BRANCH = "master"
+BETTER_AUTH_URL = "https://fleet.nerdz.cloud"
+EMAIL_FROM = "SC Companion <infrastructure@nerdz.cloud>"
 
 # Workers Observability — structured logs + OTEL export to Grafana Cloud
 [observability]

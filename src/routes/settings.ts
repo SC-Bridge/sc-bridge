@@ -1,21 +1,17 @@
 import { Hono } from "hono";
-import type { Env } from "../lib/types";
+import type { HonoEnv } from "../lib/types";
 import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
-import { getDefaultUserID } from "../db/queries";
 
 /**
  * /api/settings/* — User settings and LLM configuration
  */
-export function settingsRoutes<E extends { Bindings: Env }>() {
-  const routes = new Hono<E>();
+export function settingsRoutes() {
+  const routes = new Hono<HonoEnv>();
 
   // GET /api/settings/llm-config
   routes.get("/llm-config", async (c) => {
     const db = c.env.DB;
-    const userID = await getDefaultUserID(db);
-    if (userID === null) {
-      return c.json({ error: "Default user not found" }, 500);
-    }
+    const userID = c.get("user")!.id;
 
     const config = await db
       .prepare(
@@ -66,10 +62,7 @@ export function settingsRoutes<E extends { Bindings: Env }>() {
   // PUT /api/settings/llm-config
   routes.put("/llm-config", async (c) => {
     const db = c.env.DB;
-    const userID = await getDefaultUserID(db);
-    if (userID === null) {
-      return c.json({ error: "Default user not found" }, 500);
-    }
+    const userID = c.get("user")!.id;
 
     const body = await c.req.json<{
       provider?: string;
@@ -118,4 +111,3 @@ export function settingsRoutes<E extends { Bindings: Env }>() {
 
   return routes;
 }
-

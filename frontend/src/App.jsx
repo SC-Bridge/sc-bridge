@@ -1,10 +1,14 @@
 import React, { useState, Suspense, lazy } from 'react'
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X } from 'lucide-react'
+import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, User } from 'lucide-react'
 import LoadingState from './components/LoadingState'
+import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
+import { useSession, signOut } from './lib/auth-client'
 
 import Dashboard from './pages/Dashboard'
+import Login from './pages/Login'
+import Register from './pages/Register'
 
 const FleetTable = lazy(() => import('./pages/FleetTable'))
 const Insurance = lazy(() => import('./pages/Insurance'))
@@ -34,6 +38,13 @@ const navItems = [
 
 function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { data: session } = useSession()
+
+  const handleSignOut = async () => {
+    await signOut()
+    navigate('/login')
+  }
 
   return (
     <>
@@ -120,9 +131,27 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
           )
         })}
       </div>
+
+      {/* User info + sign out */}
+      {session?.user && (
+        <div className="p-3 border-t border-sc-border">
+          <div className="flex items-center gap-2 px-2 py-2">
+            <User className="w-4 h-4 text-gray-500" />
+            <span className="text-xs text-gray-400 truncate flex-1">{session.user.name || session.user.email}</span>
+            <button
+              onClick={handleSignOut}
+              className="text-gray-500 hover:text-gray-300 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="p-3 border-t border-sc-border">
         <p className="text-[11px] font-mono text-gray-500 text-center tracking-widest">
-          v1.0.0 · NZVengeance
+          v2.0.0 · NZVengeance
         </p>
       </div>
     </>
@@ -135,78 +164,92 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
-    <div className="min-h-screen flex">
-      {/* Skip navigation link */}
-      <a href="#main-content" className="skip-link">
-        Skip to content
-      </a>
+    <Routes>
+      {/* Public auth routes — no sidebar */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
-      {/* Desktop sidebar */}
-      <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0" aria-label="Main">
-        <SidebarContent
-          expandedMenu={expandedMenu}
-          setExpandedMenu={setExpandedMenu}
-          onNavClick={() => {}}
-        />
-      </nav>
+      {/* Protected routes — with sidebar layout */}
+      <Route
+        path="*"
+        element={
+          <RequireAuth>
+            <div className="min-h-screen flex">
+              {/* Skip navigation link */}
+              <a href="#main-content" className="skip-link">
+                Skip to content
+              </a>
 
-      {/* Mobile hamburger */}
-      <button
-        onClick={() => setMobileMenuOpen(true)}
-        aria-label="Open navigation menu"
-        className="md:hidden fixed top-4 left-4 z-40 p-2 rounded bg-sc-panel border border-sc-border text-gray-400 hover:text-white transition-colors"
-      >
-        <Menu className="w-5 h-5" aria-hidden="true" />
-      </button>
+              {/* Desktop sidebar */}
+              <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0" aria-label="Main">
+                <SidebarContent
+                  expandedMenu={expandedMenu}
+                  setExpandedMenu={setExpandedMenu}
+                  onNavClick={() => {}}
+                />
+              </nav>
 
-      {/* Mobile slide-over sidebar */}
-      {mobileMenuOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-50 flex"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Navigation menu"
-          onClick={() => setMobileMenuOpen(false)}
-        >
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
-          <nav
-            className="relative w-64 bg-sc-darker border-r border-sc-border flex flex-col animate-fade-in"
-            aria-label="Main"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setMobileMenuOpen(false)}
-              aria-label="Close navigation menu"
-              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" aria-hidden="true" />
-            </button>
-            <SidebarContent
-              expandedMenu={expandedMenu}
-              setExpandedMenu={setExpandedMenu}
-              onNavClick={() => setMobileMenuOpen(false)}
-            />
-          </nav>
-        </div>
-      )}
+              {/* Mobile hamburger */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open navigation menu"
+                className="md:hidden fixed top-4 left-4 z-40 p-2 rounded bg-sc-panel border border-sc-border text-gray-400 hover:text-white transition-colors"
+              >
+                <Menu className="w-5 h-5" aria-hidden="true" />
+              </button>
 
-      {/* Main content */}
-      <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
-        <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
-          <Suspense fallback={<LoadingState fullScreen />}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/fleet" element={<FleetTable />} />
-              <Route path="/insurance" element={<Insurance />} />
-              <Route path="/analysis" element={<Analysis />} />
-              <Route path="/analysis/history" element={<AnalysisHistory />} />
-              <Route path="/ships" element={<ShipDB />} />
-              <Route path="/import" element={<Import />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </Suspense>
-        </div>
-      </main>
-    </div>
+              {/* Mobile slide-over sidebar */}
+              {mobileMenuOpen && (
+                <div
+                  className="md:hidden fixed inset-0 z-50 flex"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Navigation menu"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
+                  <nav
+                    className="relative w-64 bg-sc-darker border-r border-sc-border flex flex-col animate-fade-in"
+                    aria-label="Main"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-label="Close navigation menu"
+                      className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+                    >
+                      <X className="w-5 h-5" aria-hidden="true" />
+                    </button>
+                    <SidebarContent
+                      expandedMenu={expandedMenu}
+                      setExpandedMenu={setExpandedMenu}
+                      onNavClick={() => setMobileMenuOpen(false)}
+                    />
+                  </nav>
+                </div>
+              )}
+
+              {/* Main content */}
+              <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
+                <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
+                  <Suspense fallback={<LoadingState fullScreen />}>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/fleet" element={<FleetTable />} />
+                      <Route path="/insurance" element={<Insurance />} />
+                      <Route path="/analysis" element={<Analysis />} />
+                      <Route path="/analysis/history" element={<AnalysisHistory />} />
+                      <Route path="/ships" element={<ShipDB />} />
+                      <Route path="/import" element={<Import />} />
+                      <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                  </Suspense>
+                </div>
+              </main>
+            </div>
+          </RequireAuth>
+        }
+      />
+    </Routes>
   )
 }

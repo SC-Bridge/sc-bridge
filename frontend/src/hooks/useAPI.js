@@ -3,7 +3,13 @@ import { useState, useEffect, useCallback } from 'react'
 const BASE = '/api'
 
 async function fetchJSON(path) {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: 'same-origin',
+  })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)
@@ -16,7 +22,12 @@ async function postJSON(path, body) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin',
   })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)
@@ -29,7 +40,12 @@ async function putJSON(path, body) {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    credentials: 'same-origin',
   })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)
@@ -110,7 +126,14 @@ export function useAIAnalysisHistory() {
 }
 
 export async function deleteAIAnalysis(id) {
-  const res = await fetch(`${BASE}/llm/analysis/${id}`, { method: 'DELETE' })
+  const res = await fetch(`${BASE}/llm/analysis/${id}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)

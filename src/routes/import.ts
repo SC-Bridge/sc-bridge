@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { Env, HangarXplorEntry } from "../lib/types";
+import type { HonoEnv, HangarXplorEntry } from "../lib/types";
 import { slugFromShipCode, slugFromName, compactSlug } from "../lib/slug";
-import { getDefaultUserID, loadInsuranceTypes } from "../db/queries";
+import { loadInsuranceTypes } from "../db/queries";
 import { logEvent } from "../lib/logger";
 
 /**
@@ -10,21 +10,17 @@ import { logEvent } from "../lib/logger";
  * Preloads vehicle slug map to avoid per-entry DB queries.
  * Uses db.batch() for transactional delete+insert (all-or-nothing).
  */
-export function importRoutes<E extends { Bindings: Env }>() {
-  const routes = new Hono<E>();
+export function importRoutes() {
+  const routes = new Hono<HonoEnv>();
 
   // POST /api/import/hangarxplor — import HangarXplor JSON export
   routes.post("/hangarxplor", async (c) => {
     const db = c.env.DB;
+    const userID = c.get("user")!.id;
 
     const entries: HangarXplorEntry[] = await c.req.json();
     if (!Array.isArray(entries)) {
       return c.json({ error: "Expected JSON array" }, 400);
-    }
-
-    const userID = await getDefaultUserID(db);
-    if (userID === null) {
-      return c.json({ error: "Default user not found" }, 500);
     }
 
     // Preload all vehicle slugs+names into memory (avoids per-entry queries)

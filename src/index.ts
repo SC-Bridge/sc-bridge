@@ -1,6 +1,7 @@
 import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
-import type { Env } from "./lib/types";
+import type { Env, HonoEnv } from "./lib/types";
+import { createAuth } from "./lib/auth";
 import { fleetRoutes } from "./routes/fleet";
 import { vehicleRoutes } from "./routes/vehicles";
 import { paintRoutes } from "./routes/paints";
@@ -9,10 +10,9 @@ import { settingsRoutes } from "./routes/settings";
 import { syncRoutes } from "./routes/sync";
 import { analysisRoutes } from "./routes/analysis";
 import { debugRoutes } from "./routes/debug";
+import { migrateRoutes } from "./routes/migrate";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
-
-type HonoEnv = { Bindings: Env };
 
 const app = new Hono<HonoEnv>();
 
@@ -58,7 +58,7 @@ app.use("/api/*", async (c, next) => {
     const isSameOrigin = originHost === host || originHost === host.split(":")[0];
     const isLocalDev = originHost === "localhost" || originHost === "127.0.0.1";
     if (isSameOrigin || isLocalDev) {
-      return cors({ origin })(c, next);
+      return cors({ origin, credentials: true })(c, next);
     }
   } catch {
     // Malformed origin — reject
@@ -66,14 +66,80 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
-// Auth middleware — protect mutating endpoints with API_TOKEN
-app.use("/api/sync/*", authMiddleware);
-app.use("/api/import/*", authMiddleware);
-app.use("/api/settings/*", authMiddleware);
-app.use("/api/debug/*", authMiddleware);
+// --- Better Auth handler — mount before session middleware ---
+app.on(["POST", "GET"], "/api/auth/**", async (c) => {
+  const auth = createAuth(c.env);
+  return auth.handler(c.req.raw);
+});
 
-// LLM routes: only protect mutating endpoints (POST/DELETE), not read-only GETs
-app.on(["POST", "DELETE"], "/api/llm/*", authMiddleware);
+// --- Session middleware — populate c.get('user') for all API routes ---
+app.use("/api/*", async (c, next) => {
+  // Skip for auth routes (already handled above)
+  if (c.req.path.startsWith("/api/auth/")) {
+    return next();
+  }
+
+  const auth = createAuth(c.env);
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  c.set("user", session?.user ?? null);
+  c.set("session", session?.session ?? null);
+  return next();
+});
+
+// --- Route protection ---
+
+// Public routes (no auth required): /api/health, /api/auth/**, /api/ships/*, /api/status
+// Protected routes require session auth OR API_TOKEN fallback
+
+// requireAuth middleware — session or API token
+async function requireAuth(c: Context<HonoEnv>, next: Next): Promise<Response | void> {
+  if (c.get("user")) {
+    return next();
+  }
+
+  // Fallback: X-API-Key for external API consumers
+  const token = c.env.API_TOKEN;
+  if (token) {
+    const provided = c.req.header("X-API-Key") || c.req.query("token") || "";
+    const encoder = new TextEncoder();
+    const a = encoder.encode(provided);
+    const b = encoder.encode(token);
+    if (a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b)) {
+      return next();
+    }
+  }
+
+  return c.json({ error: "Unauthorized" }, 401);
+}
+
+// requireRole middleware factory
+function requireRole(...roles: string[]) {
+  return async (c: Context<HonoEnv>, next: Next): Promise<Response | void> => {
+    const authResp = await requireAuth(c, async () => {});
+    if (authResp) return authResp;
+
+    const user = c.get("user");
+    if (!user?.role || !roles.includes(user.role)) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    return next();
+  };
+}
+
+// Protected: user fleet, import, settings, analysis, LLM
+app.use("/api/vehicles/*", requireAuth);
+app.use("/api/import/*", requireAuth);
+app.use("/api/settings/*", requireAuth);
+app.use("/api/analysis", requireAuth);
+app.on(["POST", "DELETE"], "/api/llm/*", requireAuth);
+
+// Admin-only: sync, debug, migrate
+app.use("/api/sync/*", requireRole("admin", "super_admin"));
+app.use("/api/debug/*", requireRole("admin", "super_admin"));
+app.use("/api/migrate", requireRole("super_admin"));
 
 // Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }));
@@ -81,6 +147,7 @@ app.get("/api/health", (c) => c.json({ status: "ok" }));
 // Status endpoint
 app.get("/api/status", async (c) => {
   const db = c.env.DB;
+  const user = c.get("user");
 
   const vehicleCount = await db
     .prepare("SELECT COUNT(*) as count FROM vehicles")
@@ -88,11 +155,16 @@ app.get("/api/status", async (c) => {
   const paintCount = await db
     .prepare("SELECT COUNT(*) as count FROM paints")
     .first<{ count: number }>();
-  const fleetCount = await db
-    .prepare(
-      "SELECT COUNT(*) as count FROM user_fleet WHERE user_id = (SELECT id FROM users WHERE username = 'default')",
-    )
-    .first<{ count: number }>();
+
+  // Fleet count is user-scoped if logged in, otherwise 0
+  let fleetCount = 0;
+  if (user) {
+    const row = await db
+      .prepare("SELECT COUNT(*) as count FROM user_fleet WHERE user_id = ?")
+      .bind(user.id)
+      .first<{ count: number }>();
+    fleetCount = row?.count ?? 0;
+  }
 
   const syncHistory = await db
     .prepare(
@@ -107,7 +179,7 @@ app.get("/api/status", async (c) => {
   return c.json({
     ships: vehicleCount?.count ?? 0,
     paints: paintCount?.count ?? 0,
-    vehicles: fleetCount?.count ?? 0,
+    vehicles: fleetCount,
     sync_status: syncHistory.results,
     config: {
       sync_schedule: "0 3 * * *",
@@ -118,13 +190,14 @@ app.get("/api/status", async (c) => {
 
 // Mount route groups — matches Go router URL structure exactly
 app.route("/api/ships", vehicleRoutes<HonoEnv>());
-app.route("/api/vehicles", fleetRoutes<HonoEnv>());
+app.route("/api/vehicles", fleetRoutes());
 app.route("/api/paints", paintRoutes<HonoEnv>());
-app.route("/api/import", importRoutes<HonoEnv>());
-app.route("/api/settings", settingsRoutes<HonoEnv>());
+app.route("/api/import", importRoutes());
+app.route("/api/settings", settingsRoutes());
 app.route("/api/sync", syncRoutes<HonoEnv>());
-app.route("/api", analysisRoutes<HonoEnv>());
-app.route("/api/debug", debugRoutes<HonoEnv>());
+app.route("/api", analysisRoutes());
+app.route("/api/debug", debugRoutes());
+app.route("/api/migrate", migrateRoutes());
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {
@@ -180,31 +253,20 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
       logEvent("cron_trigger", { schedule: cron, task: "rsi_images" });
       await triggerRSISync(env);
       break;
+    case "0 * * * *":
+      console.log("[cron] Session cleanup");
+      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup" });
+      await cleanExpiredSessions(env);
+      break;
     default:
       console.warn(`[cron] Unknown schedule: ${cron}`);
   }
 }
 
-async function authMiddleware(c: Context<HonoEnv>, next: Next): Promise<Response | void> {
-  const token = c.env.API_TOKEN;
-  if (!token) {
-    // No API_TOKEN configured — allow all requests (dev mode)
-    return next();
-  }
-  // Same-origin browser requests are trusted (SPA served by same Worker).
-  // Sec-Fetch-Site is a forbidden header — browsers set it automatically and
-  // JavaScript cannot override it, so "same-origin" is reliable proof the
-  // request came from our own SPA.
-  if (c.req.header("Sec-Fetch-Site") === "same-origin") {
-    return next();
-  }
-  const provided = c.req.header("X-API-Key") || c.req.query("token") || "";
-  const encoder = new TextEncoder();
-  const a = encoder.encode(provided);
-  const b = encoder.encode(token);
-  // Constant-time comparison — prevent timing side-channel attacks
-  if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  return next();
+async function cleanExpiredSessions(env: Env): Promise<void> {
+  const db = env.DB;
+  await db.exec("DELETE FROM session WHERE expiresAt < datetime('now')");
+  await db.exec("DELETE FROM verification WHERE expiresAt < datetime('now')").catch(() => {
+    // verification table may not exist yet
+  });
 }

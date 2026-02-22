@@ -1,32 +1,30 @@
 import { Hono } from "hono";
-import type { Env } from "../lib/types";
-import { getDefaultUserID } from "../db/queries";
+import type { HonoEnv } from "../lib/types";
 
 /**
  * /api/vehicles/* — User's fleet
  */
-export function fleetRoutes<E extends { Bindings: Env }>() {
-  const routes = new Hono<E>();
+export function fleetRoutes() {
+  const routes = new Hono<HonoEnv>();
 
   // GET /api/vehicles — list user fleet with full reference data
   routes.get("/", async (c) => {
-    return getFleetList(c.env.DB, c);
+    return getFleetList(c.env.DB, c.get("user")!.id, c);
   });
 
   // GET /api/vehicles/with-insurance — alias (insurance is already part of fleet data)
   routes.get("/with-insurance", async (c) => {
-    return getFleetList(c.env.DB, c);
+    return getFleetList(c.env.DB, c.get("user")!.id, c);
   });
 
   return routes;
 }
 
-async function getFleetList(db: D1Database, c: { json: (data: unknown, status?: number) => Response }) {
-  const userID = await getDefaultUserID(db);
-  if (userID === null) {
-    return c.json({ error: "Default user not found" }, 500);
-  }
-
+async function getFleetList(
+  db: D1Database,
+  userID: string,
+  c: { json: (data: unknown, status?: number) => Response },
+) {
   const result = await db
     .prepare(
       `SELECT uf.id, uf.user_id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
