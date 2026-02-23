@@ -122,6 +122,15 @@ export async function importHangarXplor(jsonData) {
   return postJSON('/import/hangarxplor', jsonData)
 }
 
+// User Preferences
+export function usePreferences() {
+  return useAPI('/settings/preferences')
+}
+
+export async function setPreferences(prefs) {
+  return putJSON('/settings/preferences', prefs)
+}
+
 // LLM Configuration
 export function useLLMConfig() {
   return useAPI('/settings/llm-config')

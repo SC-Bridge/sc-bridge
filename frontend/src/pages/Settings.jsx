@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useLLMConfig, setLLMConfig, testLLMConnection } from '../hooks/useAPI'
-import { Settings as SettingsIcon, Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type } from 'lucide-react'
+import { Settings as SettingsIcon, Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
 import FilterSelect from '../components/FilterSelect'
 import ConfirmDialog from '../components/ConfirmDialog'
 import useFontPreference from '../hooks/useFontPreference'
+import useTimezone from '../hooks/useTimezone'
+import { formatDate } from '../lib/dates'
 
 const FONT_OPTIONS = [
   { key: 'default', label: 'Default', desc: 'Inter body + Electrolize headings', preview: '"Inter", "Segoe UI"' },
@@ -14,8 +16,13 @@ const FONT_OPTIONS = [
   { key: 'opendyslexic', label: 'OpenDyslexic', desc: 'Weighted bottoms to reduce letter swapping', preview: '"OpenDyslexic"' },
 ]
 
+const ALL_TIMEZONES = Intl.supportedValuesOf('timeZone')
+
 export default function Settings() {
   const { fontPreference, setFontPreference } = useFontPreference()
+  const { timezone, setTimezone } = useTimezone()
+  const [tzSearch, setTzSearch] = useState('')
+  const [tzDropdownOpen, setTzDropdownOpen] = useState(false)
   const { data: config, refetch } = useLLMConfig()
   const [provider, setProvider] = useState('')
   const [apiKey, setAPIKey] = useState('')
@@ -162,6 +169,54 @@ export default function Settings() {
                 </div>
               </label>
             ))}
+          </div>
+        </div>
+      </PanelSection>
+
+      <PanelSection title="Regional" icon={Globe}>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-400">
+            Choose your timezone for date and time display across the app.
+          </p>
+
+          <div className="relative max-w-md">
+            <input
+              type="text"
+              value={tzDropdownOpen ? tzSearch : timezone}
+              onChange={(e) => { setTzSearch(e.target.value); setTzDropdownOpen(true) }}
+              onFocus={() => { setTzSearch(''); setTzDropdownOpen(true) }}
+              onBlur={() => setTimeout(() => setTzDropdownOpen(false), 200)}
+              placeholder="Search timezones..."
+              className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+            />
+            {tzDropdownOpen && (
+              <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto bg-sc-darker border border-sc-border rounded shadow-lg">
+                {ALL_TIMEZONES
+                  .filter((tz) => tz.toLowerCase().includes(tzSearch.toLowerCase()))
+                  .slice(0, 50)
+                  .map((tz) => (
+                    <button
+                      key={tz}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setTimezone(tz)
+                        setTzDropdownOpen(false)
+                        setTzSearch('')
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-white/5 transition-colors ${
+                        tz === timezone ? 'text-sc-accent bg-sc-accent/10' : 'text-gray-300'
+                      }`}
+                    >
+                      {tz}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-3 rounded bg-sc-accent/10 border border-sc-accent/20 text-xs text-sc-accent font-mono">
+            Preview: {formatDate(new Date().toISOString(), timezone)}
           </div>
         </div>
       </PanelSection>

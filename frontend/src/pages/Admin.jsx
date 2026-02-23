@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { RefreshCw, Database, Image, Palette, Globe, Play, AlertCircle } from 'lucide-react'
 import { useSyncStatus, triggerSCWikiSync, triggerItemSync, triggerImageSync, triggerPaintSync, triggerRSISync, triggerFullSync } from '../hooks/useAPI'
+import useTimezone from '../hooks/useTimezone'
+import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import PanelSection from '../components/PanelSection'
@@ -14,6 +16,7 @@ const syncActions = [
 ]
 
 export default function Admin() {
+  const { timezone } = useTimezone()
   const { data: syncHistory, loading, error, refetch } = useSyncStatus()
   const [triggering, setTriggering] = useState(null)
   const [triggerError, setTriggerError] = useState(null)
@@ -129,7 +132,7 @@ export default function Admin() {
                       {(s.record_count || 0).toLocaleString()}
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-gray-500">
-                      {new Date(s.started_at).toLocaleString()}
+                      {formatDate(s.started_at, timezone)}
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-sc-danger truncate max-w-[200px]" title={s.error_message || ''}>
                       {s.error_message || '—'}

@@ -5,6 +5,7 @@ import LoadingState from './components/LoadingState'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
 import { useSession, signOut } from './lib/auth-client'
+import { TimezoneProvider } from './hooks/useTimezone'
 
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
@@ -228,6 +229,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   return (
+    <TimezoneProvider>
     <Routes>
       {/* Public auth routes — no sidebar */}
       <Route path="/login" element={<Login />} />
@@ -323,5 +325,6 @@ export default function App() {
         }
       />
     </Routes>
+    </TimezoneProvider>
   )
 }

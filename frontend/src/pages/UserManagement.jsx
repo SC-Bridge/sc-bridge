@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Users, Shield, Ban, Trash2, AlertCircle } from 'lucide-react'
 import { authClient } from '../lib/auth-client'
+import useTimezone from '../hooks/useTimezone'
+import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import PanelSection from '../components/PanelSection'
@@ -8,6 +10,7 @@ import PanelSection from '../components/PanelSection'
 const ROLES = ['user', 'admin', 'super_admin']
 
 export default function UserManagement() {
+  const { timezone } = useTimezone()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -135,7 +138,7 @@ export default function UserManagement() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-gray-500">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}
+                      {formatDate(u.createdAt, timezone)}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">

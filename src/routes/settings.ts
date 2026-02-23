@@ -109,5 +109,47 @@ export function settingsRoutes() {
     return c.json({ message: "LLM configuration saved" });
   });
 
+  // GET /api/settings/preferences
+  routes.get("/preferences", async (c) => {
+    const db = c.env.DB;
+    const userID = c.get("user")!.id;
+
+    const rows = await db
+      .prepare("SELECT key, value FROM user_settings WHERE user_id = ?")
+      .bind(userID)
+      .all<{ key: string; value: string }>();
+
+    const prefs: Record<string, string> = {};
+    for (const row of rows.results) {
+      prefs[row.key] = row.value;
+    }
+
+    return c.json(prefs);
+  });
+
+  // PUT /api/settings/preferences
+  routes.put("/preferences", async (c) => {
+    const db = c.env.DB;
+    const userID = c.get("user")!.id;
+
+    const body = await c.req.json<Record<string, string>>();
+
+    const stmt = db.prepare(
+      `INSERT INTO user_settings (user_id, key, value)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+    );
+
+    const batch = Object.entries(body).map(([key, value]) =>
+      stmt.bind(userID, key, value),
+    );
+
+    if (batch.length > 0) {
+      await db.batch(batch);
+    }
+
+    return c.json({ message: "Preferences saved" });
+  });
+
   return routes;
 }

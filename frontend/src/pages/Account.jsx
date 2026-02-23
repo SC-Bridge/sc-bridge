@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy, Pencil } from 'lucide-react'
 import { useSession, authClient, signOut } from '../lib/auth-client'
+import useTimezone from '../hooks/useTimezone'
+import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import PanelSection from '../components/PanelSection'
@@ -11,6 +13,7 @@ export default function Account() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: session, isPending } = useSession()
+  const { timezone } = useTimezone()
   const user = session?.user
 
   const [name, setName] = useState('')
@@ -762,7 +765,7 @@ export default function Account() {
                           <div>
                             <span className="text-sm text-white">{pk.name || 'Passkey'}</span>
                             <p className="text-xs text-gray-500 font-mono">
-                              Added: {pk.createdAt ? new Date(pk.createdAt).toLocaleDateString() : '—'}
+                              Added: {formatDate(pk.createdAt, timezone)}
                             </p>
                           </div>
                         )}
@@ -864,7 +867,7 @@ export default function Account() {
                         )}
                       </div>
                       <p className="text-xs text-gray-500 font-mono mt-1">
-                        Expires: {new Date(s.expiresAt).toLocaleString()}
+                        Expires: {formatDate(s.expiresAt, timezone)}
                       </p>
                     </div>
                     <button

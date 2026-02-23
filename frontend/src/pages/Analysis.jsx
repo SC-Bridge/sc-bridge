@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAnalysis, useLLMConfig, generateAIAnalysis, useLatestAIAnalysis } from '../hooks/useAPI'
+import useTimezone from '../hooks/useTimezone'
+import { formatDateOnly } from '../lib/dates'
 import { AlertCircle, AlertTriangle, Info, Copy, ChevronRight, Sparkles, Loader } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -14,6 +16,7 @@ const PRIORITY_CONFIG = {
 }
 
 export default function Analysis() {
+  const { timezone } = useTimezone()
   const { data: analysis, loading, error } = useAnalysis()
   const { data: llmConfig } = useLLMConfig()
   const { data: latestAnalysis } = useLatestAIAnalysis()
@@ -102,7 +105,7 @@ export default function Analysis() {
             <span className="flex-1">AI Fleet Insights</span>
             {aiTimestamp && (
               <span className="text-[11px] font-mono text-gray-500 normal-case tracking-normal">
-                Generated {new Date(aiTimestamp).toLocaleDateString('en-NZ', { year: 'numeric', month: 'short', day: 'numeric' })}
+                Generated {formatDateOnly(aiTimestamp, timezone)}
               </span>
             )}
           </div>

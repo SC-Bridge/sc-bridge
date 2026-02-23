@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAIAnalysisHistory, deleteAIAnalysis } from '../hooks/useAPI'
+import useTimezone from '../hooks/useTimezone'
+import { formatDate } from '../lib/dates'
 import { Clock, Sparkles, ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -9,6 +11,7 @@ import EmptyState from '../components/EmptyState'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function AnalysisHistory() {
+  const { timezone } = useTimezone()
   const { data, loading, error, refetch } = useAIAnalysisHistory()
   const [expandedId, setExpandedId] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -81,14 +84,7 @@ export default function AnalysisHistory() {
       <div className="space-y-3">
         {history.map((item) => {
           const isExpanded = expandedId === item.id
-          const date = new Date(item.created_at)
-          const formattedDate = date.toLocaleString('en-NZ', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
+          const formattedDate = formatDate(item.created_at, timezone)
 
           return (
             <div key={item.id} className="panel">
