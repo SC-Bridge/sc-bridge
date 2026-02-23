@@ -57,19 +57,33 @@ export function analysisRoutes() {
     const db = c.env.DB;
     const userID = c.get("user")!.id;
 
-    const apiKey = await getDecryptedAPIKey(db, userID, c.env.ENCRYPTION_KEY);
-    if (!apiKey) {
-      return c.json({ error: "No API key configured" }, 400);
+    const body = await c.req.json<{ provider?: string; api_key?: string }>().catch(() => ({}));
+
+    const provider = body.provider?.trim() || "anthropic";
+    if (!PROVIDER_MODELS[provider]) {
+      return c.json({ error: `Unsupported provider: ${provider}` }, 400);
     }
 
+    // Use provided API key (first-time setup) or fall back to stored key
+    let apiKey = body.api_key?.trim() || null;
+    if (!apiKey) {
+      apiKey = await getDecryptedAPIKey(db, userID, c.env.ENCRYPTION_KEY);
+    }
+    if (!apiKey) {
+      return c.json({ error: "No API key provided or configured" }, 400);
+    }
+
+    const testModel = TEST_MODELS[provider];
     try {
-      await callAnthropic(apiKey, {
-        model: "claude-3-5-haiku-20241022",
-        max_tokens: 10,
+      // Gemini 2.5+ models use "thinking" tokens that count against max_tokens,
+      // so we need enough headroom for both thinking and a response.
+      await callLLM(provider, apiKey, {
+        model: testModel,
+        max_tokens: 100,
         messages: [{ role: "user", content: "test" }],
       });
-      logEvent("llm_test", { success: true });
-      return c.json({ success: true, message: "Connection successful" });
+      logEvent("llm_test", { success: true, provider });
+      return c.json({ success: true, message: "Connection successful", models: PROVIDER_MODELS[provider] });
     } catch (err) {
       return c.json(
         { error: `Connection failed: ${err instanceof Error ? err.message : String(err)}` },
@@ -78,11 +92,14 @@ export function analysisRoutes() {
     }
   });
 
-  // GET /api/llm/models — list available models
+  // GET /api/llm/models — list available models for a provider
   routes.get("/llm/models", async (c) => {
-    return c.json({
-      models: ANTHROPIC_MODELS,
-    });
+    const provider = c.req.query("provider") || "anthropic";
+    const models = PROVIDER_MODELS[provider];
+    if (!models) {
+      return c.json({ error: `Unsupported provider: ${provider}` }, 400);
+    }
+    return c.json({ models });
   });
 
   // POST /api/llm/generate-analysis
@@ -113,7 +130,8 @@ export function analysisRoutes() {
     const body = await c.req
       .json<{ model?: string }>()
       .catch(() => ({ model: undefined }));
-    const defaultModel = c.env.LLM_DEFAULT_MODEL || "claude-sonnet-4-5-20250929";
+    const provider = config.provider || "anthropic";
+    const defaultModel = c.env.LLM_DEFAULT_MODEL || DEFAULT_MODELS[provider] || "claude-sonnet-4-6";
     const model = body.model || config.model || defaultModel;
 
     // Get fleet data
@@ -167,18 +185,15 @@ export function analysisRoutes() {
       });
       const userPrompt = `Fleet data:\n\n${JSON.stringify(sanitizedFleet)}\n\nProvide a comprehensive fleet analysis.`;
 
-      const resp = await callAnthropic(apiKey, {
+      const analysisText = await callLLM(provider, apiKey, {
         model,
         max_tokens: 4000,
         system: ANALYSIS_PROMPT,
         messages: [{ role: "user", content: userPrompt }],
       });
 
-      const analysisText =
-        resp.content?.[0]?.type === "text" ? resp.content[0].text : "";
-
       if (!analysisText) {
-        return c.json({ error: "No response from Anthropic" }, 500);
+        return c.json({ error: "No response from LLM" }, 500);
       }
 
       // Save analysis to DB
@@ -269,23 +284,35 @@ export function analysisRoutes() {
 
 // --- LLM Helpers ---
 
-const ANTHROPIC_MODELS = [
-  {
-    id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    description: "Most capable model for complex analysis",
-  },
-  {
-    id: "claude-sonnet-4-5-20250929",
-    name: "Claude Sonnet 4.5",
-    description: "Balanced performance and cost",
-  },
-  {
-    id: "claude-3-5-haiku-20241022",
-    name: "Claude 3.5 Haiku",
-    description: "Fast and cost-effective",
-  },
-];
+const PROVIDER_MODELS: Record<string, Array<{ id: string; name: string; description: string }>> = {
+  anthropic: [
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6", description: "Most capable model for complex analysis" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", description: "Balanced performance and cost" },
+    { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", description: "Fast and cost-effective" },
+  ],
+  openai: [
+    { id: "gpt-5.2", name: "GPT-5.2", description: "Most capable model for complex analysis" },
+    { id: "gpt-4o", name: "GPT-4o", description: "Versatile and reliable" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and cost-effective" },
+  ],
+  google: [
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Most capable model with 1M context" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast and budget-friendly" },
+    { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", description: "Most affordable option" },
+  ],
+};
+
+const DEFAULT_MODELS: Record<string, string> = {
+  anthropic: "claude-sonnet-4-6",
+  openai: "gpt-4o",
+  google: "gemini-2.5-flash",
+};
+
+const TEST_MODELS: Record<string, string> = {
+  anthropic: "claude-haiku-4-5-20251001",
+  openai: "gpt-4o-mini",
+  google: "gemini-2.5-flash-lite",
+};
 
 async function decryptAPIKey(
   encryptedKey: string,
@@ -319,21 +346,31 @@ async function getDecryptedAPIKey(
   return decryptAPIKey(config.encrypted_api_key, encryptionKey);
 }
 
-interface AnthropicRequest {
+interface LLMRequest {
   model: string;
   max_tokens: number;
   system?: string;
   messages: Array<{ role: string; content: string }>;
 }
 
-interface AnthropicResponse {
-  content: Array<{ type: string; text: string }>;
+async function callLLM(
+  provider: string,
+  apiKey: string,
+  request: LLMRequest,
+): Promise<string> {
+  switch (provider) {
+    case "anthropic":
+      return callAnthropic(apiKey, request);
+    case "openai":
+      return callOpenAI(apiKey, request);
+    case "google":
+      return callGoogle(apiKey, request);
+    default:
+      throw new Error(`Unsupported provider: ${provider}`);
+  }
 }
 
-async function callAnthropic(
-  apiKey: string,
-  body: AnthropicRequest,
-): Promise<AnthropicResponse> {
+async function callAnthropic(apiKey: string, body: LLMRequest): Promise<string> {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -341,7 +378,12 @@ async function callAnthropic(
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      model: body.model,
+      max_tokens: body.max_tokens,
+      ...(body.system ? { system: body.system } : {}),
+      messages: body.messages,
+    }),
   });
 
   if (!resp.ok) {
@@ -349,7 +391,75 @@ async function callAnthropic(
     throw new Error(`Anthropic API error (${resp.status}): ${text}`);
   }
 
-  return resp.json() as Promise<AnthropicResponse>;
+  const data = (await resp.json()) as { content: Array<{ type: string; text: string }> };
+  return data.content?.[0]?.type === "text" ? data.content[0].text : "";
+}
+
+async function callOpenAI(apiKey: string, body: LLMRequest): Promise<string> {
+  const messages: Array<{ role: string; content: string }> = [];
+  if (body.system) {
+    messages.push({ role: "system", content: body.system });
+  }
+  messages.push(...body.messages);
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: body.model,
+      max_completion_tokens: body.max_tokens,
+      messages,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`OpenAI API error (${resp.status}): ${text}`);
+  }
+
+  const data = (await resp.json()) as { choices: Array<{ message: { content: string } }> };
+  return data.choices?.[0]?.message?.content || "";
+}
+
+async function callGoogle(apiKey: string, body: LLMRequest): Promise<string> {
+  const contents = body.messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const requestBody: Record<string, unknown> = {
+    contents,
+    generationConfig: { maxOutputTokens: body.max_tokens },
+  };
+
+  if (body.system) {
+    requestBody.systemInstruction = { parts: [{ text: body.system }] };
+  }
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${body.model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(requestBody),
+    },
+  );
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Google API error (${resp.status}): ${text}`);
+  }
+
+  const data = (await resp.json()) as {
+    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
+  };
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 
 // --- Embedded Analysis Prompt (from prompts/analysis.md) ---

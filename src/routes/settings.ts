@@ -77,8 +77,7 @@ export function settingsRoutes() {
     }
 
     // Validate provider
-    // Only Anthropic is implemented — add others here when provider routing is built
-    const validProviders = ["anthropic"];
+    const validProviders = ["anthropic", "openai", "google"];
     if (!body.provider || !validProviders.includes(body.provider)) {
       return c.json({ error: "Invalid provider" }, 400);
     }

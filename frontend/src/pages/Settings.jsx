@@ -229,9 +229,9 @@ export default function Settings() {
 
           <div className="space-y-2">
             {[
-              { value: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT-4, GPT-3.5-turbo models' },
-              { value: 'anthropic', label: 'Anthropic (Claude)', desc: 'Claude Opus, Sonnet, Haiku' },
-              { value: 'google', label: 'Google (Gemini)', desc: 'Gemini Pro, Gemini Flash' },
+              { value: 'anthropic', label: 'Anthropic (Claude)', desc: 'Claude Opus 4.6, Sonnet 4.6, Haiku 4.5' },
+              { value: 'openai', label: 'OpenAI (ChatGPT)', desc: 'GPT-5.2, GPT-4o, GPT-4o Mini' },
+              { value: 'google', label: 'Google (Gemini)', desc: 'Gemini 2.5 Pro, Flash, Flash-Lite' },
             ].map((p) => (
               <label
                 key={p.value}
@@ -246,7 +246,7 @@ export default function Settings() {
                   name="provider"
                   value={p.value}
                   checked={provider === p.value}
-                  onChange={(e) => setProvider(e.target.value)}
+                  onChange={(e) => { setProvider(e.target.value); setModels([]); setModel(''); setTestResult(null) }}
                   className="mr-3"
                 />
                 <span className="text-white font-medium">{p.label}</span>
