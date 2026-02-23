@@ -147,6 +147,7 @@ app.use("/api/import/*", requireAuth);
 app.use("/api/settings/*", requireAuth);
 app.use("/api/analysis", requireAuth);
 app.on(["POST", "DELETE"], "/api/llm/*", requireAuth);
+app.use("/api/account", requireAuth);
 app.use("/api/account/*", requireAuth);
 
 // Admin-only: sync, debug, migrate

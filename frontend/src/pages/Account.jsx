@@ -443,8 +443,10 @@ export default function Account() {
         body: JSON.stringify({ confirmation: 'DELETE' }),
       })
       if (!resp.ok) {
-        const data = await resp.json()
-        throw new Error(data.error || 'Failed to delete account')
+        const text = await resp.text()
+        let message = 'Failed to delete account'
+        try { message = JSON.parse(text).error || message } catch {}
+        throw new Error(message)
       }
       await signOut()
       navigate('/login', { replace: true })
