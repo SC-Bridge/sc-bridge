@@ -4,23 +4,19 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Full code review fixes applied. Ready for OAuth SSO providers.**
+**All code review findings resolved. Ready for OAuth SSO providers.**
 
 ## Recent Changes
 
-- Full 3-reviewer code review (Claude Opus, Codex, Gemini) — 15 findings consolidated
-- Fixed `usePreferences()` skip bug (blocker — 401 redirect loop for logged-out users)
-- Fixed CORS localhost bypass in production (added ENVIRONMENT check)
-- Added `escapeHtml()` to all email templates (auth + GDPR export)
-- Added preferences endpoint validation (key allowlist + value length limits)
-- Chunked import batches to stay under D1 1000-statement limit
-- Batched account deletion for atomicity (single `db.batch()`)
-- Restricted LLM provider to Anthropic only (was accepting openai/google but always called Anthropic)
-- Stripped `custom_name` from LLM payload (personal data)
-- Added timezone optimistic update rollback on API failure
-- Cached `createAuth()` per isolate via WeakMap
-- Fixed `encryptionKeyValidated` race (set flag after check, not before)
-- Documented rate limiting limitation (memory storage is per-isolate on Workers)
+- Implemented multi-provider LLM support: Anthropic, OpenAI (GPT-5.2/4o/4o-mini), Google (Gemini 2.5 Pro/Flash/Flash-Lite)
+- Added `callOpenAI()` and `callGoogle()` with unified `callLLM()` dispatcher in analysis.ts
+- Fixed test-connection to accept body params and return provider-specific models
+- OpenAI uses `max_completion_tokens` (not `max_tokens`) for GPT-5.2 compat
+- Test max_tokens bumped to 100 for Gemini thinking model compatibility
+- Fixed timing leak: SHA-256 hash both values before `timingSafeEqual` (index.ts)
+- Fixed import atomicity: insert-then-swap pattern using AUTOINCREMENT ID threshold (import.ts)
+- Gated `runFullSync` behind `ENVIRONMENT === "development"` (sync.ts)
+- All 3 low-severity Gemini findings resolved (rate limiting documented, init race acceptable, providers list updated)
 
 ## Production
 
@@ -33,23 +29,18 @@ This file maintains running context across compactions.
 
 ## Key Decisions
 
-- Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory per-request
-- All DB timestamps are UTC (`CURRENT_TIMESTAMP` / `datetime('now')`) — frontend converts via user timezone preference
-- Timezone preference uses `user_settings` key-value table (not a dedicated column) — extensible for future prefs
-- Date format: `YYYY-MMM-DD HH:MM AM/PM TZ` (e.g. `2026-FEB-23 07:09 PM NZDT`) — locale-independent via `formatToParts()`
-- Guests (not logged in) get browser timezone automatically; logged-in users get server-persisted preference
+- Multi-provider LLM: Anthropic (Messages API), OpenAI (Chat Completions), Google (generateContent)
+- API keys: `NERDZ_CODEX_API_KEY` for OpenAI, `NERDZ_GEMINI_API_KEY` for Google (in ~/.secrets)
+- Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
+- All DB timestamps are UTC — frontend converts via user timezone preference
+- Date format: `YYYY-MMM-DD HH:MM AM/PM TZ` — locale-independent via `formatToParts()`
 - Always use `CLOUDFLARE_API_TOKEN`. Always use `npx wrangler`
 
 ## What's Next
 
-- **Commit review fixes** — all changes are staged but uncommitted
 - **Wire up Google OAuth** — `npx wrangler secret put GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, test login flow
 - **Set up remaining OAuth providers** — GitHub, Discord, Twitch (same pattern)
 - **Hide unconfigured SSO buttons** — endpoint to expose available providers
 - **Register first user** + promote to super_admin
 - **Test email verification** flow
-
-
----
-**Session compacted at:** 2026-02-23 20:19:12
-
+- **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
