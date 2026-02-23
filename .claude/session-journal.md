@@ -4,17 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**User Change History — implemented, needs migration applied and manual testing.**
+**Observability working. Change history live in production. Ready for next feature.**
 
 ## Recent Changes
 
-- Created `user_change_history` table + `change_event_types` lookup (migration 0003)
-- Created `src/lib/change-history.ts` — fire-and-forget `logUserChange()` helper
-- Wired into `account.ts`: unlink-provider, set-password, account-deleted
-- Wired into `import.ts`: fleet_imported with vehicle_count metadata
-- Wired into `settings.ts`: settings_changed (with old/new values), llm_config_changed
-- Added Better Auth `databaseHooks` in `auth.ts`: account.create (provider_linked), session.delete (session_revoked), user.update (profile_updated)
-- Added Better Auth `hooks.after` middleware: 2FA enable/disable, change-password, passkey add/delete
+- Migration 0003 confirmed applied to remote D1 — `change_event_types` (16 rows) + `user_change_history` both live
+- Observability fully working: New Relic (7,555 spans + 6,567 logs) + Grafana Cloud (Loki + Tempo)
+- Grafana: installed "Cloudflare Workers" integration from Connections menu → pre-built dashboards working
+- Loki label: `service_name="sc-bridge"` — Tempo: `{.service.name = "sc-bridge"}`
 
 ## Production
 
@@ -30,13 +27,11 @@ This file maintains running context across compactions.
 - Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
 - All DB timestamps are UTC — frontend converts via user timezone preference
 - Always use `CLOUDFLARE_API_TOKEN`. Always use `npx wrangler`
-- Cloudflare observability MCP: account ID `4214879ee537a4840de659aafb7bf201` (NERDZ)
+- Grafana Cloud integration (not grafana.com/dashboards) provides Cloudflare Workers pre-built dashboards
 - Unlink safety: backend enforces min 2 account rows, credential unlinking blocked (use password change instead)
-- `signIn.social()` with `callbackURL: '/account'` handles linking for already-authenticated users
 
 ## What's Next
 
-- **Apply migration 0003** — `npx wrangler d1 migrations apply sc-companion --local` (or `--remote`)
 - **Manual testing** — unlink provider, set password, import fleet → verify rows in `user_change_history`
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
@@ -82,4 +77,24 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-24 06:44:05
+
+
+---
+**Session compacted at:** 2026-02-24 07:15:55
+
+
+---
+**Session compacted at:** 2026-02-24 07:32:24
+
+
+---
+**Session compacted at:** 2026-02-24 10:04:05
+
+
+---
+**Session compacted at:** 2026-02-24 11:09:54
+
+
+---
+**Session compacted at:** 2026-02-24 12:08:32
 
