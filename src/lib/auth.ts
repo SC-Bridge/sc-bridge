@@ -74,17 +74,31 @@ export function createAuth(env: Env) {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({ user, url }) => {
-        await sendEmail(
-          env,
-          user.email,
-          "Verify your email",
-          buildTransactionalEmailHtml("Verify Your Email", `
-            <p>Welcome to SC Bridge! Please verify your email address to activate your account.</p>
-            <p>Click the button below to get started:</p>
-            <p style="text-align:center;"><a href="${url}" class="cta">Verify Email</a></p>
-            <p style="font-size:12px;color:#888;">If you didn't create an SC Bridge account, you can safely ignore this email.</p>
-          `),
-        );
+        const isEmailChange = user.emailVerified === true;
+        if (isEmailChange) {
+          await sendEmail(
+            env,
+            user.email,
+            "Verify your new email",
+            buildTransactionalEmailHtml("Verify New Email", `
+              <p>Click the button below to confirm <strong>${user.email}</strong> as your new SC Bridge email address.</p>
+              <p style="text-align:center;"><a href="${url}" class="cta">Verify New Email</a></p>
+              <p style="font-size:12px;color:#888;">If you didn't request this change, you can safely ignore this email.</p>
+            `),
+          );
+        } else {
+          await sendEmail(
+            env,
+            user.email,
+            "Verify your email",
+            buildTransactionalEmailHtml("Verify Your Email", `
+              <p>Welcome to SC Bridge! Please verify your email address to activate your account.</p>
+              <p>Click the button below to get started:</p>
+              <p style="text-align:center;"><a href="${url}" class="cta">Verify Email</a></p>
+              <p style="font-size:12px;color:#888;">If you didn't create an SC Bridge account, you can safely ignore this email.</p>
+            `),
+          );
+        }
       },
     },
     rateLimit: {
@@ -104,19 +118,6 @@ export function createAuth(env: Env) {
     user: {
       changeEmail: {
         enabled: true,
-        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
-          await sendEmail(
-            env,
-            user.email,
-            "Confirm email change",
-            buildTransactionalEmailHtml("Confirm Email Change", `
-              <p>We received a request to change your SC Bridge email to <strong>${newEmail}</strong>.</p>
-              <p>Click the button below to confirm this change:</p>
-              <p style="text-align:center;"><a href="${url}" class="cta">Confirm Email Change</a></p>
-              <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email.</p>
-            `),
-          );
-        },
       },
     },
     trustedOrigins: [env.BETTER_AUTH_URL],

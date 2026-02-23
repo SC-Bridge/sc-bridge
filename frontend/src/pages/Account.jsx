@@ -375,14 +375,15 @@ export default function Account() {
                       setEmailError(null)
                       setEmailMsg(null)
                       try {
+                        const pendingEmail = newEmail
                         const result = await authClient.changeEmail({ newEmail })
                         if (result.error) {
                           setEmailError(result.error.message || 'Failed to change email')
                         } else {
-                          setEmailMsg('Check your current email to confirm the change')
+                          setEmailMsg(`Verification email sent to ${pendingEmail} — click the link there to confirm the change`)
                           setShowEmailEdit(false)
                           setNewEmail('')
-                          setTimeout(() => setEmailMsg(null), 8000)
+                          setTimeout(() => setEmailMsg(null), 10000)
                         }
                       } catch (err) {
                         setEmailError(err.message || 'Failed to change email')
