@@ -11,6 +11,7 @@ import { syncRoutes } from "./routes/sync";
 import { analysisRoutes } from "./routes/analysis";
 import { debugRoutes } from "./routes/debug";
 import { migrateRoutes } from "./routes/migrate";
+import { accountRoutes } from "./routes/account";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
 
@@ -143,6 +144,7 @@ app.use("/api/import/*", requireAuth);
 app.use("/api/settings/*", requireAuth);
 app.use("/api/analysis", requireAuth);
 app.on(["POST", "DELETE"], "/api/llm/*", requireAuth);
+app.use("/api/account/*", requireAuth);
 
 // Admin-only: sync, debug, migrate
 app.use("/api/sync/*", requireRole("admin", "super_admin"));
@@ -206,6 +208,7 @@ app.route("/api/sync", syncRoutes<HonoEnv>());
 app.route("/api", analysisRoutes());
 app.route("/api/debug", debugRoutes());
 app.route("/api/migrate", migrateRoutes());
+app.route("/api/account", accountRoutes());
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {

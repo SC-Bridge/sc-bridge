@@ -13,6 +13,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -150,9 +151,28 @@ export default function Register() {
               </div>
             </div>
 
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 rounded border-sc-border bg-sc-darker text-sc-accent focus:ring-sc-accent/50"
+              />
+              <span className="text-xs text-gray-400">
+                I agree to the{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
+                  Privacy Policy
+                </a>
+              </span>
+            </label>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="btn-primary w-full py-2.5 font-display tracking-wider uppercase text-sm disabled:opacity-50"
             >
               {loading ? 'Creating account...' : 'Create Account'}
@@ -169,6 +189,17 @@ export default function Register() {
           </div>
 
           <SocialLoginButtons callbackURL="/" loading={loading} setLoading={setLoading} setError={setError} />
+
+          <p className="text-[11px] text-gray-500 text-center mt-3">
+            By signing up with a social provider, you agree to our{' '}
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
+              Terms of Service
+            </a>{' '}
+            and{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
+              Privacy Policy
+            </a>
+          </p>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">

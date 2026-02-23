@@ -4,16 +4,17 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Auth deployed. Waiting on domain decision before setting up OAuth providers.**
+**Privacy/TOS/GDPR compliance implemented — ready for deploy.**
 
 ## Recent Changes
 
-- Fixed missing `signIn` import in Login.jsx (would have crashed on login attempt)
-- Created `context.md` — project vision document covering current features and future roadmap
-- SocialLoginButtons extracted into shared component with Simple Icons SVGs, `currentColor` fill
-- SSO buttons added to Register page (previously only on Login)
-- All 5 auth phases code-complete and deployed to production
-- D1 has 33 tables (Better Auth + app tables), all migrations applied
+- NEW: `src/routes/account.ts` — GDPR account routes (data export download, email export, self-service account deletion)
+- NEW: `frontend/src/pages/Privacy.jsx` — Public privacy policy page at `/privacy`
+- NEW: `frontend/src/pages/Terms.jsx` — Public terms of service page at `/terms`
+- EDIT: `src/index.ts` — Mounted account routes with requireAuth middleware
+- EDIT: `frontend/src/App.jsx` — Added public routes for Privacy/Terms, sidebar footer links
+- EDIT: `frontend/src/pages/Register.jsx` — TOS checkbox blocks form submission, social login note
+- EDIT: `frontend/src/pages/Account.jsx` — Data & Privacy section with export + danger zone deletion
 
 ## Production
 
@@ -71,4 +72,8 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-23 11:34:00
+
+
+---
+**Session compacted at:** 2026-02-23 15:26:38
 

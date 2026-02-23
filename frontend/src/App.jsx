@@ -21,6 +21,8 @@ const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
 const Account = lazy(() => import('./pages/Account'))
 const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
+const Privacy = lazy(() => import('./pages/Privacy'))
+const Terms = lazy(() => import('./pages/Terms'))
 
 const baseNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
@@ -184,6 +186,11 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
         <p className="text-[11px] font-mono text-gray-500 text-center tracking-widest">
           v2.0.0 · NZVengeance
         </p>
+        <p className="text-[10px] text-gray-600 text-center mt-1">
+          <NavLink to="/privacy" className="hover:text-gray-400 transition-colors">Privacy</NavLink>
+          {' · '}
+          <NavLink to="/terms" className="hover:text-gray-400 transition-colors">Terms</NavLink>
+        </p>
       </div>
     </>
   )
@@ -200,6 +207,8 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/2fa" element={<Suspense fallback={<LoadingState fullScreen />}><TwoFactorVerify /></Suspense>} />
+      <Route path="/privacy" element={<Suspense fallback={<LoadingState fullScreen />}><Privacy /></Suspense>} />
+      <Route path="/terms" element={<Suspense fallback={<LoadingState fullScreen />}><Terms /></Suspense>} />
 
       {/* Protected routes — with sidebar layout */}
       <Route
