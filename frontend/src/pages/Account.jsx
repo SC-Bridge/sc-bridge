@@ -20,7 +20,6 @@ export default function Account() {
 
   // Email change
   const [newEmail, setNewEmail] = useState('')
-  const [emailSaving, setEmailSaving] = useState(false)
   const [emailMsg, setEmailMsg] = useState(null)
   const [emailError, setEmailError] = useState(null)
   const [showEmailEdit, setShowEmailEdit] = useState(false)
@@ -106,8 +105,24 @@ export default function Account() {
     setSaving(true)
     setError(null)
     setSaveMsg(null)
+    setEmailError(null)
+    setEmailMsg(null)
     try {
       await authClient.updateUser({ name })
+
+      if (showEmailEdit && newEmail && newEmail !== user.email) {
+        const pendingEmail = newEmail
+        const result = await authClient.changeEmail({ newEmail, callbackURL: '/account?emailChanged=true' })
+        if (result.error) {
+          setEmailError(result.error.message || 'Failed to change email')
+        } else {
+          setEmailMsg(`Verification email sent to ${pendingEmail} — click the link there to confirm the change`)
+          setShowEmailEdit(false)
+          setNewEmail('')
+          setTimeout(() => setEmailMsg(null), 10000)
+        }
+      }
+
       setSaveMsg('Profile updated')
       setTimeout(() => setSaveMsg(null), 3000)
     } catch (err) {
@@ -373,45 +388,14 @@ export default function Account() {
                   onChange={(e) => setNewEmail(e.target.value)}
                   className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
                   placeholder="New email address"
-                  autoFocus
                 />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={emailSaving || !newEmail || newEmail === user.email}
-                    onClick={async () => {
-                      setEmailSaving(true)
-                      setEmailError(null)
-                      setEmailMsg(null)
-                      try {
-                        const pendingEmail = newEmail
-                        const result = await authClient.changeEmail({ newEmail, callbackURL: '/account?emailChanged=true' })
-                        if (result.error) {
-                          setEmailError(result.error.message || 'Failed to change email')
-                        } else {
-                          setEmailMsg(`Verification email sent to ${pendingEmail} — click the link there to confirm the change`)
-                          setShowEmailEdit(false)
-                          setNewEmail('')
-                          setTimeout(() => setEmailMsg(null), 10000)
-                        }
-                      } catch (err) {
-                        setEmailError(err.message || 'Failed to change email')
-                      } finally {
-                        setEmailSaving(false)
-                      }
-                    }}
-                    className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs disabled:opacity-50"
-                  >
-                    {emailSaving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowEmailEdit(false); setNewEmail(''); setEmailError(null) }}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowEmailEdit(false); setNewEmail(''); setEmailError(null) }}
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
