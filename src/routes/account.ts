@@ -45,7 +45,7 @@ export function accountRoutes() {
   // DELETE /api/account — Self-service account deletion
   routes.delete("/", async (c) => {
     const user = c.get("user")!;
-    const body = await c.req.json<{ confirmation?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ confirmation?: string }>().catch(() => ({ confirmation: undefined }));
 
     if (body.confirmation !== "DELETE") {
       return c.json({ error: "You must send { \"confirmation\": \"DELETE\" } to confirm account deletion" }, 400);
