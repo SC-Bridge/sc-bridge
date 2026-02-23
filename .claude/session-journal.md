@@ -4,19 +4,17 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**All code review findings resolved. Ready for OAuth SSO providers.**
+**OAuth-only user flows working. Google OAuth live. Set-password deployed — needs user testing.**
 
 ## Recent Changes
 
-- Implemented multi-provider LLM support: Anthropic, OpenAI (GPT-5.2/4o/4o-mini), Google (Gemini 2.5 Pro/Flash/Flash-Lite)
-- Added `callOpenAI()` and `callGoogle()` with unified `callLLM()` dispatcher in analysis.ts
-- Fixed test-connection to accept body params and return provider-specific models
-- OpenAI uses `max_completion_tokens` (not `max_tokens`) for GPT-5.2 compat
-- Test max_tokens bumped to 100 for Gemini thinking model compatibility
-- Fixed timing leak: SHA-256 hash both values before `timingSafeEqual` (index.ts)
-- Fixed import atomicity: insert-then-swap pattern using AUTOINCREMENT ID threshold (import.ts)
-- Gated `runFullSync` behind `ENVIRONMENT === "development"` (sync.ts)
-- All 3 low-severity Gemini findings resolved (rate limiting documented, init race acceptable, providers list updated)
+- Added custom `POST /api/account/set-password` for OAuth-only users (Better Auth's `setPassword` is server-only, no HTTP route)
+- Added `GET /api/account/providers` to detect OAuth vs password users
+- Frontend Account page: conditional "Set Password" (OAuth) vs "Change Password" (credential) sections
+- 2FA section: warns OAuth-only users to set a password first
+- Fixed TypeScript catch clause in analysis.ts (`TS2339` — typed the catch return)
+- Google OAuth secrets confirmed set (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`)
+- Fixed 4 consecutive CI/CD deploy failures caused by the TS error
 
 ## Production
 
@@ -32,15 +30,31 @@ This file maintains running context across compactions.
 - Multi-provider LLM: Anthropic (Messages API), OpenAI (Chat Completions), Google (generateContent)
 - API keys: `NERDZ_CODEX_API_KEY` for OpenAI, `NERDZ_GEMINI_API_KEY` for Google (in ~/.secrets)
 - Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
+- Better Auth `setPassword` has NO HTTP route (no path in `createAuthEndpoint`) — custom endpoint needed
 - All DB timestamps are UTC — frontend converts via user timezone preference
 - Date format: `YYYY-MMM-DD HH:MM AM/PM TZ` — locale-independent via `formatToParts()`
 - Always use `CLOUDFLARE_API_TOKEN`. Always use `npx wrangler`
+- Cloudflare observability MCP: account ID `4214879ee537a4840de659aafb7bf201` (NERDZ)
 
 ## What's Next
 
-- **Wire up Google OAuth** — `npx wrangler secret put GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, test login flow
-- **Set up remaining OAuth providers** — GitHub, Discord, Twitch (same pattern)
+- **Test set-password flow** — Google signup → set password → enable 2FA (deployed, untested)
+- **Set up remaining OAuth providers** — GitHub, Discord, Twitch (same pattern as Google)
 - **Hide unconfigured SSO buttons** — endpoint to expose available providers
-- **Register first user** + promote to super_admin
-- **Test email verification** flow
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+
+---
+**Session compacted at:** 2026-02-23 20:46:45
+
+
+---
+**Session compacted at:** 2026-02-23 20:54:20
+
+
+---
+**Session compacted at:** 2026-02-23 21:05:30
+
+
+---
+**Session compacted at:** 2026-02-23 21:09:47
+
