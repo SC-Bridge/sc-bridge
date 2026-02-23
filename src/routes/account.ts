@@ -216,7 +216,7 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_change_history WHERE user_id = ?").bind(user.id),
       // Better Auth tables (FK order: dependents first, then user last)
       db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id),
-      db.prepare("DELETE FROM two_factor WHERE userId = ?").bind(user.id),
+      db.prepare("DELETE FROM twoFactor WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM verification WHERE identifier = ?").bind(user.email),
       db.prepare("DELETE FROM session WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM account WHERE userId = ?").bind(user.id),
