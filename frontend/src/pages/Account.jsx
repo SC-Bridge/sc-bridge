@@ -261,9 +261,33 @@ export default function Account() {
   }
 
   const handleRevokeSession = async (sessionToken) => {
+    const isCurrent = sessionToken === session?.session?.token
+    if (isCurrent && !window.confirm('This will sign you out. Continue?')) return
     try {
       await authClient.revokeSession({ token: sessionToken })
+      if (isCurrent) {
+        await signOut()
+        navigate('/login', { replace: true })
+        return
+      }
       await fetchSessions()
+    } catch {
+      // Silently fail
+    }
+  }
+
+  const handleRevokeAllSessions = async () => {
+    if (!window.confirm('This will sign you out of all devices, including this one. Continue?')) return
+    try {
+      const currentToken = session?.session?.token
+      for (const s of sessions) {
+        if (s.token !== currentToken) {
+          await authClient.revokeSession({ token: s.token })
+        }
+      }
+      await authClient.revokeSession({ token: currentToken })
+      await signOut()
+      navigate('/login', { replace: true })
     } catch {
       // Silently fail
     }
@@ -849,17 +873,25 @@ export default function Account() {
                         Expires: {new Date(s.expiresAt).toLocaleString()}
                       </p>
                     </div>
-                    {!isCurrent && (
-                      <button
-                        onClick={() => handleRevokeSession(s.token)}
-                        className="text-xs text-sc-danger hover:text-sc-danger/80 transition-colors font-mono uppercase tracking-wider"
-                      >
-                        Revoke
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleRevokeSession(s.token)}
+                      className="text-xs text-sc-danger hover:text-sc-danger/80 transition-colors font-mono uppercase tracking-wider"
+                    >
+                      Revoke
+                    </button>
                   </div>
                 )
               })}
+
+              {sessions.length > 1 && (
+                <button
+                  onClick={handleRevokeAllSessions}
+                  className="mt-2 px-4 py-2 bg-sc-danger/10 border border-sc-danger/30 text-sc-danger font-display tracking-wider uppercase text-xs rounded hover:bg-sc-danger/20 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Kill All Sessions
+                </button>
+              )}
             </div>
           )}
         </div>
