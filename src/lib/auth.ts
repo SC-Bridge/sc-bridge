@@ -177,37 +177,55 @@ export function createAuth(env: Env) {
     databaseHooks: {
       account: {
         create: {
-          after: async (account) => {
-            const providerId = (account as Record<string, unknown>).providerId as string | undefined;
-            const userId = (account as Record<string, unknown>).userId as string | undefined;
+          after: async (account, context) => {
+            const rec = account as Record<string, unknown>;
+            const providerId = rec.providerId as string | undefined;
+            const userId = rec.userId as string | undefined;
             if (userId && providerId && providerId !== "credential") {
-              await logUserChange(env.DB, userId, "provider_linked", { providerId, newValue: providerId });
+              const ip = context?.headers?.get("cf-connecting-ip") ?? context?.headers?.get("x-forwarded-for");
+              await logUserChange(env.DB, userId, "provider_linked", {
+                providerId,
+                newValue: providerId,
+                ipAddress: ip ?? undefined,
+              });
             }
           },
         },
       },
       session: {
         delete: {
-          after: async (session) => {
+          after: async (session, context) => {
             const userId = (session as Record<string, unknown>).userId as string | undefined;
             if (userId) {
-              await logUserChange(env.DB, userId, "session_revoked");
+              const ip = context?.headers?.get("cf-connecting-ip") ?? context?.headers?.get("x-forwarded-for");
+              await logUserChange(env.DB, userId, "session_revoked", {
+                ipAddress: ip ?? undefined,
+              });
             }
           },
         },
       },
       user: {
         update: {
-          after: async (user) => {
+          after: async (user, context) => {
             const record = user as Record<string, unknown>;
             const userId = record.id as string | undefined;
             if (!userId) return;
-            // Better Auth update hooks receive the updated record.
-            // We can't diff old vs new here, so we log the event with the new values.
+            const ip = context?.headers?.get("cf-connecting-ip") ?? context?.headers?.get("x-forwarded-for");
+            // Check for email change
+            if (record.email !== undefined) {
+              await logUserChange(env.DB, userId, "email_changed", {
+                fieldName: "email",
+                newValue: record.email as string,
+                ipAddress: ip ?? undefined,
+              });
+            }
+            // Check for name/profile change
             if (record.name !== undefined) {
               await logUserChange(env.DB, userId, "profile_updated", {
                 fieldName: "name",
                 newValue: record.name as string,
+                ipAddress: ip ?? undefined,
               });
             }
           },
@@ -223,6 +241,7 @@ export function createAuth(env: Env) {
           "/change-password",
           "/passkey/add-passkey",
           "/passkey/delete-passkey",
+          "/passkey/update-passkey",
         ]);
         if (!TRACKED_PATHS.has(path)) return;
 
@@ -237,19 +256,46 @@ export function createAuth(env: Env) {
         const userId = session?.user?.id;
         if (!userId) return;
 
+        const ip = ctx.headers?.get("cf-connecting-ip") ?? ctx.headers?.get("x-forwarded-for");
+        const ipAddress = ip ?? undefined;
+
         if (path === "/two-factor/enable") {
-          await logUserChange(env.DB, userId, "2fa_enabled");
+          await logUserChange(env.DB, userId, "2fa_enabled", {
+            fieldName: "2fa",
+            newValue: "enabled",
+            ipAddress,
+          });
         } else if (path === "/two-factor/disable") {
-          await logUserChange(env.DB, userId, "2fa_disabled");
+          await logUserChange(env.DB, userId, "2fa_disabled", {
+            fieldName: "2fa",
+            oldValue: "enabled",
+            newValue: "disabled",
+            ipAddress,
+          });
         } else if (path === "/change-password") {
           await logUserChange(env.DB, userId, "password_changed", {
             providerId: "credential",
             newValue: "[changed]",
+            ipAddress,
           });
         } else if (path === "/passkey/add-passkey") {
-          await logUserChange(env.DB, userId, "passkey_added");
+          await logUserChange(env.DB, userId, "passkey_added", {
+            fieldName: "passkey",
+            newValue: "[added]",
+            ipAddress,
+          });
         } else if (path === "/passkey/delete-passkey") {
-          await logUserChange(env.DB, userId, "passkey_removed");
+          await logUserChange(env.DB, userId, "passkey_removed", {
+            fieldName: "passkey",
+            oldValue: "[removed]",
+            ipAddress,
+          });
+        } else if (path === "/passkey/update-passkey") {
+          await logUserChange(env.DB, userId, "passkey_renamed", {
+            fieldName: "passkey",
+            newValue: "[renamed]",
+            ipAddress,
+          });
         }
       }),
     },
