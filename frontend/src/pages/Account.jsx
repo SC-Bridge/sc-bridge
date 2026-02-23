@@ -279,13 +279,7 @@ export default function Account() {
   const handleRevokeAllSessions = async () => {
     if (!window.confirm('This will sign you out of all devices, including this one. Continue?')) return
     try {
-      const currentToken = session?.session?.token
-      for (const s of sessions) {
-        if (s.token !== currentToken) {
-          await authClient.revokeSession({ token: s.token })
-        }
-      }
-      await authClient.revokeSession({ token: currentToken })
+      await authClient.revokeSessions()
       await signOut()
       navigate('/login', { replace: true })
     } catch {
