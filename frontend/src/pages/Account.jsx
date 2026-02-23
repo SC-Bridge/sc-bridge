@@ -59,6 +59,15 @@ export default function Account() {
   const [editingPasskeyId, setEditingPasskeyId] = useState(null)
   const [editingPasskeyName, setEditingPasskeyName] = useState('')
 
+  // Account providers (OAuth vs password)
+  const [hasPassword, setHasPassword] = useState(null) // null = loading, true/false = known
+  const [providers, setProviders] = useState([])
+  const [initPw, setInitPw] = useState('')
+  const [initPwConfirm, setInitPwConfirm] = useState('')
+  const [initPwSaving, setInitPwSaving] = useState(false)
+  const [initPwMsg, setInitPwMsg] = useState(null)
+  const [initPwError, setInitPwError] = useState(null)
+
   // Data & Privacy
   const [exporting, setExporting] = useState(false)
   const [emailing, setEmailing] = useState(false)
@@ -104,6 +113,21 @@ export default function Account() {
     }
   }, [])
 
+  const fetchProviders = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/account/providers', { credentials: 'include' })
+      if (resp.ok) {
+        const data = await resp.json()
+        setHasPassword(data.hasPassword)
+        setProviders(data.providers)
+      }
+    } catch {
+      // Default to showing password section if check fails
+      setHasPassword(true)
+    }
+  }, [])
+
+  useEffect(() => { fetchProviders() }, [fetchProviders])
   useEffect(() => { fetchSessions() }, [fetchSessions])
   useEffect(() => { fetchPasskeys() }, [fetchPasskeys])
 
@@ -168,6 +192,39 @@ export default function Account() {
       setPasswordError(err.message || 'Failed to change password')
     } finally {
       setPasswordSaving(false)
+    }
+  }
+
+  const handleSetPassword = async (e) => {
+    e.preventDefault()
+    setInitPwError(null)
+    setInitPwMsg(null)
+
+    if (initPw !== initPwConfirm) {
+      setInitPwError('Passwords do not match')
+      return
+    }
+    if (initPw.length < 8) {
+      setInitPwError('Password must be at least 8 characters')
+      return
+    }
+
+    setInitPwSaving(true)
+    try {
+      const result = await authClient.setPassword({ newPassword: initPw })
+      if (result.error) {
+        setInitPwError(result.error.message || 'Failed to set password')
+      } else {
+        setInitPwMsg('Password set successfully')
+        setInitPw('')
+        setInitPwConfirm('')
+        setHasPassword(true)
+        setTimeout(() => setInitPwMsg(null), 3000)
+      }
+    } catch (err) {
+      setInitPwError(err.message || 'Failed to set password')
+    } finally {
+      setInitPwSaving(false)
     }
   }
 
@@ -465,78 +522,141 @@ export default function Account() {
         </form>
       </PanelSection>
 
-      {/* Change Password */}
-      <PanelSection title="Change Password" icon={Lock}>
-        <form onSubmit={handleChangePassword} className="p-5 space-y-4 max-w-md">
-          {passwordError && (
-            <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{passwordError}</span>
+      {/* Password — Set or Change depending on account type */}
+      <PanelSection title={hasPassword ? "Change Password" : "Set Password"} icon={Lock}>
+        {hasPassword === false ? (
+          /* OAuth-only user — no password yet */
+          <form onSubmit={handleSetPassword} className="p-5 space-y-4 max-w-md">
+            <p className="text-sm text-gray-400">
+              You signed in with {providers.filter(p => p !== 'credential').join(', ')}. Set a password to enable two-factor authentication and password-based login.
+            </p>
+            {initPwError && (
+              <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{initPwError}</span>
+              </div>
+            )}
+            {initPwMsg && (
+              <div className="flex items-center gap-2 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{initPwMsg}</span>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="set-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+                Password
+              </label>
+              <input
+                id="set-pw"
+                type="password"
+                value={initPw}
+                onChange={(e) => setInitPw(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                placeholder="Min 8 characters"
+              />
             </div>
-          )}
-          {passwordMsg && (
-            <div className="flex items-center gap-2 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
-              <Check className="w-4 h-4 shrink-0" />
-              <span>{passwordMsg}</span>
+
+            <div>
+              <label htmlFor="set-pw-confirm" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+                Confirm Password
+              </label>
+              <input
+                id="set-pw-confirm"
+                type="password"
+                value={initPwConfirm}
+                onChange={(e) => setInitPwConfirm(e.target.value)}
+                required
+                autoComplete="new-password"
+                className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                placeholder="Confirm password"
+              />
             </div>
-          )}
 
-          <div>
-            <label htmlFor="current-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
-              Current Password
-            </label>
-            <input
-              id="current-pw"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
-            />
-          </div>
+            <button
+              type="submit"
+              disabled={initPwSaving}
+              className="btn-primary px-6 py-2 font-display tracking-wider uppercase text-sm disabled:opacity-50"
+            >
+              {initPwSaving ? 'Setting...' : 'Set Password'}
+            </button>
+          </form>
+        ) : (
+          /* User has a password — change it */
+          <form onSubmit={handleChangePassword} className="p-5 space-y-4 max-w-md">
+            {passwordError && (
+              <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{passwordError}</span>
+              </div>
+            )}
+            {passwordMsg && (
+              <div className="flex items-center gap-2 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{passwordMsg}</span>
+              </div>
+            )}
 
-          <div>
-            <label htmlFor="new-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
-              New Password
-            </label>
-            <input
-              id="new-pw"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-              className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
-              placeholder="Min 8 characters"
-            />
-          </div>
+            <div>
+              <label htmlFor="current-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+                Current Password
+              </label>
+              <input
+                id="current-pw"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="confirm-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
-              Confirm New Password
-            </label>
-            <input
-              id="confirm-pw"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-              className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
-              placeholder="Confirm new password"
-            />
-          </div>
+            <div>
+              <label htmlFor="new-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+                New Password
+              </label>
+              <input
+                id="new-pw"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+                className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                placeholder="Min 8 characters"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={passwordSaving}
-            className="btn-primary px-6 py-2 font-display tracking-wider uppercase text-sm disabled:opacity-50"
-          >
-            {passwordSaving ? 'Changing...' : 'Change Password'}
-          </button>
-        </form>
+            <div>
+              <label htmlFor="confirm-pw" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+                Confirm New Password
+              </label>
+              <input
+                id="confirm-pw"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                placeholder="Confirm new password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={passwordSaving}
+              className="btn-primary px-6 py-2 font-display tracking-wider uppercase text-sm disabled:opacity-50"
+            >
+              {passwordSaving ? 'Changing...' : 'Change Password'}
+            </button>
+          </form>
+        )}
       </PanelSection>
 
       {/* Two-Factor Authentication */}
@@ -659,6 +779,17 @@ export default function Account() {
                   Disable 2FA
                 </button>
               )}
+            </div>
+          ) : hasPassword === false ? (
+            /* OAuth-only user without a password — can't enable 2FA yet */
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">
+                Add an extra layer of security using a TOTP authenticator app.
+              </p>
+              <div className="flex items-center gap-2 p-3 bg-sc-warn/10 border border-sc-warn/30 rounded text-sc-warn text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Set a password in the section above before enabling two-factor authentication.</span>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">

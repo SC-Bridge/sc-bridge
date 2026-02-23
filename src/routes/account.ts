@@ -9,6 +9,26 @@ import { escapeHtml } from "../lib/utils";
 export function accountRoutes() {
   const routes = new Hono<HonoEnv>();
 
+  // GET /api/account/providers — list linked auth providers for current user
+  routes.get("/providers", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const accounts = await db
+      .prepare("SELECT providerId FROM account WHERE userId = ?")
+      .bind(user.id)
+      .all();
+
+    const providers = accounts.results.map(
+      (a: Record<string, unknown>) => a.providerId as string,
+    );
+
+    return c.json({
+      providers,
+      hasPassword: providers.includes("credential"),
+    });
+  });
+
   // GET /api/account/export — Download all user data as JSON
   routes.get("/export", async (c) => {
     const user = c.get("user")!;
