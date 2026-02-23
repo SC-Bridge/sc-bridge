@@ -57,7 +57,7 @@ export function analysisRoutes() {
     const db = c.env.DB;
     const userID = c.get("user")!.id;
 
-    const body = await c.req.json<{ provider?: string; api_key?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ provider?: string; api_key?: string }>().catch((): { provider?: string; api_key?: string } => ({}));
 
     const provider = body.provider?.trim() || "anthropic";
     if (!PROVIDER_MODELS[provider]) {
