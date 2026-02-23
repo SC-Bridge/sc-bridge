@@ -169,7 +169,7 @@ export function createAuth(env: Env) {
     account: {
       accountLinking: {
         enabled: true,
-        trustedProviders: ["google"],
+        trustedProviders: ["google", "discord"],
       },
     },
     plugins: [
