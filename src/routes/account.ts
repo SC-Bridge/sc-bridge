@@ -1,8 +1,19 @@
 import { Hono } from "hono";
-import type { HonoEnv } from "../lib/types";
+import type { Env, HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
 import { hashPassword } from "../lib/password";
+
+/** Returns the list of social OAuth provider IDs that have CLIENT_ID configured */
+function getConfiguredProviders(env: Env): string[] {
+  const checks: [string, string | undefined][] = [
+    ["google", env.GOOGLE_CLIENT_ID],
+    ["github", env.GITHUB_CLIENT_ID],
+    ["discord", env.DISCORD_CLIENT_ID],
+    ["twitch", env.TWITCH_CLIENT_ID],
+  ];
+  return checks.filter(([, val]) => !!val).map(([id]) => id);
+}
 
 /**
  * /api/account/* — User account management (GDPR compliance)
@@ -27,7 +38,61 @@ export function accountRoutes() {
     return c.json({
       providers,
       hasPassword: providers.includes("credential"),
+      availableProviders: getConfiguredProviders(c.env),
     });
+  });
+
+  // POST /api/account/unlink-provider — remove a linked OAuth provider
+  routes.post("/unlink-provider", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const body = await c.req
+      .json<{ providerId?: string }>()
+      .catch(() => ({ providerId: undefined }));
+
+    if (!body.providerId) {
+      return c.json({ error: "providerId is required" }, 400);
+    }
+
+    if (body.providerId === "credential") {
+      return c.json(
+        { error: "Cannot unlink password credentials. Use Change Password instead." },
+        400,
+      );
+    }
+
+    // Count how many auth methods this user has
+    const countResult = await db
+      .prepare("SELECT COUNT(*) as cnt FROM account WHERE userId = ?")
+      .bind(user.id)
+      .first<{ cnt: number }>();
+
+    if (!countResult || countResult.cnt < 2) {
+      return c.json(
+        { error: "Cannot unlink your only authentication method" },
+        400,
+      );
+    }
+
+    // Verify the provider actually exists for this user
+    const existing = await db
+      .prepare(
+        "SELECT id FROM account WHERE userId = ? AND providerId = ?",
+      )
+      .bind(user.id, body.providerId)
+      .first();
+
+    if (!existing) {
+      return c.json({ error: "Provider not linked to your account" }, 404);
+    }
+
+    await db
+      .prepare("DELETE FROM account WHERE userId = ? AND providerId = ?")
+      .bind(user.id, body.providerId)
+      .run();
+
+    return c.json({ status: true });
   });
 
   // POST /api/account/set-password — OAuth-only users: set initial password
