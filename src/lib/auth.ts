@@ -104,11 +104,11 @@ export function createAuth(env: Env) {
             },
           }
         : {}),
-      ...(env.APPLE_CLIENT_ID && env.APPLE_CLIENT_SECRET
+      ...(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET
         ? {
-            apple: {
-              clientId: env.APPLE_CLIENT_ID,
-              clientSecret: env.APPLE_CLIENT_SECRET,
+            discord: {
+              clientId: env.DISCORD_CLIENT_ID,
+              clientSecret: env.DISCORD_CLIENT_SECRET,
             },
           }
         : {}),
