@@ -250,7 +250,7 @@ export default function App() {
             </a>
 
             {/* Desktop sidebar */}
-            <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0" aria-label="Main">
+            <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0 sticky top-0 h-screen" aria-label="Main">
               <SidebarContent
                 expandedMenu={expandedMenu}
                 setExpandedMenu={setExpandedMenu}
