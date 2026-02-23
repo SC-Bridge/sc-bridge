@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy } from 'lucide-react'
+import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy, Pencil } from 'lucide-react'
 import { useSession, authClient, signOut } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -16,6 +16,13 @@ export default function Account() {
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
   const [error, setError] = useState(null)
+
+  // Email change
+  const [newEmail, setNewEmail] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailMsg, setEmailMsg] = useState(null)
+  const [emailError, setEmailError] = useState(null)
+  const [showEmailEdit, setShowEmailEdit] = useState(false)
 
   // Password change
   const [currentPassword, setCurrentPassword] = useState('')
@@ -336,10 +343,82 @@ export default function Account() {
             <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
               Email
             </label>
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-sc-darker/50 border border-sc-border rounded text-sm text-gray-500">
-              <Mail className="w-4 h-4" />
-              {user.email}
-            </div>
+            {emailError && (
+              <div className="flex items-center gap-2 mb-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{emailError}</span>
+              </div>
+            )}
+            {emailMsg && (
+              <div className="flex items-center gap-2 mb-2 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{emailMsg}</span>
+              </div>
+            )}
+            {showEmailEdit ? (
+              <div className="space-y-2">
+                <input
+                  id="account-email"
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                  placeholder="New email address"
+                  autoFocus
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={emailSaving || !newEmail || newEmail === user.email}
+                    onClick={async () => {
+                      setEmailSaving(true)
+                      setEmailError(null)
+                      setEmailMsg(null)
+                      try {
+                        const result = await authClient.changeEmail({ newEmail })
+                        if (result.error) {
+                          setEmailError(result.error.message || 'Failed to change email')
+                        } else {
+                          setEmailMsg('Check your current email to confirm the change')
+                          setShowEmailEdit(false)
+                          setNewEmail('')
+                          setTimeout(() => setEmailMsg(null), 8000)
+                        }
+                      } catch (err) {
+                        setEmailError(err.message || 'Failed to change email')
+                      } finally {
+                        setEmailSaving(false)
+                      }
+                    }}
+                    className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs disabled:opacity-50"
+                  >
+                    {emailSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowEmailEdit(false); setNewEmail(''); setEmailError(null) }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-2 px-4 py-2.5 bg-sc-darker/50 border border-sc-border rounded text-sm text-gray-500">
+                  <Mail className="w-4 h-4" />
+                  {user.email}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowEmailEdit(true); setNewEmail(user.email) }}
+                  className="p-2.5 border border-sc-border rounded text-gray-400 hover:text-white hover:border-sc-accent transition-colors"
+                  title="Change email"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           <button

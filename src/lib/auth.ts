@@ -101,6 +101,24 @@ export function createAuth(env: Env) {
         maxAge: 5 * 60, // 5 min cache
       },
     },
+    user: {
+      changeEmail: {
+        enabled: true,
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          await sendEmail(
+            env,
+            user.email,
+            "Confirm email change",
+            buildTransactionalEmailHtml("Confirm Email Change", `
+              <p>We received a request to change your SC Bridge email to <strong>${newEmail}</strong>.</p>
+              <p>Click the button below to confirm this change:</p>
+              <p style="text-align:center;"><a href="${url}" class="cta">Confirm Email Change</a></p>
+              <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email.</p>
+            `),
+          );
+        },
+      },
+    },
     trustedOrigins: [env.BETTER_AUTH_URL],
     socialProviders: {
       ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
