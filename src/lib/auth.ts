@@ -8,6 +8,7 @@ import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
 import { sendEmail, buildTransactionalEmailHtml } from "./email";
 import { hashPassword, verifyPassword } from "./password";
+import { escapeHtml } from "./utils";
 
 // Access control: extend default admin statements with app-specific resources
 const ac = createAccessControl({
@@ -40,8 +41,15 @@ const userRole = ac.newRole({
   analysis: ["view", "generate"],
 });
 
+// Cache auth instance per isolate — avoids reconstructing on every request.
+// WeakMap keyed on the D1 binding ensures the cache is scoped to the env.
+const authCache = new WeakMap<D1Database, ReturnType<typeof betterAuth>>();
+
 export function createAuth(env: Env) {
-  return betterAuth({
+  const cached = authCache.get(env.DB);
+  if (cached) return cached;
+
+  const auth = betterAuth({
     database: {
       dialect: new D1Dialect({ database: env.DB }),
       type: "sqlite" as const,
@@ -81,7 +89,7 @@ export function createAuth(env: Env) {
             user.email,
             "Verify your new email",
             buildTransactionalEmailHtml("Verify New Email", `
-              <p>Click the button below to confirm <strong>${user.email}</strong> as your new SC Bridge email address.</p>
+              <p>Click the button below to confirm <strong>${escapeHtml(user.email)}</strong> as your new SC Bridge email address.</p>
               <p style="text-align:center;"><a href="${url}" class="cta">Verify New Email</a></p>
               <p style="font-size:12px;color:#888;">If you didn't request this change, you can safely ignore this email.</p>
             `),
@@ -101,6 +109,9 @@ export function createAuth(env: Env) {
         }
       },
     },
+    // NOTE: Memory-based rate limiting is per-isolate on Workers (resets on cold start,
+    // not shared across colos). This provides basic protection but is not globally
+    // effective. Use Cloudflare WAF rate limiting rules for production brute-force defense.
     rateLimit: {
       enabled: true,
       window: 60,
@@ -190,6 +201,9 @@ export function createAuth(env: Env) {
       }),
     ],
   });
+
+  authCache.set(env.DB, auth);
+  return auth;
 }
 
 export type Auth = ReturnType<typeof createAuth>;

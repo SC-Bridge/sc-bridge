@@ -24,16 +24,19 @@ export function TimezoneProvider({ children }) {
   }, [prefs])
 
   const setTimezone = useCallback(async (tz) => {
+    const previousTz = timezone
     setTimezoneState(tz)
     if (isLoggedIn) {
       setLoading(true)
       try {
         await setPreferences({ timezone: tz })
+      } catch {
+        setTimezoneState(previousTz)
       } finally {
         setLoading(false)
       }
     }
-  }, [isLoggedIn])
+  }, [isLoggedIn, timezone])
 
   return (
     <TimezoneContext.Provider value={{ timezone, setTimezone, loading: prefsLoading || loading }}>

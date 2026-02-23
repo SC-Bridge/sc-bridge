@@ -32,6 +32,15 @@ export async function concurrentMap<T, R>(
 }
 
 /**
+ * Escape HTML special characters to prevent injection in email templates.
+ */
+export function escapeHtml(str: string): string {
+  return str.replace(/[&<>"']/g, (m) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m] ?? m,
+  );
+}
+
+/**
  * Split an array into chunks of `size` for D1's 1000-statement batch limit.
  */
 export function chunkArray<T>(arr: T[], size: number): T[][] {

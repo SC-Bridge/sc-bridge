@@ -17,15 +17,15 @@ import { logEvent } from "./lib/logger";
 
 const app = new Hono<HonoEnv>();
 
-// Validate ENCRYPTION_KEY on first request (fail fast)
+// Validate ENCRYPTION_KEY on first request per isolate (fail fast)
 let encryptionKeyValidated = false;
 app.use("*", async (c, next) => {
   if (!encryptionKeyValidated) {
-    encryptionKeyValidated = true;
     if (c.env.ENCRYPTION_KEY) {
       const err = validateEncryptionKey(c.env.ENCRYPTION_KEY);
       if (err) console.error(`[startup] ${err}`);
     }
+    encryptionKeyValidated = true;
   }
   return next();
 });
@@ -65,7 +65,7 @@ app.use("/api/*", async (c, next) => {
   try {
     const originHost = new URL(origin).hostname;
     const isSameOrigin = originHost === host || originHost === host.split(":")[0];
-    const isLocalDev = originHost === "localhost" || originHost === "127.0.0.1";
+    const isLocalDev = (originHost === "localhost" || originHost === "127.0.0.1") && c.env.ENVIRONMENT === "development";
     if (isSameOrigin || isLocalDev) {
       return cors({ origin, credentials: true })(c, next);
     }

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
+import { escapeHtml } from "../lib/utils";
 
 /**
  * /api/account/* — User account management (GDPR compliance)
@@ -53,20 +54,22 @@ export function accountRoutes() {
 
     const db = c.env.DB;
 
-    // 1. Delete from app tables (no FK constraints, order doesn't matter)
-    await db.prepare("DELETE FROM ai_analyses WHERE user_id = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM user_settings WHERE user_id = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id).run();
-
-    // 2. Delete from Better Auth tables in FK order
-    await db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id).run().catch(() => {});
-    await db.prepare("DELETE FROM two_factor WHERE userId = ?").bind(user.id).run().catch(() => {});
-    await db.prepare("DELETE FROM verification WHERE identifier = ?").bind(user.email).run().catch(() => {});
-    await db.prepare("DELETE FROM session WHERE userId = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM account WHERE userId = ?").bind(user.id).run();
-    await db.prepare("DELETE FROM user WHERE id = ?").bind(user.id).run();
+    // Atomic deletion: all app tables + Better Auth tables in a single batch
+    await db.batch([
+      // App tables
+      db.prepare("DELETE FROM ai_analyses WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_settings WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
+      // Better Auth tables (FK order: dependents first, then user last)
+      db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id),
+      db.prepare("DELETE FROM two_factor WHERE userId = ?").bind(user.id),
+      db.prepare("DELETE FROM verification WHERE identifier = ?").bind(user.email),
+      db.prepare("DELETE FROM session WHERE userId = ?").bind(user.id),
+      db.prepare("DELETE FROM account WHERE userId = ?").bind(user.id),
+      db.prepare("DELETE FROM user WHERE id = ?").bind(user.id),
+    ]);
 
     return c.json({ message: "Account deleted" });
   });
@@ -173,10 +176,10 @@ function buildExportEmailHtml(data: Record<string, unknown>): string {
 
   <h2>Account</h2>
   <table>
-    <tr><td style="color:#aaa;">Email</td><td>${account.email || "—"}</td></tr>
-    <tr><td style="color:#aaa;">Name</td><td>${account.name || "—"}</td></tr>
-    <tr><td style="color:#aaa;">Role</td><td>${account.role || "user"}</td></tr>
-    <tr><td style="color:#aaa;">Created</td><td>${account.createdAt || "—"}</td></tr>
+    <tr><td style="color:#aaa;">Email</td><td>${escapeHtml(String(account.email || "—"))}</td></tr>
+    <tr><td style="color:#aaa;">Name</td><td>${escapeHtml(String(account.name || "—"))}</td></tr>
+    <tr><td style="color:#aaa;">Role</td><td>${escapeHtml(String(account.role || "user"))}</td></tr>
+    <tr><td style="color:#aaa;">Created</td><td>${escapeHtml(String(account.createdAt || "—"))}</td></tr>
   </table>
 
   <h2>Fleet (${fleet.length} ships)</h2>
@@ -187,7 +190,7 @@ function buildExportEmailHtml(data: Record<string, unknown>): string {
     ${fleet
       .map(
         (f) =>
-          `<tr><td>${f.vehicle_name}${f.custom_name ? ` (${f.custom_name})` : ""}</td><td>${f.pledge_name || "—"}</td><td>${f.insurance_label || "—"}</td></tr>`,
+          `<tr><td>${escapeHtml(String(f.vehicle_name))}${f.custom_name ? ` (${escapeHtml(String(f.custom_name))})` : ""}</td><td>${escapeHtml(String(f.pledge_name || "—"))}</td><td>${escapeHtml(String(f.insurance_label || "—"))}</td></tr>`,
       )
       .join("")}
   </table>`
@@ -197,7 +200,7 @@ function buildExportEmailHtml(data: Record<string, unknown>): string {
   <h2>Paints (${paints.length})</h2>
   ${
     paints.length > 0
-      ? `<p style="font-size:13px;">${paints.map((p) => p.paint_name || `Paint #${p.paint_id}`).join(", ")}</p>`
+      ? `<p style="font-size:13px;">${paints.map((p) => escapeHtml(String(p.paint_name || `Paint #${p.paint_id}`))).join(", ")}</p>`
       : "<p style='color:#666;'>No paints</p>"
   }
 

@@ -12,6 +12,7 @@ export interface Env {
   RSI_RATE_LIMIT: string;
   SCUNPACKED_REPO: string;
   SCUNPACKED_BRANCH: string;
+  ENVIRONMENT?: string;
   ENCRYPTION_KEY?: string;
   API_TOKEN?: string;
   GITHUB_TOKEN?: string;

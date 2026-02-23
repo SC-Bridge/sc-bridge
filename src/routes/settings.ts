@@ -77,7 +77,8 @@ export function settingsRoutes() {
     }
 
     // Validate provider
-    const validProviders = ["openai", "anthropic", "google"];
+    // Only Anthropic is implemented — add others here when provider routing is built
+    const validProviders = ["anthropic"];
     if (!body.provider || !validProviders.includes(body.provider)) {
       return c.json({ error: "Invalid provider" }, 400);
     }
@@ -133,6 +134,19 @@ export function settingsRoutes() {
     const userID = c.get("user")!.id;
 
     const body = await c.req.json<Record<string, string>>();
+
+    // Validate against allowlist of known preference keys
+    const VALID_PREFS = new Set(["timezone", "fontPreference"]);
+    const MAX_VALUE_LENGTH = 200;
+
+    for (const [key, value] of Object.entries(body)) {
+      if (!VALID_PREFS.has(key)) {
+        return c.json({ error: `Unknown preference: ${key}` }, 400);
+      }
+      if (typeof value !== "string" || value.length > MAX_VALUE_LENGTH) {
+        return c.json({ error: `Invalid value for ${key}` }, 400);
+      }
+    }
 
     const stmt = db.prepare(
       `INSERT INTO user_settings (user_id, key, value)

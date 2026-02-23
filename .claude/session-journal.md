@@ -4,95 +4,48 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Wiring up OAuth SSO providers — Google client ID/secret ready, need to `wrangler secret put` and test.**
+**Full code review fixes applied. Ready for OAuth SSO providers.**
 
 ## Recent Changes
 
-- Added passkey naming support: name prompt on creation, inline rename on existing passkeys
-- Email change uses one-step verification at new address
-- Single Save Changes button handles both profile name and email updates
-- GDPR compliance deployed: privacy policy, terms of service, data export, account deletion
-- App now publicly accessible without login — Dashboard shows landing page, Ship DB browsable
+- Full 3-reviewer code review (Claude Opus, Codex, Gemini) — 15 findings consolidated
+- Fixed `usePreferences()` skip bug (blocker — 401 redirect loop for logged-out users)
+- Fixed CORS localhost bypass in production (added ENVIRONMENT check)
+- Added `escapeHtml()` to all email templates (auth + GDPR export)
+- Added preferences endpoint validation (key allowlist + value length limits)
+- Chunked import batches to stay under D1 1000-statement limit
+- Batched account deletion for atomicity (single `db.batch()`)
+- Restricted LLM provider to Anthropic only (was accepting openai/google but always called Anthropic)
+- Stripped `custom_name` from LLM payload (personal data)
+- Added timezone optimistic update rollback on API failure
+- Cached `createAuth()` per isolate via WeakMap
+- Fixed `encryptionKeyValidated` race (set flag after check, not before)
+- Documented rate limiting limitation (memory storage is per-isolate on Workers)
 
 ## Production
 
-- **Domain:** `scbridge.app` (new — previously `fleet.nerdz.cloud`)
-- **Worker:** `sc-bridge` on NERDZ account (renamed from `sc-companion`)
-- **D1:** `sc-companion` (33 tables including Better Auth, Oceania region — DB name unchanged)
+- **Domain:** `scbridge.app`
+- **Worker:** `sc-bridge` on NERDZ account
+- **D1:** `sc-companion` (33+ tables including Better Auth, Oceania region)
 - **Branch:** `main`
 - **CI/CD:** Push to main → GitHub Actions → `wrangler deploy`
-- **Email:** Resend via `scbridge.app` domain — `noreply@scbridge.app` (transactional), `support@scbridge.app` (public contact), `ops@scbridge.app` (infrastructure)
+- **Email:** Resend via `scbridge.app` domain
 
 ## Key Decisions
 
 - Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory per-request
-- Better Auth tables created via direct D1 SQL (Zero Trust blocks `/api/migrate` from CLI)
-- Session cleanup runs daily at `0 3 * * *` (merged with SC Wiki sync) — free plan only allows 5 cron triggers
-- Always use `CLOUDFLARE_API_TOKEN` (already exported in shell). Always use `npx wrangler` (not bare `wrangler`)
-- App renamed to "SC Bridge" (scbridge.app) — "SC BRIDGE" in UI, "Star Citizen Bridge" in titles/docs
-- Public landing page instead of login wall — guests see Dashboard + Ship DB, auth for fleet features
-- Account deletion cascades through all app tables then Better Auth tables in FK order
+- All DB timestamps are UTC (`CURRENT_TIMESTAMP` / `datetime('now')`) — frontend converts via user timezone preference
+- Timezone preference uses `user_settings` key-value table (not a dedicated column) — extensible for future prefs
+- Date format: `YYYY-MMM-DD HH:MM AM/PM TZ` (e.g. `2026-FEB-23 07:09 PM NZDT`) — locale-independent via `formatToParts()`
+- Guests (not logged in) get browser timezone automatically; logged-in users get server-persisted preference
+- Always use `CLOUDFLARE_API_TOKEN`. Always use `npx wrangler`
 
 ## What's Next
 
+- **Commit review fixes** — all changes are staged but uncommitted
 - **Wire up Google OAuth** — `npx wrangler secret put GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, test login flow
-- **Set up remaining OAuth providers** — GitHub, Discord, Twitch (same pattern: create app, set callback URL `https://scbridge.app/api/auth/callback/<provider>`, `npx wrangler secret put` secrets)
-- **Hide unconfigured SSO buttons** — add endpoint to expose available providers so frontend only shows configured ones
+- **Set up remaining OAuth providers** — GitHub, Discord, Twitch (same pattern)
+- **Hide unconfigured SSO buttons** — endpoint to expose available providers
 - **Register first user** + promote to super_admin
 - **Test email verification** flow
-
----
-**Session compacted at:** 2026-02-22 15:12:41
-
-
----
-**Session compacted at:** 2026-02-22 17:46:51
-
-
----
-**Session compacted at:** 2026-02-22 21:45:57
-
-
----
-**Session compacted at:** 2026-02-23 08:28:05
-
-
----
-**Session compacted at:** 2026-02-23 08:51:56
-
-
----
-**Session compacted at:** 2026-02-23 09:03:55
-
-
----
-**Session compacted at:** 2026-02-23 10:37:28
-
-
----
-**Session compacted at:** 2026-02-23 11:34:00
-
-
----
-**Session compacted at:** 2026-02-23 15:26:38
-
-
----
-**Session compacted at:** 2026-02-23 17:30:03
-
-
----
-**Session compacted at:** 2026-02-23 17:41:57
-
-
----
-**Session compacted at:** 2026-02-23 18:27:36
-
-
----
-**Session compacted at:** 2026-02-23 18:35:08
-
-
----
-**Session compacted at:** 2026-02-23 18:48:30
 

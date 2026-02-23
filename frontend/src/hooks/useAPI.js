@@ -123,8 +123,8 @@ export async function importHangarXplor(jsonData) {
 }
 
 // User Preferences
-export function usePreferences() {
-  return useAPI('/settings/preferences')
+export function usePreferences(opts) {
+  return useAPI('/settings/preferences', opts)
 }
 
 export async function setPreferences(prefs) {

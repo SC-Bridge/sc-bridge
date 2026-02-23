@@ -143,7 +143,8 @@ export function analysisRoutes() {
     }
 
     try {
-      // Strip financial/personal data before sending to LLM — only ship characteristics needed
+      // Strip personal data before sending to LLM — ship characteristics + pricing for analysis
+      // pledge_price is needed for budget recommendations; custom_name is personal and excluded
       const sanitizedFleet = fleet.map((entry) => {
         const e = entry as Record<string, unknown>;
         return {
@@ -162,7 +163,6 @@ export function analysisRoutes() {
           is_lifetime: e.is_lifetime,
           production_status: e.production_status,
           warbond: e.warbond,
-          custom_name: e.custom_name,
         };
       });
       const userPrompt = `Fleet data:\n\n${JSON.stringify(sanitizedFleet)}\n\nProvide a comprehensive fleet analysis.`;
