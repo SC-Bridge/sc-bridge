@@ -181,7 +181,7 @@ export function createAuth(env: Env) {
             const providerId = (account as Record<string, unknown>).providerId as string | undefined;
             const userId = (account as Record<string, unknown>).userId as string | undefined;
             if (userId && providerId && providerId !== "credential") {
-              await logUserChange(env.DB, userId, "provider_linked", { providerId });
+              await logUserChange(env.DB, userId, "provider_linked", { providerId, newValue: providerId });
             }
           },
         },

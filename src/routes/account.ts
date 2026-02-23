@@ -95,6 +95,7 @@ export function accountRoutes() {
 
     await logUserChange(db, user.id, "provider_unlinked", {
       providerId: body.providerId,
+      oldValue: body.providerId,
       ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
     });
 
