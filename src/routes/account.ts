@@ -210,7 +210,7 @@ function buildExportEmailHtml(data: Record<string, unknown>): string {
 
   <div class="footer">
     <p>This is your complete SC Bridge data export per GDPR right of access.</p>
-    <p>For questions, contact ops@scbridge.app</p>
+    <p>For questions, contact support@scbridge.app</p>
   </div>
 </div>
 </body>

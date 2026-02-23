@@ -6,7 +6,7 @@ import { passkey } from "@better-auth/passkey";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
-import { sendEmail } from "./email";
+import { sendEmail, buildTransactionalEmailHtml } from "./email";
 import { hashPassword, verifyPassword } from "./password";
 
 // Access control: extend default admin statements with app-specific resources
@@ -61,7 +61,12 @@ export function createAuth(env: Env) {
           env,
           user.email,
           "Reset your password",
-          `<p>Click <a href="${url}">here</a> to reset your password.</p>`,
+          buildTransactionalEmailHtml("Reset Your Password", `
+            <p>We received a request to reset the password for your SC Bridge account.</p>
+            <p>Click the button below to choose a new password:</p>
+            <p style="text-align:center;"><a href="${url}" class="cta">Reset Password</a></p>
+            <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email. Your password won't be changed.</p>
+          `),
         );
       },
     },
@@ -73,7 +78,12 @@ export function createAuth(env: Env) {
           env,
           user.email,
           "Verify your email",
-          `<p>Click <a href="${url}">here</a> to verify your email address.</p>`,
+          buildTransactionalEmailHtml("Verify Your Email", `
+            <p>Welcome to SC Bridge! Please verify your email address to activate your account.</p>
+            <p>Click the button below to get started:</p>
+            <p style="text-align:center;"><a href="${url}" class="cta">Verify Email</a></p>
+            <p style="font-size:12px;color:#888;">If you didn't create an SC Bridge account, you can safely ignore this email.</p>
+          `),
         );
       },
     },

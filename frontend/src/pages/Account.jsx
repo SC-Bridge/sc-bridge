@@ -36,6 +36,9 @@ export default function Account() {
   const [twoFALoading, setTwoFALoading] = useState(false)
   const [twoFAError, setTwoFAError] = useState(null)
   const [twoFAMsg, setTwoFAMsg] = useState(null)
+  const [twoFAPassword, setTwoFAPassword] = useState('')
+  const [showEnablePrompt, setShowEnablePrompt] = useState(false)
+  const [showDisablePrompt, setShowDisablePrompt] = useState(false)
 
   // Passkeys
   const [passkeys, setPasskeys] = useState([])
@@ -134,10 +137,12 @@ export default function Account() {
     setTwoFALoading(true)
     setTwoFAError(null)
     try {
-      const result = await authClient.twoFactor.enable({ password: '' })
+      const result = await authClient.twoFactor.enable({ password: twoFAPassword })
       if (result.data?.totpURI) {
         setTotpUri(result.data.totpURI)
         setBackupCodes(result.data.backupCodes || null)
+        setShowEnablePrompt(false)
+        setTwoFAPassword('')
       } else if (result.error) {
         setTwoFAError(result.error.message || 'Failed to enable 2FA')
       }
@@ -169,12 +174,13 @@ export default function Account() {
   }
 
   const handleDisable2FA = async () => {
-    if (!window.confirm('Disable two-factor authentication? This reduces account security.')) return
     setTwoFALoading(true)
     setTwoFAError(null)
     try {
-      await authClient.twoFactor.disable({ password: '' })
+      await authClient.twoFactor.disable({ password: twoFAPassword })
       setTwoFAMsg('Two-factor authentication disabled')
+      setShowDisablePrompt(false)
+      setTwoFAPassword('')
       setTimeout(() => setTwoFAMsg(null), 3000)
     } catch (err) {
       setTwoFAError(err.message || 'Failed to disable 2FA')
@@ -484,26 +490,85 @@ export default function Account() {
                   <Check className="w-4 h-4" /> Two-factor authentication is enabled
                 </span>
               </div>
-              <button
-                onClick={handleDisable2FA}
-                disabled={twoFALoading}
-                className="text-xs text-sc-danger hover:text-sc-danger/80 transition-colors font-mono uppercase tracking-wider disabled:opacity-50"
-              >
-                {twoFALoading ? 'Disabling...' : 'Disable 2FA'}
-              </button>
+              {showDisablePrompt ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-400">Enter your password to disable 2FA:</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={twoFAPassword}
+                      onChange={(e) => setTwoFAPassword(e.target.value)}
+                      placeholder="Current password"
+                      autoComplete="current-password"
+                      className="flex-1 px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && twoFAPassword) handleDisable2FA() }}
+                    />
+                    <button
+                      onClick={handleDisable2FA}
+                      disabled={twoFALoading || !twoFAPassword}
+                      className="px-4 py-2.5 bg-sc-danger text-white font-display tracking-wider uppercase text-xs rounded hover:bg-sc-danger/80 transition-colors disabled:opacity-50"
+                    >
+                      {twoFALoading ? 'Disabling...' : 'Confirm Disable'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setShowDisablePrompt(false); setTwoFAPassword(''); setTwoFAError(null) }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowDisablePrompt(true)}
+                  className="text-xs text-sc-danger hover:text-sc-danger/80 transition-colors font-mono uppercase tracking-wider"
+                >
+                  Disable 2FA
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-gray-400">
                 Add an extra layer of security using a TOTP authenticator app.
               </p>
-              <button
-                onClick={handleEnable2FA}
-                disabled={twoFALoading}
-                className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs disabled:opacity-50"
-              >
-                {twoFALoading ? 'Setting up...' : 'Enable 2FA'}
-              </button>
+              {showEnablePrompt ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-400">Enter your password to continue:</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={twoFAPassword}
+                      onChange={(e) => setTwoFAPassword(e.target.value)}
+                      placeholder="Current password"
+                      autoComplete="current-password"
+                      className="flex-1 px-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && twoFAPassword) handleEnable2FA() }}
+                    />
+                    <button
+                      onClick={handleEnable2FA}
+                      disabled={twoFALoading || !twoFAPassword}
+                      className="btn-primary px-4 py-2.5 font-display tracking-wider uppercase text-xs disabled:opacity-50"
+                    >
+                      {twoFALoading ? 'Setting up...' : 'Continue'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setShowEnablePrompt(false); setTwoFAPassword(''); setTwoFAError(null) }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowEnablePrompt(true)}
+                  disabled={twoFALoading}
+                  className="btn-primary px-4 py-2 font-display tracking-wider uppercase text-xs disabled:opacity-50"
+                >
+                  Enable 2FA
+                </button>
+              )}
             </div>
           )}
         </div>

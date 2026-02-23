@@ -21,6 +21,7 @@ const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
 const Account = lazy(() => import('./pages/Account'))
 const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 
@@ -232,6 +233,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/2fa" element={<Suspense fallback={<LoadingState fullScreen />}><TwoFactorVerify /></Suspense>} />
+      <Route path="/verify-email" element={<Suspense fallback={<LoadingState fullScreen />}><VerifyEmail /></Suspense>} />
       <Route path="/privacy" element={<Suspense fallback={<LoadingState fullScreen />}><Privacy /></Suspense>} />
       <Route path="/terms" element={<Suspense fallback={<LoadingState fullScreen />}><Terms /></Suspense>} />
 

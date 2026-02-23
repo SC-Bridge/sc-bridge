@@ -41,7 +41,7 @@ export default function Register() {
       if (result.error) {
         setError(result.error.message || 'Registration failed')
       } else {
-        navigate('/', { replace: true })
+        navigate('/verify-email', { replace: true, state: { email } })
       }
     } catch (err) {
       setError(err.message || 'An unexpected error occurred')
