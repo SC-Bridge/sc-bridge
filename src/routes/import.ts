@@ -133,23 +133,26 @@ export function importRoutes() {
       console.log(`[import] Created ${stubStmts.length} stub vehicles: ${stubSlugs.join(", ")}`);
     }
 
-    // Delete existing fleet + insert new entries
-    // D1 limits batches to 1000 statements, so chunk inserts accordingly
-    const deleteStmt = db
-      .prepare("DELETE FROM user_fleet WHERE user_id = ?")
-      .bind(userID);
+    // Insert-then-swap: insert all new entries first, then delete old ones.
+    // This avoids data loss if a batch fails partway through — old entries remain
+    // until all new entries are confirmed. IDs are AUTOINCREMENT so new entries
+    // always have higher IDs than existing ones.
+    const maxRow = await db
+      .prepare("SELECT MAX(id) as max_id FROM user_fleet WHERE user_id = ?")
+      .bind(userID)
+      .first<{ max_id: number | null }>();
+    const maxExistingId = maxRow?.max_id ?? 0;
 
-    const BATCH_LIMIT = 999; // Leave room for delete stmt in first batch
-    if (insertStmts.length <= BATCH_LIMIT) {
-      // Small fleet: single atomic batch (delete + all inserts)
-      await db.batch([deleteStmt, ...insertStmts]);
-    } else {
-      // Large fleet: delete + first chunk in one batch, then remaining chunks
-      await db.batch([deleteStmt, ...insertStmts.slice(0, BATCH_LIMIT)]);
-      for (let i = BATCH_LIMIT; i < insertStmts.length; i += 1000) {
-        await db.batch(insertStmts.slice(i, i + 1000));
-      }
+    // Insert new entries in D1-safe chunks (max 1000 statements per batch)
+    for (let i = 0; i < insertStmts.length; i += 1000) {
+      await db.batch(insertStmts.slice(i, i + 1000));
     }
+
+    // All inserts succeeded — delete old entries
+    await db
+      .prepare("DELETE FROM user_fleet WHERE user_id = ? AND id <= ?")
+      .bind(userID, maxExistingId)
+      .run();
     const imported = insertStmts.length;
 
     console.log(`[import] HangarXplor import complete: ${imported}/${entries.length}`);

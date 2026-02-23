@@ -113,10 +113,13 @@ async function requireAuth(c: Context<HonoEnv>, next: Next): Promise<Response | 
   const token = c.env.API_TOKEN;
   if (token) {
     const provided = c.req.header("X-API-Key") || c.req.query("token") || "";
+    // Hash both values to fixed length before comparing — avoids leaking token length
     const encoder = new TextEncoder();
-    const a = encoder.encode(provided);
-    const b = encoder.encode(token);
-    if (a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b)) {
+    const [hashA, hashB] = await Promise.all([
+      crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+      crypto.subtle.digest("SHA-256", encoder.encode(token)),
+    ]);
+    if (crypto.subtle.timingSafeEqual(hashA, hashB)) {
       return next();
     }
   }

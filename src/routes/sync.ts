@@ -92,7 +92,12 @@ export function syncRoutes<E extends { Bindings: Env }>() {
   });
 
   // POST /api/sync/all — trigger full sync pipeline (background)
+  // Restricted to development — likely exceeds Workers 30s CPU limit in production.
+  // Use the staggered cron triggers instead.
   routes.post("/all", async (c) => {
+    if (c.env.ENVIRONMENT !== "development") {
+      return c.json({ error: "Full sync disabled in production — use individual sync endpoints or cron triggers" }, 403);
+    }
     const env = c.env;
     c.executionCtx.waitUntil(
       runFullSync(env).catch((err) =>
