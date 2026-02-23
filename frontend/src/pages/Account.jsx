@@ -211,9 +211,15 @@ export default function Account() {
 
     setInitPwSaving(true)
     try {
-      const result = await authClient.setPassword({ newPassword: initPw })
-      if (result.error) {
-        setInitPwError(result.error.message || 'Failed to set password')
+      const resp = await fetch('/api/auth/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ newPassword: initPw }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        setInitPwError(data.message || data.error || 'Failed to set password')
       } else {
         setInitPwMsg('Password set successfully')
         setInitPw('')
