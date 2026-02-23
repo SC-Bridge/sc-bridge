@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle } from 'lucide-react'
+import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy } from 'lucide-react'
 import { useSession, authClient, signOut } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -453,7 +453,21 @@ export default function Account() {
 
               {backupCodes && (
                 <div>
-                  <p className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Backup Codes</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Backup Codes</p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(backupCodes.join('\n'))
+                        setTwoFAMsg('Backup codes copied')
+                        setTimeout(() => setTwoFAMsg(null), 2000)
+                      }}
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                      title="Copy backup codes"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </button>
+                  </div>
                   <p className="text-xs text-gray-500 mb-2">Save these codes in a safe place. Each can be used once if you lose your authenticator.</p>
                   <div className="grid grid-cols-2 gap-1 p-3 bg-sc-darker border border-sc-border rounded font-mono text-xs text-gray-300">
                     {backupCodes.map((code, i) => (
@@ -482,6 +496,12 @@ export default function Account() {
                   Verify
                 </button>
               </div>
+              <button
+                onClick={() => { setTotpUri(null); setTotpCode(''); setBackupCodes(null); setTwoFAError(null) }}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           ) : user.twoFactorEnabled ? (
             <div className="space-y-3">
