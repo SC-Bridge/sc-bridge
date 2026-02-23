@@ -211,7 +211,7 @@ export default function Account() {
 
     setInitPwSaving(true)
     try {
-      const resp = await fetch('/api/auth/set-password', {
+      const resp = await fetch('/api/account/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

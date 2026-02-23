@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
+import { hashPassword } from "../lib/password";
 
 /**
  * /api/account/* — User account management (GDPR compliance)
@@ -27,6 +28,52 @@ export function accountRoutes() {
       providers,
       hasPassword: providers.includes("credential"),
     });
+  });
+
+  // POST /api/account/set-password — OAuth-only users: set initial password
+  routes.post("/set-password", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const body = await c.req
+      .json<{ newPassword?: string }>()
+      .catch(() => ({ newPassword: undefined }));
+
+    if (!body.newPassword || body.newPassword.length < 8) {
+      return c.json(
+        { error: "Password must be at least 8 characters" },
+        400,
+      );
+    }
+    if (body.newPassword.length > 128) {
+      return c.json({ error: "Password is too long" }, 400);
+    }
+
+    // Check if user already has a credential (password) account
+    const existing = await db
+      .prepare(
+        "SELECT id FROM account WHERE userId = ? AND providerId = 'credential'",
+      )
+      .bind(user.id)
+      .first();
+
+    if (existing) {
+      return c.json(
+        { error: "You already have a password. Use Change Password instead." },
+        400,
+      );
+    }
+
+    const hashed = await hashPassword(body.newPassword);
+
+    await db
+      .prepare(
+        "INSERT INTO account (id, userId, accountId, providerId, password, createdAt, updatedAt) VALUES (?, ?, ?, 'credential', ?, datetime('now'), datetime('now'))",
+      )
+      .bind(crypto.randomUUID(), user.id, user.id, hashed)
+      .run();
+
+    return c.json({ status: true });
   });
 
   // GET /api/account/export — Download all user data as JSON
