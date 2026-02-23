@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, User, Wrench, Users } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
@@ -24,7 +24,12 @@ const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
 
-const baseNavItems = [
+const publicNavItems = [
+  { to: '/', icon: BarChart3, label: 'Dashboard' },
+  { to: '/ships', icon: Database, label: 'Ship DB' },
+]
+
+const authNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
   { to: '/fleet', icon: Rocket, label: 'Fleet' },
   { to: '/insurance', icon: Shield, label: 'Insurance' },
@@ -50,8 +55,9 @@ const superAdminNavItems = [
   { to: '/users', icon: Users, label: 'Users' },
 ]
 
-function getNavItems(role) {
-  const items = [...baseNavItems]
+function getNavItems(role, isLoggedIn) {
+  if (!isLoggedIn) return [...publicNavItems]
+  const items = [...authNavItems]
   if (role === 'admin' || role === 'super_admin') {
     items.push(...adminNavItems)
   }
@@ -65,8 +71,9 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
   const userRole = session?.user?.role || 'user'
-  const navItems = getNavItems(userRole)
+  const navItems = getNavItems(userRole, isLoggedIn)
 
   const handleSignOut = async () => {
     await signOut()
@@ -159,8 +166,8 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
         })}
       </div>
 
-      {/* User info + sign out */}
-      {session?.user && (
+      {/* User info + sign out / Sign in CTA */}
+      {isLoggedIn ? (
         <div className="p-3 border-t border-sc-border">
           <div className="flex items-center gap-2 px-2 py-2">
             <NavLink
@@ -179,6 +186,24 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
               <LogOut className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      ) : (
+        <div className="p-3 border-t border-sc-border space-y-2">
+          <NavLink
+            to="/login"
+            onClick={onNavClick}
+            className="btn-primary w-full py-2 font-display tracking-wider uppercase text-xs flex items-center justify-center gap-2"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            Sign In
+          </NavLink>
+          <NavLink
+            to="/register"
+            onClick={onNavClick}
+            className="w-full py-2 font-display tracking-wider uppercase text-xs flex items-center justify-center gap-2 border border-sc-border rounded text-gray-400 hover:text-gray-300 hover:bg-white/5 transition-colors"
+          >
+            Create Account
+          </NavLink>
         </div>
       )}
 
@@ -210,88 +235,89 @@ export default function App() {
       <Route path="/privacy" element={<Suspense fallback={<LoadingState fullScreen />}><Privacy /></Suspense>} />
       <Route path="/terms" element={<Suspense fallback={<LoadingState fullScreen />}><Terms /></Suspense>} />
 
-      {/* Protected routes — with sidebar layout */}
+      {/* App routes — with sidebar layout */}
       <Route
         path="*"
         element={
-          <RequireAuth>
-            <div className="min-h-screen flex">
-              {/* Skip navigation link */}
-              <a href="#main-content" className="skip-link">
-                Skip to content
-              </a>
+          <div className="min-h-screen flex">
+            {/* Skip navigation link */}
+            <a href="#main-content" className="skip-link">
+              Skip to content
+            </a>
 
-              {/* Desktop sidebar */}
-              <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0" aria-label="Main">
-                <SidebarContent
-                  expandedMenu={expandedMenu}
-                  setExpandedMenu={setExpandedMenu}
-                  onNavClick={() => {}}
-                />
-              </nav>
+            {/* Desktop sidebar */}
+            <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0" aria-label="Main">
+              <SidebarContent
+                expandedMenu={expandedMenu}
+                setExpandedMenu={setExpandedMenu}
+                onNavClick={() => {}}
+              />
+            </nav>
 
-              {/* Mobile hamburger */}
-              <button
-                onClick={() => setMobileMenuOpen(true)}
-                aria-label="Open navigation menu"
-                className="md:hidden fixed top-4 left-4 z-40 p-2 rounded bg-sc-panel border border-sc-border text-gray-400 hover:text-white transition-colors"
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+              className="md:hidden fixed top-4 left-4 z-40 p-2 rounded bg-sc-panel border border-sc-border text-gray-400 hover:text-white transition-colors"
+            >
+              <Menu className="w-5 h-5" aria-hidden="true" />
+            </button>
+
+            {/* Mobile slide-over sidebar */}
+            {mobileMenuOpen && (
+              <div
+                className="md:hidden fixed inset-0 z-50 flex"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Navigation menu"
+                onClick={() => setMobileMenuOpen(false)}
               >
-                <Menu className="w-5 h-5" aria-hidden="true" />
-              </button>
-
-              {/* Mobile slide-over sidebar */}
-              {mobileMenuOpen && (
-                <div
-                  className="md:hidden fixed inset-0 z-50 flex"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-label="Navigation menu"
-                  onClick={() => setMobileMenuOpen(false)}
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
+                <nav
+                  className="relative w-64 bg-sc-darker border-r border-sc-border flex flex-col animate-fade-in"
+                  aria-label="Main"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
-                  <nav
-                    className="relative w-64 bg-sc-darker border-r border-sc-border flex flex-col animate-fade-in"
-                    aria-label="Main"
-                    onClick={(e) => e.stopPropagation()}
+                  <button
+                    onClick={() => setMobileMenuOpen(false)}
+                    aria-label="Close navigation menu"
+                    className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
                   >
-                    <button
-                      onClick={() => setMobileMenuOpen(false)}
-                      aria-label="Close navigation menu"
-                      className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-                    >
-                      <X className="w-5 h-5" aria-hidden="true" />
-                    </button>
-                    <SidebarContent
-                      expandedMenu={expandedMenu}
-                      setExpandedMenu={setExpandedMenu}
-                      onNavClick={() => setMobileMenuOpen(false)}
-                    />
-                  </nav>
-                </div>
-              )}
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <SidebarContent
+                    expandedMenu={expandedMenu}
+                    setExpandedMenu={setExpandedMenu}
+                    onNavClick={() => setMobileMenuOpen(false)}
+                  />
+                </nav>
+              </div>
+            )}
 
-              {/* Main content */}
-              <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
-                <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
-                  <Suspense fallback={<LoadingState fullScreen />}>
-                    <Routes>
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/fleet" element={<FleetTable />} />
-                      <Route path="/insurance" element={<Insurance />} />
-                      <Route path="/analysis" element={<Analysis />} />
-                      <Route path="/analysis/history" element={<AnalysisHistory />} />
-                      <Route path="/ships" element={<ShipDB />} />
-                      <Route path="/import" element={<Import />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/account" element={<Account />} />
-                      <Route path="/admin" element={<Admin />} />
-                      <Route path="/users" element={<UserManagement />} />
-                    </Routes>
-                  </Suspense>
-                </div>
-              </main>
-            </div>
-          </RequireAuth>
+            {/* Main content */}
+            <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
+              <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
+                <Suspense fallback={<LoadingState fullScreen />}>
+                  <Routes>
+                    {/* Public routes */}
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/ships" element={<ShipDB />} />
+
+                    {/* Protected routes */}
+                    <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
+                    <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />
+                    <Route path="/analysis" element={<RequireAuth><Analysis /></RequireAuth>} />
+                    <Route path="/analysis/history" element={<RequireAuth><AnalysisHistory /></RequireAuth>} />
+                    <Route path="/import" element={<RequireAuth><Import /></RequireAuth>} />
+                    <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+                    <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
+                    <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
+                    <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
+                  </Routes>
+                </Suspense>
+              </div>
+            </main>
+          </div>
         }
       />
     </Routes>

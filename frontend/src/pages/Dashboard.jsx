@@ -1,7 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { useSession } from '../lib/auth-client'
 import { useStatus, useAnalysis } from '../hooks/useAPI'
-import { Rocket, Package, Users, Shield, DollarSign, Activity, Crosshair } from 'lucide-react'
+import { Rocket, Package, Users, Shield, DollarSign, Activity, Crosshair, Database, LogIn } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts'
 import { CHART_COLORS, TOOLTIP_STYLE } from '../lib/theme'
 import PageHeader from '../components/PageHeader'
@@ -9,11 +10,63 @@ import LoadingState from '../components/LoadingState'
 import PanelSection from '../components/PanelSection'
 
 export default function Dashboard() {
+  const { data: session, isPending: sessionPending } = useSession()
+  const isLoggedIn = !!session?.user
   const { data: status, loading: statusLoading } = useStatus()
-  const { data: analysis, loading: analysisLoading } = useAnalysis()
+  const { data: analysis, loading: analysisLoading } = useAnalysis({ skip: !isLoggedIn })
 
-  if (statusLoading || analysisLoading) {
+  if (sessionPending || statusLoading || (isLoggedIn && analysisLoading)) {
     return <LoadingState variant="skeleton" />
+  }
+
+  // Public landing — show when not logged in
+  if (!isLoggedIn) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        <PageHeader
+          title="SC BRIDGE"
+          subtitle="Star Citizen Fleet Management"
+        />
+
+        <div className="panel p-12 text-center bg-grid">
+          <Rocket className="w-20 h-20 mx-auto mb-6 text-sc-accent/60" />
+          <h2 className="font-display font-bold text-3xl text-white mb-3">Track Your Fleet</h2>
+          <p className="text-gray-400 text-base mb-8 max-w-lg mx-auto">
+            Import your Star Citizen hangar, track insurance and pledges, analyze fleet composition, and get AI-powered fleet recommendations.
+          </p>
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <Link to="/login" className="btn-primary inline-flex items-center gap-2 px-6 py-2.5">
+              <LogIn className="w-4 h-4" /> Sign In
+            </Link>
+            <Link to="/register" className="inline-flex items-center gap-2 px-6 py-2.5 border border-sc-border rounded text-gray-300 hover:text-white hover:bg-white/5 transition-colors font-display tracking-wider uppercase text-sm">
+              Create Account
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="panel p-6 bg-grid">
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="w-4 h-4 text-sc-accent" />
+              <span className="stat-label">Ship Database</span>
+            </div>
+            <p className="text-4xl font-display font-bold text-white mb-2">{status?.ships || 0}</p>
+            <p className="text-sm text-gray-500">Ships synced from SC Wiki</p>
+            <Link to="/ships" className="inline-flex items-center gap-1 mt-3 text-xs text-sc-accent hover:text-sc-accent/80 transition-colors font-display tracking-wider uppercase">
+              Browse Ships
+            </Link>
+          </div>
+          <div className="panel p-6 bg-grid">
+            <div className="flex items-center gap-2 mb-3">
+              <Rocket className="w-4 h-4 text-sc-accent2" />
+              <span className="stat-label">Paint Library</span>
+            </div>
+            <p className="text-4xl font-display font-bold text-white mb-2">{status?.paints || 0}</p>
+            <p className="text-sm text-gray-500">Ship paints catalogued</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const overview = analysis?.overview || {}

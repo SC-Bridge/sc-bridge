@@ -53,19 +53,20 @@ async function putJSON(path, body) {
   return res.json()
 }
 
-export function useAPI(path) {
+export function useAPI(path, { skip = false } = {}) {
   const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
 
   const refetch = useCallback(() => {
+    if (skip) return
     setLoading(true)
     setError(null)
     fetchJSON(path)
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [path])
+  }, [path, skip])
 
   useEffect(() => { refetch() }, [refetch])
 
@@ -84,8 +85,8 @@ export function useFleet() {
   return useAPI('/vehicles')
 }
 
-export function useAnalysis() {
-  return useAPI('/analysis')
+export function useAnalysis(opts) {
+  return useAPI('/analysis', opts)
 }
 
 export function useSyncStatus() {
