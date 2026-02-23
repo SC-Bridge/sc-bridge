@@ -171,7 +171,7 @@ export function createAuth(env: Env) {
     account: {
       accountLinking: {
         enabled: true,
-        trustedProviders: ["google", "discord", "github"],
+        trustedProviders: ["google", "discord", "github", "twitch"],
       },
     },
     databaseHooks: {
