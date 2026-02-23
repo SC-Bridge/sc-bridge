@@ -199,13 +199,15 @@ export function accountRoutes() {
 
     const db = c.env.DB;
 
-    // Log deletion before wiping data (the history row itself gets deleted in the batch)
+    // Log deletion before wiping data — row is kept as tombstone so this survives
     await logUserChange(db, user.id, "account_deleted", {
       metadata: { email: user.email },
       ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
     });
 
-    // Atomic deletion: all app tables + Better Auth tables in a single batch
+    // Atomic deletion: all app data + all auth credentials in a single batch
+    // user_change_history is intentionally kept (audit trail for the tombstone row)
+    // user row itself is soft-deleted below (anonymised, not hard-deleted)
     await db.batch([
       // App tables
       db.prepare("DELETE FROM ai_analyses WHERE user_id = ?").bind(user.id),
@@ -213,15 +215,27 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
-      db.prepare("DELETE FROM user_change_history WHERE user_id = ?").bind(user.id),
-      // Better Auth tables (FK order: dependents first, then user last)
+      // Better Auth tables (FK order: dependents first)
       db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM twoFactor WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM verification WHERE identifier = ?").bind(user.email),
       db.prepare("DELETE FROM session WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM account WHERE userId = ?").bind(user.id),
-      db.prepare("DELETE FROM user WHERE id = ?").bind(user.id),
     ]);
+
+    // Anonymise + soft-delete the user row — scrubs PII while preserving tombstone
+    await db
+      .prepare(
+        `UPDATE user SET
+           name       = 'Deleted User',
+           email      = 'deleted-' || id || '@deleted.invalid',
+           image      = NULL,
+           status     = 'deleted',
+           deleted_at = datetime('now')
+         WHERE id = ?`,
+      )
+      .bind(user.id)
+      .run();
 
     return c.json({ message: "Account deleted" });
   });

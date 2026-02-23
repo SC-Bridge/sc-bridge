@@ -105,7 +105,16 @@ app.use("/api/*", async (c, next) => {
 
 // requireAuth middleware — session or API token
 async function requireAuth(c: Context<HonoEnv>, next: Next): Promise<Response | void> {
-  if (c.get("user")) {
+  const user = c.get("user");
+  if (user) {
+    // Reject deleted/suspended/banned users even if they have a valid session
+    const record = await c.env.DB
+      .prepare("SELECT status FROM user WHERE id = ?")
+      .bind(user.id)
+      .first<{ status: string }>();
+    if (!record || record.status !== 'active') {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
     return next();
   }
 
