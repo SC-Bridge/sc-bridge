@@ -4,14 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Observability working. Change history live in production. Ready for next feature.**
+**Soft deletion + user status implemented. Migration 0004 needs applying to remote D1.**
 
 ## Recent Changes
 
-- Migration 0003 confirmed applied to remote D1 — `change_event_types` (16 rows) + `user_change_history` both live
-- Observability fully working: New Relic (7,555 spans + 6,567 logs) + Grafana Cloud (Loki + Tempo)
-- Grafana: installed "Cloudflare Workers" integration from Connections menu → pre-built dashboards working
-- Loki label: `service_name="sc-bridge"` — Tempo: `{.service.name = "sc-bridge"}`
+- Migration 0004: `ALTER TABLE user ADD COLUMN status / deleted_at` + 3 new event types (17-19)
+- `DELETE /api/account`: no longer hard-deletes user row — anonymises PII, sets `status='deleted'`; keeps `user_change_history` as audit trail
+- `requireAuth` in `src/index.ts`: rejects non-'active' users (deleted/suspended/banned) even with valid session
+- `change-history.ts`: added `account_suspended` (17), `account_banned` (18), `account_reinstated` (19) to EVENT_TYPE_IDS
 
 ## Production
 
@@ -32,8 +32,9 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Manual testing** — unlink provider, set password, import fleet → verify rows in `user_change_history`
-- **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+- **Apply migration 0004** — `npx wrangler d1 migrations apply sc-companion --remote`
+- **Verify soft delete** — delete test account, confirm tombstone row + audit trail, confirm re-login blocked
+- **Admin UI for suspend/ban** — uses new statuses but is separate work
 
 ---
 **Session compacted at:** 2026-02-23 20:46:45
