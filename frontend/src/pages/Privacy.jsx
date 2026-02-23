@@ -80,8 +80,8 @@ export default function Privacy() {
             <h2 className="font-display text-base font-bold text-white mb-3 uppercase tracking-wider">7. Contact</h2>
             <p className="text-gray-400">
               For privacy-related questions or data requests, contact us at{' '}
-              <a href="mailto:ops@scbridge.app" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
-                ops@scbridge.app
+              <a href="mailto:support@scbridge.app" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
+                support@scbridge.app
               </a>.
             </p>
           </section>
