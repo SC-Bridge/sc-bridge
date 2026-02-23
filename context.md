@@ -1,10 +1,10 @@
-# SC Companion — Project Context & Vision
+# SC Bridge — Project Context & Vision
 
 ## What It Is
 
-SC Companion is a **universal hub for Star Citizen players** — a single web app that consolidates fleet management, loadout planning, loot tracking, trade logistics, and game reference data into one place. Think of it as the toolbox every Star Citizen player has open on their second monitor.
+SC Bridge (scbridge.app) is a **universal hub for Star Citizen players** — a single web app that consolidates fleet management, loadout planning, loot tracking, trade logistics, and game reference data into one place. Think of it as the toolbox every Star Citizen player has open on their second monitor.
 
-The project is self-hosted on Cloudflare Workers with a D1 database, sitting behind Zero Trust. It's built as a personal tool first, with the architecture to support multiple users when ready.
+The project runs on Cloudflare Workers with a D1 database. It's built as a personal tool first, with the architecture to support multiple users when ready.
 
 ## What It Does Today
 
@@ -40,7 +40,7 @@ The project is self-hosted on Cloudflare Workers with a D1 database, sitting beh
 
 ## Where It's Going
 
-The fleet manager is the foundation. The vision is a comprehensive Star Citizen companion that covers every aspect of the game a player needs quick access to.
+The fleet manager is the foundation. The vision is a comprehensive Star Citizen bridge that covers every aspect of the game a player needs quick access to.
 
 ### 3D Rendered Armour & Weapons
 - Interactive 3D viewer for FPS armor sets and weapons using the game's model/texture data
@@ -104,7 +104,7 @@ The fleet manager is the foundation. The vision is a comprehensive Star Citizen 
 - **AI:** Anthropic Claude / OpenAI / Google Gemini (user-provided API keys)
 - **Email:** Resend (transactional — verification, password reset)
 - **CI/CD:** GitHub Actions → `wrangler deploy`
-- **Hosting:** `fleet.nerdz.cloud` behind Cloudflare Zero Trust
+- **Hosting:** `scbridge.app` on Cloudflare Workers
 
 ## Design Principles
 

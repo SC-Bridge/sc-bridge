@@ -139,7 +139,7 @@ export function createAuth(env: Env) {
         adminRoles: ["admin", "super_admin"],
       }),
       twoFactor({
-        issuer: "SC Companion",
+        issuer: "SC Bridge",
         totpOptions: {
           digits: 6,
           period: 30,
@@ -151,7 +151,7 @@ export function createAuth(env: Env) {
       }),
       passkey({
         rpID: new URL(env.BETTER_AUTH_URL).hostname,
-        rpName: "SC Companion",
+        rpName: "SC Bridge",
         origin: env.BETTER_AUTH_URL,
       }),
     ],

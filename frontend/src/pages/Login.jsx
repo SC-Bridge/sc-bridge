@@ -44,10 +44,10 @@ export default function Login() {
           <div className="flex items-center justify-center gap-2 mb-2">
             <Rocket className="w-8 h-8 text-sc-accent" />
             <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">
-              FLEET MGR
+              SC BRIDGE
             </h1>
           </div>
-          <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN</p>
+          <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
         </div>
 
         <div className="panel p-8">

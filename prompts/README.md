@@ -1,6 +1,6 @@
 # LLM Prompts
 
-This directory contains prompts used by the Fleet Manager's AI analysis features.
+This directory contains prompts used by the SC Bridge's AI analysis features.
 
 ## Files
 
@@ -9,7 +9,7 @@ System prompt for AI fleet analysis. This is loaded dynamically when generating 
 
 **To customize the analysis:**
 1. Edit `analysis.md` with your preferred instructions
-2. Restart the Fleet Manager server
+2. Restart the SC Bridge server
 3. Generate a new AI analysis to see the changes
 
 **Note:** If the file cannot be read, the system will fall back to a default embedded prompt.

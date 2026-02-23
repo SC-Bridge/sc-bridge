@@ -1,6 +1,6 @@
-# Fleet Manager Themes
+# SC Bridge Themes
 
-CSS-only themes for Fleet Manager. Each theme redefines the same Tailwind tokens and component classes — zero JSX changes required.
+CSS-only themes for SC Bridge. Each theme redefines the same Tailwind tokens and component classes — zero JSX changes required.
 
 ## Available Themes
 

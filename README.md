@@ -1,6 +1,6 @@
-# Fleet Manager
+# SC Bridge
 
-A self-hosted Star Citizen fleet management dashboard. Syncs ship data from [FleetYards.net](https://fleetyards.net), imports insurance data from [HangarXplor](https://github.com/dolkensp/HangarXPLOR), and provides fleet analysis with gap detection and redundancy tracking.
+A Star Citizen companion app — fleet management, loadout planning, and game reference data. Syncs ship data from [FleetYards.net](https://fleetyards.net), imports insurance data from [HangarXplor](https://github.com/dolkensp/HangarXPLOR), and provides fleet analysis with gap detection and redundancy tracking.
 
 ## Features
 

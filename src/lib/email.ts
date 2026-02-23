@@ -18,7 +18,7 @@ export async function sendEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.EMAIL_FROM || "SC Companion <infrastructure@nerdz.cloud>",
+      from: env.EMAIL_FROM || "SC Bridge <noreply@scbridge.app>",
       to,
       subject,
       html,

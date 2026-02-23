@@ -1,4 +1,4 @@
-# Fleet Manager Design System Rules
+# SC Bridge Design System Rules
 
 ## Framework & Build
 - **Framework:** React 18 (JSX, functional components, hooks)
