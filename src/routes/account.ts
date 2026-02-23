@@ -3,6 +3,7 @@ import type { Env, HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
 import { hashPassword } from "../lib/password";
+import { logUserChange } from "../lib/change-history";
 
 /** Returns the list of social OAuth provider IDs that have CLIENT_ID configured */
 function getConfiguredProviders(env: Env): string[] {
@@ -92,6 +93,11 @@ export function accountRoutes() {
       .bind(user.id, body.providerId)
       .run();
 
+    await logUserChange(db, user.id, "provider_unlinked", {
+      providerId: body.providerId,
+      ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+    });
+
     return c.json({ status: true });
   });
 
@@ -137,6 +143,12 @@ export function accountRoutes() {
       )
       .bind(crypto.randomUUID(), user.id, user.id, hashed)
       .run();
+
+    await logUserChange(db, user.id, "password_set", {
+      providerId: "credential",
+      newValue: "[set]",
+      ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+    });
 
     return c.json({ status: true });
   });
@@ -186,6 +198,12 @@ export function accountRoutes() {
 
     const db = c.env.DB;
 
+    // Log deletion before wiping data (the history row itself gets deleted in the batch)
+    await logUserChange(db, user.id, "account_deleted", {
+      metadata: { email: user.email },
+      ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+    });
+
     // Atomic deletion: all app tables + Better Auth tables in a single batch
     await db.batch([
       // App tables
@@ -194,6 +212,7 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_change_history WHERE user_id = ?").bind(user.id),
       // Better Auth tables (FK order: dependents first, then user last)
       db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM two_factor WHERE userId = ?").bind(user.id),

@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { D1Dialect } from "kysely-d1";
 import { admin } from "better-auth/plugins/admin";
 import { twoFactor } from "better-auth/plugins/two-factor";
@@ -9,6 +10,7 @@ import type { Env } from "./types";
 import { sendEmail, buildTransactionalEmailHtml } from "./email";
 import { hashPassword, verifyPassword } from "./password";
 import { escapeHtml } from "./utils";
+import { logUserChange } from "./change-history";
 
 // Access control: extend default admin statements with app-specific resources
 const ac = createAccessControl({
@@ -171,6 +173,85 @@ export function createAuth(env: Env) {
         enabled: true,
         trustedProviders: ["google", "discord"],
       },
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          after: async (account) => {
+            const providerId = (account as Record<string, unknown>).providerId as string | undefined;
+            const userId = (account as Record<string, unknown>).userId as string | undefined;
+            if (userId && providerId && providerId !== "credential") {
+              await logUserChange(env.DB, userId, "provider_linked", { providerId });
+            }
+          },
+        },
+      },
+      session: {
+        delete: {
+          after: async (session) => {
+            const userId = (session as Record<string, unknown>).userId as string | undefined;
+            if (userId) {
+              await logUserChange(env.DB, userId, "session_revoked");
+            }
+          },
+        },
+      },
+      user: {
+        update: {
+          after: async (user) => {
+            const record = user as Record<string, unknown>;
+            const userId = record.id as string | undefined;
+            if (!userId) return;
+            // Better Auth update hooks receive the updated record.
+            // We can't diff old vs new here, so we log the event with the new values.
+            if (record.name !== undefined) {
+              await logUserChange(env.DB, userId, "profile_updated", {
+                fieldName: "name",
+                newValue: record.name as string,
+              });
+            }
+          },
+        },
+      },
+    },
+    hooks: {
+      after: createAuthMiddleware(async (ctx) => {
+        const path = ctx.path;
+        const TRACKED_PATHS = new Set([
+          "/two-factor/enable",
+          "/two-factor/disable",
+          "/change-password",
+          "/passkey/add-passkey",
+          "/passkey/delete-passkey",
+        ]);
+        if (!TRACKED_PATHS.has(path)) return;
+
+        // Only log on successful responses
+        const returned = ctx.context?.returned;
+        if (returned && typeof returned === "object" && "status" in returned) {
+          const status = (returned as { status?: number }).status;
+          if (status && status >= 400) return;
+        }
+
+        const session = ctx.context?.session;
+        const userId = session?.user?.id;
+        if (!userId) return;
+
+        if (path === "/two-factor/enable") {
+          await logUserChange(env.DB, userId, "2fa_enabled");
+        } else if (path === "/two-factor/disable") {
+          await logUserChange(env.DB, userId, "2fa_disabled");
+        } else if (path === "/change-password") {
+          await logUserChange(env.DB, userId, "password_changed", {
+            providerId: "credential",
+            newValue: "[changed]",
+          });
+        } else if (path === "/passkey/add-passkey") {
+          await logUserChange(env.DB, userId, "passkey_added");
+        } else if (path === "/passkey/delete-passkey") {
+          await logUserChange(env.DB, userId, "passkey_removed");
+        }
+      }),
     },
     plugins: [
       admin({

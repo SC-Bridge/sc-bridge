@@ -3,6 +3,7 @@ import type { HonoEnv, HangarXplorEntry } from "../lib/types";
 import { slugFromShipCode, slugFromName, compactSlug } from "../lib/slug";
 import { loadInsuranceTypes } from "../db/queries";
 import { logEvent } from "../lib/logger";
+import { logUserChange } from "../lib/change-history";
 
 /**
  * /api/import/* — HangarXplor import
@@ -161,6 +162,10 @@ export function importRoutes() {
       imported,
       stubs_created: stubStmts.length,
       stub_slugs: stubSlugs,
+    });
+    await logUserChange(db, userID, "fleet_imported", {
+      metadata: { vehicle_count: imported, total_entries: entries.length },
+      ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
     });
     return c.json({
       imported,

@@ -4,16 +4,17 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Linked Accounts section on Account page — implemented, ready to deploy and test.**
+**User Change History — implemented, needs migration applied and manual testing.**
 
 ## Recent Changes
 
-- Added "Linked Accounts" PanelSection to Account page (between Profile and Password)
-- Enhanced `GET /api/account/providers` to return `availableProviders` (configured OAuth providers)
-- Added `POST /api/account/unlink-provider` endpoint with safety checks (min 2 auth methods, no credential unlinking)
-- Extracted SSO provider metadata (icons, labels) to shared `frontend/src/lib/providers.js`
-- Refactored `SocialLoginButtons.jsx` to import from shared providers constant
-- Frontend shows linked providers with unlink buttons, and "Link" buttons for unlinked providers
+- Created `user_change_history` table + `change_event_types` lookup (migration 0003)
+- Created `src/lib/change-history.ts` — fire-and-forget `logUserChange()` helper
+- Wired into `account.ts`: unlink-provider, set-password, account-deleted
+- Wired into `import.ts`: fleet_imported with vehicle_count metadata
+- Wired into `settings.ts`: settings_changed (with old/new values), llm_config_changed
+- Added Better Auth `databaseHooks` in `auth.ts`: account.create (provider_linked), session.delete (session_revoked), user.update (profile_updated)
+- Added Better Auth `hooks.after` middleware: 2FA enable/disable, change-password, passkey add/delete
 
 ## Production
 
@@ -35,7 +36,8 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Deploy and test linked accounts** — verify link/unlink flows with real OAuth providers
+- **Apply migration 0003** — `npx wrangler d1 migrations apply sc-companion --local` (or `--remote`)
+- **Manual testing** — unlink provider, set password, import fleet → verify rows in `user_change_history`
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
@@ -76,4 +78,8 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-24 06:38:23
+
+
+---
+**Session compacted at:** 2026-02-24 06:44:05
 

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
+import { logUserChange } from "../lib/change-history";
 
 /**
  * /api/settings/* — User settings and LLM configuration
@@ -73,6 +74,12 @@ export function settingsRoutes() {
     // Clear operation
     if (!body.provider && !body.api_key && !body.model) {
       await db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(userID).run();
+      await logUserChange(db, userID, "llm_config_changed", {
+        fieldName: "config",
+        oldValue: "[configured]",
+        newValue: "[cleared]",
+        ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+      });
       return c.json({ message: "LLM configuration cleared" });
     }
 
@@ -105,6 +112,13 @@ export function settingsRoutes() {
       )
       .bind(userID, body.provider, encryptedKey, body.model ?? "")
       .run();
+
+    await logUserChange(db, userID, "llm_config_changed", {
+      fieldName: "provider",
+      newValue: body.provider,
+      metadata: { model: body.model ?? "", api_key: "[redacted]" },
+      ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+    });
 
     return c.json({ message: "LLM configuration saved" });
   });
@@ -147,6 +161,16 @@ export function settingsRoutes() {
       }
     }
 
+    // Load existing prefs for old-value comparison
+    const existingRows = await db
+      .prepare("SELECT key, value FROM user_settings WHERE user_id = ?")
+      .bind(userID)
+      .all<{ key: string; value: string }>();
+    const existingPrefs: Record<string, string> = {};
+    for (const row of existingRows.results) {
+      existingPrefs[row.key] = row.value;
+    }
+
     const stmt = db.prepare(
       `INSERT INTO user_settings (user_id, key, value)
        VALUES (?, ?, ?)
@@ -159,6 +183,20 @@ export function settingsRoutes() {
 
     if (batch.length > 0) {
       await db.batch(batch);
+    }
+
+    // Log each changed preference
+    const ipAddress = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for");
+    for (const [key, value] of Object.entries(body)) {
+      const oldValue = existingPrefs[key];
+      if (oldValue !== value) {
+        await logUserChange(db, userID, "settings_changed", {
+          fieldName: key,
+          oldValue: oldValue ?? undefined,
+          newValue: value,
+          ipAddress,
+        });
+      }
     }
 
     return c.json({ message: "Preferences saved" });
