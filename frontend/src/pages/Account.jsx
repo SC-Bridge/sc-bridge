@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy, Pencil } from 'lucide-react'
 import { useSession, authClient, signOut } from '../lib/auth-client'
@@ -9,6 +9,7 @@ import PanelSection from '../components/PanelSection'
 
 export default function Account() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: session, isPending } = useSession()
   const user = session?.user
 
@@ -64,6 +65,14 @@ export default function Account() {
   useEffect(() => {
     if (user) setName(user.name || '')
   }, [user])
+
+  useEffect(() => {
+    if (searchParams.get('emailChanged') === 'true') {
+      setEmailMsg('Your email address has been updated successfully')
+      setSearchParams({}, { replace: true })
+      setTimeout(() => setEmailMsg(null), 8000)
+    }
+  }, [searchParams, setSearchParams])
 
   const fetchSessions = useCallback(async () => {
     setSessionsLoading(true)
@@ -376,7 +385,7 @@ export default function Account() {
                       setEmailMsg(null)
                       try {
                         const pendingEmail = newEmail
-                        const result = await authClient.changeEmail({ newEmail })
+                        const result = await authClient.changeEmail({ newEmail, callbackURL: '/account?emailChanged=true' })
                         if (result.error) {
                           setEmailError(result.error.message || 'Failed to change email')
                         } else {
