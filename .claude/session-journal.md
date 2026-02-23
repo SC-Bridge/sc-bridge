@@ -8,17 +8,11 @@ This file maintains running context across compactions.
 
 ## Recent Changes
 
+- Added passkey naming support: name prompt on creation, inline rename on existing passkeys
+- Email change uses one-step verification at new address
+- Single Save Changes button handles both profile name and email updates
 - GDPR compliance deployed: privacy policy, terms of service, data export, account deletion
 - App now publicly accessible without login — Dashboard shows landing page, Ship DB browsable
-- Sidebar shows public nav (Dashboard, Ship DB) for guests, full nav when logged in
-- Sign In / Create Account buttons in sidebar for unauthenticated users
-- Protected routes individually wrapped with RequireAuth (not blanket wrapper)
-- `useAPI` hook supports `skip` option for conditional fetching
-- Register page has TOS checkbox (blocks submit) + social login TOS note
-- Account page has Data & Privacy section (download/email export, danger zone deletion)
-- Contact email is `support@scbridge.app` (not ops@)
-- Deploy workflow passes commit message to `wrangler deploy --message`
-- "by Unknown" in Cloudflare dashboard is a known API token limitation — no fix available
 
 ## Production
 
@@ -89,4 +83,16 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-23 17:41:57
+
+
+---
+**Session compacted at:** 2026-02-23 18:27:36
+
+
+---
+**Session compacted at:** 2026-02-23 18:35:08
+
+
+---
+**Session compacted at:** 2026-02-23 18:48:30
 
