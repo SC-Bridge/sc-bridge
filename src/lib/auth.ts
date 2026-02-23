@@ -7,6 +7,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
 import { sendEmail } from "./email";
+import { hashPassword, verifyPassword } from "./password";
 
 // Access control: extend default admin statements with app-specific resources
 const ac = createAccessControl({
@@ -51,6 +52,10 @@ export function createAuth(env: Env) {
       enabled: true,
       requireEmailVerification: true,
       revokeSessionsOnPasswordReset: true,
+      password: {
+        hash: hashPassword,
+        verify: ({ password, hash }) => verifyPassword(password, hash),
+      },
       sendResetPassword: async ({ user, url }) => {
         await sendEmail(
           env,
