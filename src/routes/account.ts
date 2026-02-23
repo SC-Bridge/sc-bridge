@@ -9,7 +9,7 @@ import { logUserChange } from "../lib/change-history";
 function getConfiguredProviders(env: Env): string[] {
   const checks: [string, string | undefined][] = [
     ["google", env.GOOGLE_CLIENT_ID],
-    ["github", env.GITHUB_CLIENT_ID],
+    ["github", env.GITHUB_OAUTH_CLIENT_ID],
     ["discord", env.DISCORD_CLIENT_ID],
     ["twitch", env.TWITCH_CLIENT_ID],
   ];

@@ -143,11 +143,11 @@ export function createAuth(env: Env) {
             },
           }
         : {}),
-      ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+      ...(env.GITHUB_OAUTH_CLIENT_ID && env.GITHUB_OAUTH_CLIENT_SECRET
         ? {
             github: {
-              clientId: env.GITHUB_CLIENT_ID,
-              clientSecret: env.GITHUB_CLIENT_SECRET,
+              clientId: env.GITHUB_OAUTH_CLIENT_ID,
+              clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET,
             },
           }
         : {}),
@@ -171,7 +171,7 @@ export function createAuth(env: Env) {
     account: {
       accountLinking: {
         enabled: true,
-        trustedProviders: ["google", "discord"],
+        trustedProviders: ["google", "discord", "github"],
       },
     },
     databaseHooks: {
