@@ -206,7 +206,7 @@ export function accountRoutes() {
     });
 
     // Atomic deletion: all app data + all auth credentials in a single batch
-    // user_change_history is intentionally kept (audit trail for the tombstone row)
+    // user_change_history rows are kept (tombstone audit trail) but PII fields are scrubbed
     // user row itself is soft-deleted below (anonymised, not hard-deleted)
     await db.batch([
       // App tables
@@ -215,6 +215,14 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
+      // Scrub PII from change history — keep rows (event log) but wipe values
+      db.prepare(
+        `UPDATE user_change_history SET
+           old_value = CASE WHEN old_value IS NOT NULL THEN '<Account Deleted>' ELSE NULL END,
+           new_value = CASE WHEN new_value IS NOT NULL THEN '<Account Deleted>' ELSE NULL END,
+           metadata  = CASE WHEN metadata  IS NOT NULL THEN '<Account Deleted>' ELSE NULL END
+         WHERE user_id = ?`,
+      ).bind(user.id),
       // Better Auth tables (FK order: dependents first)
       db.prepare("DELETE FROM passkey WHERE userId = ?").bind(user.id),
       db.prepare("DELETE FROM twoFactor WHERE userId = ?").bind(user.id),
