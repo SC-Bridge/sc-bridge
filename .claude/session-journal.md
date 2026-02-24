@@ -4,16 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Admin completion + magic link implemented. Ready to deploy and verify.**
+**Plane project fully populated. 35 work items across 8 modules (epics) — all Done state.**
 
 ## Recent Changes
 
-- `magicLink()` plugin added to `src/lib/auth.ts` (10-min expiry, reuses `buildTransactionalEmailHtml`)
-- `magicLinkClient()` added to `frontend/src/lib/auth-client.js`
-- Magic link toggle/form/sent state added to `Login.jsx` (collapsed by default)
-- Impersonation button (UserCheck icon) added to `UserManagement.jsx` per-row actions
-- Amber `ImpersonationBanner` added to `App.jsx` — shows when `session.impersonatedBy` is set
-- `banned ↔ status` sync added to `user.update.after` hook — ban sets `status='banned'`, unban restores `status='active'`
+- Plane MCP `create_work_item` tool returns 404 (bug in MCP server) — worked around via direct REST API
+- Created 35 work items across 8 epics covering all 119 git commits, added to modules via API
+- All items set to Done state, with GitHub commit links in descriptions
+- Magic link callbackURL fixed to `/` (dashboard) — deployed and verified working
 
 ## Production
 
@@ -29,14 +27,14 @@ This file maintains running context across compactions.
 - Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
 - All DB timestamps are UTC — frontend converts via user timezone preference
 - Always use `CLOUDFLARE_API_TOKEN`. Always use `npx wrangler`
-- Grafana Cloud integration (not grafana.com/dashboards) provides Cloudflare Workers pre-built dashboards
-- Unlink safety: backend enforces min 2 account rows, credential unlinking blocked (use password change instead)
+- Plane MCP work item tool broken — use `curl` with API key `plane_api_415f2e8ef69c4869978c718724d1ae38`, workspace `nerdz`, base `https://plane.nerdz.cloud`
+- Plane project ID: `a2905f67-2c5b-4f47-8fb5-cdcdc43b8890`, Done state: `9aa83223-3187-4006-a2f8-0a7d9f7c1b23`
 
 ## What's Next
 
-- **Deploy to production** — push main to trigger CI/CD, verify impersonation + magic link + ban sync
-- **Verify ban sync** — `SELECT banned, status FROM user WHERE id = ?` should show both columns in sync after ban/unban
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+- **Verify ban sync in production** — `SELECT banned, status FROM user WHERE id = ?`
+- **Next feature** — to be determined
 
 ---
 **Session compacted at:** 2026-02-23 20:46:45
@@ -100,4 +98,32 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-24 12:08:32
+
+
+---
+**Session compacted at:** 2026-02-24 15:22:37
+
+
+---
+**Session compacted at:** 2026-02-24 15:48:53
+
+
+---
+**Session compacted at:** 2026-02-24 15:49:29
+
+
+---
+**Session compacted at:** 2026-02-24 15:50:24
+
+
+---
+**Session compacted at:** 2026-02-24 15:51:20
+
+
+---
+**Session compacted at:** 2026-02-24 15:52:26
+
+
+---
+**Session compacted at:** 2026-02-24 16:04:02
 
