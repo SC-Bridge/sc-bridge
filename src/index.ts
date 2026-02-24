@@ -157,6 +157,17 @@ app.use("/api/import/*", requireAuth);
 app.use("/api/settings/*", requireAuth);
 app.use("/api/analysis", requireAuth);
 app.on(["POST", "DELETE"], "/api/llm/*", requireAuth);
+// Public: serve R2-stored user avatars (no auth required)
+app.get("/api/account/avatar/file/:userId", async (c) => {
+  const userId = c.req.param("userId");
+  const object = await c.env.AVATARS.get(`avatars/${userId}`);
+  if (!object) return c.json({ error: "Not found" }, 404);
+  const contentType = object.httpMetadata?.contentType ?? "image/jpeg";
+  return new Response(object.body, {
+    headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=3600" },
+  });
+});
+
 app.use("/api/account", requireAuth);
 app.use("/api/account/*", requireAuth);
 

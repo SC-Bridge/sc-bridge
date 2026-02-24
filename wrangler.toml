@@ -19,6 +19,11 @@ database_name = "sc-companion"
 database_id = "56875a7e-0ebd-4455-887d-5d1e1afdb416"
 migrations_dir = "src/db/migrations"
 
+# R2 bucket for user avatar uploads
+[[r2_buckets]]
+binding = "AVATARS"
+bucket_name = "sc-bridge-avatars"
+
 # Cron Triggers — staggered nightly sync to stay within Workers CPU limits
 # Each step runs as a separate invocation with its own 30s CPU budget
 [triggers]

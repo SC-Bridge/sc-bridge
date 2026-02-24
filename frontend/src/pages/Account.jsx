@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy, Pencil, Link2, Plus, X, Star, RefreshCw } from 'lucide-react'
+import { User, Mail, Lock, Shield, Monitor, AlertCircle, Check, Fingerprint, Key, Trash2, Download, Send, AlertTriangle, Copy, Pencil, Link2, Plus, X, Star, RefreshCw, Upload, ImageOff } from 'lucide-react'
 import { useSession, authClient, signIn, signOut } from '../lib/auth-client'
 import { ssoProviders, getProvider } from '../lib/providers'
 import useTimezone from '../hooks/useTimezone'
@@ -82,6 +82,14 @@ export default function Account() {
   const [rsiError, setRsiError] = useState(null)
   const [rsiMsg, setRsiMsg] = useState(null)
 
+  // Avatar
+  const [avatarInfo, setAvatarInfo] = useState(null)
+  const [avatarMsg, setAvatarMsg] = useState(null)
+  const [avatarError, setAvatarError] = useState(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [showAvatarChoice, setShowAvatarChoice] = useState(null) // { gravatarUrl }
+  const avatarFileRef = useRef(null)
+
   // Data & Privacy
   const [exporting, setExporting] = useState(false)
   const [emailing, setEmailing] = useState(false)
@@ -158,6 +166,18 @@ export default function Account() {
     }
   }, [])
 
+  const fetchAvatarInfo = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/account/avatar-info', { credentials: 'include' })
+      if (resp.ok) {
+        const data = await resp.json()
+        setAvatarInfo(data)
+      }
+    } catch {
+      // Non-critical
+    }
+  }, [])
+
   const handleRsiSync = async (e) => {
     e.preventDefault()
     if (!rsiHandle.trim()) return
@@ -178,6 +198,12 @@ export default function Account() {
         setRsiProfile(data.profile)
         setRsiMsg('RSI profile synced')
         setTimeout(() => setRsiMsg(null), 4000)
+        if (data.avatarAutoSet) {
+          setAvatarInfo(prev => ({ ...prev, userImage: data.avatarAutoSet, rsiAvatarUrl: data.avatarAutoSet }))
+          await authClient.getSession({ fetchOptions: { cache: 'no-store' } })
+        } else if (data.gravatarUrl) {
+          setShowAvatarChoice({ gravatarUrl: data.gravatarUrl })
+        }
       }
     } catch (err) {
       setRsiError(err.message || 'Sync failed')
@@ -186,10 +212,100 @@ export default function Account() {
     }
   }
 
+  const handleSetAvatarSource = async (source) => {
+    setAvatarError(null)
+    setAvatarMsg(null)
+    try {
+      const resp = await fetch('/api/account/avatar', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source }),
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setAvatarError(data.error || 'Failed to set avatar')
+      } else {
+        setAvatarInfo(prev => ({ ...prev, userImage: data.image }))
+        setAvatarMsg(source === 'gravatar' ? 'Gravatar set as avatar' : 'RSI avatar applied')
+        setShowAvatarChoice(null)
+        setTimeout(() => setAvatarMsg(null), 4000)
+        await authClient.getSession({ fetchOptions: { cache: 'no-store' } })
+      }
+    } catch (err) {
+      setAvatarError(err.message || 'Failed to set avatar')
+    }
+  }
+
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null)
+    setAvatarMsg(null)
+    try {
+      const resp = await fetch('/api/account/avatar', { method: 'DELETE', credentials: 'include' })
+      if (resp.ok) {
+        setAvatarInfo(prev => ({ ...prev, userImage: null }))
+        setAvatarMsg('Avatar removed')
+        setTimeout(() => setAvatarMsg(null), 3000)
+        await authClient.getSession({ fetchOptions: { cache: 'no-store' } })
+      }
+    } catch (err) {
+      setAvatarError(err.message || 'Failed to remove avatar')
+    }
+  }
+
+  const handleGravatarOptOut = async (optOut) => {
+    try {
+      const resp = await fetch('/api/account/gravatar-opt-out', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optOut }),
+      })
+      if (resp.ok) {
+        setAvatarInfo(prev => ({ ...prev, gravatarOptedOut: optOut, gravatarUrl: optOut ? null : prev.gravatarUrl }))
+        if (!optOut) fetchAvatarInfo()
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarUploading(true)
+    setAvatarError(null)
+    setAvatarMsg(null)
+    const formData = new FormData()
+    formData.append('avatar', file)
+    try {
+      const resp = await fetch('/api/account/avatar/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      })
+      const data = await resp.json()
+      if (!resp.ok) {
+        setAvatarError(data.error || 'Upload failed')
+      } else {
+        setAvatarInfo(prev => ({ ...prev, userImage: data.image }))
+        setAvatarMsg('Avatar uploaded')
+        setTimeout(() => setAvatarMsg(null), 4000)
+        await authClient.getSession({ fetchOptions: { cache: 'no-store' } })
+      }
+    } catch (err) {
+      setAvatarError(err.message || 'Upload failed')
+    } finally {
+      setAvatarUploading(false)
+      if (avatarFileRef.current) avatarFileRef.current.value = ''
+    }
+  }
+
   useEffect(() => { fetchProviders() }, [fetchProviders])
   useEffect(() => { fetchSessions() }, [fetchSessions])
   useEffect(() => { fetchPasskeys() }, [fetchPasskeys])
   useEffect(() => { fetchRsiProfile() }, [fetchRsiProfile])
+  useEffect(() => { fetchAvatarInfo() }, [fetchAvatarInfo])
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault()
@@ -547,6 +663,137 @@ export default function Account() {
               <span>{saveMsg}</span>
             </div>
           )}
+
+          {/* Avatar */}
+          <div className="space-y-3">
+            <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">
+              Avatar
+            </label>
+
+            {avatarError && (
+              <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{avatarError}</span>
+              </div>
+            )}
+            {avatarMsg && (
+              <div className="flex items-center gap-2 p-3 bg-sc-success/10 border border-sc-success/30 rounded text-sc-success text-sm">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{avatarMsg}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full border border-sc-border overflow-hidden bg-sc-darker flex items-center justify-center shrink-0">
+                {avatarInfo?.userImage ? (
+                  <img
+                    src={avatarInfo.userImage}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                ) : (
+                  <User className="w-5 h-5 text-gray-500" />
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {/* Default */}
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  disabled={!avatarInfo?.userImage}
+                  className="px-2.5 py-1.5 text-xs border border-sc-border rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Default
+                </button>
+
+                {/* Gravatar */}
+                {avatarInfo?.gravatarUrl && !avatarInfo?.gravatarOptedOut && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetAvatarSource('gravatar')}
+                    className="px-2.5 py-1.5 text-xs border border-sc-border rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+                  >
+                    Gravatar
+                  </button>
+                )}
+
+                {/* RSI */}
+                {avatarInfo?.rsiAvatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetAvatarSource('rsi')}
+                    className="px-2.5 py-1.5 text-xs border border-sc-border rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+                  >
+                    RSI
+                  </button>
+                )}
+
+                {/* Upload */}
+                <button
+                  type="button"
+                  onClick={() => avatarFileRef.current?.click()}
+                  disabled={avatarUploading}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-sc-border rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50"
+                >
+                  <Upload className="w-3 h-3" />
+                  {avatarUploading ? 'Uploading...' : 'Upload'}
+                </button>
+                <input
+                  ref={avatarFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                />
+              </div>
+            </div>
+
+            {/* Gravatar opt-out toggle */}
+            {avatarInfo?.gravatarUrl && (
+              <button
+                type="button"
+                onClick={() => handleGravatarOptOut(!avatarInfo?.gravatarOptedOut)}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <ImageOff className="w-3 h-3" />
+                {avatarInfo?.gravatarOptedOut ? 'Allow Gravatar detection' : 'Never use Gravatar'}
+              </button>
+            )}
+
+            {/* Inline choice after RSI sync */}
+            {showAvatarChoice && (
+              <div className="p-3 bg-sc-darker border border-sc-border rounded space-y-3">
+                <p className="text-sm text-gray-300">
+                  RSI avatar loaded. You also have a Gravatar — which would you like to use?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSetAvatarSource('rsi')}
+                    className="btn-primary px-3 py-1.5 font-display tracking-wider uppercase text-xs"
+                  >
+                    Use RSI Avatar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetAvatarSource('gravatar')}
+                    className="px-3 py-1.5 text-xs border border-sc-border rounded text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
+                  >
+                    Use Gravatar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarChoice(null)}
+                    className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div>
             <label htmlFor="account-name" className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">

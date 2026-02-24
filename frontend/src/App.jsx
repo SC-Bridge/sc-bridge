@@ -181,7 +181,16 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
               onClick={onNavClick}
               className="flex items-center gap-2 flex-1 min-w-0 hover:text-gray-300 transition-colors"
             >
-              <User className="w-4 h-4 text-gray-500 shrink-0" />
+              {session.user.image ? (
+                <img
+                  src={session.user.image}
+                  alt=""
+                  className="w-5 h-5 rounded-full object-cover shrink-0 border border-sc-border"
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
+              ) : (
+                <User className="w-4 h-4 text-gray-500 shrink-0" />
+              )}
               <span className="text-xs text-gray-400 truncate">{session.user.name || session.user.email}</span>
             </NavLink>
             <button

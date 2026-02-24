@@ -5,6 +5,7 @@ import { escapeHtml } from "../lib/utils";
 import { hashPassword } from "../lib/password";
 import { logUserChange } from "../lib/change-history";
 import { fetchRsiProfile } from "../lib/rsi";
+import { checkGravatar } from "../lib/gravatar";
 
 /** Returns the list of social OAuth provider IDs that have CLIENT_ID configured */
 function getConfiguredProviders(env: Env): string[] {
@@ -267,13 +268,175 @@ export function accountRoutes() {
         )
         .run();
 
-      return c.json({ profile: { ...profile, fetched_at: new Date().toISOString() } });
+      // After upsert: if user has no avatar, try to auto-set from RSI
+      const currentUser = await db
+        .prepare("SELECT image, gravatar_opted_out FROM user WHERE id = ?")
+        .bind(user.id)
+        .first<{ image: string | null; gravatar_opted_out: number }>();
+
+      let avatarAutoSet: string | null = null;
+      let gravatarUrl: string | null = null;
+
+      if (!currentUser?.image && profile.avatar_url) {
+        const gravatar = currentUser?.gravatar_opted_out
+          ? null
+          : await checkGravatar(user.email);
+        if (!gravatar) {
+          await db
+            .prepare("UPDATE user SET image = ? WHERE id = ?")
+            .bind(profile.avatar_url, user.id)
+            .run();
+          avatarAutoSet = profile.avatar_url;
+        } else {
+          gravatarUrl = gravatar;
+        }
+      }
+
+      return c.json({ profile: { ...profile, fetched_at: new Date().toISOString() }, avatarAutoSet, gravatarUrl });
     } catch (err) {
       return c.json(
         { error: err instanceof Error ? err.message : "Failed to fetch RSI profile" },
         502,
       );
     }
+  });
+
+  // GET /api/account/avatar-info — return avatar sources for current user
+  routes.get("/avatar-info", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const row = await db
+      .prepare("SELECT image, gravatar_opted_out FROM user WHERE id = ?")
+      .bind(user.id)
+      .first<{ image: string | null; gravatar_opted_out: number }>();
+
+    const rsiRow = await db
+      .prepare("SELECT avatar_url FROM user_rsi_profile WHERE user_id = ?")
+      .bind(user.id)
+      .first<{ avatar_url: string | null }>();
+
+    const gravatarOptedOut = (row?.gravatar_opted_out ?? 0) === 1;
+    let gravatarUrl: string | null = null;
+    if (!gravatarOptedOut) {
+      gravatarUrl = await checkGravatar(user.email);
+    }
+
+    return c.json({
+      userImage: row?.image ?? null,
+      gravatarUrl,
+      gravatarOptedOut,
+      rsiAvatarUrl: rsiRow?.avatar_url ?? null,
+    });
+  });
+
+  // PATCH /api/account/avatar — set avatar source (gravatar or rsi)
+  routes.patch("/avatar", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const body = await c.req
+      .json<{ source?: "gravatar" | "rsi" }>()
+      .catch(() => ({ source: undefined }));
+
+    if (!body.source || !["gravatar", "rsi"].includes(body.source)) {
+      return c.json({ error: "source must be 'gravatar' or 'rsi'" }, 400);
+    }
+
+    let imageUrl: string | null = null;
+
+    if (body.source === "gravatar") {
+      imageUrl = await checkGravatar(user.email);
+      if (!imageUrl) {
+        return c.json({ error: "No Gravatar found for your email address" }, 404);
+      }
+    } else {
+      const rsiRow = await db
+        .prepare("SELECT avatar_url FROM user_rsi_profile WHERE user_id = ?")
+        .bind(user.id)
+        .first<{ avatar_url: string | null }>();
+      if (!rsiRow?.avatar_url) {
+        return c.json({ error: "No RSI avatar found — sync your profile first" }, 404);
+      }
+      imageUrl = rsiRow.avatar_url;
+    }
+
+    await db
+      .prepare("UPDATE user SET image = ? WHERE id = ?")
+      .bind(imageUrl, user.id)
+      .run();
+
+    return c.json({ image: imageUrl });
+  });
+
+  // DELETE /api/account/avatar — remove avatar (set user.image = NULL)
+  routes.delete("/avatar", async (c) => {
+    const user = c.get("user")!;
+    await c.env.DB
+      .prepare("UPDATE user SET image = NULL WHERE id = ?")
+      .bind(user.id)
+      .run();
+    return c.json({ image: null });
+  });
+
+  // PATCH /api/account/gravatar-opt-out — set gravatar_opted_out flag
+  routes.patch("/gravatar-opt-out", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const body = await c.req
+      .json<{ optOut?: boolean }>()
+      .catch(() => ({ optOut: undefined }));
+
+    if (typeof body.optOut !== "boolean") {
+      return c.json({ error: "optOut must be a boolean" }, 400);
+    }
+
+    await db
+      .prepare("UPDATE user SET gravatar_opted_out = ? WHERE id = ?")
+      .bind(body.optOut ? 1 : 0, user.id)
+      .run();
+
+    return c.json({ gravatarOptedOut: body.optOut });
+  });
+
+  // POST /api/account/avatar/upload — upload custom avatar to R2
+  routes.post("/avatar/upload", async (c) => {
+    const user = c.get("user")!;
+
+    const formData = await c.req.formData().catch(() => null);
+    if (!formData) {
+      return c.json({ error: "Expected multipart form data" }, 400);
+    }
+
+    const file = formData.get("avatar");
+    if (!file || typeof file !== "object") {
+      return c.json({ error: "Field 'avatar' is required" }, 400);
+    }
+
+    const fileBlob = file as Blob;
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(fileBlob.type)) {
+      return c.json({ error: "Only JPEG, PNG, WebP, or GIF images are allowed" }, 415);
+    }
+
+    const maxSize = 2 * 1024 * 1024; // 2 MB
+    if (fileBlob.size > maxSize) {
+      return c.json({ error: "Image must be ≤ 2 MB" }, 413);
+    }
+
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    await c.env.AVATARS.put(`avatars/${user.id}`, arrayBuffer, {
+      httpMetadata: { contentType: fileBlob.type },
+    });
+
+    const imageUrl = `/api/account/avatar/file/${user.id}`;
+    await c.env.DB
+      .prepare("UPDATE user SET image = ? WHERE id = ?")
+      .bind(imageUrl, user.id)
+      .run();
+
+    return c.json({ image: imageUrl });
   });
 
   // DELETE /api/account — Self-service account deletion
