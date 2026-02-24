@@ -151,17 +151,32 @@ async function fetchViaCitizenPage(handle: string): Promise<Partial<RsiProfile> 
 
 function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
   // ── Avatar ──────────────────────────────────────────────────────────────
-  // <div class="thumb"><img src="https://cdn.robertsspaceindustries.com/..."/></div>
-  const avatarMatch =
-    html.match(/class="profile[^"]*"[^>]*>[\s\S]{0,500}?<img[^>]+src="([^"]+)"/) ??
-    html.match(/class="thumb"[^>]*>[\s\S]{0,200}?<img[^>]+src="([^"]+cdn[^"]+)"/) ??
-    html.match(/class="avatar"[^>]*>[\s\S]{0,200}?<img[^>]+src="([^"]+)"/);
-  const avatar_url = avatarMatch ? avatarMatch[1] : null;
+  // RSI profile pages use heap_thumb for the actual avatar image.
+  // The heap_infobox images are org logos / placeholders — skip those.
+  let avatar_url: string | null = null;
+  const thumbMatch =
+    html.match(/<img[^>]+src="((?:https:\/\/media\.robertsspaceindustries\.com)?\/media\/[^"]+heap_thumb[^"]*)"/) ??
+    html.match(/<img[^>]+src="(https:\/\/media\.robertsspaceindustries\.com\/[^"]+)"/);
+  if (thumbMatch) {
+    const raw = thumbMatch[1];
+    avatar_url = raw.startsWith("/") ? `${RSI_BASE}${raw}` : raw;
+    // Reject obvious placeholders
+    if (avatar_url.includes("Black_example") || avatar_url.includes("placeholder")) {
+      avatar_url = null;
+    }
+  }
 
   // ── Citizen record ───────────────────────────────────────────────────────
-  // Pattern: R-XXXXXXX (7 digits with optional non-breaking hyphen)
-  const recordMatch = html.match(/R[‑\-](\d{7})/);
-  const citizen_record = recordMatch ? `R-${recordMatch[1]}` : null;
+  // New RSI format: #1147876 — displayed after "UEE Citizen Record" label.
+  // Old format (kept for safety): R-XXXXXXX
+  let citizen_record: string | null = null;
+  const recordNewMatch = html.match(/UEE Citizen Record[\s\S]{0,300}<strong[^>]*class="value[^"]*"[^>]*>(#\d+)/);
+  if (recordNewMatch) {
+    citizen_record = recordNewMatch[1];
+  } else {
+    const recordOldMatch = html.match(/R[‑\-](\d{7})/);
+    if (recordOldMatch) citizen_record = `R-${recordOldMatch[1]}`;
+  }
 
   // ── Enlisted date ────────────────────────────────────────────────────────
   // Label "Enlisted" followed by a date value
@@ -187,8 +202,8 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
   const orgs: RsiOrg[] = [];
   let main_org_slug: string | null = null;
 
-  // Extract main org block
-  const mainOrgBlock = html.match(/class="main-org"([\s\S]{0,2000}?)(?:class="affiliations"|class="sidebar-wrap"|<\/section)/);
+  // Extract main org block — class may include extra values like "right-col visibility-V"
+  const mainOrgBlock = html.match(/class="main-org[^"]*"([\s\S]{0,2000}?)(?:class="affiliations"|class="sidebar-wrap"|<\/section)/);
   if (mainOrgBlock) {
     const orgData = extractOrgFromBlock(mainOrgBlock[1]);
     if (orgData) {
@@ -241,8 +256,11 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
 function extractOrgFromBlock(block: string): { slug: string; name: string } | null {
   // Extract slug from href="/en/orgs/SLUG" or href="/orgs/SLUG"
   const slugMatch = block.match(/href="\/(?:en\/)?orgs?\/([A-Z0-9]+)"/);
-  // Extract name from <p class="name">...</p> or <div class="name">...</div>
+  // RSI uses <a href="/orgs/SLUG" class="value data12" ...>Org Name</a>
+  // Fallback: <p class="name">, class="org-name", or <strong>
   const nameMatch =
+    block.match(/href="\/(?:en\/)?orgs?\/[A-Z0-9]+"[^>]*class="value[^"]*"[^>]*>([^<]+)<\/a>/) ??
+    block.match(/class="value[^"]*"[^>]*>([^<]+)<\/a>/) ??
     block.match(/<(?:p|div)[^>]*class="name"[^>]*>([^<]+)<\//) ??
     block.match(/class="org-name"[^>]*>([^<]+)<\//) ??
     block.match(/<strong[^>]*>([^<]+)<\/strong>/);
