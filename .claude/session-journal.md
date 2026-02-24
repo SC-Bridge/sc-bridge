@@ -4,19 +4,23 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Avatar system fully implemented and deployed to production.**
+**Avatar system fully implemented, deployed, and tested. Plane Epic 11 created with 13 work items (all Done).**
 
 ## Recent Changes
 
-- `src/db/migrations/0006_avatar.sql` — ADD gravatar_opted_out INTEGER NOT NULL DEFAULT 0 to user table (applied remotely)
-- `src/lib/gravatar.ts` (NEW) — SHA-256 email hash, HEAD check, returns Gravatar URL or null
-- `wrangler.toml` — R2 binding `AVATARS` → `sc-bridge-avatars` bucket (created in production)
-- `src/lib/types.ts` — AVATARS: R2Bucket added to Env interface
-- `src/routes/account.ts` — 5 new endpoints: avatar-info, PATCH/DELETE avatar, gravatar-opt-out, avatar/upload; RSI sync now auto-sets avatar or prompts Gravatar choice
-- `src/index.ts` — public GET /api/account/avatar/file/:userId (before auth middleware)
-- `frontend/src/App.jsx` — sidebar shows avatar img or User icon fallback
-- `frontend/src/pages/Account.jsx` — avatar section in Profile panel with source buttons + upload + inline choice
-- Committed as `1bac7bc`, pushed + deployed via GitHub Actions
+- Avatar system: migration 0006, gravatar.ts, R2 bucket, 5 new endpoints, sidebar display — `1bac7bc`
+- Client-side resize to 512px WebP before upload (1.5 MB PNG → 10 KB WebP, 149× reduction) — `5ea33e3`
+- Plane Epic 11 — Avatar System: 13 work items created, all Done
+
+## Key Decisions
+
+- Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
+- Better Auth `sendInvitationEmail`: `data.invitationUrl` does NOT exist in types — construct from `data.invitation.id`
+- Better Auth org tables use camelCase column names in D1: `organizationId`, `userId`, `createdAt`
+- `org_visibility` values: `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
+- Plane MCP work item tool broken — use `curl` with API key `plane_api_415f2e8ef69c4869978c718724d1ae38`, workspace `nerdz`, base `https://plane.nerdz.cloud`
+- Plane project ID: `a2905f67-2c5b-4f47-8fb5-cdcdc43b8890`, Done state: `9aa83223-3187-4006-a2f8-0a7d9f7c1b23`
+- Module-issues endpoint: `POST /api/v1/workspaces/nerdz/projects/{pid}/modules/{mid}/module-issues/`
 
 ## Production
 
