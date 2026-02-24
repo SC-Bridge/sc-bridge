@@ -161,6 +161,24 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
     avatar_url = raw.startsWith("/") ? `${RSI_BASE}${raw}` : raw;
   }
 
+  // ── Community Moniker + Handle ───────────────────────────────────────────
+  // .profile.left-col .info contains strong.value elements in order:
+  //   [0] = Community Moniker (display name / vanity name)
+  //   [1] = Handle (canonical SC handle)
+  // Use indexOf+slice, capped at the main-org block, to avoid picking up
+  // org-rank strong.value elements from the sibling right-col.
+  let display_name: string | null = null;
+  let parsedHandle = handle;
+  const leftColIdx = html.indexOf('class="profile left-col"');
+  if (leftColIdx !== -1) {
+    const mainOrgIdxInLeft = html.indexOf('class="main-org', leftColIdx);
+    const leftColEnd = mainOrgIdxInLeft !== -1 ? mainOrgIdxInLeft : leftColIdx + 4000;
+    const leftColWindow = html.slice(leftColIdx, leftColEnd);
+    const valueMatches = [...leftColWindow.matchAll(/<strong[^>]*class="value[^"]*"[^>]*>([^<]+)<\/strong>/g)];
+    if (valueMatches[0]) display_name = valueMatches[0][1].trim() || null;
+    if (valueMatches[1]) parsedHandle = valueMatches[1][1].trim() || handle;
+  }
+
   // ── Citizen record ───────────────────────────────────────────────────────
   // New RSI format: #1147876 — displayed after "UEE Citizen Record" label.
   // Old format (kept for safety): R-XXXXXXX
@@ -181,39 +199,31 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
     html.match(/enlisted[^>]*>[\s\S]{0,100}?(\w+ \d{1,2}, \d{4})/i);
   const enlisted_at = enlistedMatch ? enlistedMatch[1].trim() : null;
 
-  // ── Handle (canonical) ───────────────────────────────────────────────────
-  // Look for the handle in the profile section
-  const handleMatch =
-    html.match(/Handle[^<]*<\/[^>]+>[\s\S]{0,200}?<strong[^>]*class="value"[^>]*>([^<]+)<\/strong>/) ??
-    html.match(/class="value">([^<]+)<\/strong>[\s\S]{0,100}?(?=Enlisted|UEE)/);
-  const parsedHandle = handleMatch ? handleMatch[1].trim() : handle;
-
   // ── Org affiliations ─────────────────────────────────────────────────────
-  // Orgs section has org name, SID, and whether it's the main org
-  // Pattern varies but typically:
-  //   <div class="main-org">...<div class="org">...href="/en/orgs/SLUG"...<p class="name">Name</p>...
-  //   <div class="affiliations">...<div class="org">...
-
+  // Use indexOf+slice instead of regex terminators — the terminator patterns
+  // (affiliations, sidebar-wrap, </section) are not reliably present and caused
+  // the mainOrgBlock regex to always return null.
   const orgs: RsiOrg[] = [];
   let main_org_slug: string | null = null;
 
-  // Extract main org block — class may include extra values like "right-col visibility-V"
-  const mainOrgBlock = html.match(/class="main-org[^"]*"([\s\S]{0,2000}?)(?:class="affiliations"|class="sidebar-wrap"|<\/section)/);
-  if (mainOrgBlock) {
-    const orgData = extractOrgFromBlock(mainOrgBlock[1]);
+  // Main org: scan a 5000-char window from the main-org div start
+  const mainOrgIdx = html.indexOf('class="main-org');
+  if (mainOrgIdx !== -1) {
+    const mainOrgWindow = html.slice(mainOrgIdx, mainOrgIdx + 5000);
+    const orgData = extractOrgFromBlock(mainOrgWindow);
     if (orgData) {
       orgs.push({ ...orgData, is_main: true });
       main_org_slug = orgData.slug;
     }
   }
 
-  // Extract affiliated orgs block
-  const affiliationsBlock = html.match(/class="affiliations"([\s\S]{0,5000}?)(?:class="sidebar-wrap"|<\/section|class="main-org")/);
-  if (affiliationsBlock) {
-    // Each org is in a <div class="org"> block
+  // Affiliated orgs: scan from the affiliations div start
+  const affiliationsIdx = html.indexOf('class="affiliations"');
+  if (affiliationsIdx !== -1) {
+    const affiliationsWindow = html.slice(affiliationsIdx, affiliationsIdx + 10000);
     const orgPattern = /class="org"([\s\S]{0,1000}?)(?=class="org"|$)/g;
     let match;
-    while ((match = orgPattern.exec(affiliationsBlock[1])) !== null) {
+    while ((match = orgPattern.exec(affiliationsWindow)) !== null) {
       const orgData = extractOrgFromBlock(match[1]);
       if (orgData && !orgs.find((o) => o.slug === orgData.slug)) {
         orgs.push({ ...orgData, is_main: false });
@@ -239,7 +249,7 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
 
   return {
     handle: parsedHandle,
-    display_name: null, // citizen page doesn't always have a separate display name
+    display_name,
     citizen_record,
     enlisted_at,
     avatar_url,
@@ -251,15 +261,17 @@ function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
 function extractOrgFromBlock(block: string): { slug: string; name: string } | null {
   // Extract slug from href="/en/orgs/SLUG" or href="/orgs/SLUG"
   const slugMatch = block.match(/href="\/(?:en\/)?orgs?\/([A-Z0-9]+)"/);
-  // RSI uses <a href="/orgs/SLUG" class="value data12" ...>Org Name</a>
-  // Fallback: <p class="name">, class="org-name", or <strong>
+  if (!slugMatch) return null;
+
+  // RSI org name is the text content of the <a> tag whose href points to the org.
+  // The class suffix varies per user (e.g. "value data5", "value data12") — match any.
+  // Both attribute orderings (href-first, class-first) are handled.
   const nameMatch =
-    block.match(/href="\/(?:en\/)?orgs?\/[A-Z0-9]+"[^>]*class="value[^"]*"[^>]*>([^<]+)<\/a>/) ??
-    block.match(/class="value[^"]*"[^>]*>([^<]+)<\/a>/) ??
+    block.match(/href="\/(?:en\/)?orgs?\/[A-Z0-9]+"[^>]*>([^<]+)<\/a>/) ??
     block.match(/<(?:p|div)[^>]*class="name"[^>]*>([^<]+)<\//) ??
     block.match(/class="org-name"[^>]*>([^<]+)<\//) ??
     block.match(/<strong[^>]*>([^<]+)<\/strong>/);
 
-  if (!slugMatch || !nameMatch) return null;
+  if (!nameMatch) return null;
   return { slug: slugMatch[1], name: nameMatch[1].trim() };
 }
