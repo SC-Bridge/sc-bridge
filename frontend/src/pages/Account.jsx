@@ -270,14 +270,46 @@ export default function Account() {
     }
   }
 
+  const resizeAvatar = (file) => new Promise((resolve, reject) => {
+    const MAX = 512
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error('Resize failed')),
+        'image/webp',
+        0.85,
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')) }
+    img.src = url
+  })
+
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setAvatarUploading(true)
     setAvatarError(null)
     setAvatarMsg(null)
+    let blob
+    try {
+      blob = await resizeAvatar(file)
+    } catch (err) {
+      setAvatarError(err.message || 'Could not process image')
+      setAvatarUploading(false)
+      if (avatarFileRef.current) avatarFileRef.current.value = ''
+      return
+    }
     const formData = new FormData()
-    formData.append('avatar', file)
+    formData.append('avatar', blob, 'avatar.webp')
     try {
       const resp = await fetch('/api/account/avatar/upload', {
         method: 'POST',
