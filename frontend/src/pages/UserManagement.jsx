@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, Shield, Ban, Trash2, AlertCircle } from 'lucide-react'
-import { authClient } from '../lib/auth-client'
+import { Users, Shield, Ban, Trash2, AlertCircle, UserCheck } from 'lucide-react'
+import { authClient, useSession } from '../lib/auth-client'
 import useTimezone from '../hooks/useTimezone'
 import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
@@ -11,6 +11,7 @@ const ROLES = ['user', 'admin', 'super_admin']
 
 export default function UserManagement() {
   const { timezone } = useTimezone()
+  const { data: session } = useSession()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -72,6 +73,18 @@ export default function UserManagement() {
     } catch (err) {
       setActionError(err.message || 'Failed to delete user')
     } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleImpersonate = async (userId) => {
+    setActionLoading(userId)
+    setActionError(null)
+    try {
+      await authClient.admin.impersonateUser({ userId })
+      window.location.href = '/'
+    } catch (err) {
+      setActionError(err.message || 'Failed to impersonate user')
       setActionLoading(null)
     }
   }
@@ -142,6 +155,14 @@ export default function UserManagement() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleImpersonate(u.id)}
+                          disabled={actionLoading === u.id || u.id === session?.user?.id}
+                          title="Impersonate"
+                          className="p-1.5 rounded text-sc-accent hover:bg-sc-accent/10 transition-colors disabled:opacity-50"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={() => handleBan(u.id, !u.banned)}
                           disabled={actionLoading === u.id}

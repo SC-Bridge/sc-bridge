@@ -4,7 +4,7 @@ import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as Set
 import LoadingState from './components/LoadingState'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
-import { useSession, signOut } from './lib/auth-client'
+import { authClient, useSession, signOut } from './lib/auth-client'
 import { TimezoneProvider } from './hooks/useTimezone'
 
 import Dashboard from './pages/Dashboard'
@@ -223,6 +223,29 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   )
 }
 
+function ImpersonationBanner() {
+  const { data: sessionData } = useSession()
+  const isImpersonating = !!sessionData?.session?.impersonatedBy
+  if (!isImpersonating) return null
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-4 px-4 py-2 bg-amber-500 text-amber-950 text-sm font-medium">
+      <span>
+        Impersonating: <strong>{sessionData.user.name || sessionData.user.email}</strong>
+      </span>
+      <button
+        onClick={async () => {
+          await authClient.admin.stopImpersonating()
+          window.location.href = '/users'
+        }}
+        className="px-3 py-1 bg-amber-950/20 hover:bg-amber-950/30 rounded text-xs font-display tracking-wide uppercase transition-colors"
+      >
+        Stop Impersonating
+      </button>
+    </div>
+  )
+}
+
 export default function App() {
   useFontPreference()
   const [expandedMenu, setExpandedMenu] = useState('/analysis')
@@ -244,6 +267,7 @@ export default function App() {
         path="*"
         element={
           <div className="min-h-screen flex">
+            <ImpersonationBanner />
             {/* Skip navigation link */}
             <a href="#main-content" className="skip-link">
               Skip to content

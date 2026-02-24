@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { D1Dialect } from "kysely-d1";
 import { admin } from "better-auth/plugins/admin";
+import { magicLink } from "better-auth/plugins";
 import { twoFactor } from "better-auth/plugins/two-factor";
 import { passkey } from "@better-auth/passkey";
 import { createAccessControl } from "better-auth/plugins/access";
@@ -228,6 +229,20 @@ export function createAuth(env: Env) {
                 ipAddress: ip ?? undefined,
               });
             }
+            // Sync banned flag → status column
+            if (typeof record.banned === "boolean") {
+              if (record.banned) {
+                await env.DB
+                  .prepare("UPDATE user SET status = 'banned' WHERE id = ? AND status != 'deleted'")
+                  .bind(userId)
+                  .run();
+              } else {
+                await env.DB
+                  .prepare("UPDATE user SET status = 'active' WHERE id = ? AND status = 'banned'")
+                  .bind(userId)
+                  .run();
+              }
+            }
           },
         },
       },
@@ -309,6 +324,21 @@ export function createAuth(env: Env) {
         },
         defaultRole: "user",
         adminRoles: ["admin", "super_admin"],
+      }),
+      magicLink({
+        expiresIn: 600,
+        sendMagicLink: async ({ email, url }) => {
+          await sendEmail(
+            env,
+            email,
+            "Sign in to SC Bridge",
+            buildTransactionalEmailHtml("Sign In to SC Bridge", `
+              <p>Click the button below to sign in to your SC Bridge account. This link expires in 10 minutes.</p>
+              <p style="text-align:center;"><a href="${url}" class="cta">Sign In</a></p>
+              <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email. The link will expire automatically.</p>
+            `),
+          );
+        },
       }),
       twoFactor({
         issuer: "SC Bridge",

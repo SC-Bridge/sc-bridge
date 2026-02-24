@@ -14,6 +14,33 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const [magicLinkOpen, setMagicLinkOpen] = useState(false)
+  const [magicLinkEmail, setMagicLinkEmail] = useState('')
+  const [magicLinkSent, setMagicLinkSent] = useState(false)
+  const [magicLinkError, setMagicLinkError] = useState('')
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
+
+  const handleMagicLink = async (e) => {
+    e.preventDefault()
+    setMagicLinkError('')
+    setMagicLinkLoading(true)
+    try {
+      const { error } = await authClient.signIn.magicLink({
+        email: magicLinkEmail,
+        callbackURL: '/fleet',
+      })
+      if (error) {
+        setMagicLinkError(error.message || 'Failed to send magic link')
+      } else {
+        setMagicLinkSent(true)
+      }
+    } catch (err) {
+      setMagicLinkError(err.message || 'An unexpected error occurred')
+    } finally {
+      setMagicLinkLoading(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -143,6 +170,58 @@ export default function Login() {
             <Fingerprint className="w-4 h-4" />
             <span className="font-display tracking-wide text-xs uppercase">Sign in with Passkey</span>
           </button>
+
+          <div className="mt-4">
+            {!magicLinkOpen ? (
+              <button
+                type="button"
+                onClick={() => setMagicLinkOpen(true)}
+                className="w-full text-center text-xs text-gray-500 hover:text-gray-400 transition-colors py-1"
+              >
+                Sign in with email link
+              </button>
+            ) : magicLinkSent ? (
+              <div className="p-3 bg-sc-accent/10 border border-sc-accent/30 rounded text-sm text-sc-accent text-center">
+                Check your inbox — we sent a sign-in link to <strong>{magicLinkEmail}</strong>. It expires in 10 minutes.
+              </div>
+            ) : (
+              <form onSubmit={handleMagicLink} className="space-y-3">
+                <p className="text-xs text-gray-500 text-center">Enter your email to receive a sign-in link</p>
+                {magicLinkError && (
+                  <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{magicLinkError}</span>
+                  </div>
+                )}
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="email"
+                    value={magicLinkEmail}
+                    onChange={(e) => setMagicLinkEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="w-full pl-10 pr-4 py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-white placeholder-gray-600 focus:border-sc-accent focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+                    placeholder="commander@rsi.com"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={magicLinkLoading}
+                  className="w-full py-2.5 bg-sc-darker border border-sc-border rounded text-sm text-gray-300 hover:text-white hover:border-gray-500 transition-all disabled:opacity-50 font-display tracking-wide uppercase text-xs"
+                >
+                  {magicLinkLoading ? 'Sending...' : 'Send me a link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMagicLinkOpen(false)}
+                  className="w-full text-center text-xs text-gray-600 hover:text-gray-500 transition-colors py-1"
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
+          </div>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
