@@ -21,6 +21,29 @@ export default function ShipDB() {
   const [sortDir, setSortDir] = useState('asc')
   const [page, setPage] = useState(1)
 
+  // For ships with no image, find the base variant's image by progressively
+  // shortening the ship name and looking for a match that has an image.
+  const baseImageMap = useMemo(() => {
+    if (!ships) return new Map()
+    const withImages = ships
+      .filter((s) => s.image_url_medium || s.image_url)
+      .map((s) => ({ name: s.name.toLowerCase(), img: s.image_url_medium || s.image_url }))
+    const result = new Map()
+    for (const ship of ships) {
+      if (ship.image_url_medium || ship.image_url) continue
+      const words = ship.name.toLowerCase().split(/\s+/)
+      for (let len = words.length - 1; len >= 1; len--) {
+        const prefix = words.slice(0, len).join(' ')
+        const base = withImages.find((b) => b.name === prefix)
+        if (base) {
+          result.set(ship.slug, base.img)
+          break
+        }
+      }
+    }
+    return result
+  }, [ships])
+
   const manufacturers = useMemo(() => {
     if (!ships) return []
     const m = new Set(ships.map((s) => s.manufacturer_name).filter(Boolean))
@@ -142,6 +165,7 @@ export default function ShipDB() {
           <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden">
             <ShipImage
               src={ship.image_url_medium || ship.image_url}
+              baseSrc={baseImageMap.get(ship.slug)}
               alt={ship.name}
               aspectRatio="landscape"
               hoverZoom

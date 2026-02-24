@@ -142,6 +142,7 @@ const shipNameMap: Record<string, string> = {
   "gladius pirate edition": "gladius pirate",
   "caterpillar pirate edition": "caterpillar pirate",
   "f7c-m super hornet heartseeker mk i": "f7c-m hornet heartseeker mk i",
+  "f7c-m super hornet heartseeker mk ii": "f7c-m hornet heartseeker mk ii",
   "f7c-m super hornet mk i": "f7c-m super hornet mk i",
   "f7c-m super hornet mk ii": "f7c-m super hornet mk ii",
   "f8c lightning executive edition": "f8c lightning executive edition",
@@ -260,6 +261,14 @@ function findVehicleSlug(rsiName: string, nameToSlug: Map<string, string>): stri
     const withoutPrefix = lower.substring(spaceIdx + 1);
     const slug = nameToSlug.get(withoutPrefix);
     if (slug) return slug;
+
+    // 4. Apply shipNameMap to the prefix-stripped name
+    //    e.g. "AEGIS Ares Inferno" → strip "AEGIS" → "Ares Inferno" → map → "Ares Star Fighter Inferno"
+    const reMapped = shipNameMap[withoutPrefix];
+    if (reMapped) {
+      const slug2 = nameToSlug.get(reMapped);
+      if (slug2) return slug2;
+    }
   }
 
   return "";
@@ -444,10 +453,26 @@ export async function syncShipImages(
     for (const v of vehicles) {
       if (slugImages.has(v.slug)) continue;
 
+      // Pass 1: RSI name prefix match (e.g. "Dragonfly Black" prefix for "Dragonfly Star Kitten")
       const baseImg = findBaseVehicleImages(v.name, rsiNameImages);
       if (baseImg) {
         stmts.push(buildUpdateVehicleImagesStatement(db, v.slug, baseImg.imageURL, baseImg.small, baseImg.medium, baseImg.large));
         inherited++;
+        continue;
+      }
+
+      // Pass 2: DB name prefix match against vehicles that already have matched images
+      // e.g. "Ares Star Fighter Inferno Wikelo War Special" → prefix "ares star fighter inferno" → slug in slugImages
+      const words = v.name.toLowerCase().split(/\s+/);
+      for (let len = words.length - 1; len >= 1; len--) {
+        const prefix = words.slice(0, len).join(" ");
+        const baseSlug = nameToSlug.get(prefix);
+        if (baseSlug && slugImages.has(baseSlug)) {
+          const img = slugImages.get(baseSlug)!;
+          stmts.push(buildUpdateVehicleImagesStatement(db, v.slug, img.imageURL, img.small, img.medium, img.large));
+          inherited++;
+          break;
+        }
       }
     }
 

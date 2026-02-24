@@ -7,8 +7,12 @@ const ASPECT_CLASSES = {
   thumbnail: 'w-20 h-12',
 }
 
-export default function ShipImage({ src, alt, aspectRatio = 'landscape', hoverZoom = false, className = '' }) {
-  const [status, setStatus] = useState(src ? 'loading' : 'error')
+export default function ShipImage({ src, baseSrc, alt, aspectRatio = 'landscape', hoverZoom = false, className = '' }) {
+  // If no direct image but a base variant image is provided, use it with a banner
+  const effectiveSrc = src || baseSrc
+  const isVariantFallback = !src && !!baseSrc
+
+  const [status, setStatus] = useState(effectiveSrc ? 'loading' : 'error')
 
   const aspectClass = ASPECT_CLASSES[aspectRatio] || ASPECT_CLASSES.landscape
   const isFixedSize = aspectRatio === 'thumbnail'
@@ -25,9 +29,9 @@ export default function ShipImage({ src, alt, aspectRatio = 'landscape', hoverZo
         </div>
       )}
 
-      {src && status !== 'error' && (
+      {effectiveSrc && status !== 'error' && (
         <img
-          src={src}
+          src={effectiveSrc}
           alt={alt || ''}
           loading="lazy"
           className={`w-full h-full object-cover transition-transform duration-300 ${
@@ -36,6 +40,12 @@ export default function ShipImage({ src, alt, aspectRatio = 'landscape', hoverZo
           onLoad={() => setStatus('loaded')}
           onError={() => setStatus('error')}
         />
+      )}
+
+      {isVariantFallback && status === 'loaded' && !isFixedSize && (
+        <div className="absolute bottom-0 inset-x-0 bg-black/70 px-2 py-0.5 text-center">
+          <span className="text-[10px] font-mono text-gray-400 tracking-wide uppercase">Variant image unavailable</span>
+        </div>
       )}
     </div>
   )
