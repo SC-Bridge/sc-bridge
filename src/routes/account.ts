@@ -430,7 +430,7 @@ export function accountRoutes() {
       httpMetadata: { contentType: fileBlob.type },
     });
 
-    const imageUrl = `/api/account/avatar/file/${user.id}`;
+    const imageUrl = `/api/account/avatar/file/${user.id}?v=${Date.now()}`;
     await c.env.DB
       .prepare("UPDATE user SET image = ? WHERE id = ?")
       .bind(imageUrl, user.id)
