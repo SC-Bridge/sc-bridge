@@ -1,0 +1,7 @@
+# index.html must never be cached — stale HTML + content-hashed chunks = MIME type errors
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate
+
+# Content-hashed assets are immutable — cache forever
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
