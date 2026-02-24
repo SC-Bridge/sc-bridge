@@ -4,24 +4,19 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Avatar system complete. Ready for next feature.**
+**Ship images — RSI sync enabled, deploying now. Will build slug map after sync runs.**
 
 ## Recent Changes
 
-- Avatar system: migration 0006, gravatar.ts, R2 bucket, 5 new endpoints, sidebar display — `1bac7bc`
-- Client-side resize to 512px WebP before upload (1.5 MB PNG → 10 KB WebP, 149× reduction) — `5ea33e3`
-- fix: cache-bust avatar URL on upload with `?v=timestamp` so browser fetches fresh after re-upload — `d7d1637`
-- Plane Epic 11 — Avatar System: 14 work items, all Done
+- Logo/favicon: SC Bridge PNG added, all sizes generated, sidebar Rocket → logo — `718a063`
+- Enabled RSI_API_ENABLED=true in wrangler.toml — RSI image sync was silently no-oping every night — `c44391d`
+- Admin page with all sync buttons already existed at `/admin` (no code needed)
 
 ## Key Decisions
 
-- Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
-- Better Auth `sendInvitationEmail`: `data.invitationUrl` does NOT exist in types — construct from `data.invitation.id`
-- Better Auth org tables use camelCase column names in D1: `organizationId`, `userId`, `createdAt`
-- `org_visibility` values: `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
-- Plane MCP work item tool broken — use `curl` with API key `plane_api_415f2e8ef69c4869978c718724d1ae38`, workspace `nerdz`, base `https://plane.nerdz.cloud`
-- Plane project ID: `a2905f67-2c5b-4f47-8fb5-cdcdc43b8890`, Done state: `9aa83223-3187-4006-a2f8-0a7d9f7c1b23`
-- Module-issues endpoint: `POST /api/v1/workspaces/nerdz/projects/{pid}/modules/{mid}/module-issues/`
+- RSI sync was the problem — FleetYards slug matching unreliable, RSI has name map + variant inheritance
+- After deploy: go to /admin → click RSI API button → check sync history
+- Next: use LLM knowledge to expand `shipNameMap` in `src/sync/rsi.ts` for any skipped ships
 
 ## Production
 
@@ -32,10 +27,9 @@ This file maintains running context across compactions.
 - **CI/CD:** Push to main → GitHub Actions → `wrangler deploy`
 - **Email:** Resend via `scbridge.app` domain
 
-## Key Decisions
+## Key Decisions (Auth/Infra)
 
 - Better Auth v1.4.18 with Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
-- Better Auth `sendInvitationEmail`: `data.invitationUrl` does NOT exist in types — construct from `data.invitation.id`
 - Better Auth org tables use camelCase column names in D1: `organizationId`, `userId`, `createdAt`
 - `org_visibility` values: `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
 - Plane MCP work item tool broken — use `curl` with API key `plane_api_415f2e8ef69c4869978c718724d1ae38`, workspace `nerdz`, base `https://plane.nerdz.cloud`
@@ -43,18 +37,7 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Deploy to production**: push to main, then `GET /api/auth/migrate` to create org/member/invitation tables
-- **Run D1 migration 0005**: `user_rsi_profile` table + ALTER TABLE `user_fleet` for `org_visibility`/`available_for_ops`
-- **Org Settings page** (v2): update org metadata (RSI SID, social links) — skipped from v1 scope
+- **Trigger RSI sync** from /admin after deploy
+- **Expand shipNameMap** in src/sync/rsi.ts for skipped ships
+- **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
-
----
-**Session compacted at:** 2026-02-24 16:26:11
-
----
-**Session compacted at:** 2026-02-24 16:59:13
-
-
----
-**Session compacted at:** 2026-02-24 17:24:23
-
