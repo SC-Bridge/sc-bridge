@@ -151,19 +151,14 @@ async function fetchViaCitizenPage(handle: string): Promise<Partial<RsiProfile> 
 
 function parseCitizenHtml(html: string, handle: string): Partial<RsiProfile> {
   // ── Avatar ──────────────────────────────────────────────────────────────
-  // RSI profile pages use heap_thumb for the actual avatar image.
-  // The heap_infobox images are org logos / placeholders — skip those.
+  // Target: .profile.left-col > .inner > .thumb > img
+  // That div holds the user's actual profile picture.
+  // The .info section inside .profile.left-col contains game badge icons — avoid those.
   let avatar_url: string | null = null;
-  const thumbMatch =
-    html.match(/<img[^>]+src="((?:https:\/\/media\.robertsspaceindustries\.com)?\/media\/[^"]+heap_thumb[^"]*)"/) ??
-    html.match(/<img[^>]+src="(https:\/\/media\.robertsspaceindustries\.com\/[^"]+)"/);
-  if (thumbMatch) {
-    const raw = thumbMatch[1];
+  const profileBlock = html.match(/class="profile left-col"[\s\S]{0,2000}?class="thumb"[\s\S]{0,300}?<img[^>]+src="([^"]+)"/);
+  if (profileBlock) {
+    const raw = profileBlock[1];
     avatar_url = raw.startsWith("/") ? `${RSI_BASE}${raw}` : raw;
-    // Reject obvious placeholders
-    if (avatar_url.includes("Black_example") || avatar_url.includes("placeholder")) {
-      avatar_url = null;
-    }
   }
 
   // ── Citizen record ───────────────────────────────────────────────────────
