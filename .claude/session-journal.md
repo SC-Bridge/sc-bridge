@@ -4,14 +4,16 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Soft deletion + user status fully tested and verified in production.**
+**Admin completion + magic link implemented. Ready to deploy and verify.**
 
 ## Recent Changes
 
-- Migration 0004 applied to remote D1 — `status` + `deleted_at` columns live on `user` table
-- Soft deletion verified end-to-end: tombstone row, PII scrubbed, audit trail preserved, re-login blocked
-- `user_change_history` PII scrub working: `old_value`/`new_value`/`metadata` → `<Account Deleted>` on deletion
-- Tested with two accounts (nzsupernova via Twitch, FatedRetribution via Discord+GitHub) — both clean
+- `magicLink()` plugin added to `src/lib/auth.ts` (10-min expiry, reuses `buildTransactionalEmailHtml`)
+- `magicLinkClient()` added to `frontend/src/lib/auth-client.js`
+- Magic link toggle/form/sent state added to `Login.jsx` (collapsed by default)
+- Impersonation button (UserCheck icon) added to `UserManagement.jsx` per-row actions
+- Amber `ImpersonationBanner` added to `App.jsx` — shows when `session.impersonatedBy` is set
+- `banned ↔ status` sync added to `user.update.after` hook — ban sets `status='banned'`, unban restores `status='active'`
 
 ## Production
 
@@ -32,7 +34,8 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Admin UI for suspend/ban** — uses `status` column added in 0004, separate work
+- **Deploy to production** — push main to trigger CI/CD, verify impersonation + magic link + ban sync
+- **Verify ban sync** — `SELECT banned, status FROM user WHERE id = ?` should show both columns in sync after ban/unban
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
