@@ -227,11 +227,14 @@ function buildImageURLs(url: string): ImageSet {
   const matches = url.match(mediaIDRegex);
   if (matches && matches[1]) {
     const base = "https://media.robertsspaceindustries.com/" + matches[1];
+    // Preserve the file extension from the original URL — RSI uses .jpg for most
+    // ships but .png for some (e.g. 85X Limited). Defaulting to .jpg causes 404s.
+    const ext = url.match(/\.(png)$/i) ? ".png" : ".jpg";
     return {
-      imageURL: base + "/store_large.jpg",
-      small: base + "/store_small.jpg",
-      medium: base + "/store_large.jpg",
-      large: base + "/store_hub_large.jpg",
+      imageURL: base + "/store_large" + ext,
+      small: base + "/store_small" + ext,
+      medium: base + "/store_large" + ext,
+      large: base + "/store_hub_large" + ext,
     };
   }
 
@@ -244,16 +247,18 @@ function buildImageURLs(url: string): ImageSet {
 function findVehicleSlug(rsiName: string, nameToSlug: Map<string, string>): string {
   const lower = rsiName.toLowerCase();
 
-  // 1. Direct name match
-  const direct = nameToSlug.get(lower);
-  if (direct) return direct;
-
-  // 2. Check fuzzy name map
+  // 1. Check shipNameMap first — explicit overrides take priority over DB name matches.
+  //    This ensures entries like "600i touring" → "600i" work even when the DB has
+  //    a vehicle named "600i Touring" that would otherwise be matched in step 2.
   const mapped = shipNameMap[lower];
   if (mapped) {
     const slug = nameToSlug.get(mapped);
     if (slug) return slug;
   }
+
+  // 2. Direct name match
+  const direct = nameToSlug.get(lower);
+  if (direct) return direct;
 
   // 3. Try removing manufacturer prefix
   const spaceIdx = lower.indexOf(" ");
@@ -263,7 +268,7 @@ function findVehicleSlug(rsiName: string, nameToSlug: Map<string, string>): stri
     if (slug) return slug;
 
     // 4. Apply shipNameMap to the prefix-stripped name
-    //    e.g. "AEGIS Ares Inferno" → strip "AEGIS" → "Ares Inferno" → map → "Ares Star Fighter Inferno"
+    //    e.g. "Origin 600i Touring" → strip "Origin" → "600i Touring" → map → "600i"
     const reMapped = shipNameMap[withoutPrefix];
     if (reMapped) {
       const slug2 = nameToSlug.get(reMapped);
