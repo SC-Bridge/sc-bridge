@@ -27,7 +27,7 @@ export default function Login() {
     try {
       const { error } = await authClient.signIn.magicLink({
         email: magicLinkEmail,
-        callbackURL: '/fleet',
+        callbackURL: '/',
       })
       if (error) {
         setMagicLinkError(error.message || 'Failed to send magic link')
