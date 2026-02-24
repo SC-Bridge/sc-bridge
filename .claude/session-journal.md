@@ -4,18 +4,19 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Organisation System fully implemented (all 7 sprints). Needs production deployment + D1 migrations.**
+**Avatar system fully implemented and deployed to production.**
 
 ## Recent Changes
 
-- `src/lib/auth.ts` — `organization()` plugin added with additionalFields (rsiSid, social links) + `sendInvitationEmail` (URL constructed from `data.invitation.id`, not `data.invitationUrl` which doesn't exist)
-- `src/routes/orgs.ts` (NEW) — full org CRUD: list, profile, fleet (visibility-gated), members, analysis, stats
-- `src/routes/fleet.ts` — added `org_visibility` + `available_for_ops` to fleet SELECT; added `PATCH /:id/visibility`
-- `frontend/src/pages/Orgs.jsx` (NEW), `OrgProfile.jsx` (NEW), `AcceptInvitation.jsx` (NEW)
-- `frontend/src/pages/FleetTable.jsx` — per-ship visibility dropdown + ops checkbox (shown when user is in ≥1 org)
-- `frontend/src/pages/Account.jsx` — RSI handle sync, profile display, RsiOrgChip
-- Committed Sprint 1-4 as `8fea4c4`, Sprint 5-6 as `3cb4d0d`
-- Plane Epic 9 (RSI Profile) + Epic 10 (Organisations) — 20 work items, all Done
+- `src/db/migrations/0006_avatar.sql` — ADD gravatar_opted_out INTEGER NOT NULL DEFAULT 0 to user table (applied remotely)
+- `src/lib/gravatar.ts` (NEW) — SHA-256 email hash, HEAD check, returns Gravatar URL or null
+- `wrangler.toml` — R2 binding `AVATARS` → `sc-bridge-avatars` bucket (created in production)
+- `src/lib/types.ts` — AVATARS: R2Bucket added to Env interface
+- `src/routes/account.ts` — 5 new endpoints: avatar-info, PATCH/DELETE avatar, gravatar-opt-out, avatar/upload; RSI sync now auto-sets avatar or prompts Gravatar choice
+- `src/index.ts` — public GET /api/account/avatar/file/:userId (before auth middleware)
+- `frontend/src/App.jsx` — sidebar shows avatar img or User icon fallback
+- `frontend/src/pages/Account.jsx` — avatar section in Profile panel with source buttons + upload + inline choice
+- Committed as `1bac7bc`, pushed + deployed via GitHub Actions
 
 ## Production
 
