@@ -106,7 +106,8 @@ export default function ShipDB() {
     return items
   }, [ships, filter, mfrFilter, sizeFilter, classFilter, statusFilter, sortBy, sortDir])
 
-  // Reset page when filters change
+  // Reset page when filters change; scroll to top when page changes
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
   const resetPage = () => setPage(1)
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); resetPage() }
   const handleSearchChange = (e) => { setFilter(e.target.value); resetPage() }
@@ -217,7 +218,7 @@ export default function ShipDB() {
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 py-4">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => { setPage((p) => Math.max(1, p - 1)); scrollTop() }}
             disabled={page === 1}
             className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
           >
@@ -227,7 +228,7 @@ export default function ShipDB() {
             Page {page} of {totalPages}
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); scrollTop() }}
             disabled={page === totalPages}
             className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
           >

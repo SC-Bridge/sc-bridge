@@ -283,6 +283,12 @@ async function syncGameVersions(db: D1Database, rateLimitMs: number): Promise<vo
   }
 }
 
+// Vehicles to permanently exclude from syncing — non-ship entries that SC Wiki
+// includes but should not appear in the ship database.
+const BLOCKED_VEHICLE_SLUGS = new Set([
+  "power-suit", // Not a ship — EVA/ground suit equipment
+]);
+
 async function syncVehicles(db: D1Database, rateLimitMs: number): Promise<void> {
   const syncID = await insertSyncHistory(db, SYNC_SOURCE.SCWIKI, "vehicles", "running");
 
@@ -310,6 +316,7 @@ async function syncVehicles(db: D1Database, rateLimitMs: number): Promise<void> 
 
     for (const raw of data) {
       const v = raw as SCWikiVehicle;
+      if (BLOCKED_VEHICLE_SLUGS.has(v.slug)) continue;
       try {
         let manufacturerID: number | null = null;
         if (v.manufacturer) {
