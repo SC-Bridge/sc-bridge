@@ -90,7 +90,7 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
     <>
       <div className="p-5 border-b border-sc-border">
         <h1 className="font-display font-bold text-lg tracking-wider text-sc-accent flex items-center gap-2">
-          <Rocket className="w-5 h-5" aria-hidden="true" />
+          <img src="/logo.png" alt="" className="w-6 h-6" aria-hidden="true" />
           SC BRIDGE
         </h1>
         <p className="text-xs font-mono text-gray-500 mt-1 tracking-widest">STAR CITIZEN COMPANION</p>
