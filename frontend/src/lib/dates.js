@@ -11,7 +11,13 @@
  */
 export function formatDate(isoString, timezone) {
   if (!isoString) return '\u2014'
-  const date = new Date(isoString)
+  // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" — no T, no Z.
+  // Browsers treat that space-separated format as local time, not UTC.
+  // Normalise to ISO 8601 UTC so conversion is always correct.
+  let s = isoString.trim()
+  const hasTimezone = s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)
+  if (!hasTimezone) s = s.replace(' ', 'T') + 'Z'
+  const date = new Date(s)
   if (isNaN(date.getTime())) return '\u2014'
 
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -46,7 +52,10 @@ export function formatDate(isoString, timezone) {
  */
 export function formatDateOnly(isoString, timezone) {
   if (!isoString) return '\u2014'
-  const date = new Date(isoString)
+  let s = isoString.trim()
+  const hasTimezone = s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)
+  if (!hasTimezone) s = s.replace(' ', 'T') + 'Z'
+  const date = new Date(s)
   if (isNaN(date.getTime())) return '\u2014'
 
   const parts = new Intl.DateTimeFormat('en-US', {

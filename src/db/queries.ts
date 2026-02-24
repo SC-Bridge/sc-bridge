@@ -969,7 +969,7 @@ export async function insertSyncHistory(
 ): Promise<number> {
   const result = await db
     .prepare(
-      `INSERT INTO sync_history (source_id, endpoint, status, started_at) VALUES (?, ?, ?, datetime('now'))`,
+      `INSERT INTO sync_history (source_id, endpoint, status, started_at) VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`,
     )
     .bind(sourceID, endpoint, status)
     .run();
@@ -985,7 +985,7 @@ export async function updateSyncHistory(
 ): Promise<void> {
   await db
     .prepare(
-      "UPDATE sync_history SET status = ?, record_count = ?, error_message = ?, completed_at = datetime('now') WHERE id = ?",
+      "UPDATE sync_history SET status = ?, record_count = ?, error_message = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
     )
     .bind(status, count, errMsg || null, id)
     .run();
