@@ -4,13 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Avatar system fully implemented, deployed, and tested. Plane Epic 11 created with 13 work items (all Done).**
+**Avatar system complete. Ready for next feature.**
 
 ## Recent Changes
 
 - Avatar system: migration 0006, gravatar.ts, R2 bucket, 5 new endpoints, sidebar display — `1bac7bc`
 - Client-side resize to 512px WebP before upload (1.5 MB PNG → 10 KB WebP, 149× reduction) — `5ea33e3`
-- Plane Epic 11 — Avatar System: 13 work items created, all Done
+- fix: cache-bust avatar URL on upload with `?v=timestamp` so browser fetches fresh after re-upload — `d7d1637`
+- Plane Epic 11 — Avatar System: 14 work items, all Done
 
 ## Key Decisions
 
