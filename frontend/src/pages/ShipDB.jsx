@@ -198,11 +198,11 @@ export default function ShipDB() {
                     <span className="inline-flex items-center gap-1 text-sc-success">
                       <CheckCircle className="w-3 h-3" /> Flight Ready
                     </span>
-                  ) : (
+                  ) : ship.production_status ? (
                     <span className="inline-flex items-center gap-1 text-sc-warn">
-                      <Wrench className="w-3 h-3" /> {ship.production_status || 'Unknown'}
+                      <Wrench className="w-3 h-3" /> {ship.production_status}
                     </span>
-                  )}
+                  ) : null}
                 </span>
                 {ship.pledge_price > 0 && (
                   <span className="text-xs font-mono text-sc-warn">${ship.pledge_price}</span>
