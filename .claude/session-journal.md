@@ -4,14 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Soft deletion + user status implemented. Migration 0004 needs applying to remote D1.**
+**Soft deletion + user status fully tested and verified in production.**
 
 ## Recent Changes
 
-- Migration 0004: `ALTER TABLE user ADD COLUMN status / deleted_at` + 3 new event types (17-19)
-- `DELETE /api/account`: no longer hard-deletes user row — anonymises PII, sets `status='deleted'`; keeps `user_change_history` as audit trail
-- `requireAuth` in `src/index.ts`: rejects non-'active' users (deleted/suspended/banned) even with valid session
-- `change-history.ts`: added `account_suspended` (17), `account_banned` (18), `account_reinstated` (19) to EVENT_TYPE_IDS
+- Migration 0004 applied to remote D1 — `status` + `deleted_at` columns live on `user` table
+- Soft deletion verified end-to-end: tombstone row, PII scrubbed, audit trail preserved, re-login blocked
+- `user_change_history` PII scrub working: `old_value`/`new_value`/`metadata` → `<Account Deleted>` on deletion
+- Tested with two accounts (nzsupernova via Twitch, FatedRetribution via Discord+GitHub) — both clean
 
 ## Production
 
@@ -32,9 +32,8 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Apply migration 0004** — `npx wrangler d1 migrations apply sc-companion --remote`
-- **Verify soft delete** — delete test account, confirm tombstone row + audit trail, confirm re-login blocked
-- **Admin UI for suspend/ban** — uses new statuses but is separate work
+- **Admin UI for suspend/ban** — uses `status` column added in 0004, separate work
+- **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
 **Session compacted at:** 2026-02-23 20:46:45
