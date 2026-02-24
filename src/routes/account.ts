@@ -4,6 +4,7 @@ import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
 import { hashPassword } from "../lib/password";
 import { logUserChange } from "../lib/change-history";
+import { fetchRsiProfile } from "../lib/rsi";
 
 /** Returns the list of social OAuth provider IDs that have CLIENT_ID configured */
 function getConfiguredProviders(env: Env): string[] {
@@ -188,6 +189,93 @@ export function accountRoutes() {
     return c.json({ message: "Export emailed to your registered address" });
   });
 
+  // GET /api/account/rsi-profile — return cached RSI profile for current user
+  routes.get("/rsi-profile", async (c) => {
+    const user = c.get("user")!;
+    const row = await c.env.DB
+      .prepare("SELECT * FROM user_rsi_profile WHERE user_id = ?")
+      .bind(user.id)
+      .first();
+    if (!row) return c.json({ profile: null });
+    const r = row as Record<string, unknown>;
+    return c.json({
+      profile: {
+        handle: r.handle,
+        display_name: r.display_name,
+        citizen_record: r.citizen_record,
+        enlisted_at: r.enlisted_at,
+        avatar_url: r.avatar_url,
+        main_org_slug: r.main_org_slug,
+        orgs: r.orgs_json ? JSON.parse(r.orgs_json as string) : [],
+        fetched_at: r.fetched_at,
+      },
+    });
+  });
+
+  // POST /api/account/rsi-sync — fetch + cache RSI citizen profile
+  // Rate-limited: one sync per 10 minutes per user.
+  routes.post("/rsi-sync", async (c) => {
+    const user = c.get("user")!;
+    const db = c.env.DB;
+
+    const body = await c.req.json<{ handle?: string }>().catch(() => ({ handle: undefined }));
+    if (!body.handle?.trim()) {
+      return c.json({ error: "handle is required" }, 400);
+    }
+    const handle = body.handle.trim();
+
+    // Rate-limit: reject if last sync was < 10 minutes ago
+    const existing = await db
+      .prepare("SELECT fetched_at FROM user_rsi_profile WHERE user_id = ?")
+      .bind(user.id)
+      .first<{ fetched_at: string }>();
+
+    if (existing?.fetched_at) {
+      const lastSync = new Date(existing.fetched_at + "Z").getTime();
+      const elapsed = Date.now() - lastSync;
+      if (elapsed < 10 * 60 * 1000) {
+        const waitSec = Math.ceil((10 * 60 * 1000 - elapsed) / 1000);
+        return c.json({ error: `Rate limit: please wait ${waitSec}s before syncing again` }, 429);
+      }
+    }
+
+    try {
+      const profile = await fetchRsiProfile(handle);
+
+      await db
+        .prepare(`INSERT INTO user_rsi_profile
+            (user_id, handle, display_name, citizen_record, enlisted_at, avatar_url, main_org_slug, orgs_json, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+              handle        = excluded.handle,
+              display_name  = excluded.display_name,
+              citizen_record = excluded.citizen_record,
+              enlisted_at   = excluded.enlisted_at,
+              avatar_url    = excluded.avatar_url,
+              main_org_slug = excluded.main_org_slug,
+              orgs_json     = excluded.orgs_json,
+              fetched_at    = excluded.fetched_at`)
+        .bind(
+          user.id,
+          profile.handle,
+          profile.display_name,
+          profile.citizen_record,
+          profile.enlisted_at,
+          profile.avatar_url,
+          profile.main_org_slug,
+          JSON.stringify(profile.orgs),
+        )
+        .run();
+
+      return c.json({ profile: { ...profile, fetched_at: new Date().toISOString() } });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : "Failed to fetch RSI profile" },
+        502,
+      );
+    }
+  });
+
   // DELETE /api/account — Self-service account deletion
   routes.delete("/", async (c) => {
     const user = c.get("user")!;
@@ -215,6 +303,7 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_rsi_profile WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values
       db.prepare(
         `UPDATE user_change_history SET

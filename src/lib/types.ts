@@ -376,6 +376,54 @@ export interface AIAnalysis {
   analysis: string;
 }
 
+// --- Organisation / RSI Types ---
+
+export type OrgVisibility = 'public' | 'org' | 'officers' | 'private';
+
+export interface OrgFleetEntry extends UserFleetEntry {
+  org_visibility: OrgVisibility;
+  available_for_ops: boolean;
+  owner_name?: string;
+}
+
+export interface OrgMember {
+  id: string;
+  userId: string;
+  organizationId: string;
+  role: string;
+  createdAt: string;
+  userName?: string;
+  userEmail?: string;
+  userImage?: string;
+}
+
+export interface OrgProfile {
+  id: string;
+  name: string;
+  slug: string;
+  logo?: string | null;
+  rsiSid?: string | null;
+  rsiUrl?: string | null;
+  homepage?: string | null;
+  discord?: string | null;
+  twitch?: string | null;
+  youtube?: string | null;
+  createdAt: string;
+  memberCount?: number;
+}
+
+export interface StoredRsiProfile {
+  user_id: string;
+  handle: string;
+  display_name: string | null;
+  citizen_record: string | null;
+  enlisted_at: string | null;
+  avatar_url: string | null;
+  main_org_slug: string | null;
+  orgs_json: string;  // JSON: RsiOrg[]
+  fetched_at: string;
+}
+
 // --- Import Types ---
 
 export interface HangarXplorEntry {

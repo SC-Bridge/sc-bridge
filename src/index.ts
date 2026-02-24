@@ -12,6 +12,7 @@ import { analysisRoutes } from "./routes/analysis";
 import { debugRoutes } from "./routes/debug";
 import { migrateRoutes } from "./routes/migrate";
 import { accountRoutes } from "./routes/account";
+import { orgRoutes } from "./routes/orgs";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
 
@@ -222,6 +223,7 @@ app.route("/api", analysisRoutes());
 app.route("/api/debug", debugRoutes());
 app.route("/api/migrate", migrateRoutes());
 app.route("/api/account", accountRoutes());
+app.route("/api/orgs", orgRoutes());
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {

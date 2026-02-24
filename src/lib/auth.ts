@@ -5,6 +5,7 @@ import { admin } from "better-auth/plugins/admin";
 import { magicLink } from "better-auth/plugins";
 import { twoFactor } from "better-auth/plugins/two-factor";
 import { passkey } from "@better-auth/passkey";
+import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/admin/access";
 import type { Env } from "./types";
@@ -324,6 +325,32 @@ export function createAuth(env: Env) {
         },
         defaultRole: "user",
         adminRoles: ["admin", "super_admin"],
+      }),
+      organization({
+        creatorRole: "owner",
+        allowUserToCreateOrganization: true,
+        additionalFields: {
+          rsiSid:   { type: "string", input: true, required: false },
+          rsiUrl:   { type: "string", input: true, required: false },
+          homepage: { type: "string", input: true, required: false },
+          discord:  { type: "string", input: true, required: false },
+          twitch:   { type: "string", input: true, required: false },
+          youtube:  { type: "string", input: true, required: false },
+        },
+        sendInvitationEmail: async (data) => {
+          const invitationUrl = `${env.BETTER_AUTH_URL}/accept-invitation?id=${data.invitation.id}`;
+          await sendEmail(
+            env,
+            data.invitation.email,
+            `You're invited to join ${data.organization.name} on SC Bridge`,
+            buildTransactionalEmailHtml("You've Been Invited", `
+              <p>You've been invited to join <strong>${escapeHtml(data.organization.name)}</strong> on SC Bridge.</p>
+              <p>Click the button below to accept your invitation:</p>
+              <p style="text-align:center;"><a href="${invitationUrl}" class="cta">Accept Invitation</a></p>
+              <p style="font-size:12px;color:#888;">This invitation will expire in 48 hours. If you don't have an SC Bridge account yet, you'll be prompted to create one.</p>
+            `),
+          );
+        },
       }),
       magicLink({
         expiresIn: 600,

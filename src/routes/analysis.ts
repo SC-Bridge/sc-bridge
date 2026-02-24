@@ -620,7 +620,7 @@ Recommendation: [Specific ship to add]
 /**
  * Fleet analysis — ported from internal/analysis/analysis.go
  */
-function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): FleetAnalysis {
+export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): FleetAnalysis {
   // Overview stats
   let flightReady = 0;
   let inConcept = 0;

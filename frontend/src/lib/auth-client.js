@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { adminClient, magicLinkClient, twoFactorClient } from "better-auth/client/plugins";
+import { adminClient, magicLinkClient, twoFactorClient, organizationClient } from "better-auth/client/plugins";
 import { passkeyClient } from "@better-auth/passkey/client";
 
 export const authClient = createAuthClient({
@@ -13,6 +13,7 @@ export const authClient = createAuthClient({
       },
     }),
     passkeyClient(),
+    organizationClient(),
   ],
 });
 
