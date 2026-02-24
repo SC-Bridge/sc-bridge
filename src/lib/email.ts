@@ -60,6 +60,8 @@ export async function sendEmail(
 
   if (!resp.ok) {
     const text = await resp.text();
-    console.error(`[email] Failed to send: ${resp.status} ${text}`);
+    console.error(`[email] Failed to send to ${to}: ${resp.status} ${text}`);
+  } else {
+    console.log(`[email] Sent "${subject}" to ${to}`);
   }
 }
