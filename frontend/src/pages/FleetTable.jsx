@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { useFleet } from '../hooks/useAPI'
+import { useFleet, useUserOrgs, updateShipVisibility } from '../hooks/useAPI'
 import { ArrowUpDown, SearchX } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -10,13 +10,23 @@ import InsuranceBadge from '../components/InsuranceBadge'
 import ShipImage from '../components/ShipImage'
 import ShipDetailPanel from '../components/ShipDetailPanel'
 
+const VISIBILITY_OPTIONS = [
+  { value: 'private', label: 'Private' },
+  { value: 'org', label: 'Org' },
+  { value: 'officers', label: 'Officers' },
+  { value: 'public', label: 'Public' },
+]
+
 export default function FleetTable() {
-  const { data: fleet, loading, error } = useFleet()
+  const { data: fleet, loading, error, refetch } = useFleet()
+  const { data: orgsData } = useUserOrgs()
   const [sortKey, setSortKey] = useState('vehicle_name')
   const [sortDir, setSortDir] = useState('asc')
   const [filter, setFilter] = useState('')
   const [sizeFilter, setSizeFilter] = useState('all')
   const [selectedId, setSelectedId] = useState(null)
+
+  const inOrgs = !!(orgsData?.orgs?.length > 0)
 
   const sizes = useMemo(() => {
     if (!fleet) return []
@@ -148,12 +158,14 @@ export default function FleetTable() {
                     </th>
                   ))}
                   <th scope="col" className="table-header">Insurance</th>
+                  {inOrgs && <th scope="col" className="table-header">Visibility</th>}
+                  {inOrgs && <th scope="col" className="table-header">Ops</th>}
                 </tr>
               </thead>
               <tbody>
                 {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12">
+                    <td colSpan={inOrgs ? 7 : 5} className="py-12">
                       <div className="flex flex-col items-center gap-3 text-center">
                         <SearchX className="w-10 h-10 text-gray-500" />
                         <p className="text-gray-500 text-sm">No ships match your filters</p>
@@ -208,6 +220,37 @@ export default function FleetTable() {
                       <td className="table-cell">
                         <InsuranceBadge isLifetime={v.is_lifetime} label={v.insurance_label} />
                       </td>
+                      {inOrgs && (
+                        <td className="table-cell" onClick={(e) => e.stopPropagation()}>
+                          <select
+                            value={v.org_visibility || 'private'}
+                            onChange={async (e) => {
+                              await updateShipVisibility(v.id, { org_visibility: e.target.value }).catch(() => {})
+                              refetch()
+                            }}
+                            className="text-xs bg-sc-darker border border-sc-border rounded px-1 py-0.5 text-gray-300 focus:outline-none focus:border-sc-accent"
+                            title="Org visibility for this ship"
+                          >
+                            {VISIBILITY_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                      )}
+                      {inOrgs && (
+                        <td className="table-cell" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={!!v.available_for_ops}
+                            onChange={async (e) => {
+                              await updateShipVisibility(v.id, { available_for_ops: e.target.checked }).catch(() => {})
+                              refetch()
+                            }}
+                            title="Available for ops"
+                            className="accent-sc-accent cursor-pointer"
+                          />
+                        </td>
+                      )}
                     </tr>
                     )
                   })

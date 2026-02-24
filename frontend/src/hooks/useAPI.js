@@ -35,6 +35,24 @@ async function postJSON(path, body) {
   return res.json()
 }
 
+async function patchJSON(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'same-origin',
+  })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || res.statusText)
+  }
+  return res.json()
+}
+
 async function putJSON(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PUT',
@@ -154,6 +172,35 @@ export function useLatestAIAnalysis() {
 
 export function useAIAnalysisHistory() {
   return useAPI('/llm/analysis-history')
+}
+
+// Organisation hooks
+export function useUserOrgs(opts) {
+  return useAPI('/orgs', opts)
+}
+
+export function useOrgProfile(slug) {
+  return useAPI(slug ? `/orgs/${slug}` : null, { skip: !slug })
+}
+
+export function useOrgFleet(slug) {
+  return useAPI(slug ? `/orgs/${slug}/fleet` : null, { skip: !slug })
+}
+
+export function useOrgMembers(slug) {
+  return useAPI(slug ? `/orgs/${slug}/members` : null, { skip: !slug })
+}
+
+export function useOrgAnalysis(slug) {
+  return useAPI(slug ? `/orgs/${slug}/analysis` : null, { skip: !slug })
+}
+
+export function useOrgStats(slug) {
+  return useAPI(slug ? `/orgs/${slug}/stats` : null, { skip: !slug })
+}
+
+export async function updateShipVisibility(fleetEntryId, updates) {
+  return patchJSON(`/vehicles/${fleetEntryId}/visibility`, updates)
 }
 
 export async function deleteAIAnalysis(id) {

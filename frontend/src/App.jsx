@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2 } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
@@ -25,6 +25,9 @@ const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
 const Privacy = lazy(() => import('./pages/Privacy'))
 const Terms = lazy(() => import('./pages/Terms'))
+const Orgs = lazy(() => import('./pages/Orgs'))
+const OrgProfile = lazy(() => import('./pages/OrgProfile'))
+const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
@@ -47,6 +50,7 @@ const authNavItems = [
   { to: '/ships', icon: Database, label: 'Ship DB' },
   { to: '/import', icon: Upload, label: 'Import' },
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
+  { to: '/orgs', icon: Building2, label: 'Orgs' },
 ]
 
 const adminNavItems = [
@@ -261,6 +265,7 @@ export default function App() {
       <Route path="/verify-email" element={<Suspense fallback={<LoadingState fullScreen />}><VerifyEmail /></Suspense>} />
       <Route path="/privacy" element={<Suspense fallback={<LoadingState fullScreen />}><Privacy /></Suspense>} />
       <Route path="/terms" element={<Suspense fallback={<LoadingState fullScreen />}><Terms /></Suspense>} />
+      <Route path="/accept-invitation" element={<Suspense fallback={<LoadingState fullScreen />}><AcceptInvitation /></Suspense>} />
 
       {/* App routes — with sidebar layout */}
       <Route
@@ -341,6 +346,8 @@ export default function App() {
                     <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                     <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
                     <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
+                    <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
+                    <Route path="/orgs/:slug" element={<OrgProfile />} />
                   </Routes>
                 </Suspense>
               </div>

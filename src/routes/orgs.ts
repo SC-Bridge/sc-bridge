@@ -12,6 +12,29 @@ import { analyzeFleet } from "./analysis";
 export function orgRoutes() {
   const routes = new Hono<HonoEnv>();
 
+  // GET /api/orgs — list orgs the authenticated user belongs to
+  routes.get("/", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const db = c.env.DB;
+
+    const orgs = await db
+      .prepare(
+        `SELECT o.id, o.name, o.slug, o.logo, o.rsiSid, o.rsiUrl, mb.role,
+          COUNT(DISTINCT m2.userId) as memberCount
+        FROM organization o
+        JOIN member mb ON mb.organizationId = o.id AND mb.userId = ?
+        LEFT JOIN member m2 ON m2.organizationId = o.id
+        GROUP BY o.id, o.name, o.slug, o.logo, o.rsiSid, o.rsiUrl, mb.role
+        ORDER BY o.name`,
+      )
+      .bind(user.id)
+      .all();
+
+    return c.json({ orgs: orgs.results });
+  });
+
   // GET /api/orgs/:slug — public org profile
   routes.get("/:slug", async (c) => {
     const slug = c.req.param("slug");
