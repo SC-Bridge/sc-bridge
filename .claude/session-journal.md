@@ -38,16 +38,30 @@ This file maintains running context across compactions.
 - Better Auth org tables use camelCase column names in D1: `organizationId`, `userId`, `createdAt`
 - `org_visibility` values: `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
 
+## Discord Exporter (home-ops)
+
+- **Deployed:** `discord-exporter` CronJob in `home-automation` namespace — `home-ops` commits `0c436c0`, `1f56a75`, `e627ca0`
+- **Runs:** Weekly Sunday 03:00; manual trigger: `kubectl create job -n home-automation --from=cronjob/discord-exporter <name>`
+- **Output:** NFS at `citadel.internal:/mnt/storage0/discord-exports` (chmod 777, owned apps:apps)
+- **Token:** Personal Discord user token (NOT bot token, NOT "Bearer" prefix) — 1Password item `discord-exporter`, field `DISCORD_TOKEN`
+- **Guild:** StarFab/scdatatools community — ID `710322530992390177`; 444 files / 14MB exported including forum threads (`--include-threads all`)
+- **Forbidden channels:** Admin channels + `asset-creation` — no access, expected
+
 ## What's Next
 
 - **Trigger RSI sync from /admin** after CI deploys — will fill in Carrack, Sabre, Gladiator, Redeemer, Ballista Dunestalker/Snowblind, M50, Nox Kue, Hawk, Dragonfly Yellowjacket, P-72 Emerald, Sabre Raven, Ares Inferno, and Hornet variants
 - **Expand shipNameMap** in src/sync/rsi.ts if any ships are still skipped after sync
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+- **Read Discord export** — parse `starfab-support` and `renderer-support` forum threads for StarFab/Blender pipeline help
 
 ---
 **Session compacted at:** 2026-02-24 19:57:21
 
 ---
 **Session compacted at:** 2026-02-24 20:40:52
+
+
+---
+**Session compacted at:** 2026-02-25 14:59:37
 
