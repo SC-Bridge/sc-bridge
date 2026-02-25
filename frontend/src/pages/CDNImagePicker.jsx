@@ -1,11 +1,21 @@
-import React, { useState, useMemo, useRef } from 'react'
-import { Upload, CheckCircle, Image, Palette, AlertCircle, X } from 'lucide-react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { Upload, CheckCircle, Image, Palette, AlertCircle, X, ChevronRight, Save, Layers } from 'lucide-react'
 import { applyCDNSelections } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
 import SearchInput from '../components/SearchInput'
 
-// --- File upload drop zone ---
+const LS_KEY_SHIPS = 'cdn_picker_ship_candidates'
+const LS_KEY_PAINTS = 'cdn_picker_paint_candidates'
+
+function loadFromLS(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') } catch { return null }
+}
+function saveToLS(key, value) {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+// --- File drop zone ---
 
 function DropZone({ label, icon: Icon, loaded, count, onFile }) {
   const inputRef = useRef(null)
@@ -15,12 +25,7 @@ function DropZone({ label, icon: Icon, loaded, count, onFile }) {
     if (!file) return
     const reader = new FileReader()
     reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target.result)
-        onFile(data)
-      } catch {
-        // invalid JSON — ignore
-      }
+      try { onFile(JSON.parse(e.target.result)) } catch { /* invalid JSON */ }
     }
     reader.readAsText(file)
   }
@@ -39,13 +44,8 @@ function DropZone({ label, icon: Icon, loaded, count, onFile }) {
             : 'border-sc-border hover:border-sc-accent/50 hover:bg-white/[0.02]'
         }`}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".json"
-        className="hidden"
-        onChange={(e) => handleFile(e.target.files[0])}
-      />
+      <input ref={inputRef} type="file" accept=".json" className="hidden"
+        onChange={(e) => handleFile(e.target.files[0])} />
       {loaded ? (
         <>
           <CheckCircle className="w-6 h-6 text-sc-success" />
@@ -63,17 +63,20 @@ function DropZone({ label, icon: Icon, loaded, count, onFile }) {
   )
 }
 
-// --- Single image thumbnail ---
+// --- Image thumbnail ---
 
-function ImageThumb({ url, selected, onClick }) {
+function ImageThumb({ url, state, onClick }) {
+  // state: null | 'candidate' | 'primary'
   return (
     <button
       type="button"
       onClick={onClick}
       className={`relative shrink-0 rounded overflow-hidden transition-all
-        ${selected
-          ? 'ring-2 ring-sc-accent ring-offset-1 ring-offset-sc-panel'
-          : 'ring-1 ring-sc-border hover:ring-sc-accent/50'
+        ${state === 'primary'
+          ? 'ring-2 ring-sc-accent ring-offset-2 ring-offset-sc-panel'
+          : state === 'candidate'
+            ? 'ring-2 ring-sc-warn/70 ring-offset-1 ring-offset-sc-panel'
+            : 'ring-1 ring-sc-border hover:ring-sc-accent/50'
         }`}
       style={{ width: 160, height: 90 }}
     >
@@ -84,25 +87,35 @@ function ImageThumb({ url, selected, onClick }) {
         className="w-full h-full object-cover"
         onError={(e) => { e.currentTarget.style.opacity = '0.2' }}
       />
-      {selected && (
+      {state === 'primary' && (
         <span className="absolute top-1 right-1 bg-sc-accent rounded-full p-0.5">
           <CheckCircle className="w-3 h-3 text-white" />
+        </span>
+      )}
+      {state === 'candidate' && (
+        <span className="absolute top-1 right-1 bg-sc-warn/90 rounded-full p-0.5">
+          <Layers className="w-3 h-3 text-white" />
         </span>
       )}
     </button>
   )
 }
 
-// --- Card for a single ship or paint ---
+// --- Phase 1 card: multi-select candidates ---
 
-function ItemCard({ item, selected, onSelect }) {
+function SelectCard({ item, candidates, onToggle }) {
   const images = item.images || []
+  const count = candidates.length
 
   return (
-    <div className="bg-sc-darker border border-sc-border rounded p-3 space-y-2">
+    <div className={`bg-sc-darker border rounded p-3 space-y-2 transition-colors ${
+      count > 0 ? 'border-sc-warn/40' : 'border-sc-border'
+    }`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-white truncate">{item.name}</span>
-        <span className="text-xs text-gray-600 shrink-0">{images.length} img</span>
+        <span className={`text-xs shrink-0 ${count > 0 ? 'text-sc-warn' : 'text-gray-600'}`}>
+          {count > 0 ? `${count} selected` : `${images.length} img`}
+        </span>
       </div>
       {images.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -110,8 +123,8 @@ function ItemCard({ item, selected, onSelect }) {
             <ImageThumb
               key={i}
               url={img.url}
-              selected={selected === img.url}
-              onClick={() => onSelect(item.name, selected === img.url ? null : img.url)}
+              state={candidates.includes(img.url) ? 'candidate' : null}
+              onClick={() => onToggle(item.name, img.url)}
             />
           ))}
         </div>
@@ -122,81 +135,216 @@ function ItemCard({ item, selected, onSelect }) {
   )
 }
 
+// --- Phase 2 card: pick primary from saved candidates ---
+
+function PrimaryCard({ name, candidates, primary, onPick }) {
+  return (
+    <div className={`bg-sc-darker border rounded p-3 space-y-2 transition-colors ${
+      primary ? 'border-sc-accent/40' : 'border-sc-warn/30'
+    }`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-white truncate">{name}</span>
+        <span className={`text-xs shrink-0 ${primary ? 'text-sc-accent' : 'text-gray-500'}`}>
+          {primary ? 'primary set' : `${candidates.length} candidates`}
+        </span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {candidates.map((url, i) => (
+          <ImageThumb
+            key={i}
+            url={url}
+            state={primary === url ? 'primary' : 'candidate'}
+            onClick={() => onPick(name, primary === url ? null : url)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // --- Main page ---
 
 export default function CDNImagePicker() {
+  const [phase, setPhase] = useState('select') // 'select' | 'primary'
+
+  // Phase 1 — loaded JSON data
   const [shipsData, setShipsData] = useState(null)
   const [paintsData, setPaintsData] = useState(null)
+
+  // Phase 1 — multi-select candidates: { [name]: string[] }
+  const [shipCandidates, setShipCandidates] = useState(() => loadFromLS(LS_KEY_SHIPS) || {})
+  const [paintCandidates, setPaintCandidates] = useState(() => loadFromLS(LS_KEY_PAINTS) || {})
+
+  // Phase 2 — single primary per item: { [name]: string }
+  const [shipPrimaries, setShipPrimaries] = useState({})
+  const [paintPrimaries, setPaintPrimaries] = useState({})
+
   const [activeTab, setActiveTab] = useState('ships')
-  const [shipSelections, setShipSelections] = useState({})   // name → imageURL
-  const [paintSelections, setPaintSelections] = useState({}) // name → imageURL
   const [search, setSearch] = useState('')
   const [applying, setApplying] = useState(false)
   const [result, setResult] = useState(null)
-  const [error, setError] = useState(null)
+  const [applyError, setApplyError] = useState(null)
 
-  const activeItems = activeTab === 'ships' ? shipsData?.ships : paintsData?.paints
-  const activeSelections = activeTab === 'ships' ? shipSelections : paintSelections
-  const setActiveSelections = activeTab === 'ships' ? setShipSelections : setPaintSelections
+  // Auto-switch to primary phase if we already have saved candidates
+  useEffect(() => {
+    const hasCandidates =
+      Object.keys(shipCandidates).length > 0 || Object.keys(paintCandidates).length > 0
+    if (hasCandidates) setPhase('primary')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = useMemo(() => {
-    if (!activeItems) return []
-    const q = search.toLowerCase()
-    return q ? activeItems.filter(i => i.name.toLowerCase().includes(q)) : activeItems
-  }, [activeItems, search])
+  // --- Phase 1 helpers ---
 
-  const shipCount = Object.keys(shipSelections).length
-  const paintCount = Object.keys(paintSelections).length
-  const totalSelected = shipCount + paintCount
+  const toggleCandidate = (type, name, url) => {
+    const setter = type === 'ships' ? setShipCandidates : setPaintCandidates
+    setter(prev => {
+      const current = prev[name] || []
+      const next = current.includes(url)
+        ? current.filter(u => u !== url)
+        : [...current, url]
+      return next.length > 0 ? { ...prev, [name]: next } : (({ [name]: _, ...rest }) => rest)(prev)
+    })
+  }
 
-  const handleSelect = (name, imageURL) => {
-    setActiveSelections(prev => {
-      const next = { ...prev }
-      if (imageURL === null) {
-        delete next[name]
-      } else {
-        next[name] = imageURL
+  const saveSelections = () => {
+    saveToLS(LS_KEY_SHIPS, shipCandidates)
+    saveToLS(LS_KEY_PAINTS, paintCandidates)
+    setPhase('primary')
+  }
+
+  const clearSelections = () => {
+    setShipCandidates({})
+    setPaintCandidates({})
+    setShipPrimaries({})
+    setPaintPrimaries({})
+    localStorage.removeItem(LS_KEY_SHIPS)
+    localStorage.removeItem(LS_KEY_PAINTS)
+    setPhase('select')
+  }
+
+  // --- Phase 2 helpers ---
+
+  const setPrimary = (type, name, url) => {
+    const setter = type === 'ships' ? setShipPrimaries : setPaintPrimaries
+    setter(prev => {
+      if (url === null) {
+        const { [name]: _, ...rest } = prev
+        return rest
       }
-      return next
+      return { ...prev, [name]: url }
     })
   }
 
   const handleApply = async () => {
     setApplying(true)
-    setError(null)
+    setApplyError(null)
     setResult(null)
     try {
-      const ships = Object.entries(shipSelections).map(([name, imageURL]) => ({ name, imageURL }))
-      const paints = Object.entries(paintSelections).map(([name, imageURL]) => ({ name, imageURL }))
+      const ships = Object.entries(shipPrimaries).map(([name, imageURL]) => ({ name, imageURL }))
+      const paints = Object.entries(paintPrimaries).map(([name, imageURL]) => ({ name, imageURL }))
       const res = await applyCDNSelections({ ships, paints })
       setResult(res)
     } catch (err) {
-      setError(err.message || 'Apply failed')
+      setApplyError(err.message || 'Apply failed')
     } finally {
       setApplying(false)
     }
   }
 
-  const noData = !shipsData && !paintsData
+  // --- Derived counts ---
+
+  const shipCandidateCount = Object.keys(shipCandidates).length
+  const paintCandidateCount = Object.keys(paintCandidates).length
+  const totalCandidates = shipCandidateCount + paintCandidateCount
+  const shipPrimaryCount = Object.keys(shipPrimaries).length
+  const paintPrimaryCount = Object.keys(paintPrimaries).length
+  const totalPrimaries = shipPrimaryCount + paintPrimaryCount
+
+  // --- Phase 1 filtered items ---
+
+  const phase1Items = activeTab === 'ships' ? shipsData?.ships : paintsData?.paints
+  const filteredPhase1 = useMemo(() => {
+    if (!phase1Items) return []
+    const q = search.toLowerCase()
+    return q ? phase1Items.filter(i => i.name.toLowerCase().includes(q)) : phase1Items
+  }, [phase1Items, search])
+
+  // --- Phase 2 filtered items (from saved candidates) ---
+
+  const phase2Source = activeTab === 'ships' ? shipCandidates : paintCandidates
+  const phase2Primaries = activeTab === 'ships' ? shipPrimaries : paintPrimaries
+  const filteredPhase2 = useMemo(() => {
+    const entries = Object.entries(phase2Source)
+    const q = search.toLowerCase()
+    return q ? entries.filter(([name]) => name.toLowerCase().includes(q)) : entries
+  }, [phase2Source, search])
+
+  const noPhase1Data = !shipsData && !paintsData
+
+  // ===== RENDER =====
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="CDN IMAGE PICKER"
-        subtitle="Review and select primary images from CDN crawl data"
+        subtitle={phase === 'select' ? 'Phase 1 — select candidate images' : 'Phase 2 — pick a primary image'}
         actions={
-          totalSelected > 0 && (
-            <button
-              onClick={handleApply}
-              disabled={applying}
-              className="btn-primary flex items-center gap-2"
-            >
-              <CheckCircle className="w-3.5 h-3.5" />
-              {applying ? 'Applying...' : `Apply Selected (${totalSelected})`}
-            </button>
+          phase === 'select' ? (
+            totalCandidates > 0 && (
+              <button onClick={saveSelections} className="btn-primary flex items-center gap-2">
+                <Save className="w-3.5 h-3.5" />
+                Save &amp; Go to Phase 2 ({totalCandidates})
+              </button>
+            )
+          ) : (
+            totalPrimaries > 0 && (
+              <button onClick={handleApply} disabled={applying} className="btn-primary flex items-center gap-2">
+                <CheckCircle className="w-3.5 h-3.5" />
+                {applying ? 'Applying...' : `Apply Primary (${totalPrimaries})`}
+              </button>
+            )
           )
         }
       />
+
+      {/* Phase toggle strip */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setPhase('select')}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
+            phase === 'select'
+              ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
+              : 'text-gray-500 border border-transparent hover:text-gray-300'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          Phase 1 · Select Candidates
+          {totalCandidates > 0 && <span className="text-sc-warn">({totalCandidates})</span>}
+        </button>
+        <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+        <button
+          onClick={() => totalCandidates > 0 && setPhase('primary')}
+          disabled={totalCandidates === 0}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
+            phase === 'primary'
+              ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
+              : totalCandidates > 0
+                ? 'text-gray-500 border border-transparent hover:text-gray-300'
+                : 'text-gray-700 border border-transparent cursor-not-allowed'
+          }`}
+        >
+          <CheckCircle className="w-3.5 h-3.5" />
+          Phase 2 · Pick Primary
+          {totalPrimaries > 0 && <span className="text-sc-accent">({totalPrimaries})</span>}
+        </button>
+        {totalCandidates > 0 && (
+          <button
+            onClick={clearSelections}
+            className="ml-auto text-xs text-gray-600 hover:text-sc-danger transition-colors flex items-center gap-1"
+          >
+            <X className="w-3 h-3" /> Clear all
+          </button>
+        )}
+      </div>
 
       {/* Result banner */}
       {result && (
@@ -217,105 +365,152 @@ export default function CDNImagePicker() {
         </div>
       )}
 
-      {/* Error banner */}
-      {error && (
+      {applyError && (
         <div className="flex items-center gap-2 p-3 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+          <span>{applyError}</span>
         </div>
       )}
 
-      {/* File upload */}
-      <PanelSection title="Load CDN Export Files">
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <DropZone
-            label="ships.json"
-            icon={Image}
-            loaded={!!shipsData}
-            count={shipsData?.ships?.length}
-            onFile={(data) => { setShipsData(data); setShipSelections({}) }}
-          />
-          <DropZone
-            label="paints.json"
-            icon={Palette}
-            loaded={!!paintsData}
-            count={paintsData?.paints?.length}
-            onFile={(data) => { setPaintsData(data); setPaintSelections({}) }}
-          />
-        </div>
-      </PanelSection>
+      {/* ===== PHASE 1 ===== */}
+      {phase === 'select' && (
+        <>
+          {/* File upload */}
+          <PanelSection title="Load CDN Export Files">
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <DropZone label="ships.json" icon={Image} loaded={!!shipsData}
+                count={shipsData?.ships?.length}
+                onFile={(data) => { setShipsData(data); setShipCandidates({}) }} />
+              <DropZone label="paints.json" icon={Palette} loaded={!!paintsData}
+                count={paintsData?.paints?.length}
+                onFile={(data) => { setPaintsData(data); setPaintCandidates({}) }} />
+            </div>
+            <p className="px-4 pb-4 text-xs text-gray-600">
+              Click or tap images to add them as candidates. You can select multiple per ship. Hit "Save &amp; Go to Phase 2" when done.
+            </p>
+          </PanelSection>
 
-      {/* Image picker */}
-      {!noData && (
+          {!noPhase1Data && (
+            <PanelSection>
+              <div className="flex items-center gap-4 px-4 pt-4 pb-3 border-b border-sc-border/50">
+                <div className="flex gap-1">
+                  {shipsData && (
+                    <button onClick={() => { setActiveTab('ships'); setSearch('') }}
+                      className={`px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
+                        activeTab === 'ships'
+                          ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
+                          : 'text-gray-400 hover:text-gray-300 border border-transparent'
+                      }`}>
+                      Ships ({shipsData.ships.length})
+                      {shipCandidateCount > 0 && <span className="ml-1 text-sc-warn">·{shipCandidateCount}</span>}
+                    </button>
+                  )}
+                  {paintsData && (
+                    <button onClick={() => { setActiveTab('paints'); setSearch('') }}
+                      className={`px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
+                        activeTab === 'paints'
+                          ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
+                          : 'text-gray-400 hover:text-gray-300 border border-transparent'
+                      }`}>
+                      Paints ({paintsData.paints.length})
+                      {paintCandidateCount > 0 && <span className="ml-1 text-sc-warn">·{paintCandidateCount}</span>}
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <SearchInput value={search} onChange={(e) => setSearch(e.target.value)}
+                    placeholder={`Search ${activeTab}…`} />
+                </div>
+                <span className="text-xs text-gray-500 shrink-0">
+                  {filteredPhase1.length} / {phase1Items?.length ?? 0}
+                </span>
+              </div>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {filteredPhase1.map((item) => {
+                  const candidates = (activeTab === 'ships' ? shipCandidates : paintCandidates)[item.name] || []
+                  return (
+                    <SelectCard
+                      key={item.name}
+                      item={item}
+                      candidates={candidates}
+                      onToggle={(name, url) => toggleCandidate(activeTab, name, url)}
+                    />
+                  )
+                })}
+                {filteredPhase1.length === 0 && (
+                  <p className="col-span-full text-center text-gray-500 text-sm py-8">
+                    {search ? 'No matches.' : 'No items loaded.'}
+                  </p>
+                )}
+              </div>
+            </PanelSection>
+          )}
+
+          {noPhase1Data && (
+            <div className="text-center text-gray-500 text-sm py-12">
+              <Upload className="w-8 h-8 mx-auto mb-3 text-gray-700" />
+              <p>Load ships.json and/or paints.json from the cdn-sync export above.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ===== PHASE 2 ===== */}
+      {phase === 'primary' && (
         <PanelSection>
-          {/* Tabs + search */}
           <div className="flex items-center gap-4 px-4 pt-4 pb-3 border-b border-sc-border/50">
             <div className="flex gap-1">
-              {shipsData && (
-                <button
-                  onClick={() => { setActiveTab('ships'); setSearch('') }}
+              {shipCandidateCount > 0 && (
+                <button onClick={() => { setActiveTab('ships'); setSearch('') }}
                   className={`px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
                     activeTab === 'ships'
                       ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
                       : 'text-gray-400 hover:text-gray-300 border border-transparent'
-                  }`}
-                >
-                  Ships ({shipsData.ships.length})
-                  {shipCount > 0 && <span className="ml-1.5 text-sc-accent">·{shipCount}</span>}
+                  }`}>
+                  Ships ({shipCandidateCount})
+                  {shipPrimaryCount > 0 && <span className="ml-1 text-sc-accent">·{shipPrimaryCount}</span>}
                 </button>
               )}
-              {paintsData && (
-                <button
-                  onClick={() => { setActiveTab('paints'); setSearch('') }}
+              {paintCandidateCount > 0 && (
+                <button onClick={() => { setActiveTab('paints'); setSearch('') }}
                   className={`px-3 py-1.5 rounded text-xs font-display tracking-wide uppercase transition-colors ${
                     activeTab === 'paints'
                       ? 'bg-sc-accent/20 text-sc-accent border border-sc-accent/30'
                       : 'text-gray-400 hover:text-gray-300 border border-transparent'
-                  }`}
-                >
-                  Paints ({paintsData.paints.length})
-                  {paintCount > 0 && <span className="ml-1.5 text-sc-accent">·{paintCount}</span>}
+                  }`}>
+                  Paints ({paintCandidateCount})
+                  {paintPrimaryCount > 0 && <span className="ml-1 text-sc-accent">·{paintPrimaryCount}</span>}
                 </button>
               )}
             </div>
             <div className="flex-1">
-              <SearchInput
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${activeTab}…`}
-              />
+              <SearchInput value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${activeTab}…`} />
             </div>
-            {activeItems && (
-              <span className="text-xs text-gray-500 shrink-0">
-                {filtered.length} / {activeItems.length}
-              </span>
-            )}
+            <span className="text-xs text-gray-500 shrink-0">
+              {filteredPhase2.length} / {Object.keys(phase2Source).length}
+            </span>
           </div>
-
-          {/* Card grid */}
+          <p className="px-4 pt-3 text-xs text-gray-600">
+            These are your saved candidates. Click one image per ship to mark it as the primary, then hit Apply.
+          </p>
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filtered.map((item) => (
-              <ItemCard
-                key={item.name}
-                item={item}
-                selected={activeSelections[item.name] ?? null}
-                onSelect={handleSelect}
+            {filteredPhase2.map(([name, candidates]) => (
+              <PrimaryCard
+                key={name}
+                name={name}
+                candidates={candidates}
+                primary={phase2Primaries[name] ?? null}
+                onPick={(n, url) => setPrimary(activeTab, n, url)}
               />
             ))}
-            {filtered.length === 0 && (
+            {filteredPhase2.length === 0 && (
               <p className="col-span-full text-center text-gray-500 text-sm py-8">
-                {search ? 'No matches for your search.' : 'No items loaded.'}
+                {search ? 'No matches.' : 'No candidates saved yet — go back to Phase 1.'}
               </p>
             )}
           </div>
         </PanelSection>
-      )}
-
-      {noData && (
-        <div className="text-center text-gray-500 text-sm py-12">
-          <Upload className="w-8 h-8 mx-auto mb-3 text-gray-700" />
-          <p>Load ships.json and/or paints.json from the cdn-sync export above to get started.</p>
-        </div>
       )}
     </div>
   )
