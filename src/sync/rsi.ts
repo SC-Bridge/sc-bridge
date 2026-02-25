@@ -72,7 +72,7 @@ interface ImageSet {
   large: string;
 }
 
-interface PaintInfo {
+export interface PaintInfo {
   norm: string;
   className: string;
   hasImage: boolean;
@@ -115,7 +115,7 @@ const browseQuery = `query GetBrowseItems($query: SearchQuery) {
 
 // --- Ship name mapping (RSI name → DB name, both lowercased) ---
 
-const shipNameMap: Record<string, string> = {
+export const shipNameMap: Record<string, string> = {
   "600i explorer": "600i",
   "600i touring": "600i",
   "a2 hercules": "a2 hercules starlifter",
@@ -154,7 +154,7 @@ const shipNameMap: Record<string, string> = {
 
 // --- Paint ship aliases (abbreviated RSI ship name → full DB ship name) ---
 
-const paintShipAliases: Record<string, string> = {
+export const paintShipAliases: Record<string, string> = {
   ares: "Ares Star Fighter",
   hercules: "Hercules Starlifter",
   mercury: "Mercury Star Runner",
@@ -244,7 +244,7 @@ function buildImageURLs(url: string): ImageSet {
 
 // --- Vehicle slug matching ---
 
-function findVehicleSlug(rsiName: string, nameToSlug: Map<string, string>): string {
+export function findVehicleSlug(rsiName: string, nameToSlug: Map<string, string>): string {
   const lower = rsiName.toLowerCase();
 
   // 1. Check shipNameMap first — explicit overrides take priority over DB name matches.
@@ -301,7 +301,7 @@ function findBaseVehicleImages(
 
 const yearRegex = /\b\d{4}\b/g;
 
-function normalizePaintName(name: string): string {
+export function normalizePaintName(name: string): string {
   let n = name.toLowerCase().trim();
   n = n.replace(/ paint$/, "");
   n = n.replace(/ livery$/, "");
@@ -350,7 +350,7 @@ function stripYears(s: string): string {
   return result.split(/\s+/).filter(Boolean).join(" ");
 }
 
-function findPaintMatch(
+export function findPaintMatch(
   norm: string,
   exactLookup: Map<string, PaintInfo>,
   allDBPaints: PaintInfo[],
