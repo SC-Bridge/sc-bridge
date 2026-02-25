@@ -234,3 +234,104 @@ export async function syncCDNPaintImages(
     throw err;
   }
 }
+
+// --- User-selected image apply ---
+
+export interface NamedImage {
+  name: string;
+  imageURL: string;
+}
+
+export interface ApplyResult {
+  ships: CDNSyncResult;
+  paints: CDNSyncResult;
+}
+
+/**
+ * Apply user-selected (name, imageURL) pairs directly to D1.
+ * Called by the CDN image picker admin UI after the user has reviewed
+ * all available images and chosen one per ship/paint.
+ */
+export async function applyImageSelections(
+  db: D1Database,
+  ships: NamedImage[],
+  paints: NamedImage[],
+): Promise<ApplyResult> {
+  // --- Ships ---
+  const vehicles = await getAllVehicleNameSlugs(db);
+  const nameToSlug = new Map<string, string>();
+  for (const v of vehicles) {
+    nameToSlug.set(v.name.toLowerCase(), v.slug);
+  }
+
+  const shipStmts: D1PreparedStatement[] = [];
+  let shipMatched = 0;
+  let shipSkipped = 0;
+  for (const { name, imageURL } of ships) {
+    const slug = findVehicleSlug(name, nameToSlug);
+    if (!slug) {
+      console.log(`[cdn:apply] No slug for ship: ${name}`);
+      shipSkipped++;
+      continue;
+    }
+    shipStmts.push(
+      buildUpdateVehicleImagesStatement(db, slug, imageURL, imageURL, imageURL, imageURL),
+    );
+    shipMatched++;
+  }
+  for (const chunk of chunkArray(shipStmts, 500)) {
+    await db.batch(chunk);
+  }
+
+  // --- Paints ---
+  const dbPaints = await getAllPaintNameClasses(db);
+  const exactLookup = new Map<string, PaintInfo>();
+  const allDBPaints: PaintInfo[] = [];
+  for (const p of dbPaints) {
+    const info: PaintInfo = {
+      norm: normalizePaintName(p.name),
+      className: p.class_name,
+      hasImage: p.has_image,
+    };
+    exactLookup.set(info.norm, info);
+    allDBPaints.push(info);
+  }
+
+  const paintStmts: D1PreparedStatement[] = [];
+  let paintMatched = 0;
+  let paintSkipped = 0;
+  for (const { name, imageURL } of paints) {
+    const norm = normalizeCDNPaintName(name);
+    let info = findPaintMatch(norm, exactLookup, allDBPaints);
+    if (!info) {
+      const expanded = expandCDNPaintPrefix(norm);
+      if (expanded !== norm) {
+        info = findPaintMatch(expanded, exactLookup, allDBPaints);
+      }
+    }
+    if (!info) {
+      console.log(`[cdn:apply] No match for paint: ${name}`);
+      paintSkipped++;
+      continue;
+    }
+    paintStmts.push(
+      buildUpdatePaintImagesStatement(db, info.className, imageURL, imageURL, imageURL, imageURL),
+    );
+    paintMatched++;
+  }
+  for (const chunk of chunkArray(paintStmts, 500)) {
+    await db.batch(chunk);
+  }
+
+  logEvent("sync_cdn_apply", {
+    ships_matched: shipMatched,
+    ships_skipped: shipSkipped,
+    paints_matched: paintMatched,
+    paints_skipped: paintSkipped,
+  });
+
+  return {
+    ships: { matched: shipMatched, skipped: shipSkipped, total: ships.length },
+    paints: { matched: paintMatched, skipped: paintSkipped, total: paints.length },
+  };
+}

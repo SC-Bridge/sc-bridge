@@ -11,8 +11,10 @@ import {
 import {
   syncCDNShipImages,
   syncCDNPaintImages,
+  applyImageSelections,
   type CDNShipsExport,
   type CDNPaintsExport,
+  type NamedImage,
 } from "../sync/cdn";
 
 /**
@@ -130,6 +132,27 @@ export function syncRoutes<E extends { Bindings: Env }>() {
     try {
       const result = await syncCDNPaintImages(c.env.DB, body);
       return c.json({ message: "CDN paint sync complete", ...result });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  });
+
+  // POST /api/sync/cdn/apply — apply user-selected (name, imageURL) pairs from CDN image picker
+  routes.post("/cdn/apply", async (c) => {
+    let body: { ships?: NamedImage[]; paints?: NamedImage[] };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const ships = Array.isArray(body?.ships) ? body.ships : [];
+    const paints = Array.isArray(body?.paints) ? body.paints : [];
+    if (ships.length === 0 && paints.length === 0) {
+      return c.json({ error: "No selections provided" }, 400);
+    }
+    try {
+      const result = await applyImageSelections(c.env.DB, ships, paints);
+      return c.json({ message: "CDN image selections applied", ...result });
     } catch (err) {
       return c.json({ error: String(err) }, 500);
     }
