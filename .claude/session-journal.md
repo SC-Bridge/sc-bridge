@@ -4,14 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**RSI URL reverse engineering complete. 268/268 ship image coverage. Awaiting next task from user.**
+**vehicle_images backfill complete. 268/268 vehicles have rows. All 8 rsi_cdn_old gaps filled (3 permanently skipped — no old-CDN assets).**
 
 ## Recent Changes
 
 - `vehicle_images` table (migration 0007, renamed in 0008) — tracks rsi_cdn_new, rsi_cdn_old, rsi_graphql per vehicle
 - `parent_vehicle_id` added to vehicles — special editions inherit base ship image
 - 268/268 ships have images — commits `ca97bb6`, `965fb67`
-- Reverse engineered RSI CDN URL relationship (see Key Decisions)
+- Backfill SQL run directly on D1 (no code change): 8 UPDATEs + 73 stub INSERTs
+- Verification confirmed: 0 vehicles without row, 3 rows still missing rsi_cdn_old (expected: f7a-hornet-mk-i, idris-m, sabre-raven)
 
 ## Key Decisions
 
@@ -77,4 +78,8 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-27 08:53:00
+
+
+---
+**Session compacted at:** 2026-02-27 10:11:32
 
