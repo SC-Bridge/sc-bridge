@@ -4,15 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**vehicle_images backfill complete. 268/268 vehicles have rows. All 8 rsi_cdn_old gaps filled (3 permanently skipped — no old-CDN assets).**
+**Two fixes deployed: vehicle_images sync drift fixed + ErrorBoundary added for blank-page bug.**
 
 ## Recent Changes
 
-- `vehicle_images` table (migration 0007, renamed in 0008) — tracks rsi_cdn_new, rsi_cdn_old, rsi_graphql per vehicle
-- `parent_vehicle_id` added to vehicles — special editions inherit base ship image
-- 268/268 ships have images — commits `ca97bb6`, `965fb67`
-- Backfill SQL run directly on D1 (no code change): 8 UPDATEs + 73 stub INSERTs
-- Verification confirmed: 0 vehicles without row, 3 rows still missing rsi_cdn_old (expected: f7a-hornet-mk-i, idris-m, sabre-raven)
+- `buildUpdateVehicleImagesStatement` now returns `D1PreparedStatement[]` — writes to both `vehicles` AND `vehicle_images` on every image sync. New CDN → `rsi_cdn_new`; old CDN → `rsi_cdn_old` + derived `rsi_graphql`. Prevents drift recurring.
+- Callers updated: `fleetyards.ts` (flatMap), `cdn.ts` ×2, `rsi.ts` ×3 (spread).
+- `ErrorBoundary` component added — wraps app root (main.jsx) and inner lazy routes (App.jsx). Catches chunk load failures (shows "App Updated / Reload") and render errors (shows error + reload). Fixes blank page caused by missing ErrorBoundary.
+- Deployed: commit `7f696c6`, version `a89ec951`
 
 ## Key Decisions
 
