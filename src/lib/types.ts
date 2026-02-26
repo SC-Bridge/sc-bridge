@@ -148,7 +148,7 @@ export interface Vehicle {
   production_status?: string;
 }
 
-export interface ShipImage {
+export interface VehicleImage {
   id: number;
   vehicle_id: number;
   rsi_id?: number;

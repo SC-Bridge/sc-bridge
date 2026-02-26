@@ -137,7 +137,7 @@ export async function syncShipImages(db: D1Database, baseURL: string): Promise<v
     const count = stmts.length;
     await updateSyncHistory(db, syncID, "success", count, "");
     console.log(`[fleetyards] Ship image sync complete: ${count}/${images.length} updated`);
-    logEvent("sync_ship_images", { total: images.length, updated: count });
+    logEvent("sync_vehicle_images", { total: images.length, updated: count });
   } catch (err) {
     await updateSyncHistory(db, syncID, "error", 0, String(err));
     throw err;
