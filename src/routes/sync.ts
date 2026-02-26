@@ -8,14 +8,6 @@ import {
   triggerRSISync,
   runFullSync,
 } from "../sync/pipeline";
-import {
-  syncCDNShipImages,
-  syncCDNPaintImages,
-  applyImageSelections,
-  type CDNShipsExport,
-  type CDNPaintsExport,
-  type NamedImage,
-} from "../sync/cdn";
 
 /**
  * /api/sync/* — Sync management
@@ -97,78 +89,6 @@ export function syncRoutes<E extends { Bindings: Env }>() {
       ),
     );
     return c.json({ message: "RSI sync triggered" });
-  });
-
-  // POST /api/sync/cdn/ships — import CDN crawl ships.json (inline, returns match report)
-  routes.post("/cdn/ships", async (c) => {
-    let body: CDNShipsExport;
-    try {
-      body = await c.req.json<CDNShipsExport>();
-    } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
-    }
-    if (!Array.isArray(body?.ships)) {
-      return c.json({ error: "Body must be ships.json export (has 'ships' array)" }, 400);
-    }
-    try {
-      const result = await syncCDNShipImages(c.env.DB, body);
-      return c.json({ message: "CDN ship sync complete", ...result });
-    } catch (err) {
-      return c.json({ error: String(err) }, 500);
-    }
-  });
-
-  // POST /api/sync/cdn/paints — import CDN crawl paints.json (inline, returns match report)
-  routes.post("/cdn/paints", async (c) => {
-    let body: CDNPaintsExport;
-    try {
-      body = await c.req.json<CDNPaintsExport>();
-    } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
-    }
-    if (!Array.isArray(body?.paints)) {
-      return c.json({ error: "Body must be paints.json export (has 'paints' array)" }, 400);
-    }
-    try {
-      const result = await syncCDNPaintImages(c.env.DB, body);
-      return c.json({ message: "CDN paint sync complete", ...result });
-    } catch (err) {
-      return c.json({ error: String(err) }, 500);
-    }
-  });
-
-  // POST /api/sync/cdn/apply — apply user-selected (name, imageURL) pairs from CDN image picker
-  routes.post("/cdn/apply", async (c) => {
-    let body: { ships?: NamedImage[]; paints?: NamedImage[] };
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
-    }
-    const ships = Array.isArray(body?.ships) ? body.ships : [];
-    const paints = Array.isArray(body?.paints) ? body.paints : [];
-    if (ships.length === 0 && paints.length === 0) {
-      return c.json({ error: "No selections provided" }, 400);
-    }
-    try {
-      const result = await applyImageSelections(c.env.DB, ships, paints);
-      return c.json({ message: "CDN image selections applied", ...result });
-    } catch (err) {
-      return c.json({ error: String(err) }, 500);
-    }
-  });
-
-  // GET /api/sync/cdn/existing — current image_url for all ships/paints in D1
-  routes.get("/cdn/existing", async (c) => {
-    const [ships, paints] = await Promise.all([
-      c.env.DB.prepare(
-        `SELECT name, image_url FROM vehicles WHERE image_url IS NOT NULL AND image_url != '' ORDER BY name`
-      ).all<{ name: string; image_url: string }>(),
-      c.env.DB.prepare(
-        `SELECT name, image_url FROM paints WHERE image_url IS NOT NULL AND image_url != '' ORDER BY name`
-      ).all<{ name: string; image_url: string }>(),
-    ]);
-    return c.json({ ships: ships.results, paints: paints.results });
   });
 
   // POST /api/sync/all — trigger full sync pipeline (background)

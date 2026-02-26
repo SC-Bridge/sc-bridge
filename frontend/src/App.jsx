@@ -20,7 +20,6 @@ const Import = lazy(() => import('./pages/Import'))
 const ShipDB = lazy(() => import('./pages/ShipDB'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
-const CDNImagePicker = lazy(() => import('./pages/CDNImagePicker'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
 const Account = lazy(() => import('./pages/Account'))
 const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
@@ -357,7 +356,6 @@ export default function App() {
                     <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
                     <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                     <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
-                    <Route path="/admin/cdn-images" element={<RequireAuth><CDNImagePicker /></RequireAuth>} />
                     <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
                     <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
                     <Route path="/orgs/:slug" element={<OrgProfile />} />

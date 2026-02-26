@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
-import { RefreshCw, Database, Image, Palette, Globe, Play, AlertCircle, ExternalLink } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { RefreshCw, Database, Image, Palette, Globe, Play, AlertCircle } from 'lucide-react'
 import { useSyncStatus, triggerSCWikiSync, triggerItemSync, triggerImageSync, triggerPaintSync, triggerRSISync, triggerFullSync } from '../hooks/useAPI'
 import useTimezone from '../hooks/useTimezone'
 import { formatDate } from '../lib/dates'
@@ -93,20 +92,6 @@ export default function Admin() {
               </div>
             </button>
           ))}
-        </div>
-      </PanelSection>
-
-      {/* Tools */}
-      <PanelSection title="Tools">
-        <div className="p-4">
-          <Link
-            to="/admin/cdn-images"
-            className="inline-flex items-center gap-2 px-3 py-2 bg-sc-darker border border-sc-border rounded hover:border-sc-accent/40 transition-all text-sm text-gray-300 hover:text-white"
-          >
-            <Image className="w-4 h-4 text-sc-accent" />
-            CDN Image Picker
-            <ExternalLink className="w-3 h-3 text-gray-500" />
-          </Link>
         </div>
       </PanelSection>
 

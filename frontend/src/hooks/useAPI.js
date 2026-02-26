@@ -140,14 +140,6 @@ export async function importHangarXplor(jsonData) {
   return postJSON('/import/hangarxplor', jsonData)
 }
 
-export async function applyCDNSelections(selections) {
-  return postJSON('/sync/cdn/apply', selections)
-}
-
-export function useCDNExistingImages() {
-  return useAPI('/sync/cdn/existing')
-}
-
 // User Preferences
 export function usePreferences(opts) {
   return useAPI('/settings/preferences', opts)
