@@ -158,6 +158,19 @@ export function syncRoutes<E extends { Bindings: Env }>() {
     }
   });
 
+  // GET /api/sync/cdn/existing — current image_url for all ships/paints in D1
+  routes.get("/cdn/existing", async (c) => {
+    const [ships, paints] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT name, image_url FROM vehicles WHERE image_url IS NOT NULL AND image_url != '' ORDER BY name`
+      ).all<{ name: string; image_url: string }>(),
+      c.env.DB.prepare(
+        `SELECT name, image_url FROM paints WHERE image_url IS NOT NULL AND image_url != '' ORDER BY name`
+      ).all<{ name: string; image_url: string }>(),
+    ]);
+    return c.json({ ships: ships.results, paints: paints.results });
+  });
+
   // POST /api/sync/all — trigger full sync pipeline (background)
   // Restricted to development — likely exceeds Workers 30s CPU limit in production.
   // Use the staggered cron triggers instead.

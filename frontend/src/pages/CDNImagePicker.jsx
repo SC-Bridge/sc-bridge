@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Upload, CheckCircle, Image, Palette, AlertCircle, X, ChevronRight, Save, Layers } from 'lucide-react'
-import { applyCDNSelections } from '../hooks/useAPI'
+import { applyCDNSelections, useCDNExistingImages } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
 import SearchInput from '../components/SearchInput'
@@ -65,7 +65,7 @@ function DropZone({ label, icon: Icon, loaded, count, onFile }) {
 
 // --- Image thumbnail ---
 
-function ImageThumb({ url, state, onClick }) {
+function ImageThumb({ url, state, label, onClick }) {
   // state: null | 'candidate' | 'primary'
   return (
     <button
@@ -87,6 +87,11 @@ function ImageThumb({ url, state, onClick }) {
         className="w-full h-full object-cover"
         onError={(e) => { e.currentTarget.style.opacity = '0.2' }}
       />
+      {label && (
+        <span className="absolute bottom-1 left-1 px-1 py-0.5 bg-black/70 rounded text-[10px] font-mono text-gray-300 leading-none">
+          {label}
+        </span>
+      )}
       {state === 'primary' && (
         <span className="absolute top-1 right-1 bg-sc-accent rounded-full p-0.5">
           <CheckCircle className="w-3 h-3 text-white" />
@@ -103,8 +108,18 @@ function ImageThumb({ url, state, onClick }) {
 
 // --- Phase 1 card: multi-select candidates ---
 
-function SelectCard({ item, candidates, onToggle }) {
-  const images = item.images || []
+function SelectCard({ item, candidates, currentImage, onToggle }) {
+  const cdnImages = item.images || []
+  // Show current image first (if it's not already in the CDN list), then CDN images
+  const cdnUrls = new Set(cdnImages.map(i => i.url))
+  const showCurrentSeparately = currentImage && !cdnUrls.has(currentImage)
+  const allImages = [
+    ...(showCurrentSeparately ? [{ url: currentImage, label: 'current' }] : []),
+    ...cdnImages.map(i => ({
+      url: i.url,
+      label: currentImage && i.url === currentImage ? 'current' : null,
+    })),
+  ]
   const count = candidates.length
 
   return (
@@ -114,15 +129,16 @@ function SelectCard({ item, candidates, onToggle }) {
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-white truncate">{item.name}</span>
         <span className={`text-xs shrink-0 ${count > 0 ? 'text-sc-warn' : 'text-gray-600'}`}>
-          {count > 0 ? `${count} selected` : `${images.length} img`}
+          {count > 0 ? `${count} selected` : `${allImages.length} img`}
         </span>
       </div>
-      {images.length > 0 ? (
+      {allImages.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {images.map((img, i) => (
+          {allImages.map((img, i) => (
             <ImageThumb
               key={i}
               url={img.url}
+              label={img.label}
               state={candidates.includes(img.url) ? 'candidate' : null}
               onClick={() => onToggle(item.name, img.url)}
             />
@@ -137,7 +153,7 @@ function SelectCard({ item, candidates, onToggle }) {
 
 // --- Phase 2 card: pick primary from saved candidates ---
 
-function PrimaryCard({ name, candidates, primary, onPick }) {
+function PrimaryCard({ name, candidates, primary, currentImage, onPick }) {
   return (
     <div className={`bg-sc-darker border rounded p-3 space-y-2 transition-colors ${
       primary ? 'border-sc-accent/40' : 'border-sc-warn/30'
@@ -153,6 +169,7 @@ function PrimaryCard({ name, candidates, primary, onPick }) {
           <ImageThumb
             key={i}
             url={url}
+            label={currentImage && url === currentImage ? 'current' : null}
             state={primary === url ? 'primary' : 'candidate'}
             onClick={() => onPick(name, primary === url ? null : url)}
           />
@@ -166,6 +183,17 @@ function PrimaryCard({ name, candidates, primary, onPick }) {
 
 export default function CDNImagePicker() {
   const [phase, setPhase] = useState('select') // 'select' | 'primary'
+
+  // Existing D1 images — keyed by lowercase name
+  const { data: existingData } = useCDNExistingImages()
+  const shipImageMap = useMemo(() => {
+    if (!existingData?.ships) return {}
+    return Object.fromEntries(existingData.ships.map(s => [s.name.toLowerCase(), s.image_url]))
+  }, [existingData])
+  const paintImageMap = useMemo(() => {
+    if (!existingData?.paints) return {}
+    return Object.fromEntries(existingData.paints.map(p => [p.name.toLowerCase(), p.image_url]))
+  }, [existingData])
 
   // Phase 1 — loaded JSON data
   const [shipsData, setShipsData] = useState(null)
@@ -428,11 +456,14 @@ export default function CDNImagePicker() {
               <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {filteredPhase1.map((item) => {
                   const candidates = (activeTab === 'ships' ? shipCandidates : paintCandidates)[item.name] || []
+                  const imageMap = activeTab === 'ships' ? shipImageMap : paintImageMap
+                  const currentImage = imageMap[item.name.toLowerCase()] ?? null
                   return (
                     <SelectCard
                       key={item.name}
                       item={item}
                       candidates={candidates}
+                      currentImage={currentImage}
                       onToggle={(name, url) => toggleCandidate(activeTab, name, url)}
                     />
                   )
@@ -495,15 +526,20 @@ export default function CDNImagePicker() {
             These are your saved candidates. Click one image per ship to mark it as the primary, then hit Apply.
           </p>
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filteredPhase2.map(([name, candidates]) => (
-              <PrimaryCard
-                key={name}
-                name={name}
-                candidates={candidates}
-                primary={phase2Primaries[name] ?? null}
-                onPick={(n, url) => setPrimary(activeTab, n, url)}
-              />
-            ))}
+            {filteredPhase2.map(([name, candidates]) => {
+              const imageMap = activeTab === 'ships' ? shipImageMap : paintImageMap
+              const currentImage = imageMap[name.toLowerCase()] ?? null
+              return (
+                <PrimaryCard
+                  key={name}
+                  name={name}
+                  candidates={candidates}
+                  primary={phase2Primaries[name] ?? null}
+                  currentImage={currentImage}
+                  onPick={(n, url) => setPrimary(activeTab, n, url)}
+                />
+              )
+            })}
             {filteredPhase2.length === 0 && (
               <p className="col-span-full text-center text-gray-500 text-sm py-8">
                 {search ? 'No matches.' : 'No candidates saved yet — go back to Phase 1.'}
