@@ -139,12 +139,25 @@ export interface Vehicle {
   image_url_large?: string;
   pledge_url?: string;
   game_version_id?: number;
+  parent_vehicle_id?: number;
   created_at: string;
   updated_at: string;
   // Joined fields (populated via query, not stored)
   manufacturer_name?: string;
   manufacturer_code?: string;
   production_status?: string;
+}
+
+export interface ShipImage {
+  id: number;
+  vehicle_id: number;
+  rsi_id?: number;
+  rsi_slug?: string;
+  rsi_cdn_new?: string;
+  rsi_cdn_old?: string;
+  rsi_graphql?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Port {
