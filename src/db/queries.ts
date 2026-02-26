@@ -1223,7 +1223,10 @@ export function buildUpdateVehicleImagesStatement(
         .bind(imageURL, slug),
     );
   } else if (imageURL?.startsWith("https://media.robertsspaceindustries.com/")) {
-    // Old CDN format → write to rsi_cdn_old + derive rsi_graphql
+    // Old CDN format → write to rsi_cdn_old + derive rsi_graphql.
+    // Assumes suffix is /store_large.jpg or /store_large.png — the only formats
+    // observed from the old Google Cloud Storage CDN. Other suffixes will leave
+    // rsi_graphql set to the unchanged imageURL (harmless — isNaN guard in caller).
     const rsiGraphql = imageURL
       .replace("/store_large.jpg", "/product_thumb_medium_and_small.jpg")
       .replace("/store_large.png", "/product_thumb_medium_and_small.png");

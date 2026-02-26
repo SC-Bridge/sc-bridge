@@ -341,26 +341,26 @@ export default function App() {
             <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
               <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
                 <ErrorBoundary>
-                <Suspense fallback={<LoadingState fullScreen />}>
-                  <Routes>
-                    {/* Public routes */}
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/ships" element={<ShipDB />} />
+                  <Suspense fallback={<LoadingState fullScreen />}>
+                    <Routes>
+                      {/* Public routes */}
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/ships" element={<ShipDB />} />
 
-                    {/* Protected routes */}
-                    <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
-                    <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />
-                    <Route path="/analysis" element={<RequireAuth><Analysis /></RequireAuth>} />
-                    <Route path="/analysis/history" element={<RequireAuth><AnalysisHistory /></RequireAuth>} />
-                    <Route path="/import" element={<RequireAuth><Import /></RequireAuth>} />
-                    <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-                    <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
-                    <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
-                    <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
-                    <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
-                    <Route path="/orgs/:slug" element={<OrgProfile />} />
-                  </Routes>
-                </Suspense>
+                      {/* Protected routes */}
+                      <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
+                      <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />
+                      <Route path="/analysis" element={<RequireAuth><Analysis /></RequireAuth>} />
+                      <Route path="/analysis/history" element={<RequireAuth><AnalysisHistory /></RequireAuth>} />
+                      <Route path="/import" element={<RequireAuth><Import /></RequireAuth>} />
+                      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+                      <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
+                      <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
+                      <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
+                      <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
+                      <Route path="/orgs/:slug" element={<OrgProfile />} />
+                    </Routes>
+                  </Suspense>
                 </ErrorBoundary>
               </div>
             </main>

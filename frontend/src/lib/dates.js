@@ -15,6 +15,7 @@ export function formatDate(isoString, timezone) {
   if (isoString instanceof Date) {
     date = isoString
   } else if (typeof isoString === 'number') {
+    // Assumes milliseconds (Better Auth convention). Unix seconds would produce a 1970 date.
     date = new Date(isoString)
   } else {
     // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" — no T, no Z.
