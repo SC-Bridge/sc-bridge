@@ -4,21 +4,22 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Ship images refreshed — 209/268 ships have fresh RSI store images. Paint images still to do.**
+**Ship images complete — 268/268 coverage. Awaiting phase 2 from user.**
 
 ## Recent Changes
 
-- Wiped all vehicle image_url fields — complete clean slate
-- Applied `/mnt/c/Users/gavin/Downloads/extract-data-2026-02-26.json` (246 RSI store ships) → 209 matched and updated in D1
-- All updated images are new `/i/` RSI CDN format at 910×512 (all 4 size columns set to same URL)
-- CDN picker enhanced: shows existing D1 images alongside CDN candidates, deduplicates case-only entries — commit `6f74061`
-- Added `GET /api/sync/cdn/existing` endpoint + `useCDNExistingImages` hook — commit `be1e841`
+- `ship_images` table created (migration 0007) — tracks rsi_cdn_new, rsi_cdn_old, rsi_graphql per vehicle
+- `parent_vehicle_id` added to vehicles — special editions inherit base ship image
+- Populated: 195 rows in ship_images (store extract → rsi_cdn_new; HAR GraphQL → rsi_cdn_old + rsi_graphql)
+- 57 special editions linked via parent_vehicle_id to their base ship — commit `ca97bb6`
+- Result: 268/268 ships have images (100% coverage, all new `/i/` format or media.rsi.com fallback)
 
 ## Key Decisions
 
-- **Ship images**: 59 ships missing images are all special editions (Wikelo specials, PYAM Exec, Teach's Specials) + ATLS color variants — not on public RSI store, expected to be imageless
-- Fresh images from RSI store extract preferred over old media.rsi.com GraphQL URLs — new `/i/` format, better quality
-- All 4 image_url size columns (image_url, image_url_small, image_url_medium, image_url_large) set to same URL — ShipDB uses `image_url_medium || image_url`
+- `ship_images` is source of truth; `vehicles.image_url` is denormalized effective URL for query simplicity
+- parent_vehicle_id fallback: special editions (Wikelo, PYAM Exec, Teach's) → base ship's ship_images entry
+- HAR (`robertsspaceindustries.com_Archive [26-02-26 23-09-46].har`) — 235 ships upgrade GraphQL, adds old-format URLs
+- Store extract (`extract-data-2026-02-26.json`) — 246 ships, new `/i/` format, primary source
 - **Plane workspace:** `sc-companion` (NOT `nerdz`), project ID: `a9de8845-bec9-4197-bab0-d065bc75a709`, Done state: `d5c58bec-23e0-42c4-96ca-38e3356d5733`
 - Plane API key: `plane_api_415f2e8ef69c4869978c718724d1ae38`, base: `https://plane.nerdz.cloud`
 
@@ -47,8 +48,8 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Paint images** — use CDN picker at `/admin/cdn-images` for paints.json; ships are done
-- **ship_images table** — proposed: separate table keyed to vehicle FK, storing known slugs + URL variants (RSI_CDN_old, RSI_CDN_new, RSI_GraphQL) to get to 95%+ coverage using store extract + HAR file
+- **Phase 2** (TBD by user — ships are done, image infra is in place)
+- **Paint images** — use CDN picker at `/admin/cdn-images` for paints.json
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
