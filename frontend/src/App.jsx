@@ -2,6 +2,7 @@ import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2 } from 'lucide-react'
 import LoadingState from './components/LoadingState'
+import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
 import { authClient, useSession, signOut } from './lib/auth-client'
@@ -340,6 +341,7 @@ export default function App() {
             {/* Main content */}
             <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
               <div className="max-w-7xl mx-auto p-6 md:p-6 pt-16 md:pt-6">
+                <ErrorBoundary>
                 <Suspense fallback={<LoadingState fullScreen />}>
                   <Routes>
                     {/* Public routes */}
@@ -361,6 +363,7 @@ export default function App() {
                     <Route path="/orgs/:slug" element={<OrgProfile />} />
                   </Routes>
                 </Suspense>
+                </ErrorBoundary>
               </div>
             </main>
           </div>

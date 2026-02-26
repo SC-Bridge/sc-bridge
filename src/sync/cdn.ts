@@ -102,7 +102,7 @@ export async function syncCDNShipImages(
       }
 
       stmts.push(
-        buildUpdateVehicleImagesStatement(db, slug, imageURL, imageURL, imageURL, imageURL),
+        ...buildUpdateVehicleImagesStatement(db, slug, imageURL, imageURL, imageURL, imageURL),
       );
       matched++;
     }
@@ -275,7 +275,7 @@ export async function applyImageSelections(
       continue;
     }
     shipStmts.push(
-      buildUpdateVehicleImagesStatement(db, slug, imageURL, imageURL, imageURL, imageURL),
+      ...buildUpdateVehicleImagesStatement(db, slug, imageURL, imageURL, imageURL, imageURL),
     );
     shipMatched++;
   }

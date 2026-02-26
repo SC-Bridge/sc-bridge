@@ -125,8 +125,8 @@ export async function syncShipImages(db: D1Database, baseURL: string): Promise<v
   try {
     const images = await fetchAllShipImages(baseURL);
 
-    // Batch all image update statements
-    const stmts = images.map((img) =>
+    // Batch all image update statements (returns array per image: vehicles + vehicle_images updates)
+    const stmts = images.flatMap((img) =>
       buildUpdateVehicleImagesStatement(db, img.slug, img.imageURL, img.small, img.medium, img.large),
     );
 

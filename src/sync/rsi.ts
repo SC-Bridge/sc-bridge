@@ -449,7 +449,7 @@ export async function syncShipImages(
 
     let matched = 0;
     for (const [slug, img] of slugImages) {
-      stmts.push(buildUpdateVehicleImagesStatement(db, slug, img.imageURL, img.small, img.medium, img.large));
+      stmts.push(...buildUpdateVehicleImagesStatement(db, slug, img.imageURL, img.small, img.medium, img.large));
       matched++;
     }
 
@@ -461,7 +461,7 @@ export async function syncShipImages(
       // Pass 1: RSI name prefix match (e.g. "Dragonfly Black" prefix for "Dragonfly Star Kitten")
       const baseImg = findBaseVehicleImages(v.name, rsiNameImages);
       if (baseImg) {
-        stmts.push(buildUpdateVehicleImagesStatement(db, v.slug, baseImg.imageURL, baseImg.small, baseImg.medium, baseImg.large));
+        stmts.push(...buildUpdateVehicleImagesStatement(db, v.slug, baseImg.imageURL, baseImg.small, baseImg.medium, baseImg.large));
         inherited++;
         continue;
       }
@@ -474,7 +474,7 @@ export async function syncShipImages(
         const baseSlug = nameToSlug.get(prefix);
         if (baseSlug && slugImages.has(baseSlug)) {
           const img = slugImages.get(baseSlug)!;
-          stmts.push(buildUpdateVehicleImagesStatement(db, v.slug, img.imageURL, img.small, img.medium, img.large));
+          stmts.push(...buildUpdateVehicleImagesStatement(db, v.slug, img.imageURL, img.small, img.medium, img.large));
           inherited++;
           break;
         }

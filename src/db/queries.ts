@@ -1200,15 +1200,44 @@ export function buildUpdateVehicleImagesStatement(
   small: string,
   medium: string,
   large: string,
-): D1PreparedStatement {
-  return db
-    .prepare(
-      `UPDATE vehicles SET
-        image_url = ?, image_url_small = ?, image_url_medium = ?, image_url_large = ?,
-        updated_at = datetime('now')
-      WHERE slug = ?`,
-    )
-    .bind(imageURL, small, medium, large, slug);
+): D1PreparedStatement[] {
+  const stmts: D1PreparedStatement[] = [
+    db
+      .prepare(
+        `UPDATE vehicles SET
+          image_url = ?, image_url_small = ?, image_url_medium = ?, image_url_large = ?,
+          updated_at = datetime('now')
+        WHERE slug = ?`,
+      )
+      .bind(imageURL, small, medium, large, slug),
+  ];
+
+  if (imageURL?.startsWith("https://robertsspaceindustries.com/i/")) {
+    // New CDN format → write to rsi_cdn_new
+    stmts.push(
+      db
+        .prepare(
+          `UPDATE vehicle_images SET rsi_cdn_new = ?, updated_at = datetime('now')
+          WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)`,
+        )
+        .bind(imageURL, slug),
+    );
+  } else if (imageURL?.startsWith("https://media.robertsspaceindustries.com/")) {
+    // Old CDN format → write to rsi_cdn_old + derive rsi_graphql
+    const rsiGraphql = imageURL
+      .replace("/store_large.jpg", "/product_thumb_medium_and_small.jpg")
+      .replace("/store_large.png", "/product_thumb_medium_and_small.png");
+    stmts.push(
+      db
+        .prepare(
+          `UPDATE vehicle_images SET rsi_cdn_old = ?, rsi_graphql = ?, updated_at = datetime('now')
+          WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)`,
+        )
+        .bind(imageURL, rsiGraphql, slug),
+    );
+  }
+
+  return stmts;
 }
 
 export function buildUpdatePaintImagesStatement(
