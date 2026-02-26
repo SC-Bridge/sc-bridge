@@ -15,6 +15,45 @@ function saveToLS(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
+// Merge items that have the same name (case-insensitive), combining their images
+function deduplicateItems(items) {
+  if (!items) return []
+  const seen = new Map() // lowercase name → index in result
+  const result = []
+  for (const item of items) {
+    const key = item.name.toLowerCase()
+    if (seen.has(key)) {
+      const existing = result[seen.get(key)]
+      const existingUrls = new Set((existing.images || []).map(i => i.url))
+      const newImages = (item.images || []).filter(i => !existingUrls.has(i.url))
+      existing.images = [...(existing.images || []), ...newImages]
+    } else {
+      seen.set(key, result.length)
+      result.push({ ...item, images: [...(item.images || [])] })
+    }
+  }
+  return result
+}
+
+// Merge candidate entries that differ only by case, combining their URL arrays
+function deduplicateCandidates(candidates) {
+  if (!candidates) return {}
+  const result = {}
+  const keyMap = {} // lowercase → canonical key already stored
+  for (const [name, urls] of Object.entries(candidates)) {
+    const lower = name.toLowerCase()
+    if (lower in keyMap) {
+      const canon = keyMap[lower]
+      const existing = new Set(result[canon])
+      result[canon] = [...result[canon], ...urls.filter(u => !existing.has(u))]
+    } else {
+      keyMap[lower] = name
+      result[name] = [...urls]
+    }
+  }
+  return result
+}
+
 // --- File drop zone ---
 
 function DropZone({ label, icon: Icon, loaded, count, onFile }) {
@@ -200,8 +239,8 @@ export default function CDNImagePicker() {
   const [paintsData, setPaintsData] = useState(null)
 
   // Phase 1 — multi-select candidates: { [name]: string[] }
-  const [shipCandidates, setShipCandidates] = useState(() => loadFromLS(LS_KEY_SHIPS) || {})
-  const [paintCandidates, setPaintCandidates] = useState(() => loadFromLS(LS_KEY_PAINTS) || {})
+  const [shipCandidates, setShipCandidates] = useState(() => deduplicateCandidates(loadFromLS(LS_KEY_SHIPS)) || {})
+  const [paintCandidates, setPaintCandidates] = useState(() => deduplicateCandidates(loadFromLS(LS_KEY_PAINTS)) || {})
 
   // Phase 2 — single primary per item: { [name]: string }
   const [shipPrimaries, setShipPrimaries] = useState({})
@@ -289,9 +328,12 @@ export default function CDNImagePicker() {
 
   // --- Phase 1 filtered items ---
 
-  const phase1Items = activeTab === 'ships' ? shipsData?.ships : paintsData?.paints
+  const phase1Items = useMemo(
+    () => deduplicateItems(activeTab === 'ships' ? shipsData?.ships : paintsData?.paints),
+    [activeTab, shipsData, paintsData]
+  )
   const filteredPhase1 = useMemo(() => {
-    if (!phase1Items) return []
+    if (!phase1Items.length) return []
     const q = search.toLowerCase()
     return q ? phase1Items.filter(i => i.name.toLowerCase().includes(q)) : phase1Items
   }, [phase1Items, search])
@@ -407,10 +449,10 @@ export default function CDNImagePicker() {
           <PanelSection title="Load CDN Export Files">
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <DropZone label="ships.json" icon={Image} loaded={!!shipsData}
-                count={shipsData?.ships?.length}
+                count={shipsData?.ships ? deduplicateItems(shipsData.ships).length : undefined}
                 onFile={(data) => { setShipsData(data); setShipCandidates({}) }} />
               <DropZone label="paints.json" icon={Palette} loaded={!!paintsData}
-                count={paintsData?.paints?.length}
+                count={paintsData?.paints ? deduplicateItems(paintsData.paints).length : undefined}
                 onFile={(data) => { setPaintsData(data); setPaintCandidates({}) }} />
             </div>
             <p className="px-4 pb-4 text-xs text-gray-600">
