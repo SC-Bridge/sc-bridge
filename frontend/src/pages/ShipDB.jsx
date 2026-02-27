@@ -21,16 +21,24 @@ export default function ShipDB() {
   const [sortDir, setSortDir] = useState('asc')
   const [page, setPage] = useState(1)
 
-  // For ships with no image, find the base variant's image by progressively
-  // shortening the ship name and looking for a match that has an image.
+  // For ships with no valid absolute image URL, find the base variant's image by
+  // progressively shortening the ship name and looking for a match that has one.
+  // Relative-path URLs (old RSI CDN format, missing domain prefix) are treated as
+  // invalid so those ships also get the name-prefix fallback.
   const baseImageMap = useMemo(() => {
     if (!ships) return new Map()
+    const bestAbsolute = (s) => {
+      for (const url of [s.image_url_small, s.image_url_medium, s.image_url]) {
+        if (url?.startsWith('http')) return url
+      }
+      return null
+    }
     const withImages = ships
-      .filter((s) => s.image_url_small || s.image_url_medium || s.image_url)
-      .map((s) => ({ name: s.name.toLowerCase(), img: s.image_url_small || s.image_url_medium || s.image_url }))
+      .filter((s) => bestAbsolute(s) !== null)
+      .map((s) => ({ name: s.name.toLowerCase(), img: bestAbsolute(s) }))
     const result = new Map()
     for (const ship of ships) {
-      if (ship.image_url_small || ship.image_url_medium || ship.image_url) continue
+      if (bestAbsolute(ship) !== null) continue
       const words = ship.name.toLowerCase().split(/\s+/)
       for (let len = words.length - 1; len >= 1; len--) {
         const prefix = words.slice(0, len).join(' ')
@@ -165,7 +173,8 @@ export default function ShipDB() {
         {paged.map((ship) => (
           <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden">
             <ShipImage
-              src={ship.image_url_small || ship.image_url_medium || ship.image_url}
+              src={ship.image_url_small}
+              fallbackSrc={ship.image_url_medium || ship.image_url}
               baseSrc={baseImageMap.get(ship.slug)}
               alt={ship.name}
               aspectRatio="landscape"

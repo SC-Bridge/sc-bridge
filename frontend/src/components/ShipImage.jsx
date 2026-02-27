@@ -7,12 +7,36 @@ const ASPECT_CLASSES = {
   thumbnail: 'w-20 h-12',
 }
 
-export default function ShipImage({ src, baseSrc, alt, aspectRatio = 'landscape', hoverZoom = false, className = '' }) {
-  // If no direct image but a base variant image is provided, use it with a banner
-  const effectiveSrc = src || baseSrc
-  const isVariantFallback = !src && !!baseSrc
+// Build a chain of URLs to try in order, deduplicating adjacent identical values.
+function buildChain(src, fallbackSrc, baseSrc) {
+  const seen = new Set()
+  const chain = []
+  for (const url of [src, fallbackSrc, baseSrc]) {
+    if (url && !seen.has(url)) {
+      seen.add(url)
+      chain.push(url)
+    }
+  }
+  return chain
+}
 
-  const [status, setStatus] = useState(effectiveSrc ? 'loading' : 'error')
+export default function ShipImage({ src, fallbackSrc, baseSrc, alt, aspectRatio = 'landscape', hoverZoom = false, className = '' }) {
+  const chain = buildChain(src, fallbackSrc, baseSrc)
+  const [idx, setIdx] = useState(0)
+  const [status, setStatus] = useState(chain.length > 0 ? 'loading' : 'error')
+
+  const currentSrc = chain[idx] ?? null
+  // Show "Variant image unavailable" banner only when we've fallen through to baseSrc
+  const isVariantFallback = currentSrc === baseSrc && currentSrc !== src
+
+  const handleError = () => {
+    if (idx + 1 < chain.length) {
+      setIdx(idx + 1)
+      // Keep status as 'loading' — skeleton stays visible while next URL loads
+    } else {
+      setStatus('error')
+    }
+  }
 
   const aspectClass = ASPECT_CLASSES[aspectRatio] || ASPECT_CLASSES.landscape
   const isFixedSize = aspectRatio === 'thumbnail'
@@ -29,16 +53,16 @@ export default function ShipImage({ src, baseSrc, alt, aspectRatio = 'landscape'
         </div>
       )}
 
-      {effectiveSrc && status !== 'error' && (
+      {currentSrc && status !== 'error' && (
         <img
-          src={effectiveSrc}
+          src={currentSrc}
           alt={alt || ''}
           loading="lazy"
           className={`w-full h-full object-cover transition-transform duration-300 ${
             status === 'loading' ? 'opacity-0' : 'opacity-100'
           } ${hoverZoom ? 'group-hover:scale-105' : ''}`}
           onLoad={() => setStatus('loaded')}
-          onError={() => setStatus('error')}
+          onError={handleError}
         />
       )}
 
