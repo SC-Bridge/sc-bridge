@@ -4,15 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**RSI backfill shipped — 37 missing ships now in DB with images.**
+**Image data integrity fixed — SC Wiki can no longer overwrite RSI CDN URLs.**
 
 ## Recent Changes
 
-- **Migration 0010_rsi_backfill.sql** — 37 RSI-only ships inserted via `INSERT OR IGNORE` with images from old CDN (media.robertsspaceindustries.com/{mediaID}/store_{size}.{ext})
-- **`shipNameMap` cleanup** (`src/sync/rsi.ts`) — removed `merchantman: "banu merchantman"` override; DB name is now "Merchantman", direct match works
-- **DB count**: 301 non-paint vehicles (was 264; +37)
-- **d1_migrations tracker**: backfilled records for 0005-0009 (were applied manually, not recorded); now all 0001-0010 are tracked
-- **Valkyrie Liberator Edition**: NULL images by design (RSI has broken relative URL); ShipImage falls back to base Valkyrie
+- **Migration 0011_fix_image_urls.sql** — Restored 6 ships with broken SC Wiki relative paths (ballista-dunestalker, ballista-snowblind, dragonfly-yellowjacket, f7a-hornet-mk-i, p-72-archimedes-emerald, sabre-raven) from vehicle_images.rsi_cdn_new; created vehicle_images rows for 36 of 37 backfill ships (Valkyrie Liberator Edition skipped: NULL images by design)
+- **`queries.ts` COALESCE fix** — Both `upsertVehicle` and `buildUpsertVehicleStatement` now use `CASE WHEN excluded.image_url LIKE 'http%'` instead of plain COALESCE — SC Wiki relative `/media/...` paths no longer overwrite absolute RSI CDN URLs
+- **`buildUpdateVehicleImagesStatement` UPSERT fix** — Changed plain `UPDATE vehicle_images SET` to `INSERT INTO vehicle_images ... ON CONFLICT DO UPDATE` — vehicles without existing rows now get them created on first RSI sync
+- **CLAUDE.md image rules** — Added "Image Data Rules" section to prevent future regressions
+- **DB state**: 0 vehicles with broken relative image_url; 1 vehicle missing vehicle_images row (valkyrie-liberator-edition, expected)
 
 ## Key Decisions
 
@@ -55,3 +55,7 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-27 18:53:00
+
+---
+**Session compacted at:** 2026-02-27 19:23:00
+
