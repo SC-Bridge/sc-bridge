@@ -17,6 +17,10 @@ export interface Env {
   API_TOKEN?: string;
   GITHUB_TOKEN?: string;
   LLM_DEFAULT_MODEL?: string;
+  // Cloudflare Images
+  CLOUDFLARE_IMAGES_TOKEN?: string;
+  CF_ACCOUNT_HASH?: string;
+  CF_ACCOUNT_ID?: string;
   // Better Auth
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;

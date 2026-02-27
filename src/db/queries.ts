@@ -1311,3 +1311,69 @@ export async function syncVehicleLoanersBatch(
   }
   await db.batch(stmts);
 }
+
+// ============================================================
+// Cloudflare Images
+// ============================================================
+
+export interface VehicleForCFUpload {
+  vehicle_id: number;
+  slug: string;
+  best_image_url: string;
+}
+
+export async function getVehiclesNeedingCFUpload(
+  db: D1Database,
+  limit: number,
+  offset: number,
+): Promise<VehicleForCFUpload[]> {
+  const result = await db
+    .prepare(
+      `SELECT v.id as vehicle_id, v.slug,
+        COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) as best_image_url
+      FROM vehicles v
+      JOIN vehicle_images vi ON vi.vehicle_id = v.id
+      WHERE vi.cf_images_id IS NULL
+        AND COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) IS NOT NULL
+        AND COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) LIKE 'http%'
+      ORDER BY v.slug
+      LIMIT ? OFFSET ?`,
+    )
+    .bind(limit, offset)
+    .all<VehicleForCFUpload>();
+  return result.results;
+}
+
+export async function setVehicleCFImagesID(
+  db: D1Database,
+  vehicleId: number,
+  cfImagesId: string,
+  accountHash: string,
+): Promise<void> {
+  const base = `https://imagedelivery.net/${accountHash}/${cfImagesId}`;
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE vehicle_images SET cf_images_id = ?, updated_at = datetime('now')
+        WHERE vehicle_id = ?`,
+      )
+      .bind(cfImagesId, vehicleId),
+    db
+      .prepare(
+        `UPDATE vehicles SET
+          image_url        = ?,
+          image_url_small  = ?,
+          image_url_medium = ?,
+          image_url_large  = ?,
+          updated_at       = datetime('now')
+        WHERE id = ?`,
+      )
+      .bind(
+        `${base}/medium`,
+        `${base}/thumb`,
+        `${base}/medium`,
+        `${base}/large`,
+        vehicleId,
+      ),
+  ]);
+}

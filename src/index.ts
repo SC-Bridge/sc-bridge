@@ -13,6 +13,7 @@ import { debugRoutes } from "./routes/debug";
 import { migrateRoutes } from "./routes/migrate";
 import { accountRoutes } from "./routes/account";
 import { orgRoutes } from "./routes/orgs";
+import { adminRoutes } from "./routes/admin";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
 
@@ -171,10 +172,11 @@ app.get("/api/account/avatar/file/:userId", async (c) => {
 app.use("/api/account", requireAuth);
 app.use("/api/account/*", requireAuth);
 
-// Admin-only: sync, debug, migrate
+// Admin-only: sync, debug, migrate, admin management
 app.use("/api/sync/*", requireRole("admin", "super_admin"));
 app.use("/api/debug/*", requireRole("admin", "super_admin"));
 app.use("/api/migrate", requireRole("super_admin"));
+app.use("/api/admin/*", requireRole("super_admin"));
 
 // Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }));
@@ -235,6 +237,7 @@ app.route("/api/debug", debugRoutes());
 app.route("/api/migrate", migrateRoutes());
 app.route("/api/account", accountRoutes());
 app.route("/api/orgs", orgRoutes());
+app.route("/api/admin", adminRoutes());
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {
