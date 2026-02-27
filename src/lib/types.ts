@@ -155,11 +155,7 @@ export interface Vehicle {
 export interface VehicleImage {
   id: number;
   vehicle_id: number;
-  rsi_id?: number;
-  rsi_slug?: string;
-  rsi_cdn_new?: string;
-  rsi_cdn_old?: string;
-  rsi_graphql?: string;
+  cf_images_id?: string;
   created_at: string;
   updated_at: string;
 }

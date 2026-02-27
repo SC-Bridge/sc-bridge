@@ -1203,53 +1203,22 @@ export function buildUpdateVehicleImagesStatement(
   medium: string,
   large: string,
 ): D1PreparedStatement[] {
-  const stmts: D1PreparedStatement[] = [
+  // Only update vehicles.image_url* if this vehicle has no CF Images ID yet.
+  // CF delivery URLs are authoritative — RSI sync must not overwrite them.
+  return [
     db
       .prepare(
         `UPDATE vehicles SET
           image_url = ?, image_url_small = ?, image_url_medium = ?, image_url_large = ?,
           updated_at = datetime('now')
-        WHERE slug = ?`,
+        WHERE slug = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM vehicle_images
+            WHERE vehicle_id = vehicles.id AND cf_images_id IS NOT NULL
+          )`,
       )
       .bind(imageURL, small, medium, large, slug),
   ];
-
-  if (imageURL?.startsWith("https://robertsspaceindustries.com/i/")) {
-    // New CDN format → upsert rsi_cdn_new (creates row if missing)
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO vehicle_images (vehicle_id, rsi_cdn_new, updated_at)
-          VALUES ((SELECT id FROM vehicles WHERE slug = ?), ?, datetime('now'))
-          ON CONFLICT(vehicle_id) DO UPDATE SET
-            rsi_cdn_new = excluded.rsi_cdn_new,
-            updated_at = excluded.updated_at`,
-        )
-        .bind(slug, imageURL),
-    );
-  } else if (imageURL?.startsWith("https://media.robertsspaceindustries.com/")) {
-    // Old CDN format → upsert rsi_cdn_old + derive rsi_graphql (creates row if missing).
-    // Assumes suffix is /store_large.jpg or /store_large.png — the only formats
-    // observed from the old Google Cloud Storage CDN. Other suffixes will leave
-    // rsi_graphql set to the unchanged imageURL (harmless — isNaN guard in caller).
-    const rsiGraphql = imageURL
-      .replace("/store_large.jpg", "/product_thumb_medium_and_small.jpg")
-      .replace("/store_large.png", "/product_thumb_medium_and_small.png");
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO vehicle_images (vehicle_id, rsi_cdn_old, rsi_graphql, updated_at)
-          VALUES ((SELECT id FROM vehicles WHERE slug = ?), ?, ?, datetime('now'))
-          ON CONFLICT(vehicle_id) DO UPDATE SET
-            rsi_cdn_old = excluded.rsi_cdn_old,
-            rsi_graphql = excluded.rsi_graphql,
-            updated_at = excluded.updated_at`,
-        )
-        .bind(slug, imageURL, rsiGraphql),
-    );
-  }
-
-  return stmts;
 }
 
 export function buildUpdatePaintImagesStatement(
@@ -1329,13 +1298,12 @@ export async function getVehiclesNeedingCFUpload(
 ): Promise<VehicleForCFUpload[]> {
   const result = await db
     .prepare(
-      `SELECT v.id as vehicle_id, v.slug,
-        COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) as best_image_url
+      `SELECT v.id as vehicle_id, v.slug, v.image_url as best_image_url
       FROM vehicles v
       JOIN vehicle_images vi ON vi.vehicle_id = v.id
       WHERE vi.cf_images_id IS NULL
-        AND COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) IS NOT NULL
-        AND COALESCE(vi.rsi_cdn_new, vi.rsi_cdn_old, v.image_url) LIKE 'http%'
+        AND v.image_url IS NOT NULL
+        AND v.image_url LIKE 'http%'
       ORDER BY v.slug
       LIMIT ? OFFSET ?`,
     )
