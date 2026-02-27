@@ -239,10 +239,10 @@ export async function upsertVehicle(
         pledge_price=COALESCE(excluded.pledge_price, vehicles.pledge_price),
         price_auec=COALESCE(excluded.price_auec, vehicles.price_auec),
         on_sale=excluded.on_sale,
-        image_url=COALESCE(excluded.image_url, vehicles.image_url),
-        image_url_small=COALESCE(excluded.image_url_small, vehicles.image_url_small),
-        image_url_medium=COALESCE(excluded.image_url_medium, vehicles.image_url_medium),
-        image_url_large=COALESCE(excluded.image_url_large, vehicles.image_url_large),
+        image_url=CASE WHEN excluded.image_url LIKE 'http%' THEN excluded.image_url ELSE COALESCE(vehicles.image_url, excluded.image_url) END,
+        image_url_small=CASE WHEN excluded.image_url_small LIKE 'http%' THEN excluded.image_url_small ELSE COALESCE(vehicles.image_url_small, excluded.image_url_small) END,
+        image_url_medium=CASE WHEN excluded.image_url_medium LIKE 'http%' THEN excluded.image_url_medium ELSE COALESCE(vehicles.image_url_medium, excluded.image_url_medium) END,
+        image_url_large=CASE WHEN excluded.image_url_large LIKE 'http%' THEN excluded.image_url_large ELSE COALESCE(vehicles.image_url_large, excluded.image_url_large) END,
         pledge_url=COALESCE(excluded.pledge_url, vehicles.pledge_url),
         game_version_id=COALESCE(excluded.game_version_id, vehicles.game_version_id),
         raw_data=COALESCE(excluded.raw_data, vehicles.raw_data),
@@ -333,10 +333,10 @@ export function buildUpsertVehicleStatement(
         price_auec=COALESCE(excluded.price_auec, vehicles.price_auec),
         on_sale=excluded.on_sale,
         is_paint_variant=excluded.is_paint_variant,
-        image_url=COALESCE(excluded.image_url, vehicles.image_url),
-        image_url_small=COALESCE(excluded.image_url_small, vehicles.image_url_small),
-        image_url_medium=COALESCE(excluded.image_url_medium, vehicles.image_url_medium),
-        image_url_large=COALESCE(excluded.image_url_large, vehicles.image_url_large),
+        image_url=CASE WHEN excluded.image_url LIKE 'http%' THEN excluded.image_url ELSE COALESCE(vehicles.image_url, excluded.image_url) END,
+        image_url_small=CASE WHEN excluded.image_url_small LIKE 'http%' THEN excluded.image_url_small ELSE COALESCE(vehicles.image_url_small, excluded.image_url_small) END,
+        image_url_medium=CASE WHEN excluded.image_url_medium LIKE 'http%' THEN excluded.image_url_medium ELSE COALESCE(vehicles.image_url_medium, excluded.image_url_medium) END,
+        image_url_large=CASE WHEN excluded.image_url_large LIKE 'http%' THEN excluded.image_url_large ELSE COALESCE(vehicles.image_url_large, excluded.image_url_large) END,
         pledge_url=COALESCE(excluded.pledge_url, vehicles.pledge_url),
         game_version_id=COALESCE(excluded.game_version_id, vehicles.game_version_id),
         raw_data=COALESCE(excluded.raw_data, vehicles.raw_data),
@@ -1215,17 +1215,20 @@ export function buildUpdateVehicleImagesStatement(
   ];
 
   if (imageURL?.startsWith("https://robertsspaceindustries.com/i/")) {
-    // New CDN format → write to rsi_cdn_new
+    // New CDN format → upsert rsi_cdn_new (creates row if missing)
     stmts.push(
       db
         .prepare(
-          `UPDATE vehicle_images SET rsi_cdn_new = ?, updated_at = datetime('now')
-          WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)`,
+          `INSERT INTO vehicle_images (vehicle_id, rsi_cdn_new, updated_at)
+          VALUES ((SELECT id FROM vehicles WHERE slug = ?), ?, datetime('now'))
+          ON CONFLICT(vehicle_id) DO UPDATE SET
+            rsi_cdn_new = excluded.rsi_cdn_new,
+            updated_at = excluded.updated_at`,
         )
-        .bind(imageURL, slug),
+        .bind(slug, imageURL),
     );
   } else if (imageURL?.startsWith("https://media.robertsspaceindustries.com/")) {
-    // Old CDN format → write to rsi_cdn_old + derive rsi_graphql.
+    // Old CDN format → upsert rsi_cdn_old + derive rsi_graphql (creates row if missing).
     // Assumes suffix is /store_large.jpg or /store_large.png — the only formats
     // observed from the old Google Cloud Storage CDN. Other suffixes will leave
     // rsi_graphql set to the unchanged imageURL (harmless — isNaN guard in caller).
@@ -1235,10 +1238,14 @@ export function buildUpdateVehicleImagesStatement(
     stmts.push(
       db
         .prepare(
-          `UPDATE vehicle_images SET rsi_cdn_old = ?, rsi_graphql = ?, updated_at = datetime('now')
-          WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)`,
+          `INSERT INTO vehicle_images (vehicle_id, rsi_cdn_old, rsi_graphql, updated_at)
+          VALUES ((SELECT id FROM vehicles WHERE slug = ?), ?, ?, datetime('now'))
+          ON CONFLICT(vehicle_id) DO UPDATE SET
+            rsi_cdn_old = excluded.rsi_cdn_old,
+            rsi_graphql = excluded.rsi_graphql,
+            updated_at = excluded.updated_at`,
         )
-        .bind(imageURL, rsiGraphql, slug),
+        .bind(slug, imageURL, rsiGraphql),
     );
   }
 

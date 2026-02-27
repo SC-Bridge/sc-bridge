@@ -95,6 +95,33 @@ go mod tidy && CGO_ENABLED=1 go build -o fleet-manager ./cmd/server
 ## Debug Endpoint
 `GET /api/debug/imports` — Shows vehicle_id linkage, fleet counts, sample entries.
 
+## Image Data Rules (DO NOT BREAK THESE)
+
+These rules exist because image data is fragile and SC Wiki sync runs nightly. Violating them causes images to silently vanish.
+
+### Priority Order
+RSI GraphQL (new CDN) > RSI old CDN > SC Wiki relative path > NULL
+
+Higher-priority images must never be overwritten by lower-priority ones.
+
+### vehicle_images is the source of truth
+- Every vehicle in `vehicles` MUST have a corresponding row in `vehicle_images`
+- `buildUpdateVehicleImagesStatement` uses INSERT ... ON CONFLICT DO UPDATE — never change it back to plain UPDATE
+- When adding new vehicles (e.g., via migration), always create matching `vehicle_images` rows
+
+### vehicles.image_url* must stay absolute
+- SC Wiki provides relative `/media/...` paths — these must NEVER overwrite an absolute `https://` URL
+- The upsert CASE expression in both `upsertVehicle` and `buildUpsertVehicleStatement` checks `LIKE 'http%'` before replacing
+- Never change image COALESCE back to plain `COALESCE(excluded.image_url, vehicles.image_url)` — that treats relative paths as valid and overwrites absolute ones
+
+### URL formats
+- Old CDN: `https://media.robertsspaceindustries.com/{mediaID}/store_{size}.{ext}` (Google Cloud Storage)
+- New CDN: `https://robertsspaceindustries.com/i/{hash}/resize(...)/filename.webp` (AWS CloudFront)
+- SC Wiki relative: `/media/{mediaID}/store_small/{filename}.jpg` — NOT a valid image_url
+
+### When writing migrations that insert vehicles
+Always follow the INSERT with a corresponding INSERT OR IGNORE into `vehicle_images` using any available old-CDN URL.
+
 ## Owner Context
 - Gavin, Senior QA at Pushpay (not a developer — explain things clearly)
 - Runs a homelab Kubernetes cluster (TalosOS, Flux GitOps, BJW-S app-template)
