@@ -4,14 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**FleetYards removed. Codebase cleaned up. Account page crash fixed.**
+**RSI backfill shipped — 37 missing ships now in DB with images.**
 
 ## Recent Changes
 
-- **`formatDate` / `formatDateOnly` fixed** (`frontend/src/lib/dates.js`) — Better Auth returns `Date` objects and numbers, not strings. Added `instanceof Date` + `typeof number` guards before `.trim()` call. Fixes Account page blank/crash.
-- **FleetYards integration removed entirely** (commit `edaf0b2`) — 10 files changed, `src/sync/fleetyards.ts` deleted (253 lines). Production DB confirmed all paint `image_url` values were already RSI CDN — FY was fully redundant.
-- **Sync pipeline simplified**: SC Wiki → scunpacked → RSI (4 cron triggers, was 5). `15 3 * * *` slot removed from `wrangler.toml`.
-- **Review nits applied** (commit `a5a8bdb`) — comment on `rsiGraphql` suffix assumption in `queries.ts`, ms-timestamp comment in `dates.js`, `App.jsx` ErrorBoundary/Suspense/Routes indentation fixed.
+- **Migration 0010_rsi_backfill.sql** — 37 RSI-only ships inserted via `INSERT OR IGNORE` with images from old CDN (media.robertsspaceindustries.com/{mediaID}/store_{size}.{ext})
+- **`shipNameMap` cleanup** (`src/sync/rsi.ts`) — removed `merchantman: "banu merchantman"` override; DB name is now "Merchantman", direct match works
+- **DB count**: 301 non-paint vehicles (was 264; +37)
+- **d1_migrations tracker**: backfilled records for 0005-0009 (were applied manually, not recorded); now all 0001-0010 are tracked
+- **Valkyrie Liberator Edition**: NULL images by design (RSI has broken relative URL); ShipImage falls back to base Valkyrie
 
 ## Key Decisions
 
@@ -53,52 +54,4 @@ This file maintains running context across compactions.
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
-**Session compacted at:** 2026-02-24 19:57:21
-
----
-**Session compacted at:** 2026-02-24 20:40:52
-
-
----
-**Session compacted at:** 2026-02-25 14:59:37
-
-
----
-**Session compacted at:** 2026-02-26 11:40:48
-
-
----
-**Session compacted at:** 2026-02-26 23:11:34
-
-
----
-**Session compacted at:** 2026-02-27 08:08:11
-
-
----
-**Session compacted at:** 2026-02-27 08:53:00
-
-
----
-**Session compacted at:** 2026-02-27 10:11:32
-
-
----
-**Session compacted at:** 2026-02-27 11:33:53
-
-
----
-**Session compacted at:** 2026-02-27 12:39:10
-
-
----
-**Session compacted at:** 2026-02-27 12:45:31
-
-
----
-**Session compacted at:** 2026-02-27 13:06:33
-
-
----
-**Session compacted at:** 2026-02-27 13:14:55
-
+**Session compacted at:** 2026-02-27 18:53:00
