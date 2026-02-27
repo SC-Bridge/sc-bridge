@@ -4,14 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Plane board fully structured: Epics 12–23 created as Modules with all 64 sub-tickets (SCB-103–166) linked.**
+**FleetYards removed. Codebase cleaned up. Account page crash fixed.**
 
 ## Recent Changes
 
-- **Epics 12–23 as Modules**: Created 12 Plane modules (Epic 12–23). All 64 sub-tickets linked via `POST /modules/{id}/module-issues/` with `{"issues": [...]}`. (Correct endpoint — NOT `/issues/` which returns 404.)
-- **Wrong epics cleaned**: Deleted 12 wrong parent issues (SCB-091–102) that were accidentally created as regular issues instead of modules.
-- **Board cleanup**: Closed 11 stale Go-era bugs + completed spikes. Created SCB-088 (paint images), SCB-089 (org settings v2), SCB-090 (WAF rate limiting).
-- **Wrong project deleted**: All 69 tickets in `nerdz/a2905f67` deleted. MCP config updated to `sc-companion` workspace.
+- **`formatDate` / `formatDateOnly` fixed** (`frontend/src/lib/dates.js`) — Better Auth returns `Date` objects and numbers, not strings. Added `instanceof Date` + `typeof number` guards before `.trim()` call. Fixes Account page blank/crash.
+- **FleetYards integration removed entirely** (commit `edaf0b2`) — 10 files changed, `src/sync/fleetyards.ts` deleted (253 lines). Production DB confirmed all paint `image_url` values were already RSI CDN — FY was fully redundant.
+- **Sync pipeline simplified**: SC Wiki → scunpacked → RSI (4 cron triggers, was 5). `15 3 * * *` slot removed from `wrangler.toml`.
+- **Review nits applied** (commit `a5a8bdb`) — comment on `rsiGraphql` suffix assumption in `queries.ts`, ms-timestamp comment in `dates.js`, `App.jsx` ErrorBoundary/Suspense/Routes indentation fixed.
 
 ## Key Decisions
 
@@ -48,7 +48,6 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Phase 2** (TBD by user — ships are done, image infra is in place)
 - **Paint images** — use CDN picker at `/admin/cdn-images` for paints.json
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
@@ -94,4 +93,12 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-27 12:45:31
+
+
+---
+**Session compacted at:** 2026-02-27 13:06:33
+
+
+---
+**Session compacted at:** 2026-02-27 13:14:55
 
