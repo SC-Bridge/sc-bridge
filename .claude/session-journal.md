@@ -4,15 +4,16 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Image data integrity fixed — SC Wiki can no longer overwrite RSI CDN URLs.**
+**Cloudflare Images CDN implemented — own the images, RSI CDN changes can't break us.**
 
 ## Recent Changes
 
-- **Migration 0011_fix_image_urls.sql** — Restored 6 ships with broken SC Wiki relative paths (ballista-dunestalker, ballista-snowblind, dragonfly-yellowjacket, f7a-hornet-mk-i, p-72-archimedes-emerald, sabre-raven) from vehicle_images.rsi_cdn_new; created vehicle_images rows for 36 of 37 backfill ships (Valkyrie Liberator Edition skipped: NULL images by design)
-- **`queries.ts` COALESCE fix** — Both `upsertVehicle` and `buildUpsertVehicleStatement` now use `CASE WHEN excluded.image_url LIKE 'http%'` instead of plain COALESCE — SC Wiki relative `/media/...` paths no longer overwrite absolute RSI CDN URLs
-- **`buildUpdateVehicleImagesStatement` UPSERT fix** — Changed plain `UPDATE vehicle_images SET` to `INSERT INTO vehicle_images ... ON CONFLICT DO UPDATE` — vehicles without existing rows now get them created on first RSI sync
-- **CLAUDE.md image rules** — Added "Image Data Rules" section to prevent future regressions
-- **DB state**: 0 vehicles with broken relative image_url; 1 vehicle missing vehicle_images row (valkyrie-liberator-edition, expected)
+- **Migration 0012_cf_images.sql** — Adds `cf_images_id TEXT` column to `vehicle_images`
+- **src/lib/cfImages.ts** — `uploadToCFImages(accountId, token, sourceURL, metadata)` → returns `cf_images_id`
+- **src/db/queries.ts** — Added `getVehiclesNeedingCFUpload(db, limit, offset)` and `setVehicleCFImagesID(db, vehicleId, cfImagesId, accountHash)`
+- **src/routes/admin.ts** — `POST /api/admin/images/bulk-upload?limit=50&offset=0` (paginated, idempotent) and `POST /api/admin/images/upload` (single ship by slug + imageUrl)
+- **src/index.ts** — Mounts `/api/admin/*` under `super_admin` role guard
+- **src/lib/types.ts** — Added `CLOUDFLARE_IMAGES_TOKEN`, `CF_ACCOUNT_HASH`, `CF_ACCOUNT_ID` to `Env`
 
 ## Key Decisions
 
@@ -49,9 +50,11 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Paint images** — use CDN picker at `/admin/cdn-images` for paints.json
+- **Deploy + run migration** — `wrangler d1 migrations apply sc-companion --remote` then set secrets + deploy
+- **Run bulk-upload** — `POST /api/admin/images/bulk-upload?limit=50` repeatedly until all ships uploaded
+- **Valkyrie Liberator Edition** — once source image URL found, use `POST /api/admin/images/upload`
+- **Paint images** — CF Images upload for paints (separate endpoint needed)
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
-- **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
 **Session compacted at:** 2026-02-27 18:53:00
