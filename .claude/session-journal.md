@@ -14,6 +14,7 @@ This file maintains running context across compactions.
 - **src/routes/admin.ts** — `POST /api/admin/images/bulk-upload?limit=50&offset=0` (paginated, idempotent) and `POST /api/admin/images/upload` (single ship by slug + imageUrl)
 - **src/index.ts** — Mounts `/api/admin/*` under `super_admin` role guard
 - **src/lib/types.ts** — Added `CLOUDFLARE_IMAGES_TOKEN`, `CF_ACCOUNT_HASH`, `CF_ACCOUNT_ID` to `Env`
+- **303/303 ships uploaded** — all vehicle_images rows have cf_images_id; vehicles.image_url* now point to imagedelivery.net
 
 ## Key Decisions
 
@@ -50,11 +51,10 @@ This file maintains running context across compactions.
 
 ## What's Next
 
-- **Deploy + run migration** — `wrangler d1 migrations apply sc-companion --remote` then set secrets + deploy
-- **Run bulk-upload** — `POST /api/admin/images/bulk-upload?limit=50` repeatedly until all ships uploaded
-- **Valkyrie Liberator Edition** — once source image URL found, use `POST /api/admin/images/upload`
 - **Paint images** — CF Images upload for paints (separate endpoint needed)
+- **Valkyrie Liberator Edition** — still no image (NULL by design); if a URL is ever found, use `POST /api/admin/images/upload`
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
+- **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 
 ---
 **Session compacted at:** 2026-02-27 18:53:00
