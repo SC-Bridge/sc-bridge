@@ -286,7 +286,8 @@ async function syncGameVersions(db: D1Database, rateLimitMs: number): Promise<vo
 // Vehicles to permanently exclude from syncing — non-ship entries that SC Wiki
 // includes but should not appear in the ship database.
 const BLOCKED_VEHICLE_SLUGS = new Set([
-  "power-suit", // Not a ship — EVA/ground suit equipment
+  "power-suit",                    // Not a ship — EVA/ground suit equipment
+  "dragonfly-star-kitten-edition", // Orphan duplicate — canonical entry is dragonfly-star-kitten
 ]);
 
 // Vehicles that are cosmetic paint editions rather than distinct ships.
