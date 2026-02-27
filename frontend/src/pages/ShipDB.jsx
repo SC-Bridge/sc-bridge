@@ -26,11 +26,11 @@ export default function ShipDB() {
   const baseImageMap = useMemo(() => {
     if (!ships) return new Map()
     const withImages = ships
-      .filter((s) => s.image_url_medium || s.image_url)
-      .map((s) => ({ name: s.name.toLowerCase(), img: s.image_url_medium || s.image_url }))
+      .filter((s) => s.image_url_small || s.image_url_medium || s.image_url)
+      .map((s) => ({ name: s.name.toLowerCase(), img: s.image_url_small || s.image_url_medium || s.image_url }))
     const result = new Map()
     for (const ship of ships) {
-      if (ship.image_url_medium || ship.image_url) continue
+      if (ship.image_url_small || ship.image_url_medium || ship.image_url) continue
       const words = ship.name.toLowerCase().split(/\s+/)
       for (let len = words.length - 1; len >= 1; len--) {
         const prefix = words.slice(0, len).join(' ')
@@ -165,7 +165,7 @@ export default function ShipDB() {
         {paged.map((ship) => (
           <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden">
             <ShipImage
-              src={ship.image_url_medium || ship.image_url}
+              src={ship.image_url_small || ship.image_url_medium || ship.image_url}
               baseSrc={baseImageMap.get(ship.slug)}
               alt={ship.name}
               aspectRatio="landscape"
