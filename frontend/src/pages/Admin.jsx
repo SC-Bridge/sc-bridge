@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { RefreshCw, Database, Image, Palette, Globe, Play, AlertCircle } from 'lucide-react'
-import { useSyncStatus, triggerSCWikiSync, triggerItemSync, triggerImageSync, triggerPaintSync, triggerRSISync, triggerFullSync } from '../hooks/useAPI'
+import { RefreshCw, Database, Palette, Globe, Play, AlertCircle } from 'lucide-react'
+import { useSyncStatus, triggerSCWikiSync, triggerItemSync, triggerPaintSync, triggerRSISync, triggerFullSync } from '../hooks/useAPI'
 import useTimezone from '../hooks/useTimezone'
 import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
@@ -10,9 +10,8 @@ import PanelSection from '../components/PanelSection'
 const syncActions = [
   { id: 'scwiki', label: 'SC Wiki Vehicles', icon: Database, trigger: triggerSCWikiSync, description: 'Ship specs, dimensions, pricing, status' },
   { id: 'items', label: 'SC Wiki Items', icon: Database, trigger: triggerItemSync, description: 'Game items and components' },
-  { id: 'images', label: 'FleetYards Images', icon: Image, trigger: triggerImageSync, description: 'Ship and paint store images' },
-  { id: 'paints', label: 'Paint Sync', icon: Palette, trigger: triggerPaintSync, description: 'scunpacked paint metadata + images' },
-  { id: 'rsi', label: 'RSI API', icon: Globe, trigger: triggerRSISync, description: 'Live images from RSI GraphQL API' },
+  { id: 'paints', label: 'Paint Sync', icon: Palette, trigger: triggerPaintSync, description: 'scunpacked paint metadata' },
+  { id: 'rsi', label: 'RSI API', icon: Globe, trigger: triggerRSISync, description: 'Ship and paint images from RSI GraphQL API' },
 ]
 
 export default function Admin() {

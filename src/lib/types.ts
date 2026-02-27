@@ -4,7 +4,6 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   AVATARS: R2Bucket;
-  FLEETYARDS_BASE_URL: string;
   SC_WIKI_ENABLED: string;
   SC_WIKI_RATE_LIMIT: string;
   SC_WIKI_BURST: string;

@@ -111,10 +111,6 @@ export function useSyncStatus() {
   return useAPI('/sync/status')
 }
 
-export async function triggerImageSync() {
-  return postJSON('/sync/images')
-}
-
 // Sync management (admin)
 export async function triggerSCWikiSync() {
   return postJSON('/sync/scwiki')

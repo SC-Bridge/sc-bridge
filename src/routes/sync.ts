@@ -3,7 +3,6 @@ import type { Env } from "../lib/types";
 import {
   triggerSCWikiSync,
   triggerSCWikiItemSync,
-  triggerImageSync,
   triggerPaintSync,
   triggerRSISync,
   runFullSync,
@@ -56,17 +55,6 @@ export function syncRoutes<E extends { Bindings: Env }>() {
       console.error("[sync] SC Wiki item sync failed:", err);
       return c.json({ error: String(err) }, 500);
     }
-  });
-
-  // POST /api/sync/images — trigger FleetYards image sync (background)
-  routes.post("/images", async (c) => {
-    const env = c.env;
-    c.executionCtx.waitUntil(
-      triggerImageSync(env).catch((err) =>
-        console.error("[sync] Image sync failed:", err),
-      ),
-    );
-    return c.json({ message: "FleetYards image sync triggered" });
   });
 
   // POST /api/sync/paints — trigger paint sync pipeline (background)

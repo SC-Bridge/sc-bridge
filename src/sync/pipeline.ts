@@ -3,16 +3,13 @@
  *
  * Orchestrates the sync chain:
  * 1. SC Wiki (primary data: manufacturers, game versions, vehicles, items)
- * 2. FleetYards ship images
- * 3. scunpacked paint metadata (via GitHub API)
- * 4. FleetYards paint images
- * 5. RSI API images (ship + paint, overwrites FleetYards with RSI CDN URLs)
+ * 2. scunpacked paint metadata (via GitHub API)
+ * 3. RSI API images (ships + paints)
  *
  * Workers are single-threaded per invocation, so no sync mutex needed.
  */
 
 import { syncVehicleData as syncSCWikiVehicles, syncItemData as syncSCWikiItems } from "./scwiki";
-import { syncShipImages as syncFYShipImages, syncPaintImages as syncFYPaintImages } from "./fleetyards";
 import { syncPaints as syncScunpackedPaints } from "./scunpacked";
 import { syncAll as syncRSI } from "./rsi";
 import { getManufacturerCount, getVehicleCount } from "../db/queries";
@@ -53,36 +50,15 @@ export async function triggerSCWikiItemSync(env: Env): Promise<string> {
   return "SC Wiki item sync complete";
 }
 
-export async function triggerImageSync(env: Env): Promise<string> {
-  const baseURL = env.FLEETYARDS_BASE_URL || "https://api.fleetyards.net";
-
-  console.log("[pipeline] FleetYards image sync triggered");
-  logEvent("sync_start", { source: "fleetyards_images" });
-  const start = Date.now();
-  try {
-    await syncFYShipImages(env.DB, baseURL);
-    logEvent("sync_complete", { source: "fleetyards_images", duration_s: (Date.now() - start) / 1000 });
-  } catch (err) {
-    logEvent("sync_error", { source: "fleetyards_images", error: String(err) });
-    throw err;
-  }
-  return "FleetYards image sync complete";
-}
-
 export async function triggerPaintSync(env: Env): Promise<string> {
   const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
   const branch = env.SCUNPACKED_BRANCH || "main";
-  const baseURL = env.FLEETYARDS_BASE_URL || "https://api.fleetyards.net";
 
   console.log("[pipeline] Paint sync triggered");
   logEvent("sync_start", { source: "paint_sync" });
   const start = Date.now();
   try {
-    // Step 1: scunpacked metadata
     await syncScunpackedPaints(env.DB, repo, branch, env.GITHUB_TOKEN);
-
-    // Step 2: FleetYards paint images
-    await syncFYPaintImages(env.DB, baseURL);
     logEvent("sync_complete", { source: "paint_sync", duration_s: (Date.now() - start) / 1000 });
   } catch (err) {
     logEvent("sync_error", { source: "paint_sync", error: String(err) });
@@ -150,16 +126,7 @@ export async function runFullSync(env: Env): Promise<void> {
     return;
   }
 
-  // Step 2: FleetYards ship images
-  try {
-    const baseURL = env.FLEETYARDS_BASE_URL || "https://api.fleetyards.net";
-    console.log("[pipeline] FleetYards ship image sync starting");
-    await syncFYShipImages(db, baseURL);
-  } catch (err) {
-    console.error("[pipeline] FleetYards ship image sync failed:", err);
-  }
-
-  // Step 3: scunpacked paint metadata
+  // Step 2: scunpacked paint metadata
   try {
     const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
     const branch = env.SCUNPACKED_BRANCH || "main";
@@ -169,16 +136,7 @@ export async function runFullSync(env: Env): Promise<void> {
     console.error("[pipeline] scunpacked paint sync failed:", err);
   }
 
-  // Step 4: FleetYards paint images
-  try {
-    const baseURL = env.FLEETYARDS_BASE_URL || "https://api.fleetyards.net";
-    console.log("[pipeline] FleetYards paint image sync starting");
-    await syncFYPaintImages(db, baseURL);
-  } catch (err) {
-    console.error("[pipeline] FleetYards paint image sync failed:", err);
-  }
-
-  // Step 5: RSI API images (overwrites FleetYards with RSI CDN URLs)
+  // Step 3: RSI API images
   if (rsiEnabled) {
     try {
       const baseURL = env.RSI_BASE_URL || "https://robertsspaceindustries.com";

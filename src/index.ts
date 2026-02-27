@@ -259,7 +259,6 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
   const {
     triggerSCWikiSync,
     triggerSCWikiItemSync,
-    triggerImageSync,
     triggerPaintSync,
     triggerRSISync,
   } = await import("./sync/pipeline");
@@ -276,13 +275,8 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
       logEvent("cron_trigger", { schedule: cron, task: "scwiki_items" });
       await triggerSCWikiItemSync(env);
       break;
-    case "15 3 * * *":
-      console.log("[cron] FleetYards ship images");
-      logEvent("cron_trigger", { schedule: cron, task: "fleetyards_images" });
-      await triggerImageSync(env);
-      break;
     case "30 3 * * *":
-      console.log("[cron] Paint sync (scunpacked + FleetYards paint images)");
+      console.log("[cron] Paint sync (scunpacked)");
       logEvent("cron_trigger", { schedule: cron, task: "paint_sync" });
       await triggerPaintSync(env);
       break;
