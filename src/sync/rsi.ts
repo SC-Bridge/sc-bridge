@@ -116,8 +116,7 @@ const browseQuery = `query GetBrowseItems($query: SearchQuery) {
 // --- Ship name mapping (RSI name → DB name, both lowercased) ---
 
 export const shipNameMap: Record<string, string> = {
-  "600i explorer": "600i",
-  "600i touring": "600i",
+  "600i explorer": "600i", // RSI calls it Explorer; our DB slug is just "600i"
   "a2 hercules": "a2 hercules starlifter",
   "c2 hercules": "c2 hercules starlifter",
   "m2 hercules": "m2 hercules starlifter",
