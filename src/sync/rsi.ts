@@ -127,7 +127,6 @@ export const shipNameMap: Record<string, string> = {
   "85x": "85x limited",
   scythe: "vanduul scythe",
   stinger: "esperia stinger",
-  merchantman: "banu merchantman",
   "dragonfly black": "dragonfly",
   "c8r pisces": "c8r pisces rescue",
   "anvil ballista dunestalker": "ballista dunestalker",
