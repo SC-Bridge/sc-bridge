@@ -132,6 +132,7 @@ export interface Vehicle {
   pledge_price?: number;
   price_auec?: number;
   on_sale?: boolean;
+  is_paint_variant?: boolean;
   image_url?: string;
   image_url_small?: string;
   image_url_medium?: string;

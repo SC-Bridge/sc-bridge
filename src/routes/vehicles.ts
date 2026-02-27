@@ -23,6 +23,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
         FROM vehicles v
         LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
+        WHERE v.is_paint_variant = 0
         ORDER BY v.name`,
       )
       .all();

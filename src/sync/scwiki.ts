@@ -289,6 +289,15 @@ const BLOCKED_VEHICLE_SLUGS = new Set([
   "power-suit", // Not a ship — EVA/ground suit equipment
 ]);
 
+// Vehicles that are cosmetic paint editions rather than distinct ships.
+// They are synced to the vehicles table so hangar imports can still match them,
+// but marked is_paint_variant=true so ShipDB filters them out.
+const PAINT_VARIANT_CLASS_NAMES = new Set([
+  "ARGO_ATLS_GEO_Collector_Grad01", // ATLS Snowland Color
+  "ARGO_ATLS_GEO_Collector_Grad02", // ATLS Orange Line
+  "ARGO_ATLS_GEO_Collector_Grad03", // ATLS Cool Metal Color
+]);
+
 async function syncVehicles(db: D1Database, rateLimitMs: number): Promise<void> {
   const syncID = await insertSyncHistory(db, SYNC_SOURCE.SCWIKI, "vehicles", "running");
 
@@ -376,6 +385,7 @@ async function syncVehicles(db: D1Database, rateLimitMs: number): Promise<void> 
             health: v.health,
             pledge_price: v.msrp,
             on_sale: v.skus?.some((s) => s.available) ?? false,
+            is_paint_variant: PAINT_VARIANT_CLASS_NAMES.has(v.class_name),
             pledge_url: v.pledge_url,
             game_version_id: gameVersionID ?? undefined,
           }),

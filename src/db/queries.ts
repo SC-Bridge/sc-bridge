@@ -303,10 +303,10 @@ export function buildUpsertVehicleStatement(
       `INSERT INTO vehicles (uuid, slug, name, class_name, manufacturer_id, vehicle_type_id,
         production_status_id, size, size_label, focus, classification, description,
         length, beam, height, mass, cargo, vehicle_inventory, crew_min, crew_max,
-        speed_scm, speed_max, health, pledge_price, price_auec, on_sale,
+        speed_scm, speed_max, health, pledge_price, price_auec, on_sale, is_paint_variant,
         image_url, image_url_small, image_url_medium, image_url_large,
         pledge_url, game_version_id, raw_data, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(slug) DO UPDATE SET
         uuid=COALESCE(excluded.uuid, vehicles.uuid),
         name=excluded.name, class_name=COALESCE(excluded.class_name, vehicles.class_name),
@@ -332,6 +332,7 @@ export function buildUpsertVehicleStatement(
         pledge_price=COALESCE(excluded.pledge_price, vehicles.pledge_price),
         price_auec=COALESCE(excluded.price_auec, vehicles.price_auec),
         on_sale=excluded.on_sale,
+        is_paint_variant=excluded.is_paint_variant,
         image_url=COALESCE(excluded.image_url, vehicles.image_url),
         image_url_small=COALESCE(excluded.image_url_small, vehicles.image_url_small),
         image_url_medium=COALESCE(excluded.image_url_medium, vehicles.image_url_medium),
@@ -368,13 +369,14 @@ export function buildUpsertVehicleStatement(
       nNum(v.pledge_price),                      // 24: pledge_price
       nNum(v.price_auec),                        // 25: price_auec
       v.on_sale ? 1 : 0,                         // 26: on_sale
-      n(v.image_url),                            // 27: image_url
-      n(v.image_url_small),                      // 28: image_url_small
-      n(v.image_url_medium),                     // 29: image_url_medium
-      n(v.image_url_large),                      // 30: image_url_large
-      n(v.pledge_url),                           // 31: pledge_url
-      nNum(v.game_version_id),                   // 32: game_version_id
-      null,                                      // 33: raw_data
+      v.is_paint_variant ? 1 : 0,               // 27: is_paint_variant
+      n(v.image_url),                            // 28: image_url
+      n(v.image_url_small),                      // 29: image_url_small
+      n(v.image_url_medium),                     // 30: image_url_medium
+      n(v.image_url_large),                      // 31: image_url_large
+      n(v.pledge_url),                           // 32: pledge_url
+      nNum(v.game_version_id),                   // 33: game_version_id
+      null,                                      // 34: raw_data
     );
 }
 
