@@ -49,6 +49,17 @@ This file maintains running context across compactions.
 - **Guild:** StarFab/scdatatools community — ID `710322530992390177`; 444 files / 14MB exported including forum threads (`--include-threads all`)
 - **Forbidden channels:** Admin channels + `asset-creation` — no access, expected
 
+## Production Status — Complete
+
+- **Migration 0016** — corrected wrong production statuses using SC 4.6.0 DataCore as ground truth
+- **Methodology:** DataCore entity presence = flight_ready; holoviewer/3D assets only = in_production; zero p4k presence = in_concept
+- **Corrected 14 → in_production**: Kraken, Nautilus, Liberator, Rangers, G12s, E1 Spirit, Zeus MR, etc.
+- **Corrected 1 → in_concept**: Railen (zero presence in all 4.6.0 game data)
+- **Corrected 7 → in_concept**: Arrastra, Expanse, Hull B/D/E, Ironclad, Ironclad Assault
+- **Final distribution:** Flight Ready 269, In Production 23, In Concept 9
+- **In Concept ships**: Arrastra, Expanse, Hull B, Hull D, Hull E, Ironclad, Ironclad Assault, Javelin, Railen
+- **RSI GraphQL can't provide production status** — browse query is a store API only (name, image, price, url)
+
 ## What's Next
 
 - **Paint images** — CF Images upload for paints (separate endpoint needed)
@@ -61,4 +72,12 @@ This file maintains running context across compactions.
 
 ---
 **Session compacted at:** 2026-02-27 19:23:00
+
+
+---
+**Session compacted at:** 2026-02-28 09:19:43
+
+
+---
+**Session compacted at:** 2026-02-28 10:59:32
 
