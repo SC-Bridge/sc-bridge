@@ -4,22 +4,17 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Ship detail page implemented** at `/ships/:slug` — tabs for Overview, Loadout, Paints.
+**SC Wiki sync removed** — DataCore extraction scripts are now the sole data source for vehicles/components. Ship detail Loadout tab shows component stats from `stats_json`.
 
 ## Recent Changes
 
-- **Ship detail page** (`frontend/src/pages/ShipDetail.jsx`): hero image, tabbed Overview/Loadout/Paints, specs grid, loadout grouped by category_label
-- **Backend**: `GET /api/ships/:slug/loadout` (ports → vehicle_components → manufacturers); `/:slug` now also returns `speed_max`, `health`, `vehicle_inventory`
-- **Hooks**: `useShip`, `useShipLoadout`, `useShipPaints` added to `useAPI.js`
-- **ShipDB cards** wrapped with `Link` to `/ships/:slug` for navigation
-- **ShipDB card UI overhaul** (`frontend/src/pages/ShipDB.jsx`):
-  - Uniform card height: fixed `h-14 overflow-hidden` name area, `line-clamp-2`, `min-h-[1rem]` quest row always reserved
-  - Quest acquisition: "Quest Reward" label where price would be; source name on separate left-aligned row below status
-  - Prices: pledge shows `$X USD`, aUEC shows `X aUEC`, pipe separator `|` when both present
-  - Status badges: `in_concept` → Lightbulb + `text-blue-400`; `in_production` → Wrench + `text-sc-warn` + "In Production"
-  - Stat labels (Role/Cargo/Crew): `font-semibold text-sc-accent2` to differentiate from `text-gray-400` values
-  - Pagination: first/last page buttons (ChevronsLeft/Right), page jump text input (`inputMode="numeric"`)
-  - Scroll-to-top: `useEffect` on `[page]` with `isMounted` ref, `window.scrollTo(0, 0)` (instant, not smooth)
+- **Deleted** `src/sync/scwiki.ts` — SC Wiki sync removed entirely
+- **Rewrote** `src/sync/pipeline.ts` — only paint (scunpacked) + RSI image syncs remain
+- **Removed** `/scwiki` and `/items` sync routes; cron entries `0 3 * * *` and `5 3 * * *`
+- **Removed** SC_WIKI_ENABLED, SC_WIKI_RATE_LIMIT, SC_WIKI_BURST from wrangler.toml
+- **Removed** ~15 scwiki-exclusive functions from queries.ts (upsertManufacturer, upsertVehicle, all FPS item upserts, etc.)
+- **Added** `vc.stats_json` to `getShipLoadout` SELECT; `getKeyStats()` in LoadoutTab shows power_output, shield HP, quantum_speed, etc. as secondary text
+- **Created** `scbridge/tools/scripts/ship_ports/extract.py` + `apply.sh` + `README.md`
 
 ## Key Decisions
 
@@ -110,12 +105,15 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Ship detail polish** — loadout table column widths, loading states per tab
-- **Expose DataCore data** — ship component stats in API/UI
+- **Run ship_ports extractor**: `cd /home/gavin/scbridge/tools/scripts/ship_ports && python3 extract.py --data-path "/mnt/e/SC Bridge/Data p4k/4.6.0-live.11303722" && ./apply.sh`
+- **Verify**: `/ships/gladius` Loadout tab should show Power/Cooling/Shields/Weapons with named components
+- **Re-run manufacturers** extractor to ensure manufacturer data is up to date
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
-- **Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
+
+Also add to Data Extraction Scripts table:
+| `ship_ports/` | Ship ports + default loadout | DataCore spaceships JSONs |
 
 ---
 **Session compacted at:** 2026-02-28 18:41:13
