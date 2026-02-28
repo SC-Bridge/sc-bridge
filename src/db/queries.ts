@@ -215,7 +215,8 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         COALESCE(vc.size,  (SELECT vc2.size  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_size,
         COALESCE(vc.grade, (SELECT vc2.grade FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS grade,
         COALESCE(vc.stats_json, (SELECT vc2.stats_json FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS stats_json,
-        COALESCE(m.name, (SELECT m2.name FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS manufacturer_name
+        COALESCE(m.name, (SELECT m2.name FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS manufacturer_name,
+        COALESCE(m.class, (SELECT m2.class FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS component_class
       FROM ship_ports p
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id

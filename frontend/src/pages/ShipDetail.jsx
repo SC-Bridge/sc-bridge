@@ -210,7 +210,7 @@ function LoadoutTab({ slug }) {
         <span className="col-span-3">Component</span>
         <span className="col-span-1 text-center">Size</span>
         <span className="col-span-1 text-center">Grade</span>
-        <span className="col-span-2">Type</span>
+        <span className="col-span-2">Class</span>
         <span className="col-span-2 text-right">Manufacturer</span>
       </div>
       {Object.entries(grouped).map(([category, items]) => (
@@ -232,7 +232,7 @@ function LoadoutTab({ slug }) {
                   {item.grade || '—'}
                 </span>
                 <span className="col-span-2 text-xs text-gray-500 truncate">
-                  {item.sub_type || '—'}
+                  {item.component_class || '—'}
                 </span>
                 <span className="col-span-2 text-xs text-gray-500 truncate text-right" title={item.manufacturer_name}>
                   {item.manufacturer_name || '—'}
