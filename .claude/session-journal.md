@@ -4,7 +4,7 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**loot_map gap coverage complete (all 6 phases). 4813/5218 (92.2%) matched.**
+**loot_map gap coverage: 4829/5218 (92.5%) matched.**
 
 ## Recent Changes
 
@@ -15,6 +15,8 @@ This file maintains running context across compactions.
   - 0023/0024: `consumables` (+89 matches)
   - 0025/0026: `harvestables` (+60 matches)
   - 0027/0028: `props` plushies/medals/artifacts (+41) + loot-only clothing fix (+29)
+- **2h carryables backfill**: Props (+71 from 2h → 246 total, +16 loot matches → 57 total) and harvestables (+10 from 2h → 75 total; 2h creature drops not in loot_map)
+- **Salvage extractor**: `ship_salvage/extract.py` → 9 items in vehicle_components (SalvageHead×2, SalvageModifier×7); not in loot_map (shop-only)
 - **D1 UPSERT quirk**: Subquery-resolved FKs via ON CONFLICT do not reliably populate. Fixed by running `UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid) WHERE EXISTS (...)` after each batch import.
 - **fps_clothing extractor**: Removed `is_purchasable()` filter — now includes loot-only clothing items.
 
@@ -64,10 +66,11 @@ Last applied: **0028_loot_map_props_fk.sql**
 - **vehicle_components**: 2045 rows (ship components + mining modules)
 - **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
 - **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
-- **harvestables**: 65; **props**: 175 (plushies, medals, artifact fragments, junk)
-- **loot_map**: 5218 items, **4813 with FK matches (92.2%)**
+- **harvestables**: 75 (incl. 2h creature drops); **props**: 246 (incl. 2h large plushies/flair)
+- **vehicle_components**: 2080 (incl. 9 salvage attachments)
+- **loot_map**: 5218 items, **4829 with FK matches (92.5%)**
 
-Remaining 405 unmatched (7.8%): NOITEM_Vehicle (48), no-type (47), UNDEFINED (39),
+Remaining 389 unmatched (7.5%): NOITEM_Vehicle (48), no-type (47), UNDEFINED (39),
 Char_Skin_Color (38), placeholder Usable (29), Missile/Missile (19), Char_Head_Hair (19),
 eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc others.
 
@@ -92,8 +95,9 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 | `fps_helmets/` | Helmets | DataCore starwear/helmet dir |
 | `fps_clothing/` | Clothing (all, incl. loot-only) | DataCore pu_clothing + pu_bespoke |
 | `consumables/` | Food & Drink | DataCore carryables/1h |
-| `harvestables/` | Harvestable items | DataCore carryables/1h |
-| `props/` | Misc props (Misc/* types) | DataCore carryables/1h |
+| `harvestables/` | Harvestable items | DataCore carryables/1h + 2h |
+| `props/` | Misc props (Misc/* types) | DataCore carryables/1h + 2h |
+| `ship_salvage/` | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
@@ -117,3 +121,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ---
 **Session compacted at:** 2026-02-28 19:07:20
+
+---
+**Session compacted at:** 2026-02-28 19:31:12
+
