@@ -66,7 +66,7 @@ Last applied: **0028_loot_map_props_fk.sql**
 - **vehicle_components**: 2045 rows (ship components + mining modules)
 - **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
 - **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
-- **harvestables**: 75 (incl. 2h creature drops); **props**: 246 (incl. 2h large plushies/flair)
+- **harvestables**: 77 (1h + 2h + tractorbeamonly — incl. Irradiated Apex Fang, TBO Yormandi Tongue); **props**: 246
 - **vehicle_components**: 2080 (incl. 9 salvage attachments)
 - **loot_map**: 5218 items, **4829 with FK matches (92.5%)**
 
