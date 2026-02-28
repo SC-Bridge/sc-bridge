@@ -229,11 +229,11 @@ export default function ShipDB() {
                     ) : null}
                   </div>
                 </div>
-                {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
-                  <div className="text-right mt-1">
+                <div className="text-right mt-1 min-h-[1rem]">
+                  {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
                     <span className="text-xs text-sc-accent2">{ship.acquisition_source_name}</span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
