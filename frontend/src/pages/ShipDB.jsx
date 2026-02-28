@@ -224,6 +224,19 @@ export default function ShipDB() {
               </div>
               <div className="mt-3 pt-2 border-t border-sc-border/30">
                 <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {ship.pledge_price > 0 ? (
+                      <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
+                    ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
+                      <span className="text-xs text-sc-accent2">Quest Reward</span>
+                    ) : null}
+                    {ship.price_auec > 0 && ship.pledge_price > 0 && (
+                      <span className="text-xs text-gray-400">|</span>
+                    )}
+                    {ship.price_auec > 0 && (
+                      <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+                    )}
+                  </div>
                   <span className="text-xs font-mono text-gray-500">
                     {ship.production_status === 'flight_ready' ? (
                       <span className="inline-flex items-center gap-1 text-sc-success">
@@ -243,21 +256,8 @@ export default function ShipDB() {
                       </span>
                     ) : null}
                   </span>
-                  <div className="flex items-center gap-2">
-                    {ship.price_auec > 0 && (
-                      <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
-                    )}
-                    {ship.price_auec > 0 && ship.pledge_price > 0 && (
-                      <span className="text-xs text-gray-400">|</span>
-                    )}
-                    {ship.pledge_price > 0 ? (
-                      <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
-                    ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
-                      <span className="text-xs text-sc-accent2">Quest Reward</span>
-                    ) : null}
-                  </div>
                 </div>
-                <div className="text-right mt-1 min-h-[1rem]">
+                <div className="mt-1 min-h-[1rem]">
                   {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
                     <span className="text-xs text-sc-accent2">{ship.acquisition_source_name}</span>
                   )}
