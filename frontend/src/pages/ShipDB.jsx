@@ -218,13 +218,16 @@ export default function ShipDB() {
                       </span>
                     ) : null}
                   </span>
-                  {ship.acquisition_type === 'ingame_shop' && ship.price_auec > 0 ? (
-                    <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
-                  ) : ship.pledge_price > 0 ? (
-                    <span className="text-xs font-mono text-sc-warn">${ship.pledge_price}</span>
-                  ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
-                    <span className="text-xs text-sc-accent2">Quest Reward</span>
-                  ) : null}
+                  <div className="flex items-center gap-2">
+                    {ship.price_auec > 0 && (
+                      <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+                    )}
+                    {ship.pledge_price > 0 ? (
+                      <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
+                    ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
+                      <span className="text-xs text-sc-accent2">Quest Reward</span>
+                    ) : null}
+                  </div>
                 </div>
                 {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
                   <div className="text-right mt-1">
