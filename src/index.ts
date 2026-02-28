@@ -260,27 +260,15 @@ export default {
 
 async function runScheduledSync(cron: string, env: Env): Promise<void> {
   const {
-    triggerSCWikiSync,
-    triggerSCWikiItemSync,
     triggerPaintSync,
     triggerRSISync,
   } = await import("./sync/pipeline");
 
   switch (cron) {
-    case "0 3 * * *":
-      console.log("[cron] Session cleanup + SC Wiki vehicles");
-      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup_and_scwiki_vehicles" });
-      await cleanExpiredSessions(env);
-      await triggerSCWikiSync(env);
-      break;
-    case "5 3 * * *":
-      console.log("[cron] SC Wiki items");
-      logEvent("cron_trigger", { schedule: cron, task: "scwiki_items" });
-      await triggerSCWikiItemSync(env);
-      break;
     case "30 3 * * *":
-      console.log("[cron] Paint sync (scunpacked)");
-      logEvent("cron_trigger", { schedule: cron, task: "paint_sync" });
+      console.log("[cron] Session cleanup + paint sync (scunpacked)");
+      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup_and_paint_sync" });
+      await cleanExpiredSessions(env);
       await triggerPaintSync(env);
       break;
     case "45 3 * * *":

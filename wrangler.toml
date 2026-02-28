@@ -28,17 +28,12 @@ bucket_name = "sc-bridge-avatars"
 # Each step runs as a separate invocation with its own 30s CPU budget
 [triggers]
 crons = [
-  "0 3 * * *",   # SC Wiki vehicles + session cleanup
-  "5 3 * * *",   # SC Wiki items (components, FPS weapons, armour, etc.)
-  "30 3 * * *",  # scunpacked paint metadata
+  "30 3 * * *",  # session cleanup + scunpacked paint metadata
   "45 3 * * *",  # RSI API images (ships + paints)
 ]
 
 # Environment variables (non-secret defaults)
 [vars]
-SC_WIKI_ENABLED = "true"
-SC_WIKI_RATE_LIMIT = "1.0"
-SC_WIKI_BURST = "5"
 RSI_API_ENABLED = "true"
 RSI_BASE_URL = "https://robertsspaceindustries.com"
 RSI_RATE_LIMIT = "1.0"

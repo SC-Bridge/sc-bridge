@@ -171,6 +171,31 @@ function OverviewTab({ ship }) {
   )
 }
 
+function getKeyStats(item) {
+  if (!item.stats_json) return null
+  let stats
+  try {
+    stats = JSON.parse(item.stats_json)
+  } catch {
+    return null
+  }
+  const type = item.component_type || ''
+  const pairs = []
+  if (type === 'PowerPlant' && stats.power_output != null)
+    pairs.push(`${stats.power_output} SCU`)
+  if (type === 'Shield' && stats.max_shield_health != null)
+    pairs.push(`${stats.max_shield_health.toLocaleString()} HP`)
+  if (type === 'QuantumDrive' && stats.quantum_speed != null)
+    pairs.push(`${stats.quantum_speed} Mm/s`)
+  if (type === 'Cooler' && stats.cooling_rate != null)
+    pairs.push(`${stats.cooling_rate} cooling`)
+  if ((type === 'WeaponGun' || type === 'Weapon') && stats.damage != null)
+    pairs.push(`${stats.damage} dmg`)
+  if ((type === 'WeaponGun' || type === 'Weapon') && stats.fire_rate != null)
+    pairs.push(`${stats.fire_rate} rpm`)
+  return pairs.length > 0 ? pairs.join(' · ') : null
+}
+
 function LoadoutTab({ slug }) {
   const { data: loadout, loading, error } = useShipLoadout(slug)
 
@@ -200,25 +225,31 @@ function LoadoutTab({ slug }) {
         <div key={category} className="panel overflow-hidden">
           <div className="panel-header">{category}</div>
           <div className="divide-y divide-sc-border/30">
-            {items.map((item, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
-                <span className="col-span-4 text-xs font-mono text-gray-400 truncate" title={item.port_name}>
-                  {item.port_name}
-                </span>
-                <span className={`col-span-4 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || 'Empty'}>
-                  {item.component_name || 'Empty'}
-                </span>
-                <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
-                  {item.grade ? `S${item.component_size ?? '?'}` : '—'}
-                </span>
-                <span className="col-span-1 text-xs font-mono text-gray-500 text-center">
-                  {item.grade || '—'}
-                </span>
-                <span className="col-span-2 text-xs text-gray-500 truncate text-right" title={item.manufacturer_name}>
-                  {item.manufacturer_name || ''}
-                </span>
-              </div>
-            ))}
+            {items.map((item, i) => {
+              const keyStats = getKeyStats(item)
+              return (
+                <div key={i} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
+                  <span className="col-span-4 text-xs font-mono text-gray-400 truncate" title={item.port_name}>
+                    {item.port_name}
+                  </span>
+                  <span className={`col-span-4 truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || 'Empty'}>
+                    <span className="text-sm">{item.component_name || 'Empty'}</span>
+                    {keyStats && (
+                      <span className="block text-xs text-gray-500">{keyStats}</span>
+                    )}
+                  </span>
+                  <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
+                    {item.grade ? `S${item.component_size ?? '?'}` : '—'}
+                  </span>
+                  <span className="col-span-1 text-xs font-mono text-gray-500 text-center">
+                    {item.grade || '—'}
+                  </span>
+                  <span className="col-span-2 text-xs text-gray-500 truncate text-right" title={item.manufacturer_name}>
+                    {item.manufacturer_name || ''}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       ))}

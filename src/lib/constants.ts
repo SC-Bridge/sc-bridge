@@ -3,7 +3,6 @@
  */
 
 export const SYNC_SOURCE = {
-  SCWIKI: 1,
   HANGARXPLOR: 3,
   SCUNPACKED: 4,
   RSI_API: 5,

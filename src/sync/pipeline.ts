@@ -1,54 +1,23 @@
 /**
- * Sync pipeline orchestration — ported from internal/sync/scheduler.go
+ * Sync pipeline orchestration
  *
  * Orchestrates the sync chain:
- * 1. SC Wiki (primary data: manufacturers, game versions, vehicles, items)
- * 2. scunpacked paint metadata (via GitHub API)
- * 3. RSI API images (ships + paints)
+ * 1. scunpacked paint metadata (via GitHub API)
+ * 2. RSI API images (ships + paints)
+ *
+ * Vehicle and component data is populated via DataCore extraction scripts
+ * in scbridge/tools/scripts/ — not via live sync.
  *
  * Workers are single-threaded per invocation, so no sync mutex needed.
  */
 
-import { syncVehicleData as syncSCWikiVehicles, syncItemData as syncSCWikiItems } from "./scwiki";
 import { syncPaints as syncScunpackedPaints } from "./scunpacked";
 import { syncAll as syncRSI } from "./rsi";
-import { getManufacturerCount, getVehicleCount } from "../db/queries";
+import { getVehicleCount } from "../db/queries";
 import type { Env } from "../lib/types";
 import { logEvent } from "../lib/logger";
 
 // --- Individual sync functions (for manual triggers) ---
-
-export async function triggerSCWikiSync(env: Env): Promise<string> {
-  const rateLimitMs = parseFloat(env.SC_WIKI_RATE_LIMIT || "1") * 1000;
-
-  console.log("[pipeline] SC Wiki vehicle sync triggered");
-  logEvent("sync_start", { source: "scwiki_vehicles" });
-  const start = Date.now();
-  try {
-    await syncSCWikiVehicles(env.DB, rateLimitMs);
-    logEvent("sync_complete", { source: "scwiki_vehicles", duration_s: (Date.now() - start) / 1000 });
-  } catch (err) {
-    logEvent("sync_error", { source: "scwiki_vehicles", error: String(err) });
-    throw err;
-  }
-  return "SC Wiki vehicle sync complete";
-}
-
-export async function triggerSCWikiItemSync(env: Env): Promise<string> {
-  const rateLimitMs = parseFloat(env.SC_WIKI_RATE_LIMIT || "1") * 1000;
-
-  console.log("[pipeline] SC Wiki item sync triggered");
-  logEvent("sync_start", { source: "scwiki_items" });
-  const start = Date.now();
-  try {
-    await syncSCWikiItems(env.DB, rateLimitMs);
-    logEvent("sync_complete", { source: "scwiki_items", duration_s: (Date.now() - start) / 1000 });
-  } catch (err) {
-    logEvent("sync_error", { source: "scwiki_items", error: String(err) });
-    throw err;
-  }
-  return "SC Wiki item sync complete";
-}
 
 export async function triggerPaintSync(env: Env): Promise<string> {
   const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
@@ -99,34 +68,16 @@ export async function runFullSync(env: Env): Promise<void> {
   console.log("[pipeline] Full sync pipeline starting (dev/manual — use cron triggers in production)");
 
   const db = env.DB;
-  const scwikiEnabled = env.SC_WIKI_ENABLED !== "false";
   const rsiEnabled = env.RSI_API_ENABLED === "true";
 
-  // Step 1: SC Wiki — primary data source (vehicles + items split)
-  if (scwikiEnabled) {
-    const mfgCount = await getManufacturerCount(db);
-    console.log(`[pipeline] ${mfgCount} manufacturers in DB, running SC Wiki sync`);
-    const rateLimitMs = parseFloat(env.SC_WIKI_RATE_LIMIT || "1") * 1000;
-    try {
-      await syncSCWikiVehicles(db, rateLimitMs);
-    } catch (err) {
-      console.error("[pipeline] SC Wiki vehicle sync failed:", err);
-    }
-    try {
-      await syncSCWikiItems(db, rateLimitMs);
-    } catch (err) {
-      console.error("[pipeline] SC Wiki item sync failed:", err);
-    }
-  }
-
-  // Only run downstream syncs if vehicles exist
+  // Only run image syncs if vehicles exist
   const vehicleCount = await getVehicleCount(db);
   if (vehicleCount === 0) {
-    console.warn("[pipeline] No vehicles in DB after SC Wiki sync, skipping image and paint sync");
+    console.warn("[pipeline] No vehicles in DB, skipping image and paint sync");
     return;
   }
 
-  // Step 2: scunpacked paint metadata
+  // Step 1: scunpacked paint metadata
   try {
     const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
     const branch = env.SCUNPACKED_BRANCH || "main";
@@ -136,7 +87,7 @@ export async function runFullSync(env: Env): Promise<void> {
     console.error("[pipeline] scunpacked paint sync failed:", err);
   }
 
-  // Step 3: RSI API images
+  // Step 2: RSI API images
   if (rsiEnabled) {
     try {
       const baseURL = env.RSI_BASE_URL || "https://robertsspaceindustries.com";

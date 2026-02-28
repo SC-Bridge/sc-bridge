@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../lib/types";
 import {
-  triggerSCWikiSync,
-  triggerSCWikiItemSync,
   triggerPaintSync,
   triggerRSISync,
   runFullSync,
@@ -31,30 +29,6 @@ export function syncRoutes<E extends { Bindings: Env }>() {
       )
       .all();
     return c.json(result.results);
-  });
-
-  // POST /api/sync/scwiki — trigger SC Wiki vehicle sync (background)
-  routes.post("/scwiki", async (c) => {
-    const env = c.env;
-    c.executionCtx.waitUntil(
-      triggerSCWikiSync(env).catch((err) =>
-        console.error("[sync] SC Wiki vehicle sync failed:", err),
-      ),
-    );
-    return c.json({ message: "SC Wiki sync triggered" });
-  });
-
-  // POST /api/sync/items — trigger SC Wiki item sync (runs inline, not background)
-  // Items sync is fast enough (~10-15s) to complete within the HTTP handler timeout.
-  // Using waitUntil() was causing premature termination on production.
-  routes.post("/items", async (c) => {
-    try {
-      const result = await triggerSCWikiItemSync(c.env);
-      return c.json({ message: result });
-    } catch (err) {
-      console.error("[sync] SC Wiki item sync failed:", err);
-      return c.json({ error: String(err) }, 500);
-    }
   });
 
   // POST /api/sync/paints — trigger paint sync pipeline (background)

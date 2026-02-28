@@ -124,14 +124,6 @@ export function useSyncStatus() {
 }
 
 // Sync management (admin)
-export async function triggerSCWikiSync() {
-  return postJSON('/sync/scwiki')
-}
-
-export async function triggerItemSync() {
-  return postJSON('/sync/items')
-}
-
 export async function triggerPaintSync() {
   return postJSON('/sync/paints')
 }
