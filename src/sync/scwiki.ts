@@ -10,7 +10,7 @@ import {
   upsertGameVersion,
   buildUpsertVehicleStatement,
   buildUpsertPortStatement,
-  buildUpsertComponentStatement,
+  buildUpsertVehicleComponentStatement,
   buildUpsertFPSWeaponStatement,
   buildUpsertFPSArmourStatement,
   buildUpsertFPSAttachmentStatement,
@@ -553,7 +553,7 @@ function buildItemStatement(
   const gvID = gameVersionID ?? undefined;
 
   if (isShipComponent(item.type)) {
-    return buildUpsertComponentStatement(db, {
+    return buildUpsertVehicleComponentStatement(db, {
       uuid: item.uuid,
       name: item.name,
       slug: item.slug,

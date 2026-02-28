@@ -546,14 +546,14 @@ export async function findVehicleIDsByNameContains(
 // Component Operations
 // ============================================================
 
-export async function upsertComponent(db: D1Database, c: Partial<Component> & { uuid: string; name: string; type: string }): Promise<void> {
-  await buildUpsertComponentStatement(db, c).run();
+export async function upsertVehicleComponent(db: D1Database, c: Partial<Component> & { uuid: string; name: string; type: string }): Promise<void> {
+  await buildUpsertVehicleComponentStatement(db, c).run();
 }
 
-export function buildUpsertComponentStatement(db: D1Database, c: Partial<Component> & { uuid: string; name: string; type: string }): D1PreparedStatement {
+export function buildUpsertVehicleComponentStatement(db: D1Database, c: Partial<Component> & { uuid: string; name: string; type: string }): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO components (uuid, name, slug, class_name, manufacturer_id, type, sub_type,
+      `INSERT INTO vehicle_components (uuid, name, slug, class_name, manufacturer_id, type, sub_type,
         size, grade, description, game_version_id, raw_data, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(uuid) DO UPDATE SET
