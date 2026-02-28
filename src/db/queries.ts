@@ -193,26 +193,33 @@ export async function findVehicleIDsByNameContains(
 // ============================================================
 
 export async function getShipLoadout(db: D1Database, slug: string): Promise<Record<string, unknown>[]> {
+  // Some ships mount weapons inside a weapon-mount bracket (fixed/gimbal). The bracket is
+  // the direct equipped item on the gun port, but it is not in vehicle_components. The actual
+  // weapon lives one level deeper in a child port. We use a CTE to pre-filter to just this
+  // ship's ports, then COALESCE the direct component join with a child-port fallback lookup.
   const result = await db
     .prepare(
-      `SELECT
+      `WITH ship_ports AS (
+        SELECT * FROM vehicle_ports
+        WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
+      )
+      SELECT
         p.name AS port_name,
         p.category_label,
         p.port_type,
         p.size_min,
         p.size_max,
-        vc.name AS component_name,
-        vc.type AS component_type,
-        vc.sub_type,
-        vc.size AS component_size,
-        vc.grade,
-        vc.stats_json,
-        m.name AS manufacturer_name
-      FROM vehicle_ports p
+        COALESCE(vc.name,  (SELECT vc2.name  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_name,
+        COALESCE(vc.type,  (SELECT vc2.type  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_type,
+        COALESCE(vc.sub_type, (SELECT vc2.sub_type FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS sub_type,
+        COALESCE(vc.size,  (SELECT vc2.size  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_size,
+        COALESCE(vc.grade, (SELECT vc2.grade FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS grade,
+        COALESCE(vc.stats_json, (SELECT vc2.stats_json FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS stats_json,
+        COALESCE(m.name, (SELECT m2.name FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS manufacturer_name
+      FROM ship_ports p
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
-      WHERE p.vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
-        AND p.category_label IS NOT NULL
+      WHERE p.category_label IS NOT NULL
       ORDER BY p.category_label, p.name`,
     )
     .bind(slug)
