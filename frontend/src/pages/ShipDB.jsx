@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useShips } from '../hooks/useAPI'
-import { Database, ArrowUpDown, CheckCircle, Wrench, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -212,6 +212,14 @@ export default function ShipDB() {
                       <span className="inline-flex items-center gap-1 text-sc-success">
                         <CheckCircle className="w-3 h-3" /> Flight Ready
                       </span>
+                    ) : ship.production_status === 'in_production' ? (
+                      <span className="inline-flex items-center gap-1 text-sc-warn">
+                        <Wrench className="w-3 h-3" /> In Production
+                      </span>
+                    ) : ship.production_status === 'in_concept' ? (
+                      <span className="inline-flex items-center gap-1 text-blue-400">
+                        <Lightbulb className="w-3 h-3" /> In Concept
+                      </span>
                     ) : ship.production_status ? (
                       <span className="inline-flex items-center gap-1 text-sc-warn">
                         <Wrench className="w-3 h-3" /> {ship.production_status}
@@ -221,6 +229,9 @@ export default function ShipDB() {
                   <div className="flex items-center gap-2">
                     {ship.price_auec > 0 && (
                       <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+                    )}
+                    {ship.price_auec > 0 && ship.pledge_price > 0 && (
+                      <span className="text-xs text-gray-400">|</span>
                     )}
                     {ship.pledge_price > 0 ? (
                       <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
