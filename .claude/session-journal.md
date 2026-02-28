@@ -83,3 +83,7 @@ Last applied: **0018_loot_map.sql**
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+
+---
+**Session compacted at:** 2026-02-28 18:41:13
+
