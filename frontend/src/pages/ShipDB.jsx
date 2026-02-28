@@ -121,7 +121,7 @@ export default function ShipDB() {
   const isMounted = useRef(false)
   useEffect(() => {
     if (!isMounted.current) { isMounted.current = true; return }
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo(0, 0)
   }, [page])
 
   const resetPage = () => setPage(1)
