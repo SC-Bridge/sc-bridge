@@ -17,7 +17,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
           v.length, v.beam, v.height, v.mass, v.cargo,
           v.crew_min, v.crew_max, v.speed_scm, v.pledge_price, v.on_sale,
           v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
-          v.pledge_url,
+          v.pledge_url, v.price_auec, v.acquisition_type, v.acquisition_source_name,
           m.name as manufacturer_name, m.code as manufacturer_code,
           ps.key as production_status
         FROM vehicles v
@@ -41,7 +41,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
           v.length, v.beam, v.height, v.mass, v.cargo,
           v.crew_min, v.crew_max, v.speed_scm, v.pledge_price, v.on_sale,
           v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
-          v.pledge_url,
+          v.pledge_url, v.price_auec, v.acquisition_type, v.acquisition_source_name,
           m.name as manufacturer_name, m.code as manufacturer_code,
           ps.key as production_status
         FROM vehicles v

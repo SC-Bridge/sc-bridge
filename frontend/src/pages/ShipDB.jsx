@@ -99,7 +99,10 @@ export default function ShipDB() {
       let va, vb
       switch (sortBy) {
         case 'name': va = a.name; vb = b.name; break
-        case 'price': va = a.pledge_price || 0; vb = b.pledge_price || 0; break
+        case 'price':
+          va = a.acquisition_type === 'ingame_shop' ? (a.price_auec || 0) : (a.pledge_price || 0);
+          vb = b.acquisition_type === 'ingame_shop' ? (b.price_auec || 0) : (b.pledge_price || 0);
+          break
         case 'cargo': va = a.cargo || 0; vb = b.cargo || 0; break
         default: va = a.name; vb = b.name
       }
@@ -214,9 +217,13 @@ export default function ShipDB() {
                     </span>
                   ) : null}
                 </span>
-                {ship.pledge_price > 0 && (
+                {ship.acquisition_type === 'ingame_shop' && ship.price_auec > 0 ? (
+                  <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+                ) : ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz' ? (
+                  <span className="text-xs text-sc-accent2">{ship.acquisition_source_name}</span>
+                ) : ship.pledge_price > 0 ? (
                   <span className="text-xs font-mono text-sc-warn">${ship.pledge_price}</span>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
