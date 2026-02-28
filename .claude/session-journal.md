@@ -59,11 +59,10 @@ Last applied: **0029_rename_ports_to_vehicle_ports.sql**
 
 - **vehicles**: 303 ships, all with CF Images IDs (`imagedelivery.net`)
 - **vehicle_ports**: 25,797 rows (player ships only, INSERT...SELECT skips AI variants)
-- **vehicle_components**: 2045 rows (ship components + mining modules)
+- **vehicle_components**: 2080 rows (ship components + mining modules + 9 salvage attachments)
 - **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
 - **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
 - **harvestables**: 77 (1h + 2h + tractorbeamonly — incl. Irradiated Apex Fang, TBO Yormandi Tongue); **props**: 246
-- **vehicle_components**: 2080 (incl. 9 salvage attachments)
 - **loot_map**: 5218 items, **4829 with FK matches (92.5%)**
 
 Remaining 389 unmatched (7.5%): NOITEM_Vehicle (48), no-type (47), UNDEFINED (39),
@@ -112,33 +111,6 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
 
----
-**Session compacted at:** 2026-02-28 18:41:13
-
-
----
-**Session compacted at:** 2026-02-28 19:07:20
-
----
-**Session compacted at:** 2026-02-28 19:31:12
-
-
----
-**Session compacted at:** 2026-02-28 21:10:03
-
-
----
-**Session compacted at:** 2026-03-01 06:58:22
-
-
----
-**Session compacted at:** 2026-03-01 07:10:30
-
-
----
-**Session compacted at:** 2026-03-01 07:41:11
-
 
 ---
 **Session compacted at:** 2026-03-01 08:35:38
-
