@@ -222,6 +222,8 @@ export default function ShipDB() {
                     <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
                   ) : ship.pledge_price > 0 ? (
                     <span className="text-xs font-mono text-sc-warn">${ship.pledge_price}</span>
+                  ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
+                    <span className="text-xs text-sc-accent2">Quest Reward</span>
                   ) : null}
                 </div>
                 {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
