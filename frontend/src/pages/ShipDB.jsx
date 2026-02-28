@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useShips } from '../hooks/useAPI'
 import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
@@ -191,7 +192,7 @@ export default function ShipDB() {
       {/* Ship Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {paged.map((ship) => (
-          <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden">
+          <Link key={ship.slug} to={`/ships/${ship.slug}`} className="panel-hover group cursor-pointer overflow-hidden block">
             <ShipImage
               src={ship.image_url_small}
               fallbackSrc={ship.image_url_medium || ship.image_url}
@@ -264,7 +265,7 @@ export default function ShipDB() {
                 </div>
               </div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 

@@ -99,6 +99,18 @@ export function useShips() {
   return useAPI('/ships')
 }
 
+export function useShip(slug) {
+  return useAPI(slug ? `/ships/${slug}` : null, { skip: !slug })
+}
+
+export function useShipLoadout(slug) {
+  return useAPI(slug ? `/ships/${slug}/loadout` : null, { skip: !slug })
+}
+
+export function useShipPaints(slug) {
+  return useAPI(slug ? `/paints/ship/${slug}` : null, { skip: !slug })
+}
+
 export function useFleet() {
   return useAPI('/vehicles')
 }

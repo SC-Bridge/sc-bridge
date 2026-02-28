@@ -593,6 +593,34 @@ export async function upsertPort(db: D1Database, p: Partial<Port> & { uuid: stri
     .run();
 }
 
+export async function getShipLoadout(db: D1Database, slug: string): Promise<Record<string, unknown>[]> {
+  const result = await db
+    .prepare(
+      `SELECT
+        p.name AS port_name,
+        p.category_label,
+        p.port_type,
+        p.size_min,
+        p.size_max,
+        vc.name AS component_name,
+        vc.type AS component_type,
+        vc.sub_type,
+        vc.size AS component_size,
+        vc.grade,
+        m.name AS manufacturer_name
+      FROM ports p
+      LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
+      LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
+      WHERE p.vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
+        AND p.category_label IS NOT NULL
+      ORDER BY p.category_label, p.name`,
+    )
+    .bind(slug)
+    .all();
+
+  return result.results as Record<string, unknown>[];
+}
+
 // ============================================================
 // FPS Item Operations
 // ============================================================

@@ -18,6 +18,7 @@ const Analysis = lazy(() => import('./pages/Analysis'))
 const AnalysisHistory = lazy(() => import('./pages/AnalysisHistory'))
 const Import = lazy(() => import('./pages/Import'))
 const ShipDB = lazy(() => import('./pages/ShipDB'))
+const ShipDetail = lazy(() => import('./pages/ShipDetail'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
@@ -346,6 +347,7 @@ export default function App() {
                       {/* Public routes */}
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/ships" element={<ShipDB />} />
+                      <Route path="/ships/:slug" element={<ShipDetail />} />
 
                       {/* Protected routes */}
                       <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
