@@ -4,15 +4,16 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**DataCore extraction suite complete — ship components & FPS gear now in D1.**
+**loot_map in D1, components renamed to vehicle_components, DB conventions written.**
 
 ## Recent Changes (this session)
 
-- **DataCore extraction suite built and applied** — 9 extractors + shared lib, all committed to `scbridge/tools` repo
-- **stats_json column** added to components, fps_weapons, fps_armour, fps_attachments, fps_utilities
-- **D1 state**: 780 ship components (91% with stats), 336 fps_weapons (55% with stats), 1584 fps_armour, 99 fps_attachments, 20 fps_utilities
-- **Bug fixed**: `get_component()` and `fireActions` loops now skip None elements; fire mode types corrected (`FireSingle/Burst/Rapid` not `SingleShot/BurstFire/FullAuto`)
-- **Placeholder filtering**: `is_placeholder_name()` in lib/datacore.py excludes `@LOC_PLACEHOLDER` dev items
+- **Migration 0017**: `ALTER TABLE components RENAME TO vehicle_components` — applied
+- **Migration 0018**: `CREATE TABLE loot_map` — applied (FKs to all item tables, JSON blob columns)
+- **loot_map.json imported**: 5218 items → D1 (27 batches × 200); 2269/5218 matched to item tables (43.5%)
+- **queries.ts + scwiki.ts**: renamed `buildUpsertComponentStatement` → `buildUpsertVehicleComponentStatement`
+- **4 extractor scripts updated**: `INSERT INTO components` → `INSERT INTO vehicle_components`
+- **src/db/CONVENTIONS.md**: DB conventions document written (naming, PKs, FKs, JSON blobs, migrations, indexes)
 
 ## Key Decisions
 
@@ -62,18 +63,18 @@ This file maintains running context across compactions.
 - **production_status_id**: 269 flight_ready / 23 in_production / 9 in_concept (protected from SC Wiki overwrite)
 - **price_auec**: 48 ships (84,853 aUEC Dragonfly → 57,637,172 aUEC Reclaimer)
 - **acquisition_type**: 34 ingame_quest / 13 ingame_cz / 48 ingame_shop / 214 NULL (pledge-only)
-- **components (DataCore)**: 780 purchasable, 715 with stats_json (power/cooler/shield/QD/weapons/missiles)
-- **fps_weapons**: 404 total (336 from DataCore + pre-existing SC Wiki), 223 with stats_json
-- **fps_armour**: 1779 total, 1584 DataCore rows, 1165 with stats_json
-- **fps_attachments**: 488 total, 99 DataCore; **fps_utilities**: 50 total, 20 DataCore
+- **vehicle_components** (renamed from components): 2045 rows, DataCore ship components + SC Wiki
+- **fps_weapons**: 404 total; **fps_armour**: 1779 total; **fps_attachments**: 488; **fps_utilities**: 50
+- **loot_map**: 5218 items — 2269 matched to item tables (43.5%); gaps are clothing/helmets/misc
 - **303/303 ships** have CF Images IDs; `vehicles.image_url*` → `imagedelivery.net`
 
 ## What's Next
 
+- **loot_map gap coverage**: add `fps_helmets` table (Char_Armor_Helmet types — 491 unmatched), `fps_clothing` (1787 unmatched)
+- **Expose DataCore data** — ship component stats in API/UI (vehicle_components, fps_weapons etc.)
 - **Paint images** — CF Images upload for paints (separate endpoint needed)
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
-- **Expose DataCore data** — ship component stats in API/UI (components, fps_weapons etc.)
 
 ---
 **Session compacted at:** 2026-02-28 14:05:00
