@@ -4,16 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**vehicle_ports table populated** — 25,797 port rows for ~303 player ships. Loadout tab should now render.
+**Loadout tab complete** — weapon mount pass-through fixed, deployed to production. Verify `/ships/gladius` shows weapon names.
 
 ## Recent Changes
 
-- **SC Wiki sync removed** entirely (scwiki.ts deleted, pipeline/routes/crons cleaned up)
-- **Renamed** `ports` → `vehicle_ports` (migration 0029)
-- **Fixed** `extract.py` — DataCore JSON uses `_RecordValue_.Components` (list, not dict); find by `_Type_` == `SEntityComponentDefaultLoadoutParams`
-- **Fixed** `extract.py` — switched to `INSERT ... SELECT FROM vehicles WHERE uuid = ...` so AI-variant ships silently no-op
-- **Applied** 0029 migration + ship_ports extraction: **25,797 rows** in vehicle_ports
-- **Added** `vc.stats_json` to `getShipLoadout`; `getKeyStats()` in LoadoutTab shows component stats
+- **Fixed** `extract.py` PORT_CATEGORIES: added `hardpoint_gun_rack`/`hardpoint_gunrack` as None (before `hardpoint_gun`); added `_console`, `_camera`, `_controller` to infra substring exclusions
+- **Re-ran** `ship_ports/extract.py` + applied to D1: 25,797 rows, 97% of labeled ports equipped (2,383/2,460)
+- **Added** migration 0030: indexes on `vehicle_ports(vehicle_id)` and `vehicle_ports(parent_port_id)`
+- **Fixed** `getShipLoadout`: CTE + COALESCE child-port fallback resolves weapons through mount brackets (Gladius: CF-337 Panther Repeater, Mantis GT-220 Gatling)
+- **Pushed** to main → deploying via GitHub Actions
 
 ## Key Decisions
 
@@ -33,7 +32,7 @@ This file maintains running context across compactions.
 
 ## Applied Migrations (D1)
 
-Last applied: **0029_rename_ports_to_vehicle_ports.sql**
+Last applied: **0030_vehicle_ports_indexes.sql**
 
 | # | Migration | What |
 |---|-----------|------|
@@ -105,11 +104,19 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Verify**: `/ships/gladius` Loadout tab should show Power/Cooling/Shields/Weapons with named components
+- **Verify**: `/ships/gladius` Loadout tab in production — weapons should show named components via mount fallback
 - **Re-run manufacturers** extractor to ensure manufacturer data is up to date
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
+
+## Weapon Mount Pattern (for future reference)
+
+Gun ports in DataCore equip a weapon mount (fixed/gimbal bracket), not the weapon directly.
+Mount UUID → `vehicle_ports.equipped_item_uuid` BUT mounts are NOT in `vehicle_components`.
+The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_left`, etc.).
+`getShipLoadout` uses CTE + COALESCE child-port fallback to resolve through the mount.
+`_seat` is NOT safe to exclude — Mercury Star Runner `turret_top/bottom_seat` have real TurretBase components.
 
 
 ---
