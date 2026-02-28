@@ -290,9 +290,9 @@ export default function ShipDB() {
 
           <div className="flex items-center gap-1.5 text-xs font-mono text-gray-500 px-1">
             <input
-              type="number"
-              min={1}
-              max={totalPages}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={inputPage}
               onChange={(e) => setInputPage(e.target.value)}
               onBlur={handlePageJump}
