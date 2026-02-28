@@ -1,129 +1,175 @@
-# Fleet Manager — Project Context
+# SC Bridge — Project Context
 
 ## What This Is
-A Star Citizen fleet management app that tracks ships, insurance, pledge data, and fleet composition. Built as a self-hosted web app designed to run in a Kubernetes cluster via BJW-S app-template.
+A Star Citizen companion web app (`scbridge.app`). Tracks ships, fleet composition, insurance, loot
+data, and item stats. Deployed as a Cloudflare Worker with a D1 database and React SPA frontend.
 
 ## Tech Stack
-- **Backend:** Go 1.22, Chi router, SQLite (default) or PostgreSQL
-- **Frontend:** React SPA (Vite), Tailwind CSS, Lucide icons
-- **Deployment:** BJW-S app-template v3.x Helm chart, Flux GitOps
+- **Backend:** TypeScript, Hono framework, Cloudflare Workers
+- **Database:** Cloudflare D1 (SQLite dialect), 40 tables
+- **Frontend:** React SPA (Vite), Tailwind CSS, Lucide icons, Recharts
+- **Auth:** Better Auth v1.4.18 with Kysely D1 dialect
+- **Deployment:** `wrangler deploy` via GitHub Actions on push to `main`
 
 ## Architecture
 
-### Backend (`/internal/`)
-- `api/router.go` — All HTTP handlers and routes. Import logic, settings, debug endpoints.
-- `database/database.go` — SQLite/PostgreSQL data layer. Vehicles, user_fleet, manufacturers, sync_history tables.
-- `database/migrations.go` — Schema definitions. 25 tables including lookup tables and `paint_vehicles` junction.
-- `sync/scheduler.go` — Cron-based sync: SC Wiki (primary data), FleetYards (images only), RSI API (images).
-- `fleetyards/client.go` — FleetYards API client. Image-only — fetches store images for ships and paints by slug.
-- `scunpacked/reader.go` — Parses paint_*.json files from scunpacked-data repo.
-- `scunpacked/sync.go` — Matches paints to vehicles by tag (many-to-many via `paint_vehicles`), tag alias map for unresolvable abbreviations.
-- `rsi/import.go` — One-time RSI extract image importer. Reads ship matrix + paint catalog JSON extracts, matches to DB vehicles/paints by name, updates image URLs with RSI CDN links.
-- `rsi/client.go` — RSI GraphQL client with rate limiting and 429 retry. No auth needed.
-- `rsi/sync.go` — RSI API syncer: ships and paints from public GraphQL API with pagination.
-- `rsi/parser.go` — Parses RSI GraphQL browse response (shared shape for ships and paints).
-- `scwiki/client.go` — SC Wiki API client with rate limiting.
-- `scwiki/sync.go` — SC Wiki sync logic: manufacturers, vehicles (specs, dimensions, pricing, status), loaners.
-- `scwiki/models.go` — SC Wiki API response types.
-- `analysis/analysis.go` — Fleet analysis: gap detection, redundancies, insurance summary.
-- `models/models.go` — All data models and JSON serialization.
-- `config/config.go` — Environment variable configuration.
+### Backend (`/src/`)
+- `index.ts` — Hono app entry point. Registers all routes and global middleware (CORS, auth, logging, security headers).
+- `lib/types.ts` — `Env`, `HonoEnv`, shared TypeScript types
+- `lib/auth.ts` — `createAuth(env)` factory; cached per isolate via WeakMap
+- `lib/logger.ts` — Structured JSON logging to Workers Observability
+- `lib/crypto.ts` — ENCRYPTION_KEY validation and use
+- `lib/slug.ts` — Slug generation utilities
 
-### Frontend (`/frontend/src/`)
-- `pages/Dashboard.jsx` — Overview stats, quick actions
-- `pages/FleetTable.jsx` — Sortable/filterable ship table with insurance column
-- `pages/Insurance.jsx` — Insurance tracking view
-- `pages/Analysis.jsx` — Gap analysis, redundancies, role distribution
-- `pages/ShipDB.jsx` — Full ship database browser (data from SC Wiki)
-- `pages/Import.jsx` — HangarXplor JSON import
-- `hooks/useAPI.js` — API client hooks and action functions
+### Routes (`/src/routes/`)
+- `fleet.ts` — User fleet CRUD, ship custom names
+- `vehicles.ts` — Vehicle reference data (specs, images, components)
+- `paints.ts` — Paint variants
+- `import.ts` — HangarXplor JSON import (clean slate: DELETE + INSERT)
+- `settings.ts` — User settings
+- `sync.ts` — Trigger SC Wiki / FleetYards / RSI syncs
+- `analysis.ts` — Fleet gap analysis, redundancy detection
+- `account.ts` — Account management, email verification, 2FA
+- `orgs.ts` — Organisation management and visibility
+- `admin.ts` — Admin-only operations
+- `debug.ts` — `/api/debug/imports` — vehicle linkage, fleet counts
+- `migrate.ts` — On-demand migration trigger
 
-## Data Flow
+### Database (`/src/db/`)
+- `queries.ts` — All D1 prepared statements. Single source of truth for DB access.
+- `migrations/` — Sequential `NNNN_description.sql` files. Applied via `npx wrangler d1 migrations apply sc-companion --remote`.
+- `CONVENTIONS.md` — Full DB conventions reference. Read this before writing any migration or query.
 
-### Data Sources
-1. **SC Wiki API** (primary) — All ship data: specs, dimensions, pricing, production status, descriptions, manufacturers, loaners. Synced nightly and on startup.
-2. **FleetYards API** (images only) — Store images for ships and paints. Synced after SC Wiki so vehicles exist first.
-3. **scunpacked-data** (paint metadata) — Local JSON files from `scunpacked-data` repo. Paint names, descriptions, ship compatibility tags. Synced after images.
-4. **RSI API** (live images) — Ship and paint images from public GraphQL API at `/graphql` (no auth needed). Synced after paint sync, overwrites FleetYards with RSI CDN URLs. Opt-in via `RSI_API_ENABLED=true`.
-5. **RSI extract images** (static fallback) — JSON extracts from RSI pledge store/ship matrix. Only runs when RSI API is not enabled. Provides RSI CDN ship images with multiple size variants.
-6. **HangarXplor JSON** (user fleet) — Browser extension export. Insurance/pledge data (LTI, warbond, pledge cost/date). Only source for user fleet data.
+### Sync (`/src/sync/`)
+- `scwiki.ts` — SC Wiki sync: manufacturers, vehicles (specs, status, dimensions), loaners, components
+- `rsi.ts` — RSI API sync: ship and paint images from public GraphQL API
+- `scunpacked.ts` — Paint metadata from scunpacked-data JSON files
+- `pipeline.ts` — Sync pipeline orchestration (SC Wiki → FleetYards → scunpacked → RSI)
 
-### Ship Matching (slug generation)
-HangarXplor ship_codes like `MISC_Hull_D` get converted to slugs for matching against the vehicle reference DB:
-- `slugFromShipCode()` — strips manufacturer prefix, joins with hyphens: `hull-d`
-- `slugFromName()` — strips punctuation including dots: `A.T.L.S.` → `atls`
-- `compactSlug()` — strips ALL non-alphanumeric: `a-t-l-s` → `atls`
-- `FindVehicleSlug()` — tries exact, name, then prefix match against vehicles table
+### Frontend (`/frontend/src/pages/`)
+React SPA. Key pages: `Dashboard`, `FleetTable`, `ShipDB`, `Insurance`, `Analysis`, `Import`,
+`Account`, `Orgs`, `Settings`, `Admin`.
+
+## Data Sources
+
+| Source | What | When |
+|--------|------|------|
+| SC Wiki API | Ship specs, dimensions, pricing, production status, manufacturers, loaners | Nightly + on startup |
+| FleetYards API | Store images for ships and paints | After SC Wiki sync |
+| scunpacked-data | Paint names, descriptions, ship compatibility tags | After FleetYards sync |
+| RSI GraphQL API | Ship and paint images (new CDN) — opt-in | After paint sync |
+| HangarXplor JSON | User fleet: insurance, pledge cost/date | User-triggered import |
+| DataCore (scbridge/tools) | Component stats, FPS gear, loot map | One-time extract scripts |
 
 ## Key Design Decisions
 - **Clean slate import**: HangarXplor import does DELETE all user_fleet + INSERT. No merging.
-- **No UNIQUE constraint on user_fleet**: Users can own multiples of the same ship (e.g., two PTVs).
-- **SC Wiki is primary data source**: All ship specs, dimensions, pricing, status, descriptions come from SC Wiki API.
-- **FleetYards is images only**: Retained solely for store images (ships + paints). All non-image FleetYards code removed.
-- **Paint sync pipeline**: scunpacked-data provides metadata (names, descriptions, ship tags), FleetYards provides paint images. UPSERT uses COALESCE so neither source overwrites the other.
-- **Paints are many-to-many**: `paint_vehicles` junction table links paints to ALL compatible vehicles (e.g., Aurora paints → 5 variants). Tag alias map resolves abbreviations (890j→890-jump, star-runner→mercury-star-runner).
-- **Insurance is typed**: `insurance_types` lookup table with duration_months (LTI, 120-month, 6-month, etc.)
-- **user_fleet join table**: Links users to vehicle reference data. Insurance, pledge data, custom names live here.
-- **Gap analysis uses contains matching**: Focus strings like "Prospecting / Mining" match gap terms like "mining" via `strings.Contains`.
+- **No UNIQUE on user_fleet**: users can own multiples of the same ship (two PTVs, etc.).
+- **SC Wiki is primary data source**: specs, status, descriptions, manufacturers, loaners.
+- **FleetYards is images only**: retained solely for store images. All non-image code removed.
+- **Paints are many-to-many**: `paint_vehicles` junction table links paints to all compatible vehicles.
+- **Insurance is typed**: `insurance_types` lookup table with `duration_months` (LTI, 120-month, etc.)
+- **Better Auth org tables use camelCase** in D1: `organizationId`, `userId`, `createdAt`.
+- **`createAuth(env)` is cached per isolate** via WeakMap — do not call unconditionally per request.
+- **org_visibility values**: `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
 
-## Build & Run
+## Build & Deploy
 ```bash
-rm -f data/fleet-manager.db  # Clean DB if schema changed
-cd frontend && npm install && npm run build && cd ..
-go mod tidy && CGO_ENABLED=1 go build -o fleet-manager ./cmd/server
-./fleet-manager
+# Frontend
+cd frontend && npm install && npm run build
+
+# Type check
+npm run typecheck
+
+# Deploy (requires CLOUDFLARE_API_TOKEN in env)
+source ~/.secrets
+npx wrangler deploy
+
+# Migrations
+npx wrangler d1 migrations apply sc-companion --remote
 ```
 
-## Environment Variables
-- `PORT` (default: 8080)
-- `DB_DRIVER` (default: sqlite)
-- `DB_PATH` (default: ./data/fleet-manager.db)
-- `DATABASE_URL` (for postgres)
-- `FLEETYARDS_BASE_URL` (default: https://api.fleetyards.net — images only)
-- `SC_WIKI_ENABLED` (default: true)
-- `SC_WIKI_RATE_LIMIT` (default: 1.0 req/s)
-- `SC_WIKI_BURST` (default: 5)
-- `SCUNPACKED_DATA_PATH` (default: "" — disabled when empty, set to path of scunpacked-data repo)
-- `SYNC_SCHEDULE` (default: "0 3 * * *")
-- `SYNC_ON_STARTUP` (default: true)
-- `RSI_EXTRACT_PATH` (default: "" — disabled when empty, set to directory containing ships.json and paints.json RSI extracts)
-- `RSI_API_ENABLED` (default: false — opt-in, enable to fetch live images from RSI GraphQL API)
-- `RSI_BASE_URL` (default: https://robertsspaceindustries.com)
-- `RSI_RATE_LIMIT` (default: 1.0 req/s)
-- `STATIC_DIR` (default: ./frontend/dist)
+## Wrangler Config
+- **Worker name:** `sc-bridge`
+- **Account:** NERDZ (`4214879ee537a4840de659aafb7bf201`)
+- **D1 database:** `sc-companion` (`56875a7e-0ebd-4455-887d-5d1e1afdb416`)
+- **Assets dir:** `./frontend/dist`
 
-## Debug Endpoint
-`GET /api/debug/imports` — Shows vehicle_id linkage, fleet counts, sample entries.
+---
+
+## DB Schema Rules (DO NOT BREAK THESE)
+
+Full conventions are in `src/db/CONVENTIONS.md`. The rules below are the critical ones that
+have caused bugs before or are easy to get wrong.
+
+### Naming
+- Table names: `snake_case`, plural (`vehicles`, `fps_weapons`, `vehicle_components`)
+- Namespaces: `vehicle_*` for ship items, `fps_*` for personal gear, `user_*` for user data
+- No namespace prefix for core entities (`vehicles`, `paints`, `manufacturers`)
+- Functions in `queries.ts`: match the table name — `buildUpsertVehicleComponentStatement` for `vehicle_components`
+
+### Schema
+- PK: always `id INTEGER PRIMARY KEY AUTOINCREMENT` — never UUID as PK
+- UUIDs: separate `uuid TEXT NOT NULL UNIQUE` column when the row has a game-side UUID
+- FKs: `{singular_table}_id INTEGER REFERENCES {table}(id)` — e.g., `manufacturer_id`, `fps_weapon_id`
+- Junction tables: `{table1}_{table2}` alphabetically — e.g., `paint_vehicles` (not `vehicle_paints`)
+- JSON blobs: `{field}_json TEXT` suffix — e.g., `containers_json`, `stats_json`
+- Booleans: `INTEGER DEFAULT 0` (0 = false, 1 = true)
+- Timestamps: `TEXT DEFAULT (datetime('now'))` — ISO 8601
+
+### Migrations
+- Files: `src/db/migrations/NNNN_description.sql` — sequential, zero-padded 4-digit
+- Apply: `source ~/.secrets && npx wrangler d1 migrations apply sc-companion --remote`
+- Never skip numbers. Never rename an applied migration file.
+- **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
+- Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
+- Current last migration: **0018_loot_map.sql**
+
+### Out-of-Band Columns
+These were applied via `wrangler d1 execute`, not in migration files. They exist in D1 but
+not in any `.sql` file. Document new ones in the session journal when applied.
+
+| Column | Table | Notes |
+|--------|-------|-------|
+| `stats_json` | `vehicle_components` | DataCore component stats |
+| `stats_json` | `fps_weapons` | DataCore weapon stats |
+| `stats_json` | `fps_armour` | DataCore armour stats |
+| `stats_json` | `fps_attachments` | DataCore attachment stats |
+| `stats_json` | `fps_utilities` | DataCore utility stats |
+| `price_auec` | `vehicles` | aUEC in-game price |
+| `acquisition_type` | `vehicles` | How to obtain in-game |
+
+---
 
 ## Image Data Rules (DO NOT BREAK THESE)
 
-These rules exist because image data is fragile and SC Wiki sync runs nightly. Violating them causes images to silently vanish.
+Image data is fragile. SC Wiki sync runs nightly and will silently overwrite if these rules
+are violated.
 
 ### Priority Order
-RSI GraphQL (new CDN) > RSI old CDN > SC Wiki relative path > NULL
+CF Images > RSI new CDN > RSI old CDN > SC Wiki relative path > NULL
 
-Higher-priority images must never be overwritten by lower-priority ones.
+Higher-priority images must **never** be overwritten by lower-priority ones.
 
 ### vehicle_images is the source of truth
-- Every vehicle in `vehicles` MUST have a corresponding row in `vehicle_images`
-- `buildUpdateVehicleImagesStatement` uses INSERT ... ON CONFLICT DO UPDATE — never change it back to plain UPDATE
-- When adding new vehicles (e.g., via migration), always create matching `vehicle_images` rows
+- Every row in `vehicles` MUST have a corresponding row in `vehicle_images`
+- `buildUpdateVehicleImagesStatement` uses INSERT ... ON CONFLICT DO UPDATE — never revert to plain UPDATE
+- When migrations insert new vehicles, always follow with INSERT OR IGNORE into `vehicle_images`
 
 ### vehicles.image_url* must stay absolute
 - SC Wiki provides relative `/media/...` paths — these must NEVER overwrite an absolute `https://` URL
-- The upsert CASE expression in both `upsertVehicle` and `buildUpsertVehicleStatement` checks `LIKE 'http%'` before replacing
-- Never change image COALESCE back to plain `COALESCE(excluded.image_url, vehicles.image_url)` — that treats relative paths as valid and overwrites absolute ones
+- The CASE expression in `upsertVehicle` and `buildUpsertVehicleStatement` checks `LIKE 'http%'` before replacing
+- Never simplify the image COALESCE — `COALESCE(excluded.image_url, vehicles.image_url)` would allow relative paths to overwrite absolute ones
 
 ### URL formats
-- Old CDN: `https://media.robertsspaceindustries.com/{mediaID}/store_{size}.{ext}` (Google Cloud Storage)
-- New CDN: `https://robertsspaceindustries.com/i/{hash}/resize(...)/filename.webp` (AWS CloudFront)
-- SC Wiki relative: `/media/{mediaID}/store_small/{filename}.jpg` — NOT a valid image_url
+- CF Images: `https://imagedelivery.net/{hash}/{imageId}/public`
+- RSI new CDN: `https://robertsspaceindustries.com/i/{hash}/resize(...)/filename.webp`
+- RSI old CDN: `https://media.robertsspaceindustries.com/{mediaID}/store_{size}.{ext}`
+- SC Wiki relative: `/media/{mediaID}/store_small/{filename}.jpg` — NOT valid as `image_url`
 
-### When writing migrations that insert vehicles
-Always follow the INSERT with a corresponding INSERT OR IGNORE into `vehicle_images` using any available old-CDN URL.
+---
 
 ## Owner Context
-- Gavin, Senior QA at Pushpay (not a developer — explain things clearly)
-- Runs a homelab Kubernetes cluster (TalosOS, Flux GitOps, BJW-S app-template)
-- GitHub: gavinmcfall/fleet-manager
+- Gavin — Senior QA at Pushpay
+- Homelab: TalosOS Kubernetes cluster, Flux GitOps, BJW-S app-template
+- GitHub: `gavinmcfall/fleet-manager`
 - Has 38 ships including custom-named ones (Jean-Luc = Carrack, James Holden = Idris-P)
