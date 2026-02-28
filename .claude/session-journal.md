@@ -4,10 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**ShipDB card UI polish complete and pushed.**
+**Ship detail page implemented** at `/ships/:slug` — tabs for Overview, Loadout, Paints.
 
 ## Recent Changes
 
+- **Ship detail page** (`frontend/src/pages/ShipDetail.jsx`): hero image, tabbed Overview/Loadout/Paints, specs grid, loadout grouped by category_label
+- **Backend**: `GET /api/ships/:slug/loadout` (ports → vehicle_components → manufacturers); `/:slug` now also returns `speed_max`, `health`, `vehicle_inventory`
+- **Hooks**: `useShip`, `useShipLoadout`, `useShipPaints` added to `useAPI.js`
+- **ShipDB cards** wrapped with `Link` to `/ships/:slug` for navigation
 - **ShipDB card UI overhaul** (`frontend/src/pages/ShipDB.jsx`):
   - Uniform card height: fixed `h-14 overflow-hidden` name area, `line-clamp-2`, `min-h-[1rem]` quest row always reserved
   - Quest acquisition: "Quest Reward" label where price would be; source name on separate left-aligned row below status
@@ -106,6 +110,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
+- **Ship detail polish** — loadout table column widths, loading states per tab
 - **Expose DataCore data** — ship component stats in API/UI
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
