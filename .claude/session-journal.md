@@ -4,21 +4,17 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**loot_map gap coverage: 4829/5218 (92.5%) matched.**
+**Documentation and scripts audit complete. Data extraction suite fully documented.**
 
 ## Recent Changes
 
-- **Phases 1-6**: Expanded loot_map FK coverage from 43.5% → 92.2%
-  - 0019/0020: `fps_helmets` (+577 matches)
-  - 0021/0022: `fps_clothing` (+1723 matches)
-  - Mining modules added to `vehicle_components` (+26)
-  - 0023/0024: `consumables` (+89 matches)
-  - 0025/0026: `harvestables` (+60 matches)
-  - 0027/0028: `props` plushies/medals/artifacts (+41) + loot-only clothing fix (+29)
-- **2h carryables backfill**: Props (+71 from 2h → 246 total, +16 loot matches → 57 total) and harvestables (+10 from 2h → 75 total; 2h creature drops not in loot_map)
-- **Salvage extractor**: `ship_salvage/extract.py` → 9 items in vehicle_components (SalvageHead×2, SalvageModifier×7); not in loot_map (shop-only)
-- **D1 UPSERT quirk**: Subquery-resolved FKs via ON CONFLICT do not reliably populate. Fixed by running `UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid) WHERE EXISTS (...)` after each batch import.
-- **fps_clothing extractor**: Removed `is_purchasable()` filter — now includes loot-only clothing items.
+- **TBO harvestables**: Added `carryables/tractorbeamonly/` to harvestables extractor → 77 total (+2: Irradiated Valakkar Fang (Apex), TBO Yormandi Tongue)
+- **Documentation overhaul** (`scbridge/tools/scripts/`):
+  - Created `apply.sh` for `props/`, `ship_mining/`, `ship_salvage/` (were missing)
+  - Fixed stale `components` → `vehicle_components` in `ship_weapons/README.md` and `ship_missiles/README.md`
+  - Created READMEs for: `consumables/`, `fps_clothing/`, `fps_helmets/`, `harvestables/`, `props/`, `ship_mining/`, `ship_salvage/`, `stats_migration/`
+  - Rewrote `scripts/README.md` — comprehensive index of all 20 extractor dirs with staged workflow
+- **fleet-manager README.md**: Complete rewrite — replaced outdated Go/Docker/k8s content with actual Cloudflare Worker / D1 / Better Auth / Hono stack
 
 ## Key Decisions
 
@@ -124,4 +120,8 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ---
 **Session compacted at:** 2026-02-28 19:31:12
+
+
+---
+**Session compacted at:** 2026-02-28 21:10:03
 
