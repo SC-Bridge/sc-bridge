@@ -4,17 +4,18 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Documentation and scripts audit complete. Data extraction suite fully documented.**
+**ShipDB card UI polish complete and pushed.**
 
 ## Recent Changes
 
-- **TBO harvestables**: Added `carryables/tractorbeamonly/` to harvestables extractor → 77 total (+2: Irradiated Valakkar Fang (Apex), TBO Yormandi Tongue)
-- **Documentation overhaul** (`scbridge/tools/scripts/`):
-  - Created `apply.sh` for `props/`, `ship_mining/`, `ship_salvage/` (were missing)
-  - Fixed stale `components` → `vehicle_components` in `ship_weapons/README.md` and `ship_missiles/README.md`
-  - Created READMEs for: `consumables/`, `fps_clothing/`, `fps_helmets/`, `harvestables/`, `props/`, `ship_mining/`, `ship_salvage/`, `stats_migration/`
-  - Rewrote `scripts/README.md` — comprehensive index of all 20 extractor dirs with staged workflow
-- **fleet-manager README.md**: Complete rewrite — replaced outdated Go/Docker/k8s content with actual Cloudflare Worker / D1 / Better Auth / Hono stack
+- **ShipDB card UI overhaul** (`frontend/src/pages/ShipDB.jsx`):
+  - Uniform card height: fixed `h-14 overflow-hidden` name area, `line-clamp-2`, `min-h-[1rem]` quest row always reserved
+  - Quest acquisition: "Quest Reward" label where price would be; source name on separate left-aligned row below status
+  - Prices: pledge shows `$X USD`, aUEC shows `X aUEC`, pipe separator `|` when both present
+  - Status badges: `in_concept` → Lightbulb + `text-blue-400`; `in_production` → Wrench + `text-sc-warn` + "In Production"
+  - Stat labels (Role/Cargo/Crew): `font-semibold text-sc-accent2` to differentiate from `text-gray-400` values
+  - Pagination: first/last page buttons (ChevronsLeft/Right), page jump text input (`inputMode="numeric"`)
+  - Scroll-to-top: `useEffect` on `[page]` with `isMounted` ref, `window.scrollTo(0, 0)` (instant, not smooth)
 
 ## Key Decisions
 
@@ -124,4 +125,8 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ---
 **Session compacted at:** 2026-02-28 21:10:03
+
+
+---
+**Session compacted at:** 2026-03-01 06:58:22
 

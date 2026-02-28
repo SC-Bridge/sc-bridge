@@ -210,15 +210,15 @@ export default function ShipDB() {
               </div>
               <div className="grid grid-cols-3 gap-2 text-xs font-mono text-gray-400 mt-3">
                 <div>
-                  <span className="text-gray-400 block">Role</span>
+                  <span className="font-semibold text-sc-accent2 block">Role</span>
                   {ship.focus || '-'}
                 </div>
                 <div>
-                  <span className="text-gray-400 block">Cargo</span>
+                  <span className="font-semibold text-sc-accent2 block">Cargo</span>
                   {ship.cargo > 0 ? `${ship.cargo} SCU` : '-'}
                 </div>
                 <div>
-                  <span className="text-gray-400 block">Crew</span>
+                  <span className="font-semibold text-sc-accent2 block">Crew</span>
                   {ship.min_crew}-{ship.max_crew}
                 </div>
               </div>
