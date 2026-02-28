@@ -4,17 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**SC Bridge data extraction tooling — all scripts consolidated and organised.**
+**Acquisition data now live in ShipDB — aUEC prices, quest names, CZ hangar.**
 
 ## Recent Changes (this session)
 
-- **Migration 0017** — `vehicles.price_auec` populated for 48 ships from SC 4.6.0 in-game dealerships (applied)
-- **`scbridge/tools/scripts/`** — Reorganised into 4 standalone subdirectories, each with extract script + apply.sh + README:
-  - `ship_production_status/` — `check_status.py` (stdlib, uses extracted dir)
-  - `auec_prices/` — `extract.py` (scdatatools, opens raw Data.p4k); migration_0017 lives here
-  - `acquisition_types/` — `extract.py` (stdlib, uses extracted dir); SQL generated, **not yet applied**
-  - `loot_map/` — moved from `~/scratch/Star Citizen/data_unpack/`; full pipeline (extract_all.py + build_loot_map.py + run_pipeline.ps1/sh + upload_to_r2)
-- **Top-level `scripts/README.md`** — run-order overview for all four scripts
+- **D1 migrations applied** — `acquisition_type` column (34 quest, 13 CZ, 48 shop) + `acquisition_source_name` (e.g. "Ship Recovery: Idris-P Wikelo War Special")
+- **production_status_id** removed from ON CONFLICT UPDATE in both upsert functions — SC Wiki nightly sync no longer overwrites DataCore values
+- **`/api/ships`** — now returns `price_auec`, `acquisition_type`, `acquisition_source_name`
+- **ShipDB UI** — conditional display: aUEC (sc-melt) for shop ships, source name (sc-accent2) for quest/CZ, pledge price (sc-warn) for pledge-only; price sort fixed
+- **214 pledge-only ships** with no acquisition_type (e.g. Javelin, Idris) — expected
 
 ## Key Decisions
 
@@ -51,14 +49,14 @@ This file maintains running context across compactions.
 
 ## Applied DB State (SC 4.6.0)
 
-- **production_status_id**: 269 flight_ready / 23 in_production / 9 in_concept
+- **production_status_id**: 269 flight_ready / 23 in_production / 9 in_concept (protected from SC Wiki overwrite)
 - **price_auec**: 48 ships (84,853 aUEC Dragonfly → 57,637,172 aUEC Reclaimer)
-- **acquisition_type**: column not yet added — SQL ready at `acquisition_types/migration_acquisition_types.sql`
+- **acquisition_type**: 34 ingame_quest / 13 ingame_cz / 48 ingame_shop / 214 NULL (pledge-only)
+- **acquisition_source_name**: "Ship Recovery: {name}" for quests, "CZ Executive Hangar" for CZ
 - **303/303 ships** have CF Images IDs; `vehicles.image_url*` → `imagedelivery.net`
 
 ## What's Next
 
-- **Apply acquisition_types migration** — `cd scbridge/tools/scripts/acquisition_types && python3 extract.py --p4k-path "..." --output migration_acquisition_types.sql && ./apply.sh migration_acquisition_types.sql`
 - **Paint images** — CF Images upload for paints (separate endpoint needed)
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Configure Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
