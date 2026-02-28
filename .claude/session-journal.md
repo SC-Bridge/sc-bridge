@@ -4,14 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Loadout tab complete** — weapon mount pass-through fixed, deployed to production. Verify `/ships/gladius` shows weapon names.
+**Component class deployed** — migration 0031 adds `class` to `manufacturers`; loadout API returns `component_class`; ShipDetail shows "Class" column (Civilian/Military/Industrial/Stealth/Competition). Verify on `/ships/gladius` Loadout tab.
 
 ## Recent Changes
 
-- **Fixed** `extract.py` PORT_CATEGORIES: added `hardpoint_gun_rack`/`hardpoint_gunrack` as None (before `hardpoint_gun`); added `_console`, `_camera`, `_controller` to infra substring exclusions
-- **Re-ran** `ship_ports/extract.py` + applied to D1: 25,797 rows, 97% of labeled ports equipped (2,383/2,460)
-- **Added** migration 0030: indexes on `vehicle_ports(vehicle_id)` and `vehicle_ports(parent_port_id)`
-- **Fixed** `getShipLoadout`: CTE + COALESCE child-port fallback resolves weapons through mount brackets (Gladius: CF-337 Panther Repeater, Mantis GT-220 Gatling)
+- **Added** migration 0031: `manufacturers.class TEXT` column populated for 21 brands from DataCore loot file naming + user examples
+- **Updated** `getShipLoadout`: adds `component_class` with COALESCE child-port fallback (same pattern as manufacturer_name)
+- **Updated** `ShipDetail.jsx` `LoadoutTab`: column renamed "Type" → "Class", uses `item.component_class`
+- **Investigation**: confirmed class is NOT in DataCore component JSONs (SubType="UNDEFINED"); it comes from manufacturer identity; proved via loot file naming `loot_{type}_{grade}_{mfr}_{name}_{class}.json`
+- **Key surprises from loot files**: AMRS=Military (not Civilian!), ACOM=Competition, RACO=Stealth
 - **Pushed** to main → deploying via GitHub Actions
 
 ## Key Decisions
@@ -32,7 +33,7 @@ This file maintains running context across compactions.
 
 ## Applied Migrations (D1)
 
-Last applied: **0030_vehicle_ports_indexes.sql**
+Last applied: **0031_manufacturer_class.sql**
 
 | # | Migration | What |
 |---|-----------|------|
@@ -104,8 +105,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Verify**: `/ships/gladius` Loadout tab in production — weapons should show named components via mount fallback
-- **Re-run manufacturers** extractor to ensure manufacturer data is up to date
+- **Verify**: `/ships/gladius` Loadout tab — Class column should show Military/Civilian etc for each component
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
