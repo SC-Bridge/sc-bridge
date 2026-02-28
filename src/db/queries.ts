@@ -208,7 +208,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         vc.grade,
         vc.stats_json,
         m.name AS manufacturer_name
-      FROM ports p
+      FROM vehicle_ports p
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
       WHERE p.vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
