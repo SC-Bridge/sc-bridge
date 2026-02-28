@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useShips } from '../hooks/useAPI'
-import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -123,6 +123,18 @@ export default function ShipDB() {
     if (!isMounted.current) { isMounted.current = true; return }
     window.scrollTo(0, 0)
   }, [page])
+
+  // Page jump input — local state keeps the input responsive; syncs when page changes externally
+  const [inputPage, setInputPage] = useState('1')
+  useEffect(() => { setInputPage(String(page)) }, [page])
+  const handlePageJump = () => {
+    const n = parseInt(inputPage, 10)
+    if (!isNaN(n) && n >= 1 && n <= totalPages) {
+      setPage(n)
+    } else {
+      setInputPage(String(page))
+    }
+  }
 
   const resetPage = () => setPage(1)
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); resetPage() }
@@ -258,23 +270,53 @@ export default function ShipDB() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 py-4">
+        <div className="flex items-center justify-center gap-2 py-4">
+          <button
+            onClick={() => setPage(1)}
+            disabled={page === 1}
+            className="btn-secondary p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="First page"
+          >
+            <ChevronsLeft className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
+            className="btn-secondary p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Previous page"
           >
-            <ChevronLeft className="w-3.5 h-3.5" /> Previous
+            <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <span className="text-xs font-mono text-gray-500">
-            Page {page} of {totalPages}
-          </span>
+
+          <div className="flex items-center gap-1.5 text-xs font-mono text-gray-500 px-1">
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={inputPage}
+              onChange={(e) => setInputPage(e.target.value)}
+              onBlur={handlePageJump}
+              onKeyDown={(e) => e.key === 'Enter' && handlePageJump()}
+              className="w-10 text-center bg-sc-darker border border-sc-border rounded px-1 py-0.5 text-xs font-mono text-white focus:outline-none focus:border-sc-accent"
+            />
+            <span>of {totalPages}</span>
+          </div>
+
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
+            className="btn-secondary p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Next page"
           >
-            Next <ChevronRight className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setPage(totalPages)}
+            disabled={page === totalPages}
+            className="btn-secondary p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Last page"
+          >
+            <ChevronsRight className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
