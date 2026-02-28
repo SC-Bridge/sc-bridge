@@ -4,16 +4,19 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Plan complete: loot_map imported, components renamed, DB conventions written.**
+**loot_map gap coverage complete (all 6 phases). 4813/5218 (92.2%) matched.**
 
 ## Recent Changes
 
-- **Migration 0017**: `ALTER TABLE components RENAME TO vehicle_components` — applied
-- **Migration 0018**: `CREATE TABLE loot_map` — applied (FKs to all item tables, JSON blob columns)
-- **loot_map.json imported**: 5218 items → D1 (27 batches × 200 via `scbridge/tools/scripts/loot_map/`)
-- **FK match rate**: 2269/5218 (43.5%); gaps are clothing (1787), helmets (491), misc harvestables
-- **src/db/CONVENTIONS.md**: DB conventions written; CLAUDE.md rewritten to reflect TypeScript/Worker architecture
-- **queries.ts + scwiki.ts**: `buildUpsertComponentStatement` → `buildUpsertVehicleComponentStatement`
+- **Phases 1-6**: Expanded loot_map FK coverage from 43.5% → 92.2%
+  - 0019/0020: `fps_helmets` (+577 matches)
+  - 0021/0022: `fps_clothing` (+1723 matches)
+  - Mining modules added to `vehicle_components` (+26)
+  - 0023/0024: `consumables` (+89 matches)
+  - 0025/0026: `harvestables` (+60 matches)
+  - 0027/0028: `props` plushies/medals/artifacts (+41) + loot-only clothing fix (+29)
+- **D1 UPSERT quirk**: Subquery-resolved FKs via ON CONFLICT do not reliably populate. Fixed by running `UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid) WHERE EXISTS (...)` after each batch import.
+- **fps_clothing extractor**: Removed `is_purchasable()` filter — now includes loot-only clothing items.
 
 ## Key Decisions
 
@@ -26,20 +29,29 @@ This file maintains running context across compactions.
 
 - **Domain:** `scbridge.app`
 - **Worker:** `sc-bridge` on NERDZ Cloudflare account
-- **D1:** `sc-companion` (40 tables, Oceania region)
+- **D1:** `sc-companion` (46 tables, Oceania region)
 - **CI/CD:** Push to main → GitHub Actions → `wrangler deploy`
 - **Auth:** Better Auth v1.4.18, Kysely D1 dialect, `createAuth(env)` factory cached per isolate via WeakMap
 - **Org visibility:** `'public' | 'org' | 'officers' | 'private'` (DEFAULT `'private'`)
 
 ## Applied Migrations (D1)
 
-Last applied: **0018_loot_map.sql**
+Last applied: **0028_loot_map_props_fk.sql**
 
 | # | Migration | What |
 |---|-----------|------|
-| 0016 | correct_production_statuses | Production status data corrections |
 | 0017 | rename_components | `components` → `vehicle_components` |
 | 0018 | loot_map | `loot_map` table + FK cross-references |
+| 0019 | fps_helmets | Helmet table |
+| 0020 | loot_map_helmet_fk | `fps_helmet_id` on loot_map |
+| 0021 | fps_clothing | Clothing table (slot-based) |
+| 0022 | loot_map_clothing_fk | `fps_clothing_id` on loot_map |
+| 0023 | consumables | Food/Drink table |
+| 0024 | loot_map_consumable_fk | `consumable_id` on loot_map |
+| 0025 | harvestables | Harvestable items table |
+| 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map |
+| 0027 | props | Props table (plushies, medals, artifacts) |
+| 0028 | loot_map_props_fk | `props_id` on loot_map |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
 - `vehicle_components.stats_json`, `fps_weapons.stats_json`, `fps_armour.stats_json`
@@ -49,41 +61,59 @@ Last applied: **0018_loot_map.sql**
 ## Applied DB State (SC 4.6.0)
 
 - **vehicles**: 303 ships, all with CF Images IDs (`imagedelivery.net`)
-- **production_status_id**: 269 flight_ready / 23 in_production / 9 in_concept
-- **price_auec**: 48 ships (84,853 aUEC Dragonfly → 57,637,172 aUEC Reclaimer)
-- **acquisition_type**: 34 ingame_quest / 13 ingame_cz / 48 ingame_shop / 214 NULL
-- **vehicle_components**: 2045 rows (ship components from DataCore + SC Wiki)
-- **fps_weapons**: 404 total; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
-- **loot_map**: 5218 items, 2269 with FK matches
+- **vehicle_components**: 2045 rows (ship components + mining modules)
+- **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
+- **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
+- **harvestables**: 65; **props**: 175 (plushies, medals, artifact fragments, junk)
+- **loot_map**: 5218 items, **4813 with FK matches (92.2%)**
+
+Remaining 405 unmatched (7.8%): NOITEM_Vehicle (48), no-type (47), UNDEFINED (39),
+Char_Skin_Color (38), placeholder Usable (29), Missile/Missile (19), Char_Head_Hair (19),
+eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc others.
 
 ## Data Extraction Scripts (`scbridge/tools/scripts/`)
 
 | Script dir | What | Source |
 |------------|------|--------|
-| `ship_production_status/` | `production_status_id` | Extracted DataCore entity files |
+| `ship_production_status/` | `production_status_id` | DataCore entity files |
 | `auec_prices/` | `price_auec` | Raw `Data.p4k` via scdatatools (python3.10) |
-| `acquisition_types/` | `acquisition_type` | Extracted contract + CZ JSONs |
+| `acquisition_types/` | `acquisition_type` | Contract + CZ JSONs |
 | `loot_map/` | `loot_map` table (5218 items) | `Resolved/loot_map.json` |
 | `lib/datacore.py` | Shared helpers | — |
 | `ship_components_core/` | Power/cooler/shield/QD | DataCore ship component dirs |
 | `ship_weapons/` | Ship guns | DataCore weapon dirs |
 | `ship_missiles/` | Missile racks | DataCore missile dirs |
 | `ship_misc/` | Countermeasures/QED/jumpdrive | Multiple DataCore dirs |
+| `ship_mining/` | Mining modules → vehicle_components | DataCore miningarm dir |
 | `fps_weapons/` | FPS personal weapons | DataCore fps_weapons dir |
 | `fps_armour/` | PU armour | DataCore pu_armor dir |
 | `fps_attachments/` | Weapon modifiers | DataCore weapon_modifier dir |
 | `fps_utilities/` | Consumables/grenades | Multiple consumable dirs |
+| `fps_helmets/` | Helmets | DataCore starwear/helmet dir |
+| `fps_clothing/` | Clothing (all, incl. loot-only) | DataCore pu_clothing + pu_bespoke |
+| `consumables/` | Food & Drink | DataCore carryables/1h |
+| `harvestables/` | Harvestable items | DataCore carryables/1h |
+| `props/` | Misc props (Misc/* types) | DataCore carryables/1h |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
+**D1 UPSERT FK subquery bug**: Subquery-resolved values in ON CONFLICT DO UPDATE SET don't reliably propagate. Always follow batch UPSERT with a direct correlated UPDATE:
+```sql
+UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid)
+WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
+```
+
 ## What's Next
 
-- **loot_map gap coverage**: add `fps_helmets` table (491 Char_Armor_Helmet unmatched), `fps_clothing` (1787 unmatched)
 - **Expose DataCore data** — ship component stats in API/UI
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Cloudflare WAF Rate Limiting** — memory-based rate limiting is per-isolate only
+- **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
 
 ---
 **Session compacted at:** 2026-02-28 18:41:13
 
+
+---
+**Session compacted at:** 2026-02-28 19:07:20
