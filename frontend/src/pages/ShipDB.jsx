@@ -174,7 +174,7 @@ export default function ShipDB() {
       {/* Ship Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {paged.map((ship) => (
-          <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden flex flex-col">
+          <div key={ship.slug} className="panel-hover group cursor-pointer overflow-hidden">
             <ShipImage
               src={ship.image_url_small}
               fallbackSrc={ship.image_url_medium || ship.image_url}
@@ -183,13 +183,13 @@ export default function ShipDB() {
               aspectRatio="landscape"
               hoverZoom
             />
-            <div className="p-4 flex flex-col flex-1">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <h3 className="font-display font-semibold text-white text-sm">{ship.name}</h3>
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-2 h-14 overflow-hidden mb-2">
+                <div className="min-w-0">
+                  <h3 className="font-display font-semibold text-white text-sm line-clamp-2">{ship.name}</h3>
                   <span className="text-xs text-gray-400">{ship.manufacturer_name}</span>
                 </div>
-                <span className="badge badge-size">{ship.size_label}</span>
+                <span className="badge badge-size shrink-0">{ship.size_label}</span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-xs font-mono text-gray-400 mt-3">
                 <div>
@@ -205,7 +205,7 @@ export default function ShipDB() {
                   {ship.min_crew}-{ship.max_crew}
                 </div>
               </div>
-              <div className="mt-auto pt-2 border-t border-sc-border/30">
+              <div className="mt-3 pt-2 border-t border-sc-border/30">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono text-gray-500">
                     {ship.production_status === 'flight_ready' ? (
