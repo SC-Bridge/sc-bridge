@@ -4,17 +4,16 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**SC Wiki sync removed** — DataCore extraction scripts are now the sole data source for vehicles/components. Ship detail Loadout tab shows component stats from `stats_json`.
+**vehicle_ports table populated** — 25,797 port rows for ~303 player ships. Loadout tab should now render.
 
 ## Recent Changes
 
-- **Deleted** `src/sync/scwiki.ts` — SC Wiki sync removed entirely
-- **Rewrote** `src/sync/pipeline.ts` — only paint (scunpacked) + RSI image syncs remain
-- **Removed** `/scwiki` and `/items` sync routes; cron entries `0 3 * * *` and `5 3 * * *`
-- **Removed** SC_WIKI_ENABLED, SC_WIKI_RATE_LIMIT, SC_WIKI_BURST from wrangler.toml
-- **Removed** ~15 scwiki-exclusive functions from queries.ts (upsertManufacturer, upsertVehicle, all FPS item upserts, etc.)
-- **Added** `vc.stats_json` to `getShipLoadout` SELECT; `getKeyStats()` in LoadoutTab shows power_output, shield HP, quantum_speed, etc. as secondary text
-- **Created** `scbridge/tools/scripts/ship_ports/extract.py` + `apply.sh` + `README.md`
+- **SC Wiki sync removed** entirely (scwiki.ts deleted, pipeline/routes/crons cleaned up)
+- **Renamed** `ports` → `vehicle_ports` (migration 0029)
+- **Fixed** `extract.py` — DataCore JSON uses `_RecordValue_.Components` (list, not dict); find by `_Type_` == `SEntityComponentDefaultLoadoutParams`
+- **Fixed** `extract.py` — switched to `INSERT ... SELECT FROM vehicles WHERE uuid = ...` so AI-variant ships silently no-op
+- **Applied** 0029 migration + ship_ports extraction: **25,797 rows** in vehicle_ports
+- **Added** `vc.stats_json` to `getShipLoadout`; `getKeyStats()` in LoadoutTab shows component stats
 
 ## Key Decisions
 
@@ -34,7 +33,7 @@ This file maintains running context across compactions.
 
 ## Applied Migrations (D1)
 
-Last applied: **0028_loot_map_props_fk.sql**
+Last applied: **0029_rename_ports_to_vehicle_ports.sql**
 
 | # | Migration | What |
 |---|-----------|------|
@@ -59,6 +58,7 @@ Last applied: **0028_loot_map_props_fk.sql**
 ## Applied DB State (SC 4.6.0)
 
 - **vehicles**: 303 ships, all with CF Images IDs (`imagedelivery.net`)
+- **vehicle_ports**: 25,797 rows (player ships only, INSERT...SELECT skips AI variants)
 - **vehicle_components**: 2045 rows (ship components + mining modules)
 - **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
 - **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
@@ -94,6 +94,7 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 | `harvestables/` | Harvestable items | DataCore carryables/1h + 2h |
 | `props/` | Misc props (Misc/* types) | DataCore carryables/1h + 2h |
 | `ship_salvage/` | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage |
+| `ship_ports/` | Ship ports + default loadout → vehicle_ports | DataCore spaceships JSONs |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
@@ -105,15 +106,11 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Run ship_ports extractor**: `cd /home/gavin/scbridge/tools/scripts/ship_ports && python3 extract.py --data-path "/mnt/e/SC Bridge/Data p4k/4.6.0-live.11303722" && ./apply.sh`
 - **Verify**: `/ships/gladius` Loadout tab should show Power/Cooling/Shields/Weapons with named components
 - **Re-run manufacturers** extractor to ensure manufacturer data is up to date
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
-
-Also add to Data Extraction Scripts table:
-| `ship_ports/` | Ship ports + default loadout | DataCore spaceships JSONs |
 
 ---
 **Session compacted at:** 2026-02-28 18:41:13
@@ -140,4 +137,8 @@ Also add to Data Extraction Scripts table:
 
 ---
 **Session compacted at:** 2026-03-01 07:41:11
+
+
+---
+**Session compacted at:** 2026-03-01 08:35:38
 
