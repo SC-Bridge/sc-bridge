@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useShips } from '../hooks/useAPI'
 import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
@@ -117,8 +117,13 @@ export default function ShipDB() {
     return items
   }, [ships, filter, mfrFilter, sizeFilter, classFilter, statusFilter, sortBy, sortDir])
 
-  // Reset page when filters change; scroll to top when page changes
-  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+  // Scroll to top after page changes, but not on initial mount
+  const isMounted = useRef(false)
+  useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [page])
+
   const resetPage = () => setPage(1)
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); resetPage() }
   const handleSearchChange = (e) => { setFilter(e.target.value); resetPage() }
@@ -255,7 +260,7 @@ export default function ShipDB() {
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 py-4">
           <button
-            onClick={() => { setPage((p) => Math.max(1, p - 1)); scrollTop() }}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
             className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
           >
@@ -265,7 +270,7 @@ export default function ShipDB() {
             Page {page} of {totalPages}
           </span>
           <button
-            onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); scrollTop() }}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
             className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-30 disabled:cursor-not-allowed"
           >
