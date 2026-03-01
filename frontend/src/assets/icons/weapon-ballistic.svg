@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-  <!-- Ballistic weapon: side profile of a cannon/gun barrel -->
-  <!-- Long barrel -->
-  <rect x="2" y="11" width="16" height="2.5" rx="1.25"/>
-  <!-- Breech housing (larger block at rear) -->
-  <rect x="14" y="8.5" width="6" height="7" rx="1.5"/>
-  <!-- Top detail on breech -->
-  <rect x="16" y="6.5" width="3" height="2.5" rx="1"/>
-</svg>

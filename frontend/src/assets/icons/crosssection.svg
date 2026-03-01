@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg fill="currentColor" xmlns="http://www.w3.org/2000/svg" id="icon" viewBox="0 0 24 24">
+	<defs>
+		<style>
+			.cls-1{fill:currentColor;stroke-width:0}
+		</style>
+	</defs>
+	<path d="M13.88 7.44v1.37L19.57 12l-5.69 3.19v1.38L22 12.01l-8.12-4.56ZM2 12l8.12 4.56v-1.38l-5.69-3.19 5.69-3.19V7.43L2 12Z" class="cls-1"/>
+	<path d="m17 12-5 2.81L7 12l5-2.81L17 12z" class="cls-1"/>
+</svg>

@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-  <!-- Upper chest plate: wide angular panel tapering to a peak -->
-  <path d="M4 9L12 4L20 9V14H4Z"/>
-  <!-- Lower ab guard: wide panel tapering to a bottom point -->
-  <path d="M4 15H20V18L12 22L4 18Z"/>
-</svg>

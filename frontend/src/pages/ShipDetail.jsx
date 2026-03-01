@@ -9,6 +9,11 @@ import { useShip, useShipLoadout, useShipPaints } from '../hooks/useAPI'
 import ShipImage from '../components/ShipImage'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
+import {
+  PowerPlantIcon, CoolerIcon, ShieldGeneratorIcon, QuantumDriveIcon,
+  RadarIcon, JumpDriveIcon, WeaponIcon, TurretIcon, MissileRackIcon,
+  ElectromagneticIcon, MiningLaserIcon, CrossSectionIcon, UtilityIcon, QEDIcon,
+} from '../assets/icons/index.js'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -20,6 +25,23 @@ const TABS = [
 
 const COMPONENT_TYPES = new Set(['power', 'cooler', 'shield', 'quantum_drive', 'sensor', 'jump_drive'])
 const WEAPON_TYPES = new Set(['weapon', 'turret', 'missile', 'countermeasure', 'mining_laser', 'salvage_head', 'salvage_module', 'qed'])
+
+const PORT_TYPE_ICON = {
+  power:          PowerPlantIcon,
+  cooler:         CoolerIcon,
+  shield:         ShieldGeneratorIcon,
+  quantum_drive:  QuantumDriveIcon,
+  sensor:         RadarIcon,
+  jump_drive:     JumpDriveIcon,
+  weapon:         WeaponIcon,
+  turret:         TurretIcon,
+  missile:        MissileRackIcon,
+  countermeasure: ElectromagneticIcon,
+  mining_laser:   MiningLaserIcon,
+  salvage_head:   CrossSectionIcon,
+  salvage_module: UtilityIcon,
+  qed:            QEDIcon,
+}
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -268,9 +290,14 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
         <span className="col-span-1">Class</span>
         <span className="col-span-3 text-right">Manufacturer</span>
       </div>
-      {Object.entries(grouped).map(([category, rows]) => (
+      {Object.entries(grouped).map(([category, rows]) => {
+        const TypeIcon = PORT_TYPE_ICON[rows[0]?.port_type]
+        return (
         <div key={category} className="panel overflow-hidden">
-          <div className="panel-header">{category}</div>
+          <div className="panel-header flex items-center gap-2">
+            {TypeIcon && <TypeIcon className="w-4 h-4 shrink-0 opacity-70" />}
+            {category}
+          </div>
           <div className="divide-y divide-sc-border/30">
             {rows.map((item, i) => {
               const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
@@ -300,7 +327,7 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
             })}
           </div>
         </div>
-      ))}
+      )})}
     </div>
   )
 }
@@ -326,11 +353,14 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
 
   return (
     <div className="space-y-3">
-      {Object.entries(grouped).map(([category, rows]) => (
+      {Object.entries(grouped).map(([category, rows]) => {
+        const TypeIcon = PORT_TYPE_ICON[rows[0]?.port_type]
+        return (
         <div key={category} className="panel overflow-hidden">
-          <div className="panel-header">
+          <div className="panel-header flex items-center gap-2">
+            {TypeIcon && <TypeIcon className="w-4 h-4 shrink-0 opacity-70" />}
             {category}
-            <span className="text-gray-600 font-normal ml-1.5">({rows.length})</span>
+            <span className="text-gray-600 font-normal ml-0.5">({rows.length})</span>
           </div>
           <div className="divide-y divide-sc-border/20">
             {rows.map((item, i) => {
@@ -375,7 +405,7 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
             })}
           </div>
         </div>
-      ))}
+      )})}
     </div>
   )
 }
