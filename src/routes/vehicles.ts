@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import type { Env } from "../lib/types";
-import { getShipLoadout } from "../db/queries";
 
 /**
  * /api/ships/* — Ship reference database (all vehicles in the game)
@@ -29,15 +28,6 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
       )
       .all();
     return c.json(result.results);
-  });
-
-  // GET /api/ships/:slug/loadout — get default loadout for a vehicle
-  // Must be registered before /:slug to prevent route conflict
-  routes.get("/:slug/loadout", async (c) => {
-    const slug = c.req.param("slug");
-    const db = c.env.DB;
-    const loadout = await getShipLoadout(db, slug);
-    return c.json(loadout);
   });
 
   // GET /api/ships/:slug — get single vehicle by slug

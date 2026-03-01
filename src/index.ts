@@ -4,6 +4,7 @@ import type { Env, HonoEnv } from "./lib/types";
 import { createAuth } from "./lib/auth";
 import { fleetRoutes } from "./routes/fleet";
 import { vehicleRoutes } from "./routes/vehicles";
+import { getShipLoadout } from "./db/queries";
 import { paintRoutes } from "./routes/paints";
 import { importRoutes } from "./routes/import";
 import { settingsRoutes } from "./routes/settings";
@@ -223,6 +224,14 @@ app.get("/api/status", async (c) => {
       db_driver: "d1",
     },
   });
+});
+
+// Loadout route must be mounted directly — Hono sub-router /:slug/loadout doesn't match
+app.get("/api/ships/:slug/loadout", async (c) => {
+  const slug = c.req.param("slug");
+  const db = c.env.DB;
+  const loadout = await getShipLoadout(db, slug);
+  return c.json(loadout);
 });
 
 // Mount route groups — matches Go router URL structure exactly
