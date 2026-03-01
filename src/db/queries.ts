@@ -197,6 +197,9 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
   // the direct equipped item on the gun port, but it is not in vehicle_components. The actual
   // weapon lives one level deeper in a child port. We use a CTE to pre-filter to just this
   // ship's ports, then COALESCE the direct component join with a child-port fallback lookup.
+  //
+  // port_id and parent_port_id are returned so the frontend can build a hierarchy
+  // (e.g. weapon ports nested under their turret housing in the Turrets section).
   const result = await db
     .prepare(
       `WITH ship_ports AS (
@@ -204,6 +207,8 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
       )
       SELECT
+        p.id AS port_id,
+        p.parent_port_id,
         p.name AS port_name,
         p.category_label,
         p.port_type,
@@ -227,6 +232,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
             SELECT 1 FROM ship_ports pp
             WHERE pp.id = p.parent_port_id
               AND pp.category_label = p.category_label
+              AND pp.port_type != 'turret'
           )
         )
       ORDER BY p.category_label, p.name`,

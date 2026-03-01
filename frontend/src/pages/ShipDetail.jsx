@@ -273,12 +273,23 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
     )
   }
 
+  const turretPortIds = new Set(items.filter(i => i.port_type === 'turret').map(i => i.port_id))
+  const turretChildIds = new Set(items.filter(i => turretPortIds.has(i.parent_port_id)).map(i => i.port_id))
+
   const grouped = items.reduce((acc, item) => {
+    if (turretChildIds.has(item.port_id)) return acc
     const cat = item.category_label
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(item)
     return acc
   }, {})
+
+  const turretWeapons = new Map()
+  items.filter(i => turretChildIds.has(i.port_id)).forEach(item => {
+    const pid = item.parent_port_id
+    if (!turretWeapons.has(pid)) turretWeapons.set(pid, [])
+    turretWeapons.get(pid).push(item)
+  })
 
   return (
     <div className="space-y-4">
@@ -302,26 +313,52 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
             {rows.map((item, i) => {
               const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
               const label = rows.length > 1 ? `${category} ${i}` : category
+              const weapons = item.port_type === 'turret' ? (turretWeapons.get(item.port_id) || []) : []
               return (
-                <div key={i} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
-                  <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
-                    {label}
-                  </span>
-                  <span className={`col-span-3 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
-                    {item.component_name || '—'}
-                  </span>
-                  <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
-                    {sz != null ? `S${sz}` : '—'}
-                  </span>
-                  <span className="col-span-1 text-xs font-mono text-gray-400 text-center">
-                    {item.grade || '—'}
-                  </span>
-                  <span className="col-span-1 text-xs text-gray-500 truncate">
-                    {item.component_class || '—'}
-                  </span>
-                  <span className="col-span-3 text-xs text-gray-500 text-right">
-                    {item.manufacturer_name || '—'}
-                  </span>
+                <div key={i}>
+                  <div className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
+                    <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
+                      {label}
+                    </span>
+                    <span className={`col-span-3 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
+                      {item.component_name || '—'}
+                    </span>
+                    <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
+                      {sz != null ? `S${sz}` : '—'}
+                    </span>
+                    <span className="col-span-1 text-xs font-mono text-gray-400 text-center">
+                      {item.grade || '—'}
+                    </span>
+                    <span className="col-span-1 text-xs text-gray-500 truncate">
+                      {item.component_class || '—'}
+                    </span>
+                    <span className="col-span-3 text-xs text-gray-500 text-right">
+                      {item.manufacturer_name || '—'}
+                    </span>
+                  </div>
+                  {weapons.map((w, wi) => {
+                    const wsz = w.component_size ?? (w.size_max > 0 ? w.size_max : null)
+                    return (
+                      <div key={wi} className="grid grid-cols-12 gap-2 pl-8 pr-4 py-2 items-center bg-black/10 border-t border-sc-border/20">
+                        <span className="col-span-3 text-xs text-gray-600 truncate">└ Gun {wi + 1}</span>
+                        <span className={`col-span-3 text-xs truncate ${w.component_name ? 'text-gray-300' : 'text-gray-700 italic'}`}>
+                          {w.component_name || '—'}
+                        </span>
+                        <span className="col-span-1 text-xs font-mono text-sc-accent2/70 text-center">
+                          {wsz != null ? `S${wsz}` : '—'}
+                        </span>
+                        <span className="col-span-1 text-xs font-mono text-gray-500 text-center">
+                          {w.grade || '—'}
+                        </span>
+                        <span className="col-span-1 text-xs text-gray-600 truncate">
+                          {w.component_class || '—'}
+                        </span>
+                        <span className="col-span-3 text-xs text-gray-600 text-right">
+                          {w.manufacturer_name || '—'}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}
@@ -344,12 +381,23 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
     )
   }
 
+  const turretPortIds = new Set(items.filter(i => i.port_type === 'turret').map(i => i.port_id))
+  const turretChildIds = new Set(items.filter(i => turretPortIds.has(i.parent_port_id)).map(i => i.port_id))
+
   const grouped = items.reduce((acc, item) => {
+    if (turretChildIds.has(item.port_id)) return acc
     const cat = item.category_label
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(item)
     return acc
   }, {})
+
+  const turretWeapons = new Map()
+  items.filter(i => turretChildIds.has(i.port_id)).forEach(item => {
+    const pid = item.parent_port_id
+    if (!turretWeapons.has(pid)) turretWeapons.set(pid, [])
+    turretWeapons.get(pid).push(item)
+  })
 
   return (
     <div className="space-y-3">
@@ -370,34 +418,60 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
             <div className="divide-y divide-sc-border/20">
               {filled.map((item, i) => {
                 const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
+                const weapons = item.port_type === 'turret' ? (turretWeapons.get(item.port_id) || []) : []
                 return (
-                  <div key={i} className="flex items-center gap-3 px-4 py-3">
-                    {/* Size badge */}
-                    <div className="shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border border-sc-accent/40 text-sc-accent bg-sc-accent/5">
-                      {sz != null ? `S${sz}` : '—'}
+                  <div key={i}>
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <div className="shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border border-sc-accent/40 text-sc-accent bg-sc-accent/5">
+                        {sz != null ? `S${sz}` : '—'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-mono text-white">{item.component_name}</p>
+                        {(item.grade || item.component_class) && (
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {item.grade && (
+                              <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
+                                Grade {item.grade}
+                              </span>
+                            )}
+                            {item.component_class && (
+                              <span className="text-xs text-gray-500">{item.component_class}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-xs text-gray-500 text-right max-w-[160px]">
+                        {item.manufacturer_name || ''}
+                      </div>
                     </div>
-
-                    {/* Name + sub-line */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-mono text-white">{item.component_name}</p>
-                      {(item.grade || item.component_class) && (
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {item.grade && (
-                            <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
-                              Grade {item.grade}
-                            </span>
-                          )}
-                          {item.component_class && (
-                            <span className="text-xs text-gray-500">{item.component_class}</span>
-                          )}
+                    {weapons.map((w, wi) => {
+                      const wsz = w.component_size ?? (w.size_max > 0 ? w.size_max : null)
+                      return (
+                        <div key={wi} className="flex items-center gap-3 pl-10 pr-4 py-2.5 bg-black/20 border-t border-sc-border/10">
+                          <div className="shrink-0 w-8 h-8 rounded flex items-center justify-center font-mono font-bold text-xs border border-sc-accent/30 text-sc-accent/70 bg-sc-accent/5">
+                            {wsz != null ? `S${wsz}` : '—'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-mono text-white/80">{w.component_name || '—'}</p>
+                            {(w.grade || w.component_class) && (
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {w.grade && (
+                                  <span className="text-xs font-mono text-sc-accent2/80 bg-sc-accent2/10 px-1 py-px rounded">
+                                    Grade {w.grade}
+                                  </span>
+                                )}
+                                {w.component_class && (
+                                  <span className="text-xs text-gray-600">{w.component_class}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-xs text-gray-600 text-right max-w-[160px]">
+                            {w.manufacturer_name || ''}
+                          </div>
                         </div>
-                      )}
-                    </div>
-
-                    {/* Manufacturer */}
-                    <div className="shrink-0 text-xs text-gray-500 text-right max-w-[160px]">
-                      {item.manufacturer_name || ''}
-                    </div>
+                      )
+                    })}
                   </div>
                 )
               })}
