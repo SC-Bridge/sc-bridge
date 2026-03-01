@@ -4,15 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**ShipDetail tabs complete** — 5 tabs: Overview, Components, Weapons, Performance, Paints. All swappable component types now visible.
+**ShipDetail loadout display polished** — port sizes backfilled from XMLs, structural ports hidden, hardpoint labels show `S{n} · Position` (Option B), no more duplicate weapon rows.
 
 ## Recent Changes
 
-- **Migration 0032**: 8 performance columns + extraction script + `PerformanceTab` (3 panels: Speeds, Maneuvering, Propulsion)
-- **Tab restructure**: Loadout → Components (power/cooler/shield/QD/sensor/jump_drive) + Weapons tab (weapon/turret/missile/CM/mining_laser/salvage_head/salvage_module/qed)
-- **Migration 0033**: Backfilled `vehicle_ports` port_type/category_label for all missed component types — 202 jump drives, 17 mining lasers, 18 salvage heads, 34 salvage modules, 5 QEDs, +380 CMs/missiles/turrets/weapon mounts
-- **Migration 0034**: Second pass — 124 PowerPlant, 21 Cooler, 7 QuantumDrive, 3 Shield, 26 direct-mount WeaponGun (Ares S7, Vanguard nose-fixed, Idris railgun, Mustang Delta rockets, P-52, X1) — all NULL port_type ports now resolved (only thrusters remain, intentionally unassigned)
-- All deployed and live at scbridge.app
+- **Port size backfill** (`ship_ports/extract_sizes.py`): Parsed 126 ship XMLs → 9712 UPDATEs for size_min/size_max; 612 `$uneditable` structural ports had port_type/category_label cleared and editable=0 set
+- **Structural ports hidden**: `hardpoint_cooler_door_*`, `hardpoint_radar_door` etc. now editable=0 — no longer appear in Components/Weapons tabs
+- **Duplicate weapon fix** (`src/db/queries.ts`): `getShipLoadout` WHERE excludes child ports whose parent has the same category_label — `hardpoint_class_2` no longer double-shows alongside parent weapon mount
+- **Option B labels** (`frontend/src/pages/ShipDetail.jsx`): `TYPE_PREFIXES` map + `formatPortName(name, portType)` strips type-redundant prefixes; Hardpoint column shows `S{sz} · Position` (size from component_size ?? size_max)
+- All deployed: commit 6327bbb, pushed to main
 
 ## Key Decisions
 
@@ -117,6 +117,15 @@ The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_le
 `getShipLoadout` uses CTE + COALESCE child-port fallback to resolve through the mount.
 `_seat` is NOT safe to exclude — Mercury Star Runner `turret_top/bottom_seat` have real TurretBase components.
 
+## Port Size / XML Pattern (for future reference)
+
+Ship XMLs: `Extracted/XML/Data/Scripts/Entities/Vehicles/Implementations/Xml/{class_name}.xml`
+Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*">` → `<ItemPort minSize maxSize flags>`.
+- `$uneditable` flag → structural (door panel, relay) → hide (editable=0, clear port_type/category_label)
+- `invisible uneditable` → internal system (e.g. radar) → KEEP showing (has real component)
+- empty flags → normal player-swappable slot
+- XML size_max for weapon ports = MOUNT size (e.g. S3 gimbal); `component_size` = actual weapon size (e.g. S2). Display prefers component_size, falls back to size_max for empty slots.
+
 
 ---
 **Session compacted at:** 2026-03-01 08:35:38
@@ -171,4 +180,8 @@ The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_le
 
 ---
 **Session compacted at:** 2026-03-01 14:35:10
+
+
+---
+**Session compacted at:** 2026-03-01 15:06:17
 
