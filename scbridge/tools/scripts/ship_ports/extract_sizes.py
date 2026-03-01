@@ -75,6 +75,16 @@ MANUAL_XML_MAP: dict[str, str] = {
     "anvl_hornet_f7c_mk2": "anvl_hornet_f7cm_mk2",
     "anvl_hornet_f7cr_mk2": "anvl_hornet_f7cm_mk2",
     "anvl_hornet_f7cs_mk2": "anvl_hornet_f7cm_mk2",
+    # Hermes uses the Apollo chassis XML (vehicleDefinition: rsi_apollo.xml in DataCore)
+    "rsi_hermes": "rsi_apollo",
+    # MDC and MTC both use the MXC chassis XML (vehicleDefinition: GRIN_MXC.xml in DataCore)
+    # Note: MDC/MTC have no ports yet (extract.py only processes spaceships); map is for future use
+    "grin_mdc": "GRIN_MXC",
+    "grin_mtc": "GRIN_MXC",
+    # Ursa Medivac variants share the Ursa Rover chassis (vehicleDefinition: rsi_ursa_rover.xml)
+    # Note: no ports yet (ground vehicles not yet extracted); map is for future use
+    "rsi_ursa_medivac": "RSI_Ursa_Rover",
+    "rsi_ursa_medivac_stealth": "RSI_Ursa_Rover",
 }
 
 
