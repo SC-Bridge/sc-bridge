@@ -6,11 +6,12 @@ account_id = "4214879ee537a4840de659aafb7bf201"
 workers_dev = false
 preview_urls = false
 
-# Workers Assets — SPA routing: unmatched paths serve index.html
+# Workers Assets — Worker runs first so /api/* routes are matched before Assets CDN
 [assets]
 binding = "ASSETS"
 directory = "./frontend/dist"
 not_found_handling = "single-page-application"
+run_worker_first = true
 
 # D1 Database binding
 [[d1_databases]]
