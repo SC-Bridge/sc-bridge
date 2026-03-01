@@ -4,13 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Research documentation complete** — 7 research docs in `docs/research/` covering the full SC Bridge + extraction pipeline technical landscape. All pushed to main. Ready for SC Wiki removal plan or gladius verification.
+**Performance tab shipped** — ShipDetail now has 4 tabs: Overview, Loadout, Paints, Performance. Performance data extracted from DataCore for 209/301 ships. Live at scbridge.app.
 
 ## Recent Changes
 
-- **Added 7 research docs** to `docs/research/`: component-classification, api-reference, d1-schema-reference, datacore-extraction-pipeline, starbreaker-cli, scdatatools-reference, loot-map-pipeline
-- **Migration 0031**: `manufacturers.class TEXT`, loadout API returns `component_class`, ShipDetail LoadoutTab shows "Class" column (Civilian/Military/Industrial/Stealth/Competition)
-- **Investigation**: class NOT in DataCore JSONs; comes from manufacturer identity via loot filename convention `loot_{type}_{grade}_{mfr}_{name}_{class}.json`
+- **Migration 0032**: 8 new columns on `vehicles` (boost_speed_back, angular_velocity_pitch/yaw/roll, fuel_capacity_hydrogen/quantum, thruster_count_main/maneuvering)
+- **Extraction script**: `scbridge/tools/scripts/ship_performance/extract.py` — reads DataCore controller, fueltank, spaceship JSONs → populates D1
+- **API**: GET /api/ships/:slug now returns 8 performance columns
+- **Frontend**: `PerformanceTab` component with 3 panels (Speeds, Maneuvering, Propulsion)
+- **Coverage**: 209/301 ships have flight data; 92 concept/production ships return null gracefully
 
 ## Key Decisions
 
@@ -30,7 +32,7 @@ This file maintains running context across compactions.
 
 ## Applied Migrations (D1)
 
-Last applied: **0031_manufacturer_class.sql**
+Last applied: **0032_performance_columns.sql**
 
 | # | Migration | What |
 |---|-----------|------|
@@ -91,6 +93,7 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 | `props/` | Misc props (Misc/* types) | DataCore carryables/1h + 2h |
 | `ship_salvage/` | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage |
 | `ship_ports/` | Ship ports + default loadout → vehicle_ports | DataCore spaceships JSONs |
+| `ship_performance/` | Flight stats (boost, angular vel, fuel, thrusters) | DataCore controller/fueltank/spaceship JSONs |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
@@ -102,7 +105,6 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Verify**: `/ships/gladius` Loadout tab — Class column should show Military/Civilian etc for each component
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
