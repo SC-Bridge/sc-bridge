@@ -35,8 +35,6 @@ const LootDB = lazy(() => import('./pages/LootDB'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
-  { to: '/loot', icon: Search, label: 'Item Finder' },
-  { to: '/contracts', icon: FileText, label: 'Contracts' },
 ]
 
 const authNavItems = [
@@ -344,12 +342,12 @@ export default function App() {
                     <Routes>
                       {/* Public routes */}
                       <Route path="/" element={<Dashboard />} />
-                      <Route path="/ships" element={<ShipDB />} />
-                      <Route path="/ships/:slug" element={<ShipDetail />} />
-                      <Route path="/loot" element={<LootDB />} />
-                      <Route path="/contracts" element={<Contracts />} />
 
                       {/* Protected routes */}
+                      <Route path="/ships" element={<RequireAuth><ShipDB /></RequireAuth>} />
+                      <Route path="/ships/:slug" element={<RequireAuth><ShipDetail /></RequireAuth>} />
+                      <Route path="/loot" element={<RequireAuth><LootDB /></RequireAuth>} />
+                      <Route path="/contracts" element={<RequireAuth><Contracts /></RequireAuth>} />
                       <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
                       <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />
                       <Route path="/analysis" element={<RequireAuth><Analysis /></RequireAuth>} />
@@ -360,7 +358,7 @@ export default function App() {
                       <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
                       <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
-                      <Route path="/orgs/:slug" element={<OrgProfile />} />
+                      <Route path="/orgs/:slug" element={<RequireAuth><OrgProfile /></RequireAuth>} />
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>

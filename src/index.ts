@@ -258,6 +258,9 @@ app.route("/api/admin", adminRoutes());
 app.route("/api/contracts", contractRoutes<HonoEnv>());
 app.route("/api/loot", lootRoutes());
 
+// API fallthrough — return JSON 404 instead of HTML (prevents CF edge cache from caching HTML for API paths)
+app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
+
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {
   return c.env.ASSETS.fetch(c.req.raw);

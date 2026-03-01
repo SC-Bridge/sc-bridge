@@ -1,9 +1,9 @@
 # Coming Soon Mode — Revert Guide
 
-The app is in coming-soon mode. Registration, Ship DB, and stat counts are hidden from
-unauthenticated users. All routes and backend logic remain intact — nothing was deleted.
+The app is in coming-soon mode. Registration, Ship DB, stat counts, and all content pages
+are hidden from unauthenticated users. All routes and backend logic remain intact — nothing was deleted.
 
-**To fully re-open the app, apply all five diffs below.**
+**To fully re-open the app, apply all six diffs below.**
 
 ---
 
@@ -97,7 +97,7 @@ unauthenticated users. All routes and backend logic remain intact — nothing wa
 
 ---
 
-## 4. `frontend/src/App.jsx` — Restore Ship DB in public nav
+## 4. `frontend/src/App.jsx` — Restore public nav items
 
 **Find:**
 ```js
@@ -111,6 +111,8 @@ const publicNavItems = [
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
   { to: '/ships', icon: Database, label: 'Ship DB' },
+  { to: '/loot', icon: Search, label: 'Item Finder' },
+  { to: '/contracts', icon: FileText, label: 'Contracts' },
 ]
 ```
 
@@ -152,9 +154,44 @@ const publicNavItems = [
 
 ---
 
+## 6. `frontend/src/App.jsx` — Restore public routes
+
+**Find** (inside the inner `<Routes>` block):
+```jsx
+                      {/* Protected routes */}
+                      <Route path="/ships" element={<RequireAuth><ShipDB /></RequireAuth>} />
+                      <Route path="/ships/:slug" element={<RequireAuth><ShipDetail /></RequireAuth>} />
+                      <Route path="/loot" element={<RequireAuth><LootDB /></RequireAuth>} />
+                      <Route path="/contracts" element={<RequireAuth><Contracts /></RequireAuth>} />
+```
+
+**Replace with:**
+```jsx
+                      {/* Public content routes */}
+                      <Route path="/ships" element={<ShipDB />} />
+                      <Route path="/ships/:slug" element={<ShipDetail />} />
+                      <Route path="/loot" element={<LootDB />} />
+                      <Route path="/contracts" element={<Contracts />} />
+
+                      {/* Protected routes */}
+```
+
+**Also find:**
+```jsx
+                      <Route path="/orgs/:slug" element={<RequireAuth><OrgProfile /></RequireAuth>} />
+```
+
+**Replace with:**
+```jsx
+                      <Route path="/orgs/:slug" element={<OrgProfile />} />
+```
+
+---
+
 ## Notes
 
-- The `/register` and `/ships` routes were never removed — direct URLs still work.
+- The `/register` route was never removed — direct URL still works.
 - Social login buttons on the Login page also create accounts — these were not changed.
 - Better Auth's backend `signUp` endpoint was not touched.
 - All changes are purely cosmetic UI hiding.
+- The `/api/*` fallthrough in `src/index.ts` (JSON 404 for unhandled API paths) is a bug fix — do NOT revert it.
