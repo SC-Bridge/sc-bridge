@@ -15,6 +15,7 @@ import { migrateRoutes } from "./routes/migrate";
 import { accountRoutes } from "./routes/account";
 import { orgRoutes } from "./routes/orgs";
 import { adminRoutes } from "./routes/admin";
+import { contractRoutes } from "./routes/contracts";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
 
@@ -253,6 +254,7 @@ app.route("/api/migrate", migrateRoutes());
 app.route("/api/account", accountRoutes());
 app.route("/api/orgs", orgRoutes());
 app.route("/api/admin", adminRoutes());
+app.route("/api/contracts", contractRoutes<HonoEnv>());
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {

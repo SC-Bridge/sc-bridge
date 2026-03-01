@@ -99,6 +99,10 @@ export function useShips() {
   return useAPI('/ships')
 }
 
+export function useContracts() {
+  return useAPI('/contracts')
+}
+
 export function useShip(slug) {
   return useAPI(slug ? `/ships/${slug}` : null, { skip: !slug })
 }

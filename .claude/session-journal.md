@@ -2,6 +2,10 @@
 
 This file maintains running context across compactions.
 
+## Supplimentary Repo
+
+All tools/scripts/extractors which are propriatary are stored in a private repo which can be found locally here: /home/gavin/scbridge
+
 ## Current Focus
 
 **PDC data + port size backfill fixed** — 3 PDC housing components added to `vehicle_components`, 48 PDC ports labelled, port size case-sensitivity bug resolved.
@@ -34,22 +38,23 @@ This file maintains running context across compactions.
 
 Last applied: **0034_vehicle_ports_backfill2.sql**
 
-| # | Migration | What |
-|---|-----------|------|
-| 0017 | rename_components | `components` → `vehicle_components` |
-| 0018 | loot_map | `loot_map` table + FK cross-references |
-| 0019 | fps_helmets | Helmet table |
-| 0020 | loot_map_helmet_fk | `fps_helmet_id` on loot_map |
-| 0021 | fps_clothing | Clothing table (slot-based) |
-| 0022 | loot_map_clothing_fk | `fps_clothing_id` on loot_map |
-| 0023 | consumables | Food/Drink table |
-| 0024 | loot_map_consumable_fk | `consumable_id` on loot_map |
-| 0025 | harvestables | Harvestable items table |
-| 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map |
-| 0027 | props | Props table (plushies, medals, artifacts) |
-| 0028 | loot_map_props_fk | `props_id` on loot_map |
+| #    | Migration               | What                                      |
+| ---- | ----------------------- | ----------------------------------------- |
+| 0017 | rename_components       | `components` → `vehicle_components`       |
+| 0018 | loot_map                | `loot_map` table + FK cross-references    |
+| 0019 | fps_helmets             | Helmet table                              |
+| 0020 | loot_map_helmet_fk      | `fps_helmet_id` on loot_map               |
+| 0021 | fps_clothing            | Clothing table (slot-based)               |
+| 0022 | loot_map_clothing_fk    | `fps_clothing_id` on loot_map             |
+| 0023 | consumables             | Food/Drink table                          |
+| 0024 | loot_map_consumable_fk  | `consumable_id` on loot_map               |
+| 0025 | harvestables            | Harvestable items table                   |
+| 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map              |
+| 0027 | props                   | Props table (plushies, medals, artifacts) |
+| 0028 | loot_map_props_fk       | `props_id` on loot_map                    |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
+
 - `vehicle_components.stats_json`, `fps_weapons.stats_json`, `fps_armour.stats_json`
 - `fps_attachments.stats_json`, `fps_utilities.stats_json`
 - `vehicles.price_auec`, `vehicles.acquisition_type`
@@ -70,34 +75,35 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 
 ## Data Extraction Scripts (`scbridge/tools/scripts/`)
 
-| Script dir | What | Source |
-|------------|------|--------|
-| `ship_production_status/` | `production_status_id` | DataCore entity files |
-| `auec_prices/` | `price_auec` | Raw `Data.p4k` via scdatatools (python3.10) |
-| `acquisition_types/` | `acquisition_type` | Contract + CZ JSONs |
-| `loot_map/` | `loot_map` table (5218 items) | `Resolved/loot_map.json` |
-| `lib/datacore.py` | Shared helpers | — |
-| `ship_components_core/` | Power/cooler/shield/QD | DataCore ship component dirs |
-| `ship_weapons/` | Ship guns | DataCore weapon dirs |
-| `ship_missiles/` | Missile racks | DataCore missile dirs |
-| `ship_misc/` | Countermeasures/QED/jumpdrive | Multiple DataCore dirs |
-| `ship_mining/` | Mining modules → vehicle_components | DataCore miningarm dir |
-| `fps_weapons/` | FPS personal weapons | DataCore fps_weapons dir |
-| `fps_armour/` | PU armour | DataCore pu_armor dir |
-| `fps_attachments/` | Weapon modifiers | DataCore weapon_modifier dir |
-| `fps_utilities/` | Consumables/grenades | Multiple consumable dirs |
-| `fps_helmets/` | Helmets | DataCore starwear/helmet dir |
-| `fps_clothing/` | Clothing (all, incl. loot-only) | DataCore pu_clothing + pu_bespoke |
-| `consumables/` | Food & Drink | DataCore carryables/1h |
-| `harvestables/` | Harvestable items | DataCore carryables/1h + 2h |
-| `props/` | Misc props (Misc/* types) | DataCore carryables/1h + 2h |
-| `ship_salvage/` | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage |
-| `ship_ports/` | Ship ports + default loadout → vehicle_ports | DataCore spaceships JSONs |
-| `ship_performance/` | Flight stats (boost, angular vel, fuel, thrusters) | DataCore controller/fueltank/spaceship JSONs |
+| Script dir                | What                                               | Source                                       |
+| ------------------------- | -------------------------------------------------- | -------------------------------------------- |
+| `ship_production_status/` | `production_status_id`                             | DataCore entity files                        |
+| `auec_prices/`            | `price_auec`                                       | Raw `Data.p4k` via scdatatools (python3.10)  |
+| `acquisition_types/`      | `acquisition_type`                                 | Contract + CZ JSONs                          |
+| `loot_map/`               | `loot_map` table (5218 items)                      | `Resolved/loot_map.json`                     |
+| `lib/datacore.py`         | Shared helpers                                     | —                                            |
+| `ship_components_core/`   | Power/cooler/shield/QD                             | DataCore ship component dirs                 |
+| `ship_weapons/`           | Ship guns                                          | DataCore weapon dirs                         |
+| `ship_missiles/`          | Missile racks                                      | DataCore missile dirs                        |
+| `ship_misc/`              | Countermeasures/QED/jumpdrive                      | Multiple DataCore dirs                       |
+| `ship_mining/`            | Mining modules → vehicle_components                | DataCore miningarm dir                       |
+| `fps_weapons/`            | FPS personal weapons                               | DataCore fps_weapons dir                     |
+| `fps_armour/`             | PU armour                                          | DataCore pu_armor dir                        |
+| `fps_attachments/`        | Weapon modifiers                                   | DataCore weapon_modifier dir                 |
+| `fps_utilities/`          | Consumables/grenades                               | Multiple consumable dirs                     |
+| `fps_helmets/`            | Helmets                                            | DataCore starwear/helmet dir                 |
+| `fps_clothing/`           | Clothing (all, incl. loot-only)                    | DataCore pu_clothing + pu_bespoke            |
+| `consumables/`            | Food & Drink                                       | DataCore carryables/1h                       |
+| `harvestables/`           | Harvestable items                                  | DataCore carryables/1h + 2h                  |
+| `props/`                  | Misc props (Misc/\* types)                         | DataCore carryables/1h + 2h                  |
+| `ship_salvage/`           | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage               |
+| `ship_ports/`             | Ship ports + default loadout → vehicle_ports       | DataCore spaceships JSONs                    |
+| `ship_performance/`       | Flight stats (boost, angular vel, fuel, thrusters) | DataCore controller/fueltank/spaceship JSONs |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
 **D1 UPSERT FK subquery bug**: Subquery-resolved values in ON CONFLICT DO UPDATE SET don't reliably propagate. Always follow batch UPSERT with a direct correlated UPDATE:
+
 ```sql
 UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid)
 WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
@@ -121,115 +127,136 @@ The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_le
 
 Ship XMLs: `Extracted/XML/Data/Scripts/Entities/Vehicles/Implementations/Xml/{class_name}.xml`
 Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*">` → `<ItemPort minSize maxSize flags>`.
+
 - `$uneditable` flag → structural (door panel, relay) → hide (editable=0, clear port_type/category_label)
 - `invisible uneditable` → internal system (e.g. radar) → KEEP showing (has real component)
 - empty flags → normal player-swappable slot
 - XML size_max for weapon ports = MOUNT size (e.g. S3 gimbal); `component_size` = actual weapon size (e.g. S2). Display prefers component_size, falls back to size_max for empty slots.
 
-
 ---
+
 **Session compacted at:** 2026-03-01 08:35:38
 
 ---
+
 **Session compacted at:** 2026-03-01 09:34:37
 
-
 ---
+
 **Session compacted at:** 2026-03-01 09:57:05
 
-
 ---
+
 **Session compacted at:** 2026-03-01 10:56:21
 
-
 ---
+
 **Session compacted at:** 2026-03-01 11:31:51
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:15:27
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:28:35
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:28:58
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:29:57
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:33:40
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:39:11
 
-
 ---
+
 **Session compacted at:** 2026-03-01 13:39:45
 
-
 ---
+
 **Session compacted at:** 2026-03-01 14:16:28
 
-
 ---
+
 **Session compacted at:** 2026-03-01 14:35:10
 
-
 ---
+
 **Session compacted at:** 2026-03-01 15:06:17
 
-
 ---
+
 **Session compacted at:** 2026-03-01 18:29:59
 
-
 ---
+
 **Session compacted at:** 2026-03-02 06:19:33
 
-
 ---
+
 **Session compacted at:** 2026-03-02 06:49:36
 
-
 ---
+
 **Session compacted at:** 2026-03-02 07:11:48
 
-
 ---
+
 **Session compacted at:** 2026-03-02 07:58:38
 
-
 ---
+
 **Session compacted at:** 2026-03-02 08:37:14
 
-
 ---
+
 **Session compacted at:** 2026-03-02 08:42:12
 
-
 ---
+
 **Session compacted at:** 2026-03-02 08:54:01
 
-
 ---
+
 **Session compacted at:** 2026-03-02 08:54:18
 
-
 ---
+
 **Session compacted at:** 2026-03-02 08:55:10
 
-
 ---
+
 **Session compacted at:** 2026-03-02 09:06:17
 
+---
+
+**Session compacted at:** 2026-03-02 09:34:30
 
 ---
-**Session compacted at:** 2026-03-02 09:34:30
+**Session compacted at:** 2026-03-02 10:10:38
+
+
+---
+**Session compacted at:** 2026-03-02 10:16:26
+
+
+---
+**Session compacted at:** 2026-03-02 10:19:16
+
+
+---
+**Session compacted at:** 2026-03-02 10:19:38
+
+
+---
+**Session compacted at:** 2026-03-02 10:19:56
 
