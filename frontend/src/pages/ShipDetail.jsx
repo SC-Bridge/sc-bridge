@@ -355,55 +355,54 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
     <div className="space-y-3">
       {Object.entries(grouped).map(([category, rows]) => {
         const TypeIcon = PORT_TYPE_ICON[rows[0]?.port_type]
+        const filled = rows.filter(r => !!r.component_name)
+        const total = rows.length
         return (
         <div key={category} className="panel overflow-hidden">
           <div className="panel-header flex items-center gap-2">
             {TypeIcon && <TypeIcon className="w-4 h-4 shrink-0 opacity-70" />}
             {category}
-            <span className="text-gray-600 font-normal ml-0.5">({rows.length})</span>
+            <span className="text-gray-600 font-normal ml-0.5">
+              {filled.length < total ? `${filled.length} / ${total}` : `${total}`}
+            </span>
           </div>
-          <div className="divide-y divide-sc-border/20">
-            {rows.map((item, i) => {
-              const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
-              const hasComponent = !!item.component_name
-              return (
-                <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  {/* Size badge */}
-                  <div className={`shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border ${
-                    hasComponent
-                      ? 'border-sc-accent/40 text-sc-accent bg-sc-accent/5'
-                      : 'border-sc-border/40 text-gray-600'
-                  }`}>
-                    {sz != null ? `S${sz}` : '—'}
-                  </div>
+          {filled.length > 0 && (
+            <div className="divide-y divide-sc-border/20">
+              {filled.map((item, i) => {
+                const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
+                return (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    {/* Size badge */}
+                    <div className="shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border border-sc-accent/40 text-sc-accent bg-sc-accent/5">
+                      {sz != null ? `S${sz}` : '—'}
+                    </div>
 
-                  {/* Name + sub-line */}
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-mono ${hasComponent ? 'text-white' : 'text-gray-600 italic'}`}>
-                      {item.component_name || 'Empty'}
-                    </p>
-                    {(item.grade || item.component_class) && (
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {item.grade && (
-                          <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
-                            Grade {item.grade}
-                          </span>
-                        )}
-                        {item.component_class && (
-                          <span className="text-xs text-gray-500">{item.component_class}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                    {/* Name + sub-line */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono text-white">{item.component_name}</p>
+                      {(item.grade || item.component_class) && (
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {item.grade && (
+                            <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
+                              Grade {item.grade}
+                            </span>
+                          )}
+                          {item.component_class && (
+                            <span className="text-xs text-gray-500">{item.component_class}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Manufacturer */}
-                  <div className="shrink-0 text-xs text-gray-500 text-right max-w-[160px]">
-                    {item.manufacturer_name || ''}
+                    {/* Manufacturer */}
+                    <div className="shrink-0 text-xs text-gray-500 text-right max-w-[160px]">
+                      {item.manufacturer_name || ''}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )})}
     </div>
