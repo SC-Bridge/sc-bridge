@@ -8,14 +8,14 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**PDC data + port size backfill fixed** — 3 PDC housing components added to `vehicle_components`, 48 PDC ports labelled, port size case-sensitivity bug resolved.
+**Port size backfill complete** — extract_sizes.py v2 with XML inheritance covers 252/267 vehicles; Erkul size gaps reduced from 985 → 0.
 
 ## Recent Changes
 
-- **PDC extraction** (`672d540`): New `ship_pdcs/extract_pdcs.py` — UPSERTs 3 PDC turret housings (M2C "Swarm", MRX "Torrent", PPB-116 "Pepperbox") into `vehicle_components`, sets `port_type='pdc'`, `category_label='PDCs'` on 48 ports across 7 ships (890 Jump, Constellation Phoenix, Idris-M, Idris-P, Perseus)
-- **extract_sizes.py fix** (`672d540`): Two bugs: (1) XML filenames are lowercase (`rsi_perseus.xml`) but DB has mixed-case (`RSI_Perseus`) — fixed with `LOWER()` on both sides; (2) `$uneditable` was clearing `port_type`/`category_label` — fixed to set `editable=0` only (DataCore handles structural NULL port_type)
-- **Size backfill re-applied**: 5,581 rows updated across 126 ships (now Perseus S3/S8 mounts, etc. have correct size_max)
-- **Turret nesting** (`fd34bdf`): 130 turret housings in `vehicle_components`, nested weapons in loadout UI
+- **extract_sizes.py v2** (`1168d48`): XML inheritance via suffix-stripping + Modifications/ subdir support; `--vehicles` flag for vehicle-centric mode; manual override map for C8 Pisces, F8C, Cutlass Steel, Origin 100/300-series, F7C Mk2 variants; 18,203 port updates applied to D1
+- **Erkul reference** (`158a11b`): `fetch_erkul.py` script to snapshot Erkul API for cross-validation; Erkul gaps reduced 985→0 after v2 backfill
+- **P-72 Archimedes + F7C Mk2 fallbacks**: P-72 Archimedes/Emerald got sizes from Erkul data (no XML exists); `hardpoint_power_plant_02` fixed directly via SQL
+- **Erkul reference snapshot** at `scbridge/tools/scripts/erkul_reference/snapshots/2026-03-01/` (gitignored): SC live version 4.6.0-LIVE.11319298, 208 ships
 - NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` generates `dist/sc_bridge/wrangler.json` from `wrangler.toml`. Deploying without building ignores `wrangler.toml` changes!
 
 ## Key Decisions
