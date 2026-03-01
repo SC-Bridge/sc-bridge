@@ -12,11 +12,13 @@
 -- All existing rows are backfilled to game_version_id = 4.6.0-live.11319298.
 -- No user-owned rows (user_fleet, user_loot_collection, etc.) are touched.
 
+-- Disable FK enforcement for the duration of this migration.
 -- SQLite 3.26.0+ auto-updates FK references in dependent tables when a table
--- is renamed. This causes DROP TABLE _old to fail because other tables have
--- FK constraints pointing to the renamed table. legacy_alter_table=ON prevents
--- this auto-update behaviour, allowing the rename-create-drop pattern to work.
-PRAGMA legacy_alter_table = ON;
+-- is renamed via ALTER TABLE RENAME TO. This means DROP TABLE _old fails
+-- because the still-unbuilt tables have had their FK references auto-redirected
+-- to the _old name. Disabling FK checks allows the rename-create-drop pattern
+-- to complete. New connections get D1's default (FKs ON) automatically.
+PRAGMA foreign_keys = OFF;
 
 -- ============================================================
 -- Step 1 — Seed the current patch
