@@ -681,6 +681,15 @@ export interface LootItem {
   has_npcs: number;
   has_corpses: number;
   has_contracts: number;
+  manufacturer_name: string | null;
+}
+
+export interface WishlistItem extends LootItem {
+  shops_json: string | null;
+  containers_json: string | null;
+  npcs_json: string | null;
+  corpses_json: string | null;
+  contracts_json: string | null;
 }
 
 export async function getGameVersions(db: D1Database): Promise<{ code: string; channel: string; is_default: number; released_at: string }[]> {
@@ -712,8 +721,21 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
         CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
         CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
-        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
+        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+        COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) as manufacturer_name
       FROM loot_map lm
+      LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
+      LEFT JOIN manufacturers  mw  ON fw.manufacturer_id    = mw.id
+      LEFT JOIN fps_armour     fa  ON lm.fps_armour_id      = fa.id
+      LEFT JOIN manufacturers  ma  ON fa.manufacturer_id    = ma.id
+      LEFT JOIN fps_attachments fat ON lm.fps_attachment_id = fat.id
+      LEFT JOIN manufacturers  mat ON fat.manufacturer_id   = mat.id
+      LEFT JOIN fps_utilities  fu  ON lm.fps_utility_id     = fu.id
+      LEFT JOIN manufacturers  mu  ON fu.manufacturer_id    = mu.id
+      LEFT JOIN fps_helmets    fh  ON lm.fps_helmet_id      = fh.id
+      LEFT JOIN manufacturers  mh  ON fh.manufacturer_id    = mh.id
+      LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
+      LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
       WHERE ${versionFilter}
       ORDER BY lm.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
@@ -815,6 +837,66 @@ export async function addToLootCollection(db: D1Database, userId: string, lootMa
 export async function removeFromLootCollection(db: D1Database, userId: string, lootMapId: number): Promise<void> {
   await db
     .prepare("DELETE FROM user_loot_collection WHERE user_id = ? AND loot_map_id = ?")
+    .bind(userId, lootMapId)
+    .run();
+}
+
+export async function getUserLootWishlist(db: D1Database, userId: string): Promise<WishlistItem[]> {
+  const result = await db
+    .prepare(
+      `SELECT
+        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+        CASE
+          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+          WHEN lm.props_id IS NOT NULL THEN 'prop'
+          ELSE 'unknown'
+        END as category,
+        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+        COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) as manufacturer_name,
+        lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json
+      FROM user_loot_wishlist ulw
+      JOIN loot_map lm ON lm.id = ulw.loot_map_id
+      LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
+      LEFT JOIN manufacturers  mw  ON fw.manufacturer_id    = mw.id
+      LEFT JOIN fps_armour     fa  ON lm.fps_armour_id      = fa.id
+      LEFT JOIN manufacturers  ma  ON fa.manufacturer_id    = ma.id
+      LEFT JOIN fps_attachments fat ON lm.fps_attachment_id = fat.id
+      LEFT JOIN manufacturers  mat ON fat.manufacturer_id   = mat.id
+      LEFT JOIN fps_utilities  fu  ON lm.fps_utility_id     = fu.id
+      LEFT JOIN manufacturers  mu  ON fu.manufacturer_id    = mu.id
+      LEFT JOIN fps_helmets    fh  ON lm.fps_helmet_id      = fh.id
+      LEFT JOIN manufacturers  mh  ON fh.manufacturer_id    = mh.id
+      LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
+      LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
+      WHERE ulw.user_id = ?
+      ORDER BY lm.name ASC`,
+    )
+    .bind(userId)
+    .all();
+  return result.results as unknown as WishlistItem[];
+}
+
+export async function addToLootWishlist(db: D1Database, userId: string, lootMapId: number): Promise<void> {
+  await db
+    .prepare("INSERT OR IGNORE INTO user_loot_wishlist (user_id, loot_map_id) VALUES (?, ?)")
+    .bind(userId, lootMapId)
+    .run();
+}
+
+export async function removeFromLootWishlist(db: D1Database, userId: string, lootMapId: number): Promise<void> {
+  await db
+    .prepare("DELETE FROM user_loot_wishlist WHERE user_id = ? AND loot_map_id = ?")
     .bind(userId, lootMapId)
     .run();
 }

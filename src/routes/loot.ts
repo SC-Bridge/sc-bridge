@@ -6,6 +6,9 @@ import {
   getUserLootCollection,
   addToLootCollection,
   removeFromLootCollection,
+  getUserLootWishlist,
+  addToLootWishlist,
+  removeFromLootWishlist,
 } from "../db/queries";
 
 /**
@@ -64,9 +67,49 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
+  // GET /api/loot/wishlist — current user's wishlisted items with location JSON (auth required)
+  app.get("/wishlist", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const items = await getUserLootWishlist(c.env.DB, user.id);
+    return c.json(items);
+  });
+
+  // POST /api/loot/wishlist/:uuid — add item to wishlist (auth required)
+  app.post("/wishlist/:uuid", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const uuid = c.req.param("uuid");
+
+    const row = await c.env.DB
+      .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")
+      .bind(uuid)
+      .first<{ id: number }>();
+    if (!row) return c.json({ error: "Item not found" }, 404);
+
+    await addToLootWishlist(c.env.DB, user.id, row.id);
+    return c.json({ ok: true });
+  });
+
+  // DELETE /api/loot/wishlist/:uuid — remove item from wishlist (auth required)
+  app.delete("/wishlist/:uuid", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const uuid = c.req.param("uuid");
+
+    const row = await c.env.DB
+      .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")
+      .bind(uuid)
+      .first<{ id: number }>();
+    if (!row) return c.json({ error: "Item not found" }, 404);
+
+    await removeFromLootWishlist(c.env.DB, user.id, row.id);
+    return c.json({ ok: true });
+  });
+
   // GET /api/loot/:uuid — full detail + location JSON (public)
   // ?patch=4.7.0-live.XXXXXXX to browse a specific patch; defaults to is_default patch
-  // Must be last to avoid matching /collection
+  // Must be last to avoid matching /collection and /wishlist
   app.get("/:uuid", async (c) => {
     const uuid = c.req.param("uuid");
     const patch = c.req.query("patch");

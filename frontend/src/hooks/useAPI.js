@@ -236,6 +236,26 @@ export async function toggleLootCollection(uuid, isCurrentlyCollected) {
   return res.json()
 }
 
+export function useLootWishlist(isAuthed) {
+  return useAPI('/loot/wishlist', { skip: !isAuthed })
+}
+
+export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {
+  const res = await fetch(`/api/loot/wishlist/${uuid}`, {
+    method: isCurrentlyWishlisted ? 'DELETE' : 'POST',
+    credentials: 'same-origin',
+  })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || res.statusText)
+  }
+  return res.json()
+}
+
 export async function deleteAIAnalysis(id) {
   const res = await fetch(`${BASE}/llm/analysis/${id}`, {
     method: 'DELETE',
