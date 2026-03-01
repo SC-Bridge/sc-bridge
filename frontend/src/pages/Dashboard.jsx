@@ -44,27 +44,6 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="panel p-6 bg-grid">
-            <div className="flex items-center gap-2 mb-3">
-              <Database className="w-4 h-4 text-sc-accent" />
-              <span className="stat-label">Ship Database</span>
-            </div>
-            <p className="text-4xl font-display font-bold text-white mb-2">{status?.ships || 0}</p>
-            <p className="text-sm text-gray-500">Ships synced from SC Wiki</p>
-            <Link to="/ships" className="inline-flex items-center gap-1 mt-3 text-xs text-sc-accent hover:text-sc-accent/80 transition-colors font-display tracking-wider uppercase">
-              Browse Ships
-            </Link>
-          </div>
-          <div className="panel p-6 bg-grid">
-            <div className="flex items-center gap-2 mb-3">
-              <Rocket className="w-4 h-4 text-sc-accent2" />
-              <span className="stat-label">Paint Library</span>
-            </div>
-            <p className="text-4xl font-display font-bold text-white mb-2">{status?.paints || 0}</p>
-            <p className="text-sm text-gray-500">Ship paints catalogued</p>
-          </div>
-        </div>
       </div>
     )
   }

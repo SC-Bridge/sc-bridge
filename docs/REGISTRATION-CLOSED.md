@@ -1,9 +1,9 @@
-# Registration Closed — Revert Guide
+# Coming Soon Mode — Revert Guide
 
-Registration is currently hidden from the UI. The `/register` route and all account creation
-logic still exist and work — it's just not linked from anywhere visible.
+The app is in coming-soon mode. Registration, Ship DB, and stat counts are hidden from
+unauthenticated users. All routes and backend logic remain intact — nothing was deleted.
 
-**To re-enable registration, apply the three diffs below.**
+**To fully re-open the app, apply all five diffs below.**
 
 ---
 
@@ -97,9 +97,64 @@ logic still exist and work — it's just not linked from anywhere visible.
 
 ---
 
+## 4. `frontend/src/App.jsx` — Restore Ship DB in public nav
+
+**Find:**
+```js
+const publicNavItems = [
+  { to: '/', icon: BarChart3, label: 'Dashboard' },
+]
+```
+
+**Replace with:**
+```js
+const publicNavItems = [
+  { to: '/', icon: BarChart3, label: 'Dashboard' },
+  { to: '/ships', icon: Database, label: 'Ship DB' },
+]
+```
+
+---
+
+## 5. `frontend/src/pages/Dashboard.jsx` — Restore stat cards
+
+**Find** (after the coming-soon text, before the closing `</div>` of the landing section):
+```jsx
+      </div>
+    )
+  }
+```
+
+**Insert the stat cards before those closing tags:**
+```jsx
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="panel p-6 bg-grid">
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="w-4 h-4 text-sc-accent" />
+              <span className="stat-label">Ship Database</span>
+            </div>
+            <p className="text-4xl font-display font-bold text-white mb-2">{status?.ships || 0}</p>
+            <p className="text-sm text-gray-500">Ships synced from SC Wiki</p>
+            <Link to="/ships" className="inline-flex items-center gap-1 mt-3 text-xs text-sc-accent hover:text-sc-accent/80 transition-colors font-display tracking-wider uppercase">
+              Browse Ships
+            </Link>
+          </div>
+          <div className="panel p-6 bg-grid">
+            <div className="flex items-center gap-2 mb-3">
+              <Rocket className="w-4 h-4 text-sc-accent2" />
+              <span className="stat-label">Paint Library</span>
+            </div>
+            <p className="text-4xl font-display font-bold text-white mb-2">{status?.paints || 0}</p>
+            <p className="text-sm text-gray-500">Ship paints catalogued</p>
+          </div>
+        </div>
+```
+
+---
+
 ## Notes
 
-- The `/register` route itself was never removed — anyone with the direct URL can still register.
+- The `/register` and `/ships` routes were never removed — direct URLs still work.
 - Social login buttons on the Login page also create accounts — these were not changed.
 - Better Auth's backend `signUp` endpoint was not touched.
-- This change is purely cosmetic UI hiding.
+- All changes are purely cosmetic UI hiding.

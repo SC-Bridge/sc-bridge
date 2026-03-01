@@ -33,7 +33,6 @@ const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
-  { to: '/ships', icon: Database, label: 'Ship DB' },
 ]
 
 const authNavItems = [
