@@ -11,10 +11,14 @@ import ErrorState from '../components/ErrorState'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'loadout', label: 'Loadout' },
-  { id: 'paints', label: 'Paints' },
+  { id: 'components', label: 'Components' },
+  { id: 'weapons', label: 'Weapons' },
   { id: 'performance', label: 'Performance' },
+  { id: 'paints', label: 'Paints' },
 ]
+
+const COMPONENT_TYPES = new Set(['power', 'cooler', 'shield', 'quantum_drive', 'sensor'])
+const WEAPON_TYPES = new Set(['weapon', 'turret', 'missile', 'countermeasure'])
 
 function StatusBadge({ status }) {
   if (status === 'flight_ready') {
@@ -181,23 +185,17 @@ function formatPortName(name) {
     .join(' ')
 }
 
-function LoadoutTab({ slug }) {
-  const { data: loadout, loading, error } = useShipLoadout(slug)
-
-  if (loading) return <LoadingState message="Loading loadout..." />
-  if (error) return <ErrorState message={error} />
-
-  if (!loadout || loadout.length === 0) {
+function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
+  if (!items || items.length === 0) {
     return (
       <div className="text-center py-16 text-gray-500">
-        <Box className="w-10 h-10 mx-auto mb-3 text-gray-600" />
-        <p className="text-sm">No loadout data available</p>
+        <Icon className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+        <p className="text-sm">{emptyMessage}</p>
       </div>
     )
   }
 
-  // Group by category_label
-  const grouped = loadout.reduce((acc, item) => {
+  const grouped = items.reduce((acc, item) => {
     const cat = item.category_label
     if (!acc[cat]) acc[cat] = []
     acc[cat].push(item)
@@ -214,11 +212,11 @@ function LoadoutTab({ slug }) {
         <span className="col-span-2">Class</span>
         <span className="col-span-2 text-right">Manufacturer</span>
       </div>
-      {Object.entries(grouped).map(([category, items]) => (
+      {Object.entries(grouped).map(([category, rows]) => (
         <div key={category} className="panel overflow-hidden">
           <div className="panel-header">{category}</div>
           <div className="divide-y divide-sc-border/30">
-            {items.map((item, i) => (
+            {rows.map((item, i) => (
               <div key={i} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
                 <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
                   {formatPortName(item.port_name)}
@@ -245,6 +243,22 @@ function LoadoutTab({ slug }) {
       ))}
     </div>
   )
+}
+
+function ComponentsTab({ slug }) {
+  const { data: loadout, loading, error } = useShipLoadout(slug)
+  if (loading) return <LoadingState message="Loading components..." />
+  if (error) return <ErrorState message={error} />
+  const items = (loadout || []).filter(r => COMPONENT_TYPES.has(r.port_type))
+  return <LoadoutItems items={items} emptyIcon={Box} emptyMessage="No component data available" />
+}
+
+function WeaponsTab({ slug }) {
+  const { data: loadout, loading, error } = useShipLoadout(slug)
+  if (loading) return <LoadingState message="Loading weapons..." />
+  if (error) return <ErrorState message={error} />
+  const items = (loadout || []).filter(r => WEAPON_TYPES.has(r.port_type))
+  return <LoadoutItems items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
 }
 
 function PaintsTab({ slug }) {
@@ -404,9 +418,10 @@ export default function ShipDetail() {
 
       {/* Tab content */}
       {activeTab === 'overview' && <OverviewTab ship={ship} />}
-      {activeTab === 'loadout' && <LoadoutTab slug={slug} />}
-      {activeTab === 'paints' && <PaintsTab slug={slug} />}
+      {activeTab === 'components' && <ComponentsTab slug={slug} />}
+      {activeTab === 'weapons' && <WeaponsTab slug={slug} />}
       {activeTab === 'performance' && <PerformanceTab ship={ship} />}
+      {activeTab === 'paints' && <PaintsTab slug={slug} />}
     </div>
   )
 }
