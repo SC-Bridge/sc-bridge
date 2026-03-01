@@ -335,7 +335,6 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
           <div className="divide-y divide-sc-border/20">
             {rows.map((item, i) => {
               const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
-              const slotLabel = rows.length > 1 ? `${category} ${i + 1}` : category
               const hasComponent = !!item.component_name
               return (
                 <div key={i} className="flex items-center gap-3 px-4 py-3">
@@ -353,17 +352,18 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
                     <p className={`text-sm font-mono ${hasComponent ? 'text-white' : 'text-gray-600 italic'}`}>
                       {item.component_name || 'Empty'}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-xs text-gray-600">{slotLabel}</span>
-                      {item.grade && (
-                        <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
-                          Grade {item.grade}
-                        </span>
-                      )}
-                      {item.component_class && (
-                        <span className="text-xs text-gray-500">{item.component_class}</span>
-                      )}
-                    </div>
+                    {(item.grade || item.component_class) && (
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {item.grade && (
+                          <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
+                            Grade {item.grade}
+                          </span>
+                        )}
+                        {item.component_class && (
+                          <span className="text-xs text-gray-500">{item.component_class}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Manufacturer */}
