@@ -8,22 +8,22 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**GV ships page verified** — All 13 ground vehicle types load correctly on ships page. ROC shows cooler/power/sensor (Components) + mining arm/laser (Weapons). MTC shows shields/sensors/components + turret. Ready for next feature.
+**Auth routing fixed and deployed** — `/api/auth/**` routes now work correctly in production. Login, session, and all Better Auth endpoints functional.
 
 ## Recent Changes
 
-- **GV ships page verified**: `getShipLoadout` returns correct data for all GV slugs. COMPONENT_TYPES and WEAPON_TYPES in ShipDetail.jsx cover all GV port types. All 13 GVs have CF Images, proper slugs, categorized ports with sizes.
-- **Ground vehicle ports** (`26a959a`): extract.py updated to scan `entities/groundvehicles`. PORT_CATEGORIES extended with GV-specific prefixes + `hardpoint_weapon_gun/class/missile` variants (fixes Avenger, Vanguard, Pisces, Merlin, Archimedes). ON CONFLICT updates `port_type`.
-- **Port sizes backfill**: extract_sizes.py MANUAL_XML_MAP entries for RSI_Hermes (apollo), MDC/MTC (MXC), Ursa Medivac (ursa_rover). All GV XMLs auto-resolved via suffix-stripping. 18,455 UPDATE statements applied to D1.
+- **Auth routing fix** (`c6ed68c`): `app.on(["POST","GET"], "/api/auth/**", ...)` → `app.use("/api/auth/*", ...)`. Hono route wildcards don't match multi-segment paths in CF Workers runtime; middleware wildcards do. Auth was never working in production — CF edge cache was masking it.
+- **GV ships page verified**: `getShipLoadout` returns correct data for all GV slugs. All 13 GVs have CF Images, proper slugs, categorized ports with sizes.
+- **Port sizes backfill**: extract_sizes.py + 18,455 UPDATE statements applied to D1.
 - **Loot Item Finder** (`70b5905`): 5218 items, sidebar filters, grid+list, detail slide-over, auth-gated collection tracking live at `/loot`.
 
 ## Key Decisions
 
+- **Hono Workers routing gotcha**: `app.on()` / `app.get()` route wildcards (`*`, `**`) do NOT match multi-segment paths in CF Workers v8 runtime (works fine in Node.js). Use `app.use()` middleware wildcards for any multi-segment wildcard matching.
+- **CF edge cache vs Workers Assets CDN**: "Purge Everything" clears CF edge cache but NOT internal Workers Assets CDN cache. `run_worker_first = true` routes all requests through Worker before Assets CDN.
 - **Loot filtering**: Client-side only — fetch all 5218 items once (~1.3MB), filter in browser for instant UX. Server pagination would break search-as-you-type.
-- **Loot collection**: Binary `collected` toggle. `user_loot_collection` table with `UNIQUE(user_id, loot_map_id)` and `INSERT OR IGNORE`.
-- **Hono generic typing**: `lootRoutes()` uses `Hono<HonoEnv>` directly (NOT `<E extends HonoEnv>` generic) — generic context breaks `c.get('user')` and `c.env.DB` type inference. Inline auth checks instead of internal middleware.
+- **Hono generic typing**: `lootRoutes()` uses `Hono<HonoEnv>` directly (NOT `<E extends HonoEnv>` generic) — generic context breaks `c.get('user')` and `c.env.DB` type inference.
 - `vehicle_images` is source of truth; `vehicles.image_url` is denormalized effective URL for query simplicity
-- **Image priority**: CF Images > RSI new CDN > RSI old CDN > SC Wiki relative path > NULL
 
 ## Production
 
@@ -297,4 +297,16 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 11:08:23
+
+
+---
+**Session compacted at:** 2026-03-02 11:22:46
+
+
+---
+**Session compacted at:** 2026-03-02 11:34:21
+
+
+---
+**Session compacted at:** 2026-03-02 11:58:59
 
