@@ -8,20 +8,22 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Contracts page live** — 81 named NPC contracts (Wikelo/GFS/Ruto) seeded to D1, API endpoint working, React page deployed.
+**Ground vehicle ports complete** — vehicle_ports now has 27,058 rows covering all player ships + 13 ground vehicle types. Port categorization fixed for Avenger/Vanguard/Pisces weapon ports.
 
 ## Recent Changes
 
-- **Contracts page** (`e182d1a`): Migration `0035_contracts.sql`, extraction script at `scbridge/tools/scripts/contracts/extract_contracts.py`, backend route `src/routes/contracts.ts`, React page `frontend/src/pages/Contracts.jsx` — 81 contracts (60 Wikelo, 11 GFS, 10 Ruto) live at `/contracts`
-- **Build fix** (`39ba5b50`): Root cause of `/api/contracts` returning HTML was stale Vite build — `wrangler deploy` uses the pre-compiled Vite bundle at `dist/sc_bridge/`, NOT `src/index.ts` directly. Always run `npm run build` before `wrangler deploy`.
-- NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` in root `vite.config.ts` compiles Worker + frontend together into `dist/sc_bridge/`. Deploying without building uses stale bundle.
+- **Ground vehicle ports** (`26a959a`): extract.py updated to scan `entities/groundvehicles` in addition to spaceships. PORT_CATEGORIES extended with GV-specific prefixes + missing `hardpoint_weapon_gun/class/missile` variants (fixes Avenger, Vanguard, Pisces, Merlin, Archimedes weapon categorization). ON CONFLICT now updates `port_type` too.
+- **Port sizes backfill**: extract_sizes.py MANUAL_XML_MAP entries added for RSI_Hermes (apollo), MDC/MTC (MXC), Ursa Medivac (ursa_rover). All 257 ships with XMLs now have sizes; 18,455 UPDATE statements applied.
+- **vehicle_ports DB state**: 27,058 rows. 532 new GV ports (Ballista×3, MDC, MTC, PTV, ROC×2, STV, Ursa Rover×2, Ursa Medivac×2). 16,355 size updates applied.
+- **Loot Item Finder** (`70b5905`): 5218 items, sidebar filters, grid+list, detail slide-over, auth-gated collection tracking live at `/loot`.
 
 ## Key Decisions
 
+- **Loot filtering**: Client-side only — fetch all 5218 items once (~1.3MB), filter in browser for instant UX. Server pagination would break search-as-you-type.
+- **Loot collection**: Binary `collected` toggle. `user_loot_collection` table with `UNIQUE(user_id, loot_map_id)` and `INSERT OR IGNORE`.
+- **Hono generic typing**: `lootRoutes()` uses `Hono<HonoEnv>` directly (NOT `<E extends HonoEnv>` generic) — generic context breaks `c.get('user')` and `c.env.DB` type inference. Inline auth checks instead of internal middleware.
 - `vehicle_images` is source of truth; `vehicles.image_url` is denormalized effective URL for query simplicity
 - **Image priority**: CF Images > RSI new CDN > RSI old CDN > SC Wiki relative path > NULL
-- **Plane projects**: TWO workspaces — `sc-companion` workspace, project `a9de8845` is CORRECT
-- **Plane MCP bug**: MCP tools return 404 — use direct Python/curl with browser-like headers (Cloudflare WAF error 1010). API key: `plane_api_415f2e8ef69c4869978c718724d1ae38`
 
 ## Production
 
@@ -34,7 +36,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0035_contracts.sql**
+Last applied: **0036_user_loot_collection.sql**
 
 | #    | Migration               | What                                      |
 | ---- | ----------------------- | ----------------------------------------- |
@@ -50,6 +52,8 @@ Last applied: **0035_contracts.sql**
 | 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map              |
 | 0027 | props                   | Props table (plushies, medals, artifacts) |
 | 0028 | loot_map_props_fk       | `props_id` on loot_map                    |
+| 0035 | contracts               | `contracts` table + seed data (81 rows)   |
+| 0036 | user_loot_collection    | `user_loot_collection` table + indexes    |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
 
@@ -60,7 +64,7 @@ Last applied: **0035_contracts.sql**
 ## Applied DB State (SC 4.6.0)
 
 - **vehicles**: 303 ships, all with CF Images IDs (`imagedelivery.net`)
-- **vehicle_ports**: 25,797 rows (player ships only, INSERT...SELECT skips AI variants)
+- **vehicle_ports**: 27,058 rows (player ships + 13 GV types; INSERT...SELECT skips AI variants)
 - **vehicle_components**: 2080 rows (ship components + mining modules + 9 salvage attachments)
 - **fps_weapons**: 404; **fps_armour**: 1779; **fps_attachments**: 488; **fps_utilities**: 50
 - **fps_helmets**: 614; **fps_clothing**: 1785 (includes loot-only); **consumables**: 206
@@ -95,7 +99,7 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 | `harvestables/`           | Harvestable items                                  | DataCore carryables/1h + 2h                  |
 | `props/`                  | Misc props (Misc/\* types)                         | DataCore carryables/1h + 2h                  |
 | `ship_salvage/`           | SalvageHead + SalvageModifier → vehicle_components | DataCore ships/utility/salvage               |
-| `ship_ports/`             | Ship ports + default loadout → vehicle_ports       | DataCore spaceships JSONs                    |
+| `ship_ports/`             | Ship ports + default loadout → vehicle_ports       | DataCore spaceships + groundvehicles JSONs   |
 | `ship_performance/`       | Flight stats (boost, angular vel, fuel, thrusters) | DataCore controller/fueltank/spaceship JSONs |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
@@ -111,6 +115,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
+- **Loot detail stats**: `GET /api/loot/:uuid` fetches FK'd item table for stats_json — could surface more item details in the slide-over panel
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
 
 ## Weapon Mount Pattern (for future reference)
@@ -130,6 +135,13 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 - `invisible uneditable` → internal system (e.g. radar) → KEEP showing (has real component)
 - empty flags → normal player-swappable slot
 - XML size_max for weapon ports = MOUNT size (e.g. S3 gimbal); `component_size` = actual weapon size (e.g. S2). Display prefers component_size, falls back to size_max for empty slots.
+
+**XML Inheritance (MANUAL_XML_MAP):** Some ships use a different XML than their class name suggests. Verified via DataCore `vehicleDefinition` field:
+- `RSI_Hermes` → `rsi_apollo.xml`; `GRIN_MDC/MTC` → `GRIN_MXC.xml`; `RSI_Ursa_Medivac*` → `RSI_Ursa_Rover.xml`
+- `ARGO_ATLS` variants → NO vehicle XML (actor entity in `actor/actors/`, not `entities/vehicles/`)
+
+**`hardpoint_weapon_gun` / `hardpoint_weapon_class` / `hardpoint_weapon_missile` prefixes** were missing from PORT_CATEGORIES — now fixed. These appear on Avenger, Vanguard, Pisces, Merlin, Archimedes.
+extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows.
 
 ---
 
@@ -261,4 +273,16 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 ---
 **Session compacted at:** 2026-03-02 10:27:15
+
+
+---
+**Session compacted at:** 2026-03-02 10:35:55
+
+
+---
+**Session compacted at:** 2026-03-02 10:48:01
+
+
+---
+**Session compacted at:** 2026-03-02 10:51:39
 
