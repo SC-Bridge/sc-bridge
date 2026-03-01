@@ -4,14 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**ShipDetail loadout display complete** — type name + index hardpoint labels, dedicated Size column, structural ports hidden, no duplicate weapon rows.
+**Turret nesting complete** — turret housings in DB, weapons nested under turret rows in loadout UI.
 
 ## Recent Changes
 
-- **Port size backfill** (`ship_ports/extract_sizes.py`): Parsed 126 ship XMLs → 9712 UPDATEs for size_min/size_max; 612 `$uneditable` structural ports cleared (editable=0, port_type/category_label NULL)
-- **Duplicate weapon fix** (`src/db/queries.ts`): `getShipLoadout` WHERE excludes child ports whose parent has the same category_label
-- **Loadout display** (`frontend/src/pages/ShipDetail.jsx`): Hardpoint column shows `category_label` (or `category_label 0 / 1` when multiple); Size column (`S{n}`) restored left of Grade. `TYPE_PREFIXES`/`formatPortName` removed.
-- All deployed: last commit d4c20ce
+- **Turret housings extracted** (`scbridge/tools/scripts/ship_turrets/extract.py`): 130 TopTurret/BottomTurret/MannedTurret/TurretBase components → `vehicle_components`
+- **WHERE clause updated** (`src/db/queries.ts`): Added `AND pp.port_type != 'turret'` so weapon children of turret ports ARE included in query results (not excluded as duplicates)
+- **Nested turret display** (`frontend/src/pages/ShipDetail.jsx`): `LoadoutItems` + `LoadoutItemsEnhanced` now build `turretPortIds`/`turretChildIds`/`turretWeapons` maps and render weapon children indented under their turret housing row
+- All deployed: last commit fd34bdf
 
 ## Key Decisions
 
