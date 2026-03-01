@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ExternalLink, CheckCircle, Wrench, Lightbulb,
-  Rocket, Package, Users, Zap, Box
+  Rocket, Package, Users, Zap, Box, Palette, LayoutGrid, List
 } from 'lucide-react'
 import { useShip, useShipLoadout, useShipPaints } from '../hooks/useAPI'
 import ShipImage from '../components/ShipImage'
@@ -259,6 +259,7 @@ function WeaponsTab({ slug }) {
 
 function PaintsTab({ slug }) {
   const { data: paints, loading, error } = useShipPaints(slug)
+  const [view, setView] = useState('list')
 
   if (loading) return <LoadingState message="Loading paints..." />
   if (error) return <ErrorState message={error} />
@@ -266,27 +267,76 @@ function PaintsTab({ slug }) {
   if (!paints || paints.length === 0) {
     return (
       <div className="text-center py-16 text-gray-500">
-        <Rocket className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+        <Palette className="w-10 h-10 mx-auto mb-3 text-gray-600" />
         <p className="text-sm">No paints available</p>
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-      {paints.map((paint) => (
-        <div key={paint.id} className="panel overflow-hidden group">
-          <ShipImage
-            src={paint.image_url_small || paint.image_url_medium || paint.image_url}
-            fallbackSrc={paint.image_url_medium || paint.image_url}
-            alt={paint.name}
-            aspectRatio="square"
-          />
-          <div className="p-2">
-            <p className="text-xs font-mono text-gray-300 truncate" title={paint.name}>{paint.name}</p>
-          </div>
+    <div className="panel overflow-hidden">
+      <div className="panel-header flex items-center justify-between">
+        <span>Paints <span className="text-gray-500 font-normal">({paints.length})</span></span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setView('list')}
+            className={`p-1 rounded transition-colors ${view === 'list' ? 'text-sc-accent' : 'text-gray-500 hover:text-gray-300'}`}
+            title="List view"
+          >
+            <List className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setView('grid')}
+            className={`p-1 rounded transition-colors ${view === 'grid' ? 'text-sc-accent' : 'text-gray-500 hover:text-gray-300'}`}
+            title="Grid view"
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
         </div>
-      ))}
+      </div>
+
+      {view === 'list' ? (
+        <div className="divide-y divide-sc-border/30">
+          {paints.map((paint) => {
+            const thumb = paint.image_url_small || paint.image_url_medium || paint.image_url
+            return (
+              <div key={paint.id} className="flex items-center gap-4 px-4 py-3">
+                <div className="shrink-0 w-12 h-12 rounded overflow-hidden bg-sc-surface border border-sc-border/40 flex items-center justify-center">
+                  {thumb
+                    ? <img src={thumb} alt={paint.name} className="w-full h-full object-cover" />
+                    : <Palette className="w-5 h-5 text-gray-600" />
+                  }
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-mono text-gray-200">{paint.name}</p>
+                  {paint.description && (
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{paint.description}</p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {paints.map((paint) => {
+            const thumb = paint.image_url_small || paint.image_url_medium || paint.image_url
+            return (
+              <div key={paint.id} className="bg-sc-surface border border-sc-border/40 rounded overflow-hidden">
+                <div className="aspect-square flex items-center justify-center bg-sc-bg">
+                  {thumb
+                    ? <img src={thumb} alt={paint.name} className="w-full h-full object-cover" />
+                    : <Palette className="w-8 h-8 text-gray-600" />
+                  }
+                </div>
+                <div className="p-2">
+                  <p className="text-xs font-mono text-gray-300 truncate" title={paint.name}>{paint.name}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
