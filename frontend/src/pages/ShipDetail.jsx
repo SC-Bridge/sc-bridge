@@ -202,7 +202,7 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
         <span className="col-span-1 text-center">Size</span>
         <span className="col-span-1 text-center">Grade</span>
         <span className="col-span-1">Class</span>
-        <span className="col-span-3">Manufacturer</span>
+        <span className="col-span-3 text-right">Manufacturer</span>
       </div>
       {Object.entries(grouped).map(([category, rows]) => (
         <div key={category} className="panel overflow-hidden">
@@ -228,7 +228,7 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
                   <span className="col-span-1 text-xs text-gray-500 truncate">
                     {item.component_class || '—'}
                   </span>
-                  <span className="col-span-3 text-xs text-gray-500">
+                  <span className="col-span-3 text-xs text-gray-500 text-right">
                     {item.manufacturer_name || '—'}
                   </span>
                 </div>
