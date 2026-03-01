@@ -170,7 +170,10 @@ app.use("/api/vehicles/*", requireAuth);
 app.use("/api/import/*", requireAuth);
 app.use("/api/settings/*", requireAuth);
 app.use("/api/analysis", requireAuth);
-app.on(["POST", "DELETE"], "/api/llm/*", requireAuth);
+app.use("/api/llm/*", async (c, next) => {
+  if (c.req.method !== "POST" && c.req.method !== "DELETE") return next();
+  return requireAuth(c, next);
+});
 // Public: serve R2-stored user avatars (no auth required)
 app.get("/api/account/avatar/file/:userId", async (c) => {
   const userId = c.req.param("userId");
@@ -263,7 +266,8 @@ app.route("/api/contracts", contractRoutes<HonoEnv>());
 app.route("/api/loot", lootRoutes());
 
 // API fallthrough — return JSON 404 instead of HTML (prevents CF edge cache from caching HTML for API paths)
-app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
+// Must use app.use() — app.all() route wildcards don't match multi-segment paths in the Workers runtime
+app.use("/api/*", async (c) => c.json({ error: "Not Found" }, 404));
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
 app.get("*", async (c) => {
