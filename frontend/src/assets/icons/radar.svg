@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Radar: concentric rings + sweep arm + blip -->
+  <!-- Outer ring -->
+  <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 2a8 8 0 110 16A8 8 0 0112 4z"/>
+  <!-- Mid ring -->
+  <path fill-rule="evenodd" d="M12 7a5 5 0 100 10A5 5 0 0012 7zm0 1.5a3.5 3.5 0 110 7 3.5 3.5 0 010-7z"/>
+  <!-- Sweep arm: thin rotated rect from center to upper-right -->
+  <rect x="11.25" y="5" width="1.5" height="8" rx="0.75" transform="rotate(45 12 12)"/>
+  <!-- Center pivot -->
+  <circle cx="12" cy="12" r="1.5"/>
+  <!-- Blip -->
+  <circle cx="15.2" cy="8.8" r="1.2"/>
+</svg>

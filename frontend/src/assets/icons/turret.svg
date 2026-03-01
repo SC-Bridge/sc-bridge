@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Turret: rotating dome on a base ring with twin barrels -->
+  <!-- Base ring -->
+  <path fill-rule="evenodd" d="M6 17h12a2 2 0 002-2v-1H4v1a2 2 0 002 2z"/>
+  <!-- Turret dome (semicircle) -->
+  <path d="M4 14a8 8 0 1116 0H4z"/>
+  <!-- Left barrel -->
+  <rect x="7" y="6" width="2" height="5" rx="1"/>
+  <!-- Right barrel -->
+  <rect x="15" y="6" width="2" height="5" rx="1"/>
+  <!-- Mounting base plate -->
+  <rect x="8" y="17" width="8" height="2" rx="1"/>
+  <rect x="10" y="19" width="4" height="2" rx="1"/>
+</svg>

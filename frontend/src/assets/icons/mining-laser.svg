@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Mining laser: focused drill beam hitting a rock fragment -->
+  <!-- Emitter head (circular with ring) -->
+  <path fill-rule="evenodd" d="M18 7a5 5 0 110 10A5 5 0 0118 7zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
+  <!-- Tight focused beam (converges to a point left) -->
+  <path d="M13 10.5L3 12L13 13.5Z"/>
+  <!-- Rock fragment being hit (angular polygon left-bottom) -->
+  <path d="M2 14L5 12.5L7 15L5 18L2 17Z"/>
+</svg>

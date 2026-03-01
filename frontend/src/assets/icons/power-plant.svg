@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Power plant: lightning bolt inside a circuit frame -->
+  <!-- Outer square frame with corner cuts -->
+  <path fill-rule="evenodd" d="M3 5L5 3H19L21 5V19L19 21H5L3 19Z M5 5.5V18.5L6.5 20H17.5L19 18.5V5.5L17.5 4H6.5Z"/>
+  <!-- Lightning bolt -->
+  <path d="M13.5 4.5L8.5 12.5H12L10.5 19.5L15.5 11H12L13.5 4.5Z"/>
+</svg>

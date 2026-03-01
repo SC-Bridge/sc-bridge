@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Missile: elongated body with nose cone, fins, and exhaust -->
+  <!-- Main body -->
+  <rect x="7" y="10" width="10" height="4" rx="2"/>
+  <!-- Nose cone (tapers right) -->
+  <path d="M17 12L22 10V14Z"/>
+  <!-- Rear fins top -->
+  <path d="M7 10L4 7H7Z"/>
+  <!-- Rear fins bottom -->
+  <path d="M7 14L4 17H7Z"/>
+  <!-- Exhaust nozzle -->
+  <rect x="3" y="11" width="4" height="2" rx="1"/>
+</svg>
