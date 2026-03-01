@@ -86,10 +86,14 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
-// --- Better Auth handler — mount before session middleware ---
-app.on(["POST", "GET"], "/api/auth/**", async (c) => {
+// --- Better Auth handler — use app.use (middleware wildcard) not app.on (route wildcard)
+// app.on() with ** does not match multi-segment paths in the Workers runtime.
+// app.use() wildcard * is recursive in Hono middleware and correctly matches all sub-paths.
+app.use("/api/auth/*", async (c, next) => {
   const auth = createAuth(c.env);
-  return auth.handler(c.req.raw);
+  const response = await auth.handler(c.req.raw);
+  if (response) return response;
+  return next();
 });
 
 // --- Session middleware — populate c.get('user') for all API routes ---
