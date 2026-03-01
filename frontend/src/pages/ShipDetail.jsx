@@ -176,44 +176,6 @@ function OverviewTab({ ship }) {
   )
 }
 
-// Strip type-redundant prefixes from port names so only the position label remains.
-// Prefixes are ordered longest-first so more specific patterns match first.
-const TYPE_PREFIXES = {
-  weapon:        ['weapon_gun_nose_', 'weapon_gun_', 'weapon_turret_', 'weapon_'],
-  turret:        ['turret_'],
-  cooler:        ['cooler_'],
-  power:         ['power_'],
-  shield:        ['shield_'],
-  sensor:        ['radar_', 'sensor_'],
-  quantum_drive: ['quantum_drive_', 'quantum_'],
-  jump_drive:    ['jump_drive_', 'jumpdrive_'],
-  missile:       ['missilerack_', 'missile_rack_', 'missilelauncher_', 'missile_'],
-  countermeasure:['countermeasure_'],
-  mining_laser:  ['mining_laser_', 'mining_'],
-  salvage_head:  ['salvage_head_', 'salvage_'],
-  salvage_module:['salvage_module_', 'salvage_'],
-  qed:           ['qed_'],
-}
-
-function formatPortName(name, portType) {
-  let n = name
-    .replace(/^hardpoint_/, '')
-    .replace(/missilerack/g, 'missile_rack')
-
-  const prefixes = TYPE_PREFIXES[portType] || []
-  for (const prefix of prefixes) {
-    if (n.startsWith(prefix)) {
-      n = n.slice(prefix.length)
-      break
-    }
-  }
-
-  // If the prefix consumed the entire name (single-instance ports like 'quantum_drive'),
-  // fall back to the full cleaned name
-  if (!n) n = name.replace(/^hardpoint_/, '').replace(/_/g, ' ')
-
-  return n.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-}
 
 function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
   if (!items || items.length === 0) {
@@ -235,8 +197,9 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-12 gap-2 px-4 py-1.5 text-xs text-gray-600 uppercase tracking-wider">
-        <span className="col-span-4">Hardpoint</span>
+        <span className="col-span-3">Hardpoint</span>
         <span className="col-span-4">Component</span>
+        <span className="col-span-1 text-center">Size</span>
         <span className="col-span-1 text-center">Grade</span>
         <span className="col-span-2">Class</span>
         <span className="col-span-1 text-right">Mfr</span>
@@ -247,17 +210,17 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
           <div className="divide-y divide-sc-border/30">
             {rows.map((item, i) => {
               const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
+              const label = rows.length > 1 ? `${category} ${i}` : category
               return (
                 <div key={i} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
-                  <span className="col-span-4 text-xs text-gray-400 truncate" title={item.port_name}>
-                    {sz != null && (
-                      <span className="text-sc-accent2 font-mono mr-1">S{sz}</span>
-                    )}
-                    {sz != null && <span className="text-gray-600 mr-1">·</span>}
-                    {formatPortName(item.port_name, item.port_type)}
+                  <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
+                    {label}
                   </span>
                   <span className={`col-span-4 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
                     {item.component_name || '—'}
+                  </span>
+                  <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
+                    {sz != null ? `S${sz}` : '—'}
                   </span>
                   <span className="col-span-1 text-xs font-mono text-gray-400 text-center">
                     {item.grade || '—'}
