@@ -58,6 +58,9 @@ tmp/
 temp/
 *.tmp
 
+# Erkul reference snapshots (large JSON, contains ephemeral session tokens)
+scbridge/tools/scripts/erkul_reference/snapshots/
+
 # OS files
 Thumbs.db
 .Spotlight-V100
