@@ -4,16 +4,13 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Component class deployed** — migration 0031 adds `class` to `manufacturers`; loadout API returns `component_class`; ShipDetail shows "Class" column (Civilian/Military/Industrial/Stealth/Competition). Verify on `/ships/gladius` Loadout tab.
+**Research documentation complete** — 7 research docs in `docs/research/` covering the full SC Bridge + extraction pipeline technical landscape. All pushed to main. Ready for SC Wiki removal plan or gladius verification.
 
 ## Recent Changes
 
-- **Added** migration 0031: `manufacturers.class TEXT` column populated for 21 brands from DataCore loot file naming + user examples
-- **Updated** `getShipLoadout`: adds `component_class` with COALESCE child-port fallback (same pattern as manufacturer_name)
-- **Updated** `ShipDetail.jsx` `LoadoutTab`: column renamed "Type" → "Class", uses `item.component_class`
-- **Investigation**: confirmed class is NOT in DataCore component JSONs (SubType="UNDEFINED"); it comes from manufacturer identity; proved via loot file naming `loot_{type}_{grade}_{mfr}_{name}_{class}.json`
-- **Key surprises from loot files**: AMRS=Military (not Civilian!), ACOM=Competition, RACO=Stealth
-- **Pushed** to main → deploying via GitHub Actions
+- **Added 7 research docs** to `docs/research/`: component-classification, api-reference, d1-schema-reference, datacore-extraction-pipeline, starbreaker-cli, scdatatools-reference, loot-map-pipeline
+- **Migration 0031**: `manufacturers.class TEXT`, loadout API returns `component_class`, ShipDetail LoadoutTab shows "Class" column (Civilian/Military/Industrial/Stealth/Competition)
+- **Investigation**: class NOT in DataCore JSONs; comes from manufacturer identity via loot filename convention `loot_{type}_{grade}_{mfr}_{name}_{class}.json`
 
 ## Key Decisions
 
@@ -136,4 +133,32 @@ The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_le
 
 ---
 **Session compacted at:** 2026-03-01 11:31:51
+
+
+---
+**Session compacted at:** 2026-03-01 13:15:27
+
+
+---
+**Session compacted at:** 2026-03-01 13:28:35
+
+
+---
+**Session compacted at:** 2026-03-01 13:28:58
+
+
+---
+**Session compacted at:** 2026-03-01 13:29:57
+
+
+---
+**Session compacted at:** 2026-03-01 13:33:40
+
+
+---
+**Session compacted at:** 2026-03-01 13:39:11
+
+
+---
+**Session compacted at:** 2026-03-01 13:39:45
 
