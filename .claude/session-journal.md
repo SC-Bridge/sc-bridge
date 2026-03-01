@@ -4,14 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Turret nesting complete** — turret housings in DB, weapons nested under turret rows in loadout UI.
+**Blank page bug fixed** — three-part fix for Hono routing + Cloudflare Assets CDN caching issue. Loadout + turret nesting now live.
 
 ## Recent Changes
 
-- **Turret housings extracted** (`scbridge/tools/scripts/ship_turrets/extract.py`): 130 TopTurret/BottomTurret/MannedTurret/TurretBase components → `vehicle_components`
-- **WHERE clause updated** (`src/db/queries.ts`): Added `AND pp.port_type != 'turret'` so weapon children of turret ports ARE included in query results (not excluded as duplicates)
-- **Nested turret display** (`frontend/src/pages/ShipDetail.jsx`): `LoadoutItems` + `LoadoutItemsEnhanced` now build `turretPortIds`/`turretChildIds`/`turretWeapons` maps and render weapon children indented under their turret housing row
-- All deployed: last commit fd34bdf
+- **Turret nesting** (`fd34bdf`): 130 turret housings in `vehicle_components`, nested weapons in loadout UI, WHERE clause fix in `queries.ts`
+- **Routing fix** (`0f93316`): Moved `/:slug/loadout` from `vehicles.ts` sub-router to `index.ts` directly (Hono sub-router `/:slug/path` doesn't match via `app.route()`)
+- **CDN cache fix** (`3cbe0f2`): Added `run_worker_first = true` to `wrangler.toml` — without this, Workers Assets CDN served SPA fallback for all unmatched paths before the Worker ran, caching HTML responses for API paths
+- **no-store header** (`4a0e612`): Added `Cache-Control: no-store` middleware for all `/api/*` responses
+- NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` generates `dist/sc_bridge/wrangler.json` from `wrangler.toml`. Deploying without building ignores `wrangler.toml` changes!
 
 ## Key Decisions
 
@@ -199,4 +200,8 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 ---
 **Session compacted at:** 2026-03-02 07:11:48
+
+
+---
+**Session compacted at:** 2026-03-02 07:58:38
 
