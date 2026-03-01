@@ -53,6 +53,9 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
           v.vehicle_inventory, v.pledge_price, v.on_sale,
           v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
           v.pledge_url, v.price_auec, v.acquisition_type, v.acquisition_source_name,
+          v.boost_speed_back, v.angular_velocity_pitch, v.angular_velocity_yaw,
+          v.angular_velocity_roll, v.fuel_capacity_hydrogen, v.fuel_capacity_quantum,
+          v.thruster_count_main, v.thruster_count_maneuvering,
           m.name as manufacturer_name, m.code as manufacturer_code,
           ps.key as production_status
         FROM vehicles v

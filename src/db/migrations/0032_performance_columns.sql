@@ -1,0 +1,9 @@
+-- Performance data columns for ships tab
+ALTER TABLE vehicles ADD COLUMN boost_speed_back INTEGER;
+ALTER TABLE vehicles ADD COLUMN angular_velocity_pitch REAL;
+ALTER TABLE vehicles ADD COLUMN angular_velocity_yaw REAL;
+ALTER TABLE vehicles ADD COLUMN angular_velocity_roll REAL;
+ALTER TABLE vehicles ADD COLUMN fuel_capacity_hydrogen REAL;
+ALTER TABLE vehicles ADD COLUMN fuel_capacity_quantum REAL;
+ALTER TABLE vehicles ADD COLUMN thruster_count_main INTEGER;
+ALTER TABLE vehicles ADD COLUMN thruster_count_maneuvering INTEGER;

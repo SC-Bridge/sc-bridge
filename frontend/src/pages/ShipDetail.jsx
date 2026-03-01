@@ -13,6 +13,7 @@ const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'loadout', label: 'Loadout' },
   { id: 'paints', label: 'Paints' },
+  { id: 'performance', label: 'Performance' },
 ]
 
 function StatusBadge({ status }) {
@@ -280,6 +281,53 @@ function PaintsTab({ slug }) {
   )
 }
 
+function PerformanceTab({ ship }) {
+  const hasSpeed = ship.speed_scm || ship.speed_max || ship.boost_speed_back
+  const hasManeuvering = ship.angular_velocity_pitch || ship.angular_velocity_yaw || ship.angular_velocity_roll
+  const hasPropulsion = ship.fuel_capacity_hydrogen || ship.fuel_capacity_quantum || ship.thruster_count_main || ship.thruster_count_maneuvering
+
+  if (!hasSpeed && !hasManeuvering && !hasPropulsion) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        <Zap className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+        <p className="text-sm">No performance data available</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="panel">
+        <div className="panel-header">Speeds</div>
+        <div className="p-4 space-y-0">
+          <SpecRow label="SCM Speed" value={ship.speed_scm ? `${ship.speed_scm} m/s` : null} />
+          <SpecRow label="Max Speed" value={ship.speed_max ? `${ship.speed_max} m/s` : null} />
+          <SpecRow label="Boost Backward" value={ship.boost_speed_back ? `${ship.boost_speed_back} m/s` : null} />
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">Maneuvering</div>
+        <div className="p-4 space-y-0">
+          <SpecRow label="Pitch" value={ship.angular_velocity_pitch != null ? `${ship.angular_velocity_pitch} °/s` : null} />
+          <SpecRow label="Yaw" value={ship.angular_velocity_yaw != null ? `${ship.angular_velocity_yaw} °/s` : null} />
+          <SpecRow label="Roll" value={ship.angular_velocity_roll != null ? `${ship.angular_velocity_roll} °/s` : null} />
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">Propulsion</div>
+        <div className="p-4 space-y-0">
+          <SpecRow label="H₂ Fuel" value={ship.fuel_capacity_hydrogen != null ? `${ship.fuel_capacity_hydrogen} SCU` : null} />
+          <SpecRow label="QT Fuel" value={ship.fuel_capacity_quantum != null ? `${ship.fuel_capacity_quantum} SCU` : null} />
+          <SpecRow label="Main Thrusters" value={ship.thruster_count_main != null ? String(ship.thruster_count_main) : null} />
+          <SpecRow label="Maneuvering Thrusters" value={ship.thruster_count_maneuvering != null ? String(ship.thruster_count_maneuvering) : null} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ShipDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
@@ -358,6 +406,7 @@ export default function ShipDetail() {
       {activeTab === 'overview' && <OverviewTab ship={ship} />}
       {activeTab === 'loadout' && <LoadoutTab slug={slug} />}
       {activeTab === 'paints' && <PaintsTab slug={slug} />}
+      {activeTab === 'performance' && <PerformanceTab ship={ship} />}
     </div>
   )
 }
