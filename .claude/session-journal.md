@@ -8,15 +8,13 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Port size backfill complete** — extract_sizes.py v2 with XML inheritance covers 252/267 vehicles; Erkul size gaps reduced from 985 → 0.
+**Contracts page live** — 81 named NPC contracts (Wikelo/GFS/Ruto) seeded to D1, API endpoint working, React page deployed.
 
 ## Recent Changes
 
-- **extract_sizes.py v2** (`1168d48`): XML inheritance via suffix-stripping + Modifications/ subdir support; `--vehicles` flag for vehicle-centric mode; manual override map for C8 Pisces, F8C, Cutlass Steel, Origin 100/300-series, F7C Mk2 variants; 18,203 port updates applied to D1
-- **Erkul reference** (`158a11b`): `fetch_erkul.py` script to snapshot Erkul API for cross-validation; Erkul gaps reduced 985→0 after v2 backfill
-- **P-72 Archimedes + F7C Mk2 fallbacks**: P-72 Archimedes/Emerald got sizes from Erkul data (no XML exists); `hardpoint_power_plant_02` fixed directly via SQL
-- **Erkul reference snapshot** at `scbridge/tools/scripts/erkul_reference/snapshots/2026-03-01/` (gitignored): SC live version 4.6.0-LIVE.11319298, 208 ships
-- NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` generates `dist/sc_bridge/wrangler.json` from `wrangler.toml`. Deploying without building ignores `wrangler.toml` changes!
+- **Contracts page** (`e182d1a`): Migration `0035_contracts.sql`, extraction script at `scbridge/tools/scripts/contracts/extract_contracts.py`, backend route `src/routes/contracts.ts`, React page `frontend/src/pages/Contracts.jsx` — 81 contracts (60 Wikelo, 11 GFS, 10 Ruto) live at `/contracts`
+- **Build fix** (`39ba5b50`): Root cause of `/api/contracts` returning HTML was stale Vite build — `wrangler deploy` uses the pre-compiled Vite bundle at `dist/sc_bridge/`, NOT `src/index.ts` directly. Always run `npm run build` before `wrangler deploy`.
+- NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` in root `vite.config.ts` compiles Worker + frontend together into `dist/sc_bridge/`. Deploying without building uses stale bundle.
 
 ## Key Decisions
 
@@ -36,7 +34,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0034_vehicle_ports_backfill2.sql**
+Last applied: **0035_contracts.sql**
 
 | #    | Migration               | What                                      |
 | ---- | ----------------------- | ----------------------------------------- |
@@ -259,4 +257,8 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 ---
 **Session compacted at:** 2026-03-02 10:19:56
+
+
+---
+**Session compacted at:** 2026-03-02 10:27:15
 
