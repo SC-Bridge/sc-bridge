@@ -4,14 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Blank page bug fixed** — three-part fix for Hono routing + Cloudflare Assets CDN caching issue. Loadout + turret nesting now live.
+**PDC data + port size backfill fixed** — 3 PDC housing components added to `vehicle_components`, 48 PDC ports labelled, port size case-sensitivity bug resolved.
 
 ## Recent Changes
 
-- **Turret nesting** (`fd34bdf`): 130 turret housings in `vehicle_components`, nested weapons in loadout UI, WHERE clause fix in `queries.ts`
-- **Routing fix** (`0f93316`): Moved `/:slug/loadout` from `vehicles.ts` sub-router to `index.ts` directly (Hono sub-router `/:slug/path` doesn't match via `app.route()`)
-- **CDN cache fix** (`3cbe0f2`): Added `run_worker_first = true` to `wrangler.toml` — without this, Workers Assets CDN served SPA fallback for all unmatched paths before the Worker ran, caching HTML responses for API paths
-- **no-store header** (`4a0e612`): Added `Cache-Control: no-store` middleware for all `/api/*` responses
+- **PDC extraction** (`672d540`): New `ship_pdcs/extract_pdcs.py` — UPSERTs 3 PDC turret housings (M2C "Swarm", MRX "Torrent", PPB-116 "Pepperbox") into `vehicle_components`, sets `port_type='pdc'`, `category_label='PDCs'` on 48 ports across 7 ships (890 Jump, Constellation Phoenix, Idris-M, Idris-P, Perseus)
+- **extract_sizes.py fix** (`672d540`): Two bugs: (1) XML filenames are lowercase (`rsi_perseus.xml`) but DB has mixed-case (`RSI_Perseus`) — fixed with `LOWER()` on both sides; (2) `$uneditable` was clearing `port_type`/`category_label` — fixed to set `editable=0` only (DataCore handles structural NULL port_type)
+- **Size backfill re-applied**: 5,581 rows updated across 126 ships (now Perseus S3/S8 mounts, etc. have correct size_max)
+- **Turret nesting** (`fd34bdf`): 130 turret housings in `vehicle_components`, nested weapons in loadout UI
 - NOTE: `npm run build` must be run before `wrangler deploy` — the Vite `@cloudflare/vite-plugin` generates `dist/sc_bridge/wrangler.json` from `wrangler.toml`. Deploying without building ignores `wrangler.toml` changes!
 
 ## Key Decisions
@@ -224,4 +224,8 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 ---
 **Session compacted at:** 2026-03-02 08:55:10
+
+
+---
+**Session compacted at:** 2026-03-02 09:06:17
 
