@@ -17,8 +17,8 @@ const TABS = [
   { id: 'paints', label: 'Paints' },
 ]
 
-const COMPONENT_TYPES = new Set(['power', 'cooler', 'shield', 'quantum_drive', 'sensor'])
-const WEAPON_TYPES = new Set(['weapon', 'turret', 'missile', 'countermeasure'])
+const COMPONENT_TYPES = new Set(['power', 'cooler', 'shield', 'quantum_drive', 'sensor', 'jump_drive'])
+const WEAPON_TYPES = new Set(['weapon', 'turret', 'missile', 'countermeasure', 'mining_laser', 'salvage_head', 'salvage_module', 'qed'])
 
 function StatusBadge({ status }) {
   if (status === 'flight_ready') {
