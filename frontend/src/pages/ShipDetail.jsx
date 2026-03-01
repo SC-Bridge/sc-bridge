@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ExternalLink, CheckCircle, Wrench, Lightbulb,
-  Rocket, Package, Users, Zap, Box, Palette, LayoutGrid, List
+  Rocket, Package, Users, Zap, Box, Palette, LayoutGrid, List,
+  FlaskConical
 } from 'lucide-react'
 import { useShip, useShipLoadout, useShipPaints } from '../hooks/useAPI'
 import ShipImage from '../components/ShipImage'
@@ -19,6 +20,8 @@ const TABS = [
 
 const COMPONENT_TYPES = new Set(['power', 'cooler', 'shield', 'quantum_drive', 'sensor', 'jump_drive'])
 const WEAPON_TYPES = new Set(['weapon', 'turret', 'missile', 'countermeasure', 'mining_laser', 'salvage_head', 'salvage_module', 'qed'])
+
+// ─── Shared primitives ────────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
   if (status === 'flight_ready') {
@@ -66,12 +69,68 @@ function SpecRow({ label, value }) {
   )
 }
 
+// Shared right column (pricing, status, acquisition) — used by both overview variants
+function OverviewRightCol({ ship }) {
+  return (
+    <div className="space-y-4">
+      <div className="panel">
+        <div className="panel-header">Pricing</div>
+        <div className="p-4 space-y-2">
+          {ship.pledge_price > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Pledge Store</span>
+              <span className="text-sm font-mono text-sc-warn">${ship.pledge_price} USD</span>
+            </div>
+          )}
+          {ship.price_auec > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">In-Game</span>
+              <span className="text-sm font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+            </div>
+          )}
+          {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Source</span>
+              <span className="text-sm text-sc-accent2">Quest Reward</span>
+            </div>
+          )}
+          {!ship.pledge_price && !ship.price_auec &&
+            ship.acquisition_type !== 'ingame_quest' && ship.acquisition_type !== 'ingame_cz' && (
+            <p className="text-xs text-gray-600 font-mono">No pricing data</p>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">Status</div>
+        <div className="p-4">
+          <StatusBadge status={ship.production_status} />
+        </div>
+      </div>
+
+      {ship.acquisition_type && (
+        <div className="panel">
+          <div className="panel-header">Acquisition</div>
+          <div className="p-4 space-y-1">
+            <div className="text-sm font-mono text-gray-300 capitalize">
+              {ship.acquisition_type.replace(/_/g, ' ')}
+            </div>
+            {ship.acquisition_source_name && (
+              <div className="text-xs text-sc-accent2">{ship.acquisition_source_name}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Overview — Classic ───────────────────────────────────────────────────────
+
 function OverviewTab({ ship }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Left column */}
       <div className="lg:col-span-2 space-y-4">
-        {/* Specs */}
         <div className="panel">
           <div className="panel-header">Specifications</div>
           <div className="p-4 space-y-0">
@@ -91,7 +150,6 @@ function OverviewTab({ ship }) {
           </div>
         </div>
 
-        {/* Dimensions */}
         {(ship.length || ship.beam || ship.height || ship.mass || ship.health || ship.vehicle_inventory) && (
           <div className="panel">
             <div className="panel-header">Dimensions &amp; Physical</div>
@@ -109,7 +167,6 @@ function OverviewTab({ ship }) {
           </div>
         )}
 
-        {/* Description */}
         {ship.description && (
           <div className="panel">
             <div className="panel-header">Description</div>
@@ -118,64 +175,71 @@ function OverviewTab({ ship }) {
         )}
       </div>
 
-      {/* Right column */}
-      <div className="space-y-4">
-        {/* Pricing */}
-        <div className="panel">
-          <div className="panel-header">Pricing</div>
-          <div className="p-4 space-y-2">
-            {ship.pledge_price > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Pledge Store</span>
-                <span className="text-sm font-mono text-sc-warn">${ship.pledge_price} USD</span>
-              </div>
-            )}
-            {ship.price_auec > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">In-Game</span>
-                <span className="text-sm font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
-              </div>
-            )}
-            {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Source</span>
-                <span className="text-sm text-sc-accent2">Quest Reward</span>
-              </div>
-            )}
-            {!ship.pledge_price && !ship.price_auec &&
-              ship.acquisition_type !== 'ingame_quest' && ship.acquisition_type !== 'ingame_cz' && (
-              <p className="text-xs text-gray-600 font-mono">No pricing data</p>
-            )}
-          </div>
-        </div>
-
-        {/* Production Status */}
-        <div className="panel">
-          <div className="panel-header">Status</div>
-          <div className="p-4">
-            <StatusBadge status={ship.production_status} />
-          </div>
-        </div>
-
-        {/* Acquisition */}
-        {ship.acquisition_type && (
-          <div className="panel">
-            <div className="panel-header">Acquisition</div>
-            <div className="p-4 space-y-1">
-              <div className="text-sm font-mono text-gray-300 capitalize">
-                {ship.acquisition_type.replace(/_/g, ' ')}
-              </div>
-              {ship.acquisition_source_name && (
-                <div className="text-xs text-sc-accent2">{ship.acquisition_source_name}</div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      <OverviewRightCol ship={ship} />
     </div>
   )
 }
 
+// ─── Overview — Enhanced ──────────────────────────────────────────────────────
+
+function OverviewTabEnhanced({ ship }) {
+  const crewValue = ship.crew_min != null && ship.crew_max != null
+    ? ship.crew_min === ship.crew_max ? String(ship.crew_min) : `${ship.crew_min} – ${ship.crew_max}`
+    : null
+
+  const pyr = (ship.angular_velocity_pitch != null || ship.angular_velocity_yaw != null || ship.angular_velocity_roll != null)
+    ? `${ship.angular_velocity_pitch ?? '—'} / ${ship.angular_velocity_yaw ?? '—'} / ${ship.angular_velocity_roll ?? '—'} °/s`
+    : null
+
+  const dims = (ship.length || ship.beam || ship.height)
+    ? `${ship.length ?? '?'} × ${ship.beam ?? '?'} × ${ship.height ?? '?'} m`
+    : null
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="lg:col-span-2 space-y-4">
+        <div className="panel">
+          <div className="panel-header">Ship Data</div>
+          <div className="p-4 space-y-0">
+            {/* Identity */}
+            <SpecRow label="Role" value={ship.focus} />
+            <SpecRow label="Classification" value={ship.classification} />
+            <SpecRow label="Size" value={ship.size_label} />
+            <SpecRow label="Crew" value={crewValue} />
+            <SpecRow label="Cargo" value={ship.cargo > 0 ? `${ship.cargo} SCU` : null} />
+            <SpecRow label="Vehicle Storage" value={ship.vehicle_inventory ? `${ship.vehicle_inventory} SCU` : null} />
+            {/* Speed */}
+            <SpecRow label="SCM Speed" value={ship.speed_scm ? `${ship.speed_scm} m/s` : null} />
+            <SpecRow label="SCM Boost Back" value={ship.boost_speed_back ? `${ship.boost_speed_back} m/s` : null} />
+            <SpecRow label="Max Speed" value={ship.speed_max ? `${ship.speed_max} m/s` : null} />
+            {/* Maneuvering */}
+            <SpecRow label="Pitch / Yaw / Roll" value={pyr} />
+            {/* Physical */}
+            <SpecRow label="Dimensions (L × B × H)" value={dims} />
+            <SpecRow label="Mass" value={ship.mass ? `${ship.mass.toLocaleString()} kg` : null} />
+            <SpecRow label="Hull Health" value={ship.health ? ship.health.toLocaleString() : null} />
+            {/* Propulsion */}
+            <SpecRow label="H₂ Fuel" value={ship.fuel_capacity_hydrogen != null ? `${ship.fuel_capacity_hydrogen} SCU` : null} />
+            <SpecRow label="QT Fuel" value={ship.fuel_capacity_quantum != null ? `${ship.fuel_capacity_quantum} SCU` : null} />
+            <SpecRow label="Main Thrusters" value={ship.thruster_count_main != null ? String(ship.thruster_count_main) : null} />
+            <SpecRow label="Maneuvering Thrusters" value={ship.thruster_count_maneuvering != null ? String(ship.thruster_count_maneuvering) : null} />
+          </div>
+        </div>
+
+        {ship.description && (
+          <div className="panel">
+            <div className="panel-header">Description</div>
+            <p className="p-4 text-sm text-gray-400 leading-relaxed">{ship.description}</p>
+          </div>
+        )}
+      </div>
+
+      <OverviewRightCol ship={ship} />
+    </div>
+  )
+}
+
+// ─── Loadout — Classic ────────────────────────────────────────────────────────
 
 function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
   if (!items || items.length === 0) {
@@ -241,21 +305,102 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
   )
 }
 
-function ComponentsTab({ slug }) {
+// ─── Loadout — Enhanced ───────────────────────────────────────────────────────
+
+function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
+  if (!items || items.length === 0) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        <Icon className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+        <p className="text-sm">{emptyMessage}</p>
+      </div>
+    )
+  }
+
+  const grouped = items.reduce((acc, item) => {
+    const cat = item.category_label
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(item)
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(grouped).map(([category, rows]) => (
+        <div key={category} className="panel overflow-hidden">
+          <div className="panel-header">
+            {category}
+            <span className="text-gray-600 font-normal ml-1.5">({rows.length})</span>
+          </div>
+          <div className="divide-y divide-sc-border/20">
+            {rows.map((item, i) => {
+              const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
+              const slotLabel = rows.length > 1 ? `${category} ${i + 1}` : category
+              const hasComponent = !!item.component_name
+              return (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  {/* Size badge */}
+                  <div className={`shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border ${
+                    hasComponent
+                      ? 'border-sc-accent/40 text-sc-accent bg-sc-accent/5'
+                      : 'border-sc-border/40 text-gray-600'
+                  }`}>
+                    {sz != null ? `S${sz}` : '—'}
+                  </div>
+
+                  {/* Name + sub-line */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-mono ${hasComponent ? 'text-white' : 'text-gray-600 italic'}`}>
+                      {item.component_name || 'Empty'}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-gray-600">{slotLabel}</span>
+                      {item.grade && (
+                        <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
+                          Grade {item.grade}
+                        </span>
+                      )}
+                      {item.component_class && (
+                        <span className="text-xs text-gray-500">{item.component_class}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Manufacturer */}
+                  <div className="shrink-0 text-xs text-gray-500 text-right max-w-[160px]">
+                    {item.manufacturer_name || ''}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Component / Weapon tabs ──────────────────────────────────────────────────
+
+function ComponentsTab({ slug, layout }) {
   const { data: loadout, loading, error } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading components..." />
   if (error) return <ErrorState message={error} />
   const items = (loadout || []).filter(r => COMPONENT_TYPES.has(r.port_type))
-  return <LoadoutItems items={items} emptyIcon={Box} emptyMessage="No component data available" />
+  const Comp = layout === 'enhanced' ? LoadoutItemsEnhanced : LoadoutItems
+  return <Comp items={items} emptyIcon={Box} emptyMessage="No component data available" />
 }
 
-function WeaponsTab({ slug }) {
+function WeaponsTab({ slug, layout }) {
   const { data: loadout, loading, error } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading weapons..." />
   if (error) return <ErrorState message={error} />
   const items = (loadout || []).filter(r => WEAPON_TYPES.has(r.port_type))
-  return <LoadoutItems items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
+  const Comp = layout === 'enhanced' ? LoadoutItemsEnhanced : LoadoutItems
+  return <Comp items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
 }
+
+// ─── Paints tab ───────────────────────────────────────────────────────────────
 
 function PaintsTab({ slug }) {
   const { data: paints, loading, error } = useShipPaints(slug)
@@ -341,6 +486,8 @@ function PaintsTab({ slug }) {
   )
 }
 
+// ─── Performance — Classic ────────────────────────────────────────────────────
+
 function PerformanceTab({ ship }) {
   const hasSpeed = ship.speed_scm || ship.speed_max || ship.boost_speed_back
   const hasManeuvering = ship.angular_velocity_pitch || ship.angular_velocity_yaw || ship.angular_velocity_roll
@@ -388,10 +535,73 @@ function PerformanceTab({ ship }) {
   )
 }
 
+// ─── Performance — Enhanced ───────────────────────────────────────────────────
+
+function PerformanceTabEnhanced({ ship }) {
+  const hasSpeed = ship.speed_scm || ship.speed_max || ship.boost_speed_back
+  const hasManeuvering = ship.angular_velocity_pitch != null || ship.angular_velocity_yaw != null || ship.angular_velocity_roll != null
+  const hasPropulsion = ship.fuel_capacity_hydrogen || ship.fuel_capacity_quantum || ship.thruster_count_main || ship.thruster_count_maneuvering
+
+  if (!hasSpeed && !hasManeuvering && !hasPropulsion) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        <Zap className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+        <p className="text-sm">No performance data available</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="panel overflow-hidden">
+      <div className="panel-header">Performance</div>
+      <div className="divide-y divide-sc-border/40">
+        {hasSpeed && (
+          <div className="px-5 py-4 space-y-0">
+            <p className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">Speed</p>
+            <SpecRow label="SCM Speed" value={ship.speed_scm ? `${ship.speed_scm} m/s` : null} />
+            <SpecRow label="SCM Boost Back" value={ship.boost_speed_back ? `${ship.boost_speed_back} m/s` : null} />
+            <SpecRow label="Max Speed" value={ship.speed_max ? `${ship.speed_max} m/s` : null} />
+          </div>
+        )}
+
+        {hasManeuvering && (
+          <div className="px-5 py-4">
+            <p className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">Maneuvering</p>
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Pitch / Yaw / Roll</span>
+              <span className="text-sm font-mono text-white">
+                {ship.angular_velocity_pitch ?? '—'}
+                <span className="text-gray-600 mx-1">/</span>
+                {ship.angular_velocity_yaw ?? '—'}
+                <span className="text-gray-600 mx-1">/</span>
+                {ship.angular_velocity_roll ?? '—'}
+                <span className="text-xs text-gray-500 ml-1.5">°/s</span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {hasPropulsion && (
+          <div className="px-5 py-4 space-y-0">
+            <p className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">Propulsion</p>
+            <SpecRow label="H₂ Fuel" value={ship.fuel_capacity_hydrogen != null ? `${ship.fuel_capacity_hydrogen} SCU` : null} />
+            <SpecRow label="QT Fuel" value={ship.fuel_capacity_quantum != null ? `${ship.fuel_capacity_quantum} SCU` : null} />
+            <SpecRow label="Main Thrusters" value={ship.thruster_count_main != null ? String(ship.thruster_count_main) : null} />
+            <SpecRow label="Maneuvering Thrusters" value={ship.thruster_count_maneuvering != null ? String(ship.thruster_count_maneuvering) : null} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ShipDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
+  const [layout, setLayout] = useState('classic')
   const { data: ship, loading, error } = useShip(slug)
 
   if (loading) return <LoadingState message="Loading ship data..." />
@@ -445,28 +655,64 @@ export default function ShipDetail() {
         />
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-sc-border">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-display uppercase tracking-wider transition-colors border-b-2 -mb-px ${
-              activeTab === tab.id
-                ? 'text-sc-accent border-sc-accent'
-                : 'text-gray-500 border-transparent hover:text-gray-300'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Tab bar + A/B toggle */}
+      <div className="flex items-center justify-between border-b border-sc-border">
+        <div className="flex items-center gap-1">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm font-display uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+                activeTab === tab.id
+                  ? 'text-sc-accent border-sc-accent'
+                  : 'text-gray-500 border-transparent hover:text-gray-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Layout toggle */}
+        <div className="flex items-center gap-2 pb-1">
+          <span className="flex items-center gap-1 text-xs text-gray-600 font-mono uppercase tracking-wider">
+            <FlaskConical className="w-3.5 h-3.5" />
+            A/B
+          </span>
+          <div className="flex rounded overflow-hidden border border-sc-border/60">
+            {[
+              { id: 'classic', label: 'Classic' },
+              { id: 'enhanced', label: 'Enhanced' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setLayout(opt.id)}
+                className={`px-3 py-1 text-xs font-mono uppercase tracking-wider transition-colors ${
+                  layout === opt.id
+                    ? 'bg-sc-accent/15 text-sc-accent'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Tab content */}
-      {activeTab === 'overview' && <OverviewTab ship={ship} />}
-      {activeTab === 'components' && <ComponentsTab slug={slug} />}
-      {activeTab === 'weapons' && <WeaponsTab slug={slug} />}
-      {activeTab === 'performance' && <PerformanceTab ship={ship} />}
+      {activeTab === 'overview' && (
+        layout === 'enhanced'
+          ? <OverviewTabEnhanced ship={ship} />
+          : <OverviewTab ship={ship} />
+      )}
+      {activeTab === 'components' && <ComponentsTab slug={slug} layout={layout} />}
+      {activeTab === 'weapons' && <WeaponsTab slug={slug} layout={layout} />}
+      {activeTab === 'performance' && (
+        layout === 'enhanced'
+          ? <PerformanceTabEnhanced ship={ship} />
+          : <PerformanceTab ship={ship} />
+      )}
       {activeTab === 'paints' && <PaintsTab slug={slug} />}
     </div>
   )
