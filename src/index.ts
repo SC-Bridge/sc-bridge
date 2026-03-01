@@ -17,6 +17,7 @@ import { orgRoutes } from "./routes/orgs";
 import { adminRoutes } from "./routes/admin";
 import { contractRoutes } from "./routes/contracts";
 import { lootRoutes } from "./routes/loot";
+import { patchRoutes } from "./routes/patches";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
 
@@ -264,6 +265,7 @@ app.route("/api/orgs", orgRoutes());
 app.route("/api/admin", adminRoutes());
 app.route("/api/contracts", contractRoutes<HonoEnv>());
 app.route("/api/loot", lootRoutes());
+app.route("/api/patches", patchRoutes());
 
 // API fallthrough — return JSON 404 instead of HTML (prevents CF edge cache from caching HTML for API paths)
 // Must use app.use() — app.all() route wildcards don't match multi-segment paths in the Workers runtime

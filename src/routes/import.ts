@@ -53,8 +53,9 @@ export function importRoutes() {
           stubStmts.push(
             db
               .prepare(
-                `INSERT INTO vehicles (slug, name, updated_at) VALUES (?, ?, datetime('now'))
-                ON CONFLICT(slug) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
+                `INSERT INTO vehicles (slug, name, game_version_id, updated_at)
+                VALUES (?, ?, (SELECT id FROM game_versions WHERE is_default = 1), datetime('now'))
+                ON CONFLICT(slug, game_version_id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
               )
               .bind(matchedSlug, displayName),
           );
@@ -107,7 +108,7 @@ export function importRoutes() {
           .prepare(
             `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
               pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at)
-            VALUES (?, (SELECT id FROM vehicles WHERE slug = ?), ?, ?, ?,
+            VALUES (?, (SELECT id FROM vehicles WHERE slug = ? AND game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)), ?, ?, ?,
               ?, ?, ?, ?, ?, datetime('now'))`,
           )
           .bind(
@@ -187,7 +188,7 @@ interface VehicleMap {
 
 async function preloadVehicleMap(db: D1Database): Promise<VehicleMap> {
   const result = await db
-    .prepare("SELECT id, slug, name FROM vehicles")
+    .prepare("SELECT id, slug, name FROM vehicles WHERE game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)")
     .all();
 
   const slugToID = new Map<string, number>();

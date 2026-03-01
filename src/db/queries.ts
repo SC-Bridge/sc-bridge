@@ -683,10 +683,18 @@ export interface LootItem {
   has_contracts: number;
 }
 
-export async function getLootItems(db: D1Database): Promise<LootItem[]> {
+export async function getGameVersions(db: D1Database): Promise<{ code: string; channel: string; is_default: number; released_at: string }[]> {
   const result = await db
-    .prepare(
-      `SELECT
+    .prepare("SELECT code, channel, is_default, released_at FROM game_versions ORDER BY released_at DESC")
+    .all<{ code: string; channel: string; is_default: number; released_at: string }>();
+  return result.results;
+}
+
+export async function getLootItems(db: D1Database, patchCode?: string): Promise<LootItem[]> {
+  const versionFilter = patchCode
+    ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
+    : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
+  const sql = `SELECT
         lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         CASE
           WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
@@ -706,16 +714,17 @@ export async function getLootItems(db: D1Database): Promise<LootItem[]> {
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
       FROM loot_map lm
-      ORDER BY lm.name ASC`,
-    )
-    .all();
+      WHERE ${versionFilter}
+      ORDER BY lm.name ASC`;
+  const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
 }
 
-export async function getLootByUuid(db: D1Database, uuid: string): Promise<Record<string, unknown> | null> {
-  const row = await db
-    .prepare(
-      `SELECT
+export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: string): Promise<Record<string, unknown> | null> {
+  const versionFilter = patchCode
+    ? `AND lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
+    : `AND lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
+  const sql = `SELECT
         lm.*,
         CASE
           WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
@@ -730,10 +739,8 @@ export async function getLootByUuid(db: D1Database, uuid: string): Promise<Recor
           ELSE 'unknown'
         END as category
       FROM loot_map lm
-      WHERE lm.uuid = ?`,
-    )
-    .bind(uuid)
-    .first();
+      WHERE lm.uuid = ? ${versionFilter}`;
+  const row = await (patchCode ? db.prepare(sql).bind(uuid, patchCode) : db.prepare(sql).bind(uuid)).first();
   if (!row) return null;
 
   // Fetch linked item details based on which FK is set
