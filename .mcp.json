@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "newrelic": {
+      "type": "http",
+      "url": "https://mcp.newrelic.com/mcp/"
+    }
+  }
+}
