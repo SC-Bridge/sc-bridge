@@ -60,6 +60,12 @@ app.use("*", async (c, next) => {
   c.header("Referrer-Policy", "strict-origin-when-cross-origin");
 });
 
+// Prevent CDN caching of API responses
+app.use("/api/*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store");
+});
+
 // CORS — strict same-origin in production, localhost in dev
 app.use("/api/*", async (c, next) => {
   const origin = c.req.header("Origin") || "";
