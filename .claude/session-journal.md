@@ -4,15 +4,15 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**Performance tab shipped** — ShipDetail now has 4 tabs: Overview, Loadout, Paints, Performance. Performance data extracted from DataCore for 209/301 ships. Live at scbridge.app.
+**ShipDetail tabs complete** — 5 tabs: Overview, Components, Weapons, Performance, Paints. All swappable component types now visible.
 
 ## Recent Changes
 
-- **Migration 0032**: 8 new columns on `vehicles` (boost_speed_back, angular_velocity_pitch/yaw/roll, fuel_capacity_hydrogen/quantum, thruster_count_main/maneuvering)
-- **Extraction script**: `scbridge/tools/scripts/ship_performance/extract.py` — reads DataCore controller, fueltank, spaceship JSONs → populates D1
-- **API**: GET /api/ships/:slug now returns 8 performance columns
-- **Frontend**: `PerformanceTab` component with 3 panels (Speeds, Maneuvering, Propulsion)
-- **Coverage**: 209/301 ships have flight data; 92 concept/production ships return null gracefully
+- **Migration 0032**: 8 performance columns + extraction script + `PerformanceTab` (3 panels: Speeds, Maneuvering, Propulsion)
+- **Tab restructure**: Loadout → Components (power/cooler/shield/QD/sensor/jump_drive) + Weapons tab (weapon/turret/missile/CM/mining_laser/salvage_head/salvage_module/qed)
+- **Migration 0033**: Backfilled `vehicle_ports` port_type/category_label for all missed component types — 202 jump drives, 17 mining lasers, 18 salvage heads, 34 salvage modules, 5 QEDs, +380 CMs/missiles/turrets/weapon mounts
+- **Migration 0034**: Second pass — 124 PowerPlant, 21 Cooler, 7 QuantumDrive, 3 Shield, 26 direct-mount WeaponGun (Ares S7, Vanguard nose-fixed, Idris railgun, Mustang Delta rockets, P-52, X1) — all NULL port_type ports now resolved (only thrusters remain, intentionally unassigned)
+- All deployed and live at scbridge.app
 
 ## Key Decisions
 
@@ -32,7 +32,7 @@ This file maintains running context across compactions.
 
 ## Applied Migrations (D1)
 
-Last applied: **0032_performance_columns.sql**
+Last applied: **0034_vehicle_ports_backfill2.sql**
 
 | # | Migration | What |
 |---|-----------|------|
@@ -163,4 +163,12 @@ The actual weapon is in a child port (`hardpoint_class_2`, `hardpoint_class_1_le
 
 ---
 **Session compacted at:** 2026-03-01 13:39:45
+
+
+---
+**Session compacted at:** 2026-03-01 14:16:28
+
+
+---
+**Session compacted at:** 2026-03-01 14:35:10
 
