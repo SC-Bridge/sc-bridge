@@ -8,13 +8,13 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Ground vehicle ports complete** — vehicle_ports now has 27,058 rows covering all player ships + 13 ground vehicle types. Port categorization fixed for Avenger/Vanguard/Pisces weapon ports.
+**GV ships page verified** — All 13 ground vehicle types load correctly on ships page. ROC shows cooler/power/sensor (Components) + mining arm/laser (Weapons). MTC shows shields/sensors/components + turret. Ready for next feature.
 
 ## Recent Changes
 
-- **Ground vehicle ports** (`26a959a`): extract.py updated to scan `entities/groundvehicles` in addition to spaceships. PORT_CATEGORIES extended with GV-specific prefixes + missing `hardpoint_weapon_gun/class/missile` variants (fixes Avenger, Vanguard, Pisces, Merlin, Archimedes weapon categorization). ON CONFLICT now updates `port_type` too.
-- **Port sizes backfill**: extract_sizes.py MANUAL_XML_MAP entries added for RSI_Hermes (apollo), MDC/MTC (MXC), Ursa Medivac (ursa_rover). All 257 ships with XMLs now have sizes; 18,455 UPDATE statements applied.
-- **vehicle_ports DB state**: 27,058 rows. 532 new GV ports (Ballista×3, MDC, MTC, PTV, ROC×2, STV, Ursa Rover×2, Ursa Medivac×2). 16,355 size updates applied.
+- **GV ships page verified**: `getShipLoadout` returns correct data for all GV slugs. COMPONENT_TYPES and WEAPON_TYPES in ShipDetail.jsx cover all GV port types. All 13 GVs have CF Images, proper slugs, categorized ports with sizes.
+- **Ground vehicle ports** (`26a959a`): extract.py updated to scan `entities/groundvehicles`. PORT_CATEGORIES extended with GV-specific prefixes + `hardpoint_weapon_gun/class/missile` variants (fixes Avenger, Vanguard, Pisces, Merlin, Archimedes). ON CONFLICT updates `port_type`.
+- **Port sizes backfill**: extract_sizes.py MANUAL_XML_MAP entries for RSI_Hermes (apollo), MDC/MTC (MXC), Ursa Medivac (ursa_rover). All GV XMLs auto-resolved via suffix-stripping. 18,455 UPDATE statements applied to D1.
 - **Loot Item Finder** (`70b5905`): 5218 items, sidebar filters, grid+list, detail slide-over, auth-gated collection tracking live at `/loot`.
 
 ## Key Decisions
@@ -285,4 +285,16 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 10:51:39
+
+
+---
+**Session compacted at:** 2026-03-02 11:07:12
+
+
+---
+**Session compacted at:** 2026-03-02 11:08:07
+
+
+---
+**Session compacted at:** 2026-03-02 11:08:23
 
