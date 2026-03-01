@@ -414,20 +414,23 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
               {filled.length < total ? `${filled.length} / ${total}` : `${total}`}
             </span>
           </div>
-          {filled.length > 0 && (
+          {rows.length > 0 && (
             <div className="divide-y divide-sc-border/20">
-              {filled.map((item, i) => {
+              {rows.map((item, i) => {
                 const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
                 const weapons = item.port_type === 'turret' ? (turretWeapons.get(item.port_id) || []) : []
+                const isEmpty = !item.component_name
                 return (
                   <div key={i}>
-                    <div className="flex items-center gap-3 px-4 py-3">
+                    <div className={`flex items-center gap-3 px-4 py-3 ${isEmpty ? 'opacity-40' : ''}`}>
                       <div className="shrink-0 w-10 h-10 rounded flex items-center justify-center font-mono font-bold text-sm border border-sc-accent/40 text-sc-accent bg-sc-accent/5">
                         {sz != null ? `S${sz}` : '—'}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-mono text-white">{item.component_name}</p>
-                        {(item.grade || item.component_class) && (
+                        <p className={`text-sm font-mono ${isEmpty ? 'text-gray-500 italic' : 'text-white'}`}>
+                          {item.component_name || 'Empty'}
+                        </p>
+                        {!isEmpty && (item.grade || item.component_class) && (
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             {item.grade && (
                               <span className="text-xs font-mono text-sc-accent2 bg-sc-accent2/10 px-1.5 py-px rounded">
