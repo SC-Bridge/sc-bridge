@@ -5,12 +5,18 @@
 --
 -- Changes:
 --   1. Seed 4.6.0-live.11319298 as the first (and default) game version.
---   2. Rebuild all 14 game-data tables so each row is keyed by (uuid/slug, game_version_id)
+--   2. Rebuild all 15 game-data tables so each row is keyed by (uuid/slug, game_version_id)
 --      instead of uuid alone. The UPSERT ON CONFLICT target changes from (uuid) to
 --      (uuid, game_version_id), enabling per-patch history without data loss.
 --
 -- All existing rows are backfilled to game_version_id = 4.6.0-live.11319298.
 -- No user-owned rows (user_fleet, user_loot_collection, etc.) are touched.
+
+-- SQLite 3.26.0+ auto-updates FK references in dependent tables when a table
+-- is renamed. This causes DROP TABLE _old to fail because other tables have
+-- FK constraints pointing to the renamed table. legacy_alter_table=ON prevents
+-- this auto-update behaviour, allowing the rename-create-drop pattern to work.
+PRAGMA legacy_alter_table = ON;
 
 -- ============================================================
 -- Step 1 — Seed the current patch
@@ -629,3 +635,47 @@ DROP TABLE contracts_old;
 
 CREATE INDEX IF NOT EXISTS idx_contracts_giver_slug ON contracts(giver_slug);
 CREATE INDEX IF NOT EXISTS idx_contracts_is_active  ON contracts(is_active);
+
+-- ──────────────────────────────────────────────────────────────
+-- 2.15  vehicle_ports
+--       Was: uuid TEXT UNIQUE NOT NULL  (no game_version_id column)
+--       Now: UNIQUE(uuid, game_version_id)
+-- ──────────────────────────────────────────────────────────────
+
+ALTER TABLE vehicle_ports RENAME TO vehicle_ports_old;
+
+CREATE TABLE vehicle_ports (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid               TEXT    NOT NULL,
+  vehicle_id         INTEGER NOT NULL REFERENCES vehicles(id),
+  parent_port_id     INTEGER REFERENCES vehicle_ports(id),
+  name               TEXT    NOT NULL,
+  position           TEXT,
+  category_label     TEXT,
+  size_min           INTEGER,
+  size_max           INTEGER,
+  port_type          TEXT,
+  port_subtype       TEXT,
+  equipped_item_uuid TEXT,
+  editable           BOOLEAN DEFAULT TRUE,
+  health             REAL,
+  game_version_id    INTEGER NOT NULL REFERENCES game_versions(id),
+  created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(uuid, game_version_id)
+);
+
+INSERT INTO vehicle_ports
+  (id, uuid, vehicle_id, parent_port_id, name, position, category_label,
+   size_min, size_max, port_type, port_subtype, equipped_item_uuid,
+   editable, health, game_version_id, created_at)
+SELECT id, uuid, vehicle_id, parent_port_id, name, position, category_label,
+   size_min, size_max, port_type, port_subtype, equipped_item_uuid,
+   editable, health,
+   (SELECT id FROM game_versions WHERE code = '4.6.0-live.11319298'),
+   created_at
+FROM vehicle_ports_old;
+
+DROP TABLE vehicle_ports_old;
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_ports_vehicle_id    ON vehicle_ports(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_ports_parent_port_id ON vehicle_ports(parent_port_id);
