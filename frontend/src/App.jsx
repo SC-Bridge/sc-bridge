@@ -214,13 +214,6 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
             <LogIn className="w-3.5 h-3.5" />
             Sign In
           </NavLink>
-          <NavLink
-            to="/register"
-            onClick={onNavClick}
-            className="w-full py-2 font-display tracking-wider uppercase text-xs flex items-center justify-center gap-2 border border-sc-border rounded text-gray-400 hover:text-gray-300 hover:bg-white/5 transition-colors"
-          >
-            Create Account
-          </NavLink>
         </div>
       )}
 

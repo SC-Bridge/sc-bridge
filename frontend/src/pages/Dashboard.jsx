@@ -38,10 +38,10 @@ export default function Dashboard() {
             <Link to="/login" className="btn-primary inline-flex items-center gap-2 px-6 py-2.5">
               <LogIn className="w-4 h-4" /> Sign In
             </Link>
-            <Link to="/register" className="inline-flex items-center gap-2 px-6 py-2.5 border border-sc-border rounded text-gray-300 hover:text-white hover:bg-white/5 transition-colors font-display tracking-wider uppercase text-sm">
-              Create Account
-            </Link>
           </div>
+          <p className="text-xs text-gray-600 font-display tracking-widest uppercase">
+            Coming Soon — Registration opening shortly
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

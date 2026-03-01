@@ -223,14 +223,6 @@ export default function Login() {
             )}
           </div>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Don't have an account?{' '}
-              <Link to="/register" className="text-sc-accent hover:text-sc-accent/80 transition-colors">
-                Register
-              </Link>
-            </p>
-          </div>
         </div>
       </div>
     </div>
