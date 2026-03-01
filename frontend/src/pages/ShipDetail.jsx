@@ -198,11 +198,11 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
     <div className="space-y-4">
       <div className="grid grid-cols-12 gap-2 px-4 py-1.5 text-xs text-gray-600 uppercase tracking-wider">
         <span className="col-span-3">Hardpoint</span>
-        <span className="col-span-4">Component</span>
+        <span className="col-span-3">Component</span>
         <span className="col-span-1 text-center">Size</span>
         <span className="col-span-1 text-center">Grade</span>
-        <span className="col-span-2">Class</span>
-        <span className="col-span-1 text-right">Mfr</span>
+        <span className="col-span-1">Class</span>
+        <span className="col-span-3">Manufacturer</span>
       </div>
       {Object.entries(grouped).map(([category, rows]) => (
         <div key={category} className="panel overflow-hidden">
@@ -216,7 +216,7 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
                   <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
                     {label}
                   </span>
-                  <span className={`col-span-4 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
+                  <span className={`col-span-3 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
                     {item.component_name || '—'}
                   </span>
                   <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
@@ -225,10 +225,10 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
                   <span className="col-span-1 text-xs font-mono text-gray-400 text-center">
                     {item.grade || '—'}
                   </span>
-                  <span className="col-span-2 text-xs text-gray-500 truncate">
+                  <span className="col-span-1 text-xs text-gray-500 truncate">
                     {item.component_class || '—'}
                   </span>
-                  <span className="col-span-1 text-xs text-gray-500 truncate text-right" title={item.manufacturer_name}>
+                  <span className="col-span-3 text-xs text-gray-500">
                     {item.manufacturer_name || '—'}
                   </span>
                 </div>
