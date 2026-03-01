@@ -207,6 +207,35 @@ export async function updateShipVisibility(fleetEntryId, updates) {
   return patchJSON(`/vehicles/${fleetEntryId}/visibility`, updates)
 }
 
+// Loot / Item Finder
+export function useLoot() {
+  return useAPI('/loot')
+}
+
+export function useLootItem(uuid) {
+  return useAPI(uuid ? `/loot/${uuid}` : null, { skip: !uuid })
+}
+
+export function useLootCollection(isAuthed) {
+  return useAPI('/loot/collection', { skip: !isAuthed })
+}
+
+export async function toggleLootCollection(uuid, isCurrentlyCollected) {
+  const res = await fetch(`/api/loot/collection/${uuid}`, {
+    method: isCurrentlyCollected ? 'DELETE' : 'POST',
+    credentials: 'same-origin',
+  })
+  if (res.status === 401) {
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || res.statusText)
+  }
+  return res.json()
+}
+
 export async function deleteAIAnalysis(id) {
   const res = await fetch(`${BASE}/llm/analysis/${id}`, {
     method: 'DELETE',

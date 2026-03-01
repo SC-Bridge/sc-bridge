@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -31,14 +31,17 @@ const Orgs = lazy(() => import('./pages/Orgs'))
 const OrgProfile = lazy(() => import('./pages/OrgProfile'))
 const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'))
 const Contracts = lazy(() => import('./pages/Contracts'))
+const LootDB = lazy(() => import('./pages/LootDB'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
+  { to: '/loot', icon: Search, label: 'Item Finder' },
   { to: '/contracts', icon: FileText, label: 'Contracts' },
 ]
 
 const authNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
+  { to: '/loot', icon: Search, label: 'Item Finder' },
   { to: '/contracts', icon: FileText, label: 'Contracts' },
   { to: '/fleet', icon: Rocket, label: 'Fleet' },
   { to: '/insurance', icon: Shield, label: 'Insurance' },
@@ -343,6 +346,7 @@ export default function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/ships" element={<ShipDB />} />
                       <Route path="/ships/:slug" element={<ShipDetail />} />
+                      <Route path="/loot" element={<LootDB />} />
                       <Route path="/contracts" element={<Contracts />} />
 
                       {/* Protected routes */}

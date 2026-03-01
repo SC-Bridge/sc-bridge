@@ -665,6 +665,154 @@ export async function deleteAIAnalysis(db: D1Database, id: number): Promise<void
 }
 
 // ============================================================
+// Loot Map Operations
+// ============================================================
+
+export interface LootItem {
+  id: number;
+  uuid: string;
+  name: string;
+  type: string | null;
+  sub_type: string | null;
+  rarity: string | null;
+  category: string;
+  has_containers: number;
+  has_shops: number;
+  has_npcs: number;
+  has_corpses: number;
+  has_contracts: number;
+}
+
+export async function getLootItems(db: D1Database): Promise<LootItem[]> {
+  const result = await db
+    .prepare(
+      `SELECT
+        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+        CASE
+          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+          WHEN lm.props_id IS NOT NULL THEN 'prop'
+          ELSE 'unknown'
+        END as category,
+        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
+      FROM loot_map lm
+      ORDER BY lm.name ASC`,
+    )
+    .all();
+  return result.results as unknown as LootItem[];
+}
+
+export async function getLootByUuid(db: D1Database, uuid: string): Promise<Record<string, unknown> | null> {
+  const row = await db
+    .prepare(
+      `SELECT
+        lm.*,
+        CASE
+          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+          WHEN lm.props_id IS NOT NULL THEN 'prop'
+          ELSE 'unknown'
+        END as category
+      FROM loot_map lm
+      WHERE lm.uuid = ?`,
+    )
+    .bind(uuid)
+    .first();
+  if (!row) return null;
+
+  // Fetch linked item details based on which FK is set
+  const item = row as Record<string, unknown>;
+  let details: Record<string, unknown> | null = null;
+
+  if (item.fps_weapon_id) {
+    details = await db
+      .prepare("SELECT name, type, sub_type, description, stats_json FROM fps_weapons WHERE id = ?")
+      .bind(item.fps_weapon_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.fps_armour_id) {
+    details = await db
+      .prepare("SELECT name, type, description, stats_json FROM fps_armour WHERE id = ?")
+      .bind(item.fps_armour_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.fps_attachment_id) {
+    details = await db
+      .prepare("SELECT name, type, description, stats_json FROM fps_attachments WHERE id = ?")
+      .bind(item.fps_attachment_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.fps_utility_id) {
+    details = await db
+      .prepare("SELECT name, type, description, stats_json FROM fps_utilities WHERE id = ?")
+      .bind(item.fps_utility_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.fps_helmet_id) {
+    details = await db
+      .prepare("SELECT name, type, description FROM fps_helmets WHERE id = ?")
+      .bind(item.fps_helmet_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.fps_clothing_id) {
+    details = await db
+      .prepare("SELECT name, type, slot, description FROM fps_clothing WHERE id = ?")
+      .bind(item.fps_clothing_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.consumable_id) {
+    details = await db
+      .prepare("SELECT name, type, description FROM consumables WHERE id = ?")
+      .bind(item.consumable_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.harvestable_id) {
+    details = await db
+      .prepare("SELECT name, type, description FROM harvestables WHERE id = ?")
+      .bind(item.harvestable_id)
+      .first() as Record<string, unknown> | null;
+  } else if (item.props_id) {
+    details = await db
+      .prepare("SELECT name, type, description FROM props WHERE id = ?")
+      .bind(item.props_id)
+      .first() as Record<string, unknown> | null;
+  }
+
+  return { ...item, item_details: details };
+}
+
+export async function getUserLootCollection(db: D1Database, userId: string): Promise<number[]> {
+  const result = await db
+    .prepare("SELECT loot_map_id FROM user_loot_collection WHERE user_id = ?")
+    .bind(userId)
+    .all<{ loot_map_id: number }>();
+  return result.results.map((r) => r.loot_map_id);
+}
+
+export async function addToLootCollection(db: D1Database, userId: string, lootMapId: number): Promise<void> {
+  await db
+    .prepare("INSERT OR IGNORE INTO user_loot_collection (user_id, loot_map_id) VALUES (?, ?)")
+    .bind(userId, lootMapId)
+    .run();
+}
+
+export async function removeFromLootCollection(db: D1Database, userId: string, lootMapId: number): Promise<void> {
+  await db
+    .prepare("DELETE FROM user_loot_collection WHERE user_id = ? AND loot_map_id = ?")
+    .bind(userId, lootMapId)
+    .run();
+}
+
+// ============================================================
 // App Settings Operations
 // ============================================================
 
