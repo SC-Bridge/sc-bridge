@@ -9,7 +9,10 @@ Usage:
   source ~/.secrets && npx wrangler d1 execute sc-companion --remote --file=port_sizes.sql
 
 Flags:
-  $uneditable  -> structural port (door panel, internal system) -> editable=0
+  $uneditable  -> non-swappable port (locked turret, torpedo rack, door panel) -> editable=0
+                  Note: we set editable=0 but never clear port_type — truly structural ports
+                  already have port_type=NULL from the DataCore extraction. Clearing port_type
+                  here would incorrectly hide locked-but-visible ports (e.g. Perseus torpedo racks).
   invisible uneditable -> internal component port, still show but note as non-swappable
   empty        -> normal player-swappable slot
 
@@ -99,20 +102,25 @@ def main():
             if editable == 0:
                 structural_ports += 1
 
+            # Use LOWER() on both sides — some XML files use rsi_perseus.xml (lowercase)
+            # while the DB stores class_name as RSI_Perseus (mixed case).
+            cn = escape(class_name.lower())
             if editable == 0:
-                # Structural port: clear port_type and category_label, set editable=0
+                # Non-swappable port: set editable=0 but do NOT clear port_type/category_label.
+                # Truly structural ports already have port_type=NULL from DataCore extraction.
+                # Clearing here would incorrectly hide locked-but-visible ports like Perseus
+                # torpedo racks and turrets which the XML marks $uneditable.
                 print(
-                    f"UPDATE vehicle_ports SET size_min={size_min}, size_max={size_max}, "
-                    f"editable=0, port_type=NULL, category_label=NULL "
+                    f"UPDATE vehicle_ports SET size_min={size_min}, size_max={size_max}, editable=0 "
                     f"WHERE name='{escape(port_name)}' "
-                    f"AND vehicle_id=(SELECT id FROM vehicles WHERE class_name='{escape(class_name)}');"
+                    f"AND vehicle_id=(SELECT id FROM vehicles WHERE LOWER(class_name)='{cn}');"
                 )
             else:
-                # Normal port: just update sizes
+                # Normal player-swappable port: just update sizes
                 print(
                     f"UPDATE vehicle_ports SET size_min={size_min}, size_max={size_max} "
                     f"WHERE name='{escape(port_name)}' "
-                    f"AND vehicle_id=(SELECT id FROM vehicles WHERE class_name='{escape(class_name)}');"
+                    f"AND vehicle_id=(SELECT id FROM vehicles WHERE LOWER(class_name)='{cn}');"
                 )
 
     print(
