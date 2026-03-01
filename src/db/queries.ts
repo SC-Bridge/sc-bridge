@@ -221,6 +221,14 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
       WHERE p.category_label IS NOT NULL
+        AND (
+          p.parent_port_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM ship_ports pp
+            WHERE pp.id = p.parent_port_id
+              AND pp.category_label = p.category_label
+          )
+        )
       ORDER BY p.category_label, p.name`,
     )
     .bind(slug)
