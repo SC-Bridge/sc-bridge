@@ -4,15 +4,14 @@ This file maintains running context across compactions.
 
 ## Current Focus
 
-**ShipDetail loadout display polished** — port sizes backfilled from XMLs, structural ports hidden, hardpoint labels show `S{n} · Position` (Option B), no more duplicate weapon rows.
+**ShipDetail loadout display complete** — type name + index hardpoint labels, dedicated Size column, structural ports hidden, no duplicate weapon rows.
 
 ## Recent Changes
 
-- **Port size backfill** (`ship_ports/extract_sizes.py`): Parsed 126 ship XMLs → 9712 UPDATEs for size_min/size_max; 612 `$uneditable` structural ports had port_type/category_label cleared and editable=0 set
-- **Structural ports hidden**: `hardpoint_cooler_door_*`, `hardpoint_radar_door` etc. now editable=0 — no longer appear in Components/Weapons tabs
-- **Duplicate weapon fix** (`src/db/queries.ts`): `getShipLoadout` WHERE excludes child ports whose parent has the same category_label — `hardpoint_class_2` no longer double-shows alongside parent weapon mount
-- **Option B labels** (`frontend/src/pages/ShipDetail.jsx`): `TYPE_PREFIXES` map + `formatPortName(name, portType)` strips type-redundant prefixes; Hardpoint column shows `S{sz} · Position` (size from component_size ?? size_max)
-- All deployed: commit 6327bbb, pushed to main
+- **Port size backfill** (`ship_ports/extract_sizes.py`): Parsed 126 ship XMLs → 9712 UPDATEs for size_min/size_max; 612 `$uneditable` structural ports cleared (editable=0, port_type/category_label NULL)
+- **Duplicate weapon fix** (`src/db/queries.ts`): `getShipLoadout` WHERE excludes child ports whose parent has the same category_label
+- **Loadout display** (`frontend/src/pages/ShipDetail.jsx`): Hardpoint column shows `category_label` (or `category_label 0 / 1` when multiple); Size column (`S{n}`) restored left of Grade. `TYPE_PREFIXES`/`formatPortName` removed.
+- All deployed: last commit d4c20ce
 
 ## Key Decisions
 
