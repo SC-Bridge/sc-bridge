@@ -9,6 +9,7 @@ import {
   setLootCollectionQuantity, setLootWishlistQuantity,
 } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
+import { friendlyShopName } from '../lib/shopNames'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -189,7 +190,7 @@ function resolveLocationEntry(entry, type) {
   if (typeof entry === 'string') return { label: entry, detail: null, probability: null }
   if (type === 'shops') {
     const price = entry.buyPrice ? `${Math.round(entry.buyPrice).toLocaleString()} aUEC` : null
-    return { label: entry.shop || entry.name || '?', detail: price, probability: null }
+    return { label: friendlyShopName(entry.shop || entry.name), detail: price, probability: null }
   }
   if (type === 'npcs' || type === 'corpses') {
     return {
