@@ -353,8 +353,10 @@ function buildShoppingList(wishlistItems) {
       const entries = parseJson(item[jsonKey])
       if (!entries.length) return
       if (!groups[key]) groups[key] = { label, icon, locations: {} }
-      entries.forEach(entry => {
-        const loc = getLabel(entry)
+      // Deduplicate locations within this item's JSON array (same location can appear
+      // many times — one per container/NPC instance — which would duplicate item names)
+      const uniqueLocs = [...new Set(entries.map(getLabel))]
+      uniqueLocs.forEach(loc => {
         if (!groups[key].locations[loc]) groups[key].locations[loc] = []
         groups[key].locations[loc].push(item.name)
       })
