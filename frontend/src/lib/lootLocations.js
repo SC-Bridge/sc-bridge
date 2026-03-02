@@ -243,3 +243,41 @@ export function friendlyFaction(raw) {
   if (NPC_FACTIONS[raw]) return NPC_FACTIONS[raw]
   return toWords(raw) || raw
 }
+
+// ── Location grouping ─────────────────────────────────────────────────────────
+
+/**
+ * Group keys for container location categories.
+ * @typedef {'named'|'cave'|'outpost'|'dc'|'facility'|'contested'|'station'|'derelict'|'generic'} LocationGroup
+ */
+
+/**
+ * Return the group key for a raw DataCore container location identifier.
+ *
+ * @param {string|null|undefined} raw
+ * @returns {LocationGroup}
+ */
+export function getLocationGroup(raw) {
+  if (!raw) return 'generic'
+
+  // Strip path prefix
+  const s = raw.replace(/^caves\//, '').replace(/^contestedzones\//, '')
+
+  if (s.startsWith('Cave_') || s.startsWith('Loot_Caves_') || s === 'Caves') return 'cave'
+  if (s.startsWith('ColonialOutpost') || s === 'DerelictOutpost' || s === 'TechOutpost') return 'outpost'
+  if (s.startsWith('DistributionCentres_') || s === 'DCDelving') return 'dc'
+  if (s === 'ASDDelving' || s.startsWith('ASDDelving_')) return 'facility'
+  if (s.startsWith('ContestedZone') || s.startsWith('GhostArena') || s === 'ContestedZones') return 'contested'
+  if (s.startsWith('Station_') || s === 'Station') return 'station'
+  if (s === 'Derelict' || s === 'Derelict_Small' || s === 'SpaceDerelict') return 'derelict'
+  if (
+    s === 'Generic' ||
+    s.startsWith('ShippingContainer') ||
+    s.startsWith('Loot_') ||
+    s.startsWith('LootGeneration_') ||
+    s === 'FoodandDrink'
+  ) return 'generic'
+
+  // Named real-world locations
+  return 'named'
+}

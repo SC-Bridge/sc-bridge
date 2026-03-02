@@ -10,7 +10,7 @@ import {
 } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
 import { friendlyShopName } from '../lib/shopNames'
-import { friendlyLocation, friendlyFaction } from '../lib/lootLocations'
+import { friendlyLocation, friendlyFaction, getLocationGroup } from '../lib/lootLocations'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -186,6 +186,19 @@ function ItemCard({ item, collectionQty, onSetCollectionQty, wishlisted, onToggl
   )
 }
 
+// ── Location grouping config ──────────────────────────────────────────────────
+const LOCATION_GROUP_CONFIG = {
+  named:     { label: 'Named Locations', order: 0 },
+  cave:      { label: 'Caves',           order: 1 },
+  outpost:   { label: 'Outposts',        order: 2 },
+  dc:        { label: 'Distribution Centres', order: 3 },
+  facility:  { label: 'Facilities',      order: 4 },
+  contested: { label: 'Contested Zones', order: 5 },
+  station:   { label: 'Stations',        order: 6 },
+  derelict:  { label: 'Derelicts',       order: 7 },
+  generic:   { label: 'Generic',         order: 8 },
+}
+
 // ── Location section renderer ─────────────────────────────────────────────────
 function resolveLocationEntry(entry, type) {
   if (typeof entry === 'string') return { label: entry, detail: null, probability: null }
@@ -202,11 +215,29 @@ function resolveLocationEntry(entry, type) {
     }
   }
   // containers, contracts, default
+  const rawKey = entry.location || entry.locationTag || ''
   return {
     label: entry.location ? friendlyLocation(entry.location) : (entry.locationTag || entry.name || '?'),
     detail: entry.containerType || null,
     probability: entry.perContainer ?? entry.probability ?? null,
+    rawKey,
   }
+}
+
+function LocationRow({ row }) {
+  return (
+    <div className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
+      <span className="text-xs font-mono text-gray-300 break-words min-w-0">{row.label}</span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {row.detail && (
+          <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
+        )}
+        {row.probability != null && (
+          <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function LocationSection({ label, icon: Icon, data, type }) {
@@ -224,6 +255,51 @@ function LocationSection({ label, icon: Icon, data, type }) {
     }
   }
 
+  const rows = [...seen.values()]
+
+  // Grouped rendering for containers
+  if (type === 'containers') {
+    // Bucket rows by group
+    const buckets = new Map()
+    for (const row of rows) {
+      const groupKey = getLocationGroup(row.rawKey)
+      if (!buckets.has(groupKey)) buckets.set(groupKey, [])
+      buckets.get(groupKey).push(row)
+    }
+
+    // Sort groups by config order; sort rows within each group alphabetically
+    const sortedGroups = [...buckets.entries()].sort(([a], [b]) => {
+      const ao = LOCATION_GROUP_CONFIG[a]?.order ?? 99
+      const bo = LOCATION_GROUP_CONFIG[b]?.order ?? 99
+      return ao - bo
+    })
+    for (const [, groupRows] of sortedGroups) {
+      groupRows.sort((a, b) => a.label.localeCompare(b.label))
+    }
+
+    return (
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <Icon className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
+        </div>
+        <div className="space-y-3">
+          {sortedGroups.map(([groupKey, groupRows]) => (
+            <div key={groupKey}>
+              <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
+                {LOCATION_GROUP_CONFIG[groupKey]?.label ?? groupKey}
+              </p>
+              <div className="space-y-1">
+                {groupRows.map((row, i) => <LocationRow key={i} row={row} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Default flat rendering (shops, npcs, corpses, contracts)
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-2">
@@ -231,19 +307,7 @@ function LocationSection({ label, icon: Icon, data, type }) {
         <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
       </div>
       <div className="space-y-1">
-        {[...seen.values()].map((row, i) => (
-          <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
-            <span className="text-xs font-mono text-gray-300 break-words min-w-0">{row.label}</span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {row.detail && (
-                <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
-              )}
-              {row.probability != null && (
-                <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
-              )}
-            </div>
-          </div>
-        ))}
+        {rows.map((row, i) => <LocationRow key={i} row={row} />)}
       </div>
     </div>
   )
