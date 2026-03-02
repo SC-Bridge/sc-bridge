@@ -8,15 +8,15 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Loot item coverage expanded** — `b3a8278`. Group 1/2/3 loot fixes: ship_component category wired (218 items), name-based FK matching (39 items fixed), exclusion-based filter replacing FK-inclusion filter (4870 items now shown vs 4820).
+**Import fix** — migration 0041 applied. Import now works. Other session (1b6a23b8) still has POI planning in progress.
 
 ## Recent Changes
 
-- **Ship component loot category** (`99568b9`): `vehicle_component_id` added to CASE/WHERE/JOINs in `getLootItems`, `getLootByUuid`, `getUserLootWishlist`. `ship_component` category in `LootDB.jsx` (violet badge). Detail panel shows Size/Grade rows. 218 items now categorised as Ship Component.
-- **Name-based FK matching** (out-of-band D1 UPDATE): 29 fps_armour + 2 consumable + 8 harvestable rows linked by name where UUIDs differed between loot_map and FK tables.
-- **Exclusion-based loot filter** (`b3a8278`): `getLootItems` WHERE switches from FK-inclusion to type-exclusion list. 4870 items now shown (was 4820). Adds 50 real-name items previously hidden (missiles, eyewear, gimbal mounts, Ixonia clothing, undersuits, fuses, keycards).
-- **sub_type → type fix** (`f5c8d90`): `getLootByUuid` was selecting non-existent `type` column from fps_weapons/armour/attachments/utilities/helmets/harvestables (all use `sub_type`). D1 silently returned null. Fixed with `sub_type as type` alias.
-- **Detail panel polish** (`0e6843d`): `LocationSection` deduplicates by location/name key. Item Details header suppressed when all fields null. Added `pb-8` to scroll container.
+- **Migration 0041** (`fix_fk_references`): Rebuilt 6 tables with broken FK references caused by SQLite 3.26+ auto-rename during migration 0037. Fixed: `user_fleet`, `paint_vehicles`, `vehicle_loaners`, `vehicle_images`, `vehicle_images_archive`, `fps_ammo`. All previously pointed to dropped `vehicles_old`/`manufacturers_old` tables.
+- **Location name corrections** (`82d8b52`): ASDDelving → 'Onyx Facility', ASDDelving_ScienceWing → 'Onyx Facility — Research Wing', Kaboos → 'QV Logistics Station' (from global.ini research).
+- **Friendly shop names** (`97913bc`): `shopNames.js` + `friendlyShopName()` — 98 known shops + fallback parser.
+- **Friendly location/faction names** (`3436594`): `lootLocations.js` + `friendlyLocation()` / `friendlyFaction()` — all DataCore container location keys.
+- **POI feature planned** (7 tasks): `poiData.js` → backend `/api/loot/by-location` → `/loot/:uuid` URL route → location chip links → `/poi` directory → `/poi/:slug` detail → App.jsx wiring.
 
 ## Key Decisions
 
@@ -38,7 +38,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0040_fix_collection_fk.sql**
+Last applied: **0041_fix_fk_references.sql**
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -376,4 +376,28 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 18:23:33
+
+
+---
+**Session compacted at:** 2026-03-02 20:39:24
+
+
+---
+**Session compacted at:** 2026-03-03 06:54:38
+
+
+---
+**Session compacted at:** 2026-03-03 07:27:12
+
+
+---
+**Session compacted at:** 2026-03-03 08:05:51
+
+
+---
+**Session compacted at:** 2026-03-03 08:08:47
+
+
+---
+**Session compacted at:** 2026-03-03 08:38:47
 
