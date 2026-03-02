@@ -31,29 +31,31 @@ function rarityStyle(rarity) {
 
 // ── Category display ─────────────────────────────────────────────────────────
 const CATEGORY_LABELS = {
-  weapon:      'Weapon',
-  armour:      'Armour',
-  helmet:      'Helmet',
-  clothing:    'Clothing',
-  attachment:  'Attachment',
-  consumable:  'Consumable',
-  harvestable: 'Harvestable',
-  prop:        'Prop',
-  utility:     'Utility',
-  unknown:     'Other',
+  weapon:         'Weapon',
+  armour:         'Armour',
+  helmet:         'Helmet',
+  clothing:       'Clothing',
+  attachment:     'Attachment',
+  consumable:     'Consumable',
+  harvestable:    'Harvestable',
+  prop:           'Prop',
+  utility:        'Utility',
+  ship_component: 'Ship Component',
+  unknown:        'Other',
 }
 
 const CATEGORY_BADGE_STYLES = {
-  weapon:      'bg-red-900/40 text-red-300',
-  armour:      'bg-blue-900/40 text-blue-300',
-  helmet:      'bg-sky-900/40 text-sky-300',
-  clothing:    'bg-indigo-900/40 text-indigo-300',
-  attachment:  'bg-orange-900/40 text-orange-300',
-  consumable:  'bg-green-900/40 text-green-300',
-  harvestable: 'bg-teal-900/40 text-teal-300',
-  prop:        'bg-gray-700/60 text-gray-300',
-  utility:     'bg-yellow-900/40 text-yellow-300',
-  unknown:     'bg-gray-700/60 text-gray-400',
+  weapon:         'bg-red-900/40 text-red-300',
+  armour:         'bg-blue-900/40 text-blue-300',
+  helmet:         'bg-sky-900/40 text-sky-300',
+  clothing:       'bg-indigo-900/40 text-indigo-300',
+  attachment:     'bg-orange-900/40 text-orange-300',
+  consumable:     'bg-green-900/40 text-green-300',
+  harvestable:    'bg-teal-900/40 text-teal-300',
+  prop:           'bg-gray-700/60 text-gray-300',
+  utility:        'bg-yellow-900/40 text-yellow-300',
+  ship_component: 'bg-violet-900/40 text-violet-300',
+  unknown:        'bg-gray-700/60 text-gray-400',
 }
 
 // ── Set name extraction ───────────────────────────────────────────────────────
@@ -355,8 +357,10 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
               const hasDescription = !!det.description
               const hasType = det.type && det.type !== item.type
               const hasSlot = !!det.slot
+              const hasSize = det.size != null
+              const hasGrade = det.grade != null
               const hasStats = det.stats_json && det.stats_json !== 'null'
-              if (!hasDescription && !hasType && !hasSlot && !hasStats) return null
+              if (!hasDescription && !hasType && !hasSlot && !hasSize && !hasGrade && !hasStats) return null
               return (
                 <div>
                   <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
@@ -374,6 +378,18 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                       <div className="flex gap-2">
                         <span className="text-gray-500 w-16 shrink-0">Slot</span>
                         <span className="text-gray-300">{det.slot}</span>
+                      </div>
+                    )}
+                    {hasSize && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-16 shrink-0">Size</span>
+                        <span className="text-gray-300">S{det.size}</span>
+                      </div>
+                    )}
+                    {hasGrade && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-16 shrink-0">Grade</span>
+                        <span className="text-gray-300">{det.grade}</span>
                       </div>
                     )}
                     {hasStats && (() => {

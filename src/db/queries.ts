@@ -721,6 +721,7 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
           WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
+          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
           ELSE 'unknown'
         END as category,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
@@ -729,24 +730,26 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
         CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) LIKE '@%'
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) LIKE '@%'
           THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name)
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name)
         END as manufacturer_name
       FROM loot_map lm
-      LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
-      LEFT JOIN manufacturers  mw  ON fw.manufacturer_id    = mw.id
-      LEFT JOIN fps_armour     fa  ON lm.fps_armour_id      = fa.id
-      LEFT JOIN manufacturers  ma  ON fa.manufacturer_id    = ma.id
-      LEFT JOIN fps_attachments fat ON lm.fps_attachment_id = fat.id
-      LEFT JOIN manufacturers  mat ON fat.manufacturer_id   = mat.id
-      LEFT JOIN fps_utilities  fu  ON lm.fps_utility_id     = fu.id
-      LEFT JOIN manufacturers  mu  ON fu.manufacturer_id    = mu.id
-      LEFT JOIN fps_helmets    fh  ON lm.fps_helmet_id      = fh.id
-      LEFT JOIN manufacturers  mh  ON fh.manufacturer_id    = mh.id
-      LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
-      LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
+      LEFT JOIN fps_weapons       fw  ON lm.fps_weapon_id         = fw.id
+      LEFT JOIN manufacturers     mw  ON fw.manufacturer_id        = mw.id
+      LEFT JOIN fps_armour        fa  ON lm.fps_armour_id          = fa.id
+      LEFT JOIN manufacturers     ma  ON fa.manufacturer_id        = ma.id
+      LEFT JOIN fps_attachments   fat ON lm.fps_attachment_id      = fat.id
+      LEFT JOIN manufacturers     mat ON fat.manufacturer_id       = mat.id
+      LEFT JOIN fps_utilities     fu  ON lm.fps_utility_id         = fu.id
+      LEFT JOIN manufacturers     mu  ON fu.manufacturer_id        = mu.id
+      LEFT JOIN fps_helmets       fh  ON lm.fps_helmet_id          = fh.id
+      LEFT JOIN manufacturers     mh  ON fh.manufacturer_id        = mh.id
+      LEFT JOIN fps_clothing      fcc ON lm.fps_clothing_id        = fcc.id
+      LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
+      LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
+      LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
       WHERE ${versionFilter}
         AND lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
@@ -754,7 +757,7 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
           OR lm.fps_attachment_id IS NOT NULL OR lm.fps_utility_id IS NOT NULL
           OR lm.fps_helmet_id IS NOT NULL OR lm.fps_clothing_id IS NOT NULL
           OR lm.consumable_id IS NOT NULL OR lm.harvestable_id IS NOT NULL
-          OR lm.props_id IS NOT NULL)
+          OR lm.props_id IS NOT NULL OR lm.vehicle_component_id IS NOT NULL)
       ORDER BY lm.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
@@ -776,6 +779,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
           WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
+          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
           ELSE 'unknown'
         END as category
       FROM loot_map lm
@@ -832,6 +836,11 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
       .prepare("SELECT name, type, description FROM props WHERE id = ?")
       .bind(item.props_id)
       .first() as Record<string, unknown> | null;
+  } else if (item.vehicle_component_id) {
+    details = await db
+      .prepare("SELECT name, type, sub_type, size, grade, description, stats_json FROM vehicle_components WHERE id = ?")
+      .bind(item.vehicle_component_id)
+      .first() as Record<string, unknown> | null;
   }
 
   return { ...item, item_details: details };
@@ -881,6 +890,7 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
           WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
+          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
           ELSE 'unknown'
         END as category,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
@@ -889,27 +899,29 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
         CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) LIKE '@%'
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) LIKE '@%'
           THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name)
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name)
         END as manufacturer_name,
         lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
         ulw.quantity as wishlist_quantity
       FROM user_loot_wishlist ulw
       JOIN loot_map lm ON lm.id = ulw.loot_map_id
-      LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
-      LEFT JOIN manufacturers  mw  ON fw.manufacturer_id    = mw.id
-      LEFT JOIN fps_armour     fa  ON lm.fps_armour_id      = fa.id
-      LEFT JOIN manufacturers  ma  ON fa.manufacturer_id    = ma.id
-      LEFT JOIN fps_attachments fat ON lm.fps_attachment_id = fat.id
-      LEFT JOIN manufacturers  mat ON fat.manufacturer_id   = mat.id
-      LEFT JOIN fps_utilities  fu  ON lm.fps_utility_id     = fu.id
-      LEFT JOIN manufacturers  mu  ON fu.manufacturer_id    = mu.id
-      LEFT JOIN fps_helmets    fh  ON lm.fps_helmet_id      = fh.id
-      LEFT JOIN manufacturers  mh  ON fh.manufacturer_id    = mh.id
-      LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
-      LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
+      LEFT JOIN fps_weapons       fw  ON lm.fps_weapon_id         = fw.id
+      LEFT JOIN manufacturers     mw  ON fw.manufacturer_id        = mw.id
+      LEFT JOIN fps_armour        fa  ON lm.fps_armour_id          = fa.id
+      LEFT JOIN manufacturers     ma  ON fa.manufacturer_id        = ma.id
+      LEFT JOIN fps_attachments   fat ON lm.fps_attachment_id      = fat.id
+      LEFT JOIN manufacturers     mat ON fat.manufacturer_id       = mat.id
+      LEFT JOIN fps_utilities     fu  ON lm.fps_utility_id         = fu.id
+      LEFT JOIN manufacturers     mu  ON fu.manufacturer_id        = mu.id
+      LEFT JOIN fps_helmets       fh  ON lm.fps_helmet_id          = fh.id
+      LEFT JOIN manufacturers     mh  ON fh.manufacturer_id        = mh.id
+      LEFT JOIN fps_clothing      fcc ON lm.fps_clothing_id        = fcc.id
+      LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
+      LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
+      LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
       WHERE ulw.user_id = ?
       ORDER BY lm.name ASC`,
     )
