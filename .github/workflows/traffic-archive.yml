@@ -1,0 +1,54 @@
+name: Archive Traffic Data
+
+# GitHub traffic insights have a 14-day rolling window.
+# This workflow fetches the data daily and commits it to the
+# data/traffic branch so nothing is permanently lost.
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: data/traffic
+          fetch-depth: 1
+        continue-on-error: true
+
+      - name: Create branch if it doesn't exist
+        run: |
+          git checkout data/traffic 2>/dev/null || git checkout --orphan data/traffic
+          git rm -rf . 2>/dev/null || true
+          mkdir -p traffic
+
+      - name: Fetch traffic data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+
+          gh api repos/gavinmcfall/fleet-manager/traffic/views \
+            > traffic/views-${DATE}.json
+
+          gh api repos/gavinmcfall/fleet-manager/traffic/clones \
+            > traffic/clones-${DATE}.json
+
+          gh api repos/gavinmcfall/fleet-manager/traffic/popular/referrers \
+            > traffic/referrers-${DATE}.json
+
+          gh api repos/gavinmcfall/fleet-manager/traffic/popular/paths \
+            > traffic/paths-${DATE}.json
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add traffic/
+          git diff --staged --quiet || git commit -m "chore: archive traffic data $(date -u +%Y-%m-%d)"
+          git push origin data/traffic

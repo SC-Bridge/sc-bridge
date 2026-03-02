@@ -1,0 +1,31 @@
+name: Greetings
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  greeting:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thanks for filing your first issue on SC Bridge! 👋
+
+            A few things that help speed up the fix:
+            - Add a screenshot if you can — drag and drop into the comment box
+            - Let me know your browser (Chrome/Firefox/Safari/Edge)
+            - If it's data-related (wrong ship stats, missing items), include the game version
+
+            I'll take a look shortly.
+          pr-message: |
+            Thanks for your first pull request!
+
+            Please make sure TypeScript passes (`npm run typecheck`) and the frontend builds (`cd frontend && npm run build`) before I review.
