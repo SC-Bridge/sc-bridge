@@ -690,6 +690,12 @@ export interface WishlistItem extends LootItem {
   npcs_json: string | null;
   corpses_json: string | null;
   contracts_json: string | null;
+  wishlist_quantity: number;
+}
+
+export interface CollectionEntry {
+  loot_map_id: number;
+  quantity: number;
 }
 
 export async function getGameVersions(db: D1Database): Promise<{ code: string; channel: string; is_default: number; released_at: string }[]> {
@@ -737,6 +743,11 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
       LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
       LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
       WHERE ${versionFilter}
+        AND (lm.fps_weapon_id IS NOT NULL OR lm.fps_armour_id IS NOT NULL
+          OR lm.fps_attachment_id IS NOT NULL OR lm.fps_utility_id IS NOT NULL
+          OR lm.fps_helmet_id IS NOT NULL OR lm.fps_clothing_id IS NOT NULL
+          OR lm.consumable_id IS NOT NULL OR lm.harvestable_id IS NOT NULL
+          OR lm.props_id IS NOT NULL)
       ORDER BY lm.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
@@ -819,18 +830,25 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
   return { ...item, item_details: details };
 }
 
-export async function getUserLootCollection(db: D1Database, userId: string): Promise<number[]> {
+export async function getUserLootCollection(db: D1Database, userId: string): Promise<CollectionEntry[]> {
   const result = await db
-    .prepare("SELECT loot_map_id FROM user_loot_collection WHERE user_id = ?")
+    .prepare("SELECT loot_map_id, quantity FROM user_loot_collection WHERE user_id = ?")
     .bind(userId)
-    .all<{ loot_map_id: number }>();
-  return result.results.map((r) => r.loot_map_id);
+    .all<CollectionEntry>();
+  return result.results;
 }
 
 export async function addToLootCollection(db: D1Database, userId: string, lootMapId: number): Promise<void> {
   await db
-    .prepare("INSERT OR IGNORE INTO user_loot_collection (user_id, loot_map_id) VALUES (?, ?)")
+    .prepare("INSERT OR IGNORE INTO user_loot_collection (user_id, loot_map_id, quantity) VALUES (?, ?, 1)")
     .bind(userId, lootMapId)
+    .run();
+}
+
+export async function setLootCollectionQuantity(db: D1Database, userId: string, lootMapId: number, quantity: number): Promise<void> {
+  await db
+    .prepare("INSERT INTO user_loot_collection (user_id, loot_map_id, quantity) VALUES (?, ?, ?) ON CONFLICT (user_id, loot_map_id) DO UPDATE SET quantity = excluded.quantity")
+    .bind(userId, lootMapId, quantity)
     .run();
 }
 
@@ -864,7 +882,8 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
         COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) as manufacturer_name,
-        lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json
+        lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
+        ulw.quantity as wishlist_quantity
       FROM user_loot_wishlist ulw
       JOIN loot_map lm ON lm.id = ulw.loot_map_id
       LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
@@ -889,8 +908,15 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
 
 export async function addToLootWishlist(db: D1Database, userId: string, lootMapId: number): Promise<void> {
   await db
-    .prepare("INSERT OR IGNORE INTO user_loot_wishlist (user_id, loot_map_id) VALUES (?, ?)")
+    .prepare("INSERT OR IGNORE INTO user_loot_wishlist (user_id, loot_map_id, quantity) VALUES (?, ?, 1)")
     .bind(userId, lootMapId)
+    .run();
+}
+
+export async function setLootWishlistQuantity(db: D1Database, userId: string, lootMapId: number, quantity: number): Promise<void> {
+  await db
+    .prepare("INSERT INTO user_loot_wishlist (user_id, loot_map_id, quantity) VALUES (?, ?, ?) ON CONFLICT (user_id, loot_map_id) DO UPDATE SET quantity = excluded.quantity")
+    .bind(userId, lootMapId, quantity)
     .run();
 }
 

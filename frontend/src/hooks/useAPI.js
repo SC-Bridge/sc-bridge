@@ -236,6 +236,14 @@ export async function toggleLootCollection(uuid, isCurrentlyCollected) {
   return res.json()
 }
 
+export async function setLootCollectionQuantity(uuid, quantity) {
+  return patchJSON(`/loot/collection/${uuid}`, { quantity })
+}
+
+export async function setLootWishlistQuantity(uuid, quantity) {
+  return patchJSON(`/loot/wishlist/${uuid}`, { quantity })
+}
+
 export function useLootWishlist(isAuthed) {
   return useAPI('/loot/wishlist', { skip: !isAuthed })
 }

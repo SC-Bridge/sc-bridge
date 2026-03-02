@@ -5,9 +5,11 @@ import {
   getLootByUuid,
   getUserLootCollection,
   addToLootCollection,
+  setLootCollectionQuantity,
   removeFromLootCollection,
   getUserLootWishlist,
   addToLootWishlist,
+  setLootWishlistQuantity,
   removeFromLootWishlist,
 } from "../db/queries";
 
@@ -51,6 +53,29 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
+  // PATCH /api/loot/collection/:uuid — set quantity (auth required); quantity=0 removes
+  app.patch("/collection/:uuid", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const uuid = c.req.param("uuid");
+    const body = await c.req.json<{ quantity: number }>();
+    const quantity = Number(body.quantity);
+    if (!Number.isInteger(quantity) || quantity < 0) return c.json({ error: "Invalid quantity" }, 400);
+
+    const row = await c.env.DB
+      .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")
+      .bind(uuid)
+      .first<{ id: number }>();
+    if (!row) return c.json({ error: "Item not found" }, 404);
+
+    if (quantity === 0) {
+      await removeFromLootCollection(c.env.DB, user.id, row.id);
+    } else {
+      await setLootCollectionQuantity(c.env.DB, user.id, row.id, quantity);
+    }
+    return c.json({ ok: true });
+  });
+
   // DELETE /api/loot/collection/:uuid — unmark item collected (auth required)
   app.delete("/collection/:uuid", async (c) => {
     const user = c.get("user");
@@ -88,6 +113,29 @@ export function lootRoutes() {
     if (!row) return c.json({ error: "Item not found" }, 404);
 
     await addToLootWishlist(c.env.DB, user.id, row.id);
+    return c.json({ ok: true });
+  });
+
+  // PATCH /api/loot/wishlist/:uuid — set quantity (auth required); quantity=0 removes
+  app.patch("/wishlist/:uuid", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const uuid = c.req.param("uuid");
+    const body = await c.req.json<{ quantity: number }>();
+    const quantity = Number(body.quantity);
+    if (!Number.isInteger(quantity) || quantity < 0) return c.json({ error: "Invalid quantity" }, 400);
+
+    const row = await c.env.DB
+      .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")
+      .bind(uuid)
+      .first<{ id: number }>();
+    if (!row) return c.json({ error: "Item not found" }, 404);
+
+    if (quantity === 0) {
+      await removeFromLootWishlist(c.env.DB, user.id, row.id);
+    } else {
+      await setLootWishlistQuantity(c.env.DB, user.id, row.id, quantity);
+    }
     return c.json({ ok: true });
   });
 
