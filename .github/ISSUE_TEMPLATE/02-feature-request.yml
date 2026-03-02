@@ -7,7 +7,7 @@ body:
       value: |
         Got an idea? Great. Feature requests help shape what gets built next.
 
-        Before submitting, check [Ideas & Features in Discussions](https://github.com/gavinmcfall/fleet-manager/discussions/categories/ideas-features) — your idea may already be there and you can upvote it instead.
+        Before submitting, check [Ideas in Discussions](https://github.com/SC-Bridge/sc-bridge/discussions/categories/ideas) — your idea may already be there and you can upvote it instead.
 
   - type: dropdown
     id: area

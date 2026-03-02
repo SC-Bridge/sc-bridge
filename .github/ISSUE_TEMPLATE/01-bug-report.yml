@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for taking the time to report a bug. The more detail you include, the faster it gets fixed.
 
-        **Not a bug?** [Start a Discussion](https://github.com/gavinmcfall/fleet-manager/discussions) for questions, ideas, or general feedback.
+        **Not a bug?** [Start a Discussion](https://github.com/SC-Bridge/sc-bridge/discussions) for questions, ideas, or general feedback.
 
   - type: dropdown
     id: area

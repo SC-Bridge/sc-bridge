@@ -4,17 +4,17 @@
 
 Check these first — your question may already be answered:
 
-- **[Known issues](https://github.com/gavinmcfall/fleet-manager/discussions/categories/announcements)** — pinned in Announcements
-- **[Q&A Discussions](https://github.com/gavinmcfall/fleet-manager/discussions/categories/q-a)** — previous questions answered by the community
+- **[Known issues](https://github.com/SC-Bridge/sc-bridge/discussions/categories/announcements)** — pinned in Announcements
+- **[Q&A Discussions](https://github.com/SC-Bridge/sc-bridge/discussions/categories/q-a)** — previous questions answered by the community
 
 ## Where to go for help
 
 | Situation | Where to go |
 |-----------|-------------|
-| Something isn't working | [Bug Report →](https://github.com/gavinmcfall/fleet-manager/issues/new?template=01-bug-report.yml) |
-| Question about how to use SC Bridge | [Q&A Discussions →](https://github.com/gavinmcfall/fleet-manager/discussions/categories/q-a) |
-| Idea or suggestion | [Ideas & Features →](https://github.com/gavinmcfall/fleet-manager/discussions/categories/ideas-features) |
-| General chat | [General Discussions →](https://github.com/gavinmcfall/fleet-manager/discussions) |
+| Something isn't working | [Bug Report →](https://github.com/SC-Bridge/sc-bridge/issues/new?template=01-bug-report.yml) |
+| Question about how to use SC Bridge | [Q&A Discussions →](https://github.com/SC-Bridge/sc-bridge/discussions/categories/q-a) |
+| Idea or suggestion | [Ideas →](https://github.com/SC-Bridge/sc-bridge/discussions/categories/ideas) |
+| General chat | [General Discussions →](https://github.com/SC-Bridge/sc-bridge/discussions) |
 
 ## What SC Bridge doesn't control
 

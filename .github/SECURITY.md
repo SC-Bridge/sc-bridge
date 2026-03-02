@@ -9,7 +9,7 @@ Only the current deployed version at [scbridge.app](https://scbridge.app) is sup
 **Do not open a public issue for security vulnerabilities.**
 
 Use GitHub's private vulnerability reporting:
-1. Go to the [Security tab](https://github.com/gavinmcfall/fleet-manager/security)
+1. Go to the [Security tab](https://github.com/SC-Bridge/sc-bridge/security)
 2. Click "Report a vulnerability"
 3. Fill in the details — what you found, how to reproduce it, and what the impact might be
 
