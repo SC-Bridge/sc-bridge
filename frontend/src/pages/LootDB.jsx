@@ -185,6 +185,28 @@ function ItemCard({ item, collectionQty, onSetCollectionQty, wishlisted, onToggl
 // ── Location section renderer ─────────────────────────────────────────────────
 function LocationSection({ label, icon: Icon, data }) {
   if (!data || !Array.isArray(data) || data.length === 0) return null
+
+  // Deduplicate by location/name key; track highest probability seen for each
+  const seen = new Map()
+  for (const entry of data) {
+    if (typeof entry === 'string') {
+      if (!seen.has(entry)) seen.set(entry, { label: entry })
+    } else {
+      const key = entry.location || entry.name || '?'
+      const existing = seen.get(key)
+      const prob = entry.perContainer ?? null
+      if (!existing) {
+        seen.set(key, {
+          label: key,
+          containerType: entry.containerType || null,
+          probability: prob,
+        })
+      } else if (prob != null && (existing.probability == null || prob > existing.probability)) {
+        existing.probability = prob
+      }
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-2">
@@ -192,9 +214,17 @@ function LocationSection({ label, icon: Icon, data }) {
         <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
       </div>
       <div className="space-y-1">
-        {data.map((entry, i) => (
-          <div key={i} className="text-xs font-mono text-gray-300 pl-2 border-l border-sc-border">
-            {typeof entry === 'string' ? entry : (entry.name || entry.location || JSON.stringify(entry))}
+        {[...seen.values()].map((row, i) => (
+          <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
+            <span className="text-xs font-mono text-gray-300 truncate">{row.label}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {row.containerType && (
+                <span className="text-[9px] font-mono text-gray-500">{row.containerType}</span>
+              )}
+              {row.probability != null && (
+                <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -250,7 +280,7 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
         )}
 
         {item && !loading && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          <div className="flex-1 overflow-y-auto p-4 pb-8 space-y-5">
             {/* Name + badges */}
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-white leading-tight">{item.name}</h2>
@@ -320,39 +350,47 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
             )}
 
             {/* Item stats from linked table */}
-            {item.item_details && (
-              <div>
-                <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
-                <div className="space-y-1 text-xs font-mono">
-                  {item.item_details.description && (
-                    <p className="text-gray-400 text-[11px] leading-relaxed">{item.item_details.description}</p>
-                  )}
-                  {item.item_details.type && item.item_details.type !== item.type && (
-                    <div className="flex gap-2">
-                      <span className="text-gray-500 w-16 shrink-0">Type</span>
-                      <span className="text-gray-300">{item.item_details.type}</span>
-                    </div>
-                  )}
-                  {item.item_details.slot && (
-                    <div className="flex gap-2">
-                      <span className="text-gray-500 w-16 shrink-0">Slot</span>
-                      <span className="text-gray-300">{item.item_details.slot}</span>
-                    </div>
-                  )}
-                  {item.item_details.stats_json && item.item_details.stats_json !== 'null' && (() => {
-                    try {
-                      const stats = JSON.parse(item.item_details.stats_json)
-                      return Object.entries(stats).slice(0, 12).map(([k, v]) => (
-                        <div key={k} className="flex gap-2">
-                          <span className="text-gray-500 w-32 shrink-0 capitalize">{k.replace(/_/g, ' ')}</span>
-                          <span className="text-gray-300">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                        </div>
-                      ))
-                    } catch { return null }
-                  })()}
+            {item.item_details && (() => {
+              const det = item.item_details
+              const hasDescription = !!det.description
+              const hasType = det.type && det.type !== item.type
+              const hasSlot = !!det.slot
+              const hasStats = det.stats_json && det.stats_json !== 'null'
+              if (!hasDescription && !hasType && !hasSlot && !hasStats) return null
+              return (
+                <div>
+                  <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
+                  <div className="space-y-1 text-xs font-mono">
+                    {hasDescription && (
+                      <p className="text-gray-400 text-[11px] leading-relaxed">{det.description}</p>
+                    )}
+                    {hasType && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-16 shrink-0">Type</span>
+                        <span className="text-gray-300">{det.type}</span>
+                      </div>
+                    )}
+                    {hasSlot && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-16 shrink-0">Slot</span>
+                        <span className="text-gray-300">{det.slot}</span>
+                      </div>
+                    )}
+                    {hasStats && (() => {
+                      try {
+                        const stats = JSON.parse(det.stats_json)
+                        return Object.entries(stats).slice(0, 12).map(([k, v]) => (
+                          <div key={k} className="flex gap-2">
+                            <span className="text-gray-500 w-32 shrink-0 capitalize">{k.replace(/_/g, ' ')}</span>
+                            <span className="text-gray-300">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                          </div>
+                        ))
+                      } catch { return null }
+                    })()}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Where to find — parse JSON directly (has_* flags not present in detail response) */}
             {(() => {
