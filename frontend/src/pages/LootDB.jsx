@@ -233,7 +233,7 @@ function LocationSection({ label, icon: Icon, data, type }) {
       <div className="space-y-1">
         {[...seen.values()].map((row, i) => (
           <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
-            <span className="text-xs font-mono text-gray-300 truncate">{row.label}</span>
+            <span className="text-xs font-mono text-gray-300 break-words min-w-0">{row.label}</span>
             <div className="flex items-center gap-1.5 shrink-0">
               {row.detail && (
                 <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
@@ -248,6 +248,40 @@ function LocationSection({ label, icon: Icon, data, type }) {
     </div>
   )
 }
+
+// ── Detail panel helpers ──────────────────────────────────────────────────────
+
+/**
+ * Fix UTF-8 mojibake stored in D1 (e.g. "Â°C" → "°C", "Âµ" → "µ").
+ * Caused by double-encoding: UTF-8 bytes stored as Latin-1 characters.
+ */
+function decodeMojibake(str) {
+  if (!str || typeof str !== 'string') return str
+  try { return decodeURIComponent(escape(str)) } catch { return str }
+}
+
+/**
+ * Format a fire_modes array into readable text.
+ * e.g. ["Burst", "Single"] + burst_count=3 → "3-Round Burst, Single"
+ */
+function formatFireModes(modes, burstCount) {
+  if (!Array.isArray(modes) || modes.length === 0) return null
+  return modes
+    .map(m => (m === 'Burst' && burstCount) ? `${burstCount}-Round Burst` : m)
+    .join(', ')
+}
+
+/** Human-readable labels for known stats_json fields. null = hidden. */
+const STAT_LABELS = {
+  item_port_count:  'Attachment Slots',
+  ammo_capacity:    'Ammo Capacity',
+  rounds_per_minute:'Rounds / Min',
+  fire_modes:       'Fire Modes',
+  burst_count:      null,           // merged into fire_modes display
+}
+
+/** Display order for known stats fields. Unknown fields sort alphabetically after. */
+const STAT_ORDER = ['item_port_count', 'ammo_capacity', 'rounds_per_minute', 'fire_modes']
 
 // ── Detail slide-over ─────────────────────────────────────────────────────────
 function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
@@ -274,7 +308,7 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
       />
       {/* Panel */}
       <div
-        className="fixed right-0 top-0 h-full w-full sm:w-96 bg-sc-darker border-l border-sc-border z-50 flex flex-col overflow-hidden"
+        className="fixed right-0 top-0 h-full w-full sm:w-[28rem] bg-sc-darker border-l border-sc-border z-50 flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
@@ -377,54 +411,85 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
               const hasGrade = det.grade != null
               const hasStats = det.stats_json && det.stats_json !== 'null'
               if (!hasDescription && !hasType && !hasSubType && !hasSlot && !hasSize && !hasGrade && !hasStats) return null
+
+              // Parse and sort stats entries: known fields first (STAT_ORDER), then alphabetical
+              let statsEntries = []
+              if (hasStats) {
+                try {
+                  const stats = JSON.parse(det.stats_json)
+                  statsEntries = Object.entries(stats)
+                    .filter(([k]) => STAT_LABELS[k] !== null)
+                    .sort(([a], [b]) => {
+                      const ai = STAT_ORDER.indexOf(a)
+                      const bi = STAT_ORDER.indexOf(b)
+                      if (ai === -1 && bi === -1) return a.localeCompare(b)
+                      if (ai === -1) return 1
+                      if (bi === -1) return -1
+                      return ai - bi
+                    })
+                    .map(([k, v]) => {
+                      const label = STAT_LABELS[k] ?? k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                      let display
+                      if (k === 'fire_modes') {
+                        const burstCount = JSON.parse(det.stats_json).burst_count
+                        display = formatFireModes(v, burstCount)
+                      } else if (Array.isArray(v)) {
+                        display = v.join(', ')
+                      } else {
+                        display = String(v)
+                      }
+                      return { k, label, display }
+                    })
+                    .filter(({ display }) => display)
+                } catch { /* skip */ }
+              }
+
               return (
                 <div>
                   <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
                   <div className="space-y-1 text-xs font-mono">
                     {hasType && (
                       <div className="flex gap-2">
-                        <span className="text-gray-500 w-16 shrink-0">Type</span>
+                        <span className="text-gray-500 w-32 shrink-0">Type</span>
                         <span className="text-gray-300">{det.type}</span>
                       </div>
                     )}
                     {hasSubType && (
                       <div className="flex gap-2">
-                        <span className="text-gray-500 w-16 shrink-0">Sub Type</span>
+                        <span className="text-gray-500 w-32 shrink-0">Sub Type</span>
                         <span className="text-gray-300">{det.sub_type}</span>
                       </div>
                     )}
                     {hasSlot && (
                       <div className="flex gap-2">
-                        <span className="text-gray-500 w-16 shrink-0">Slot</span>
+                        <span className="text-gray-500 w-32 shrink-0">Slot</span>
                         <span className="text-gray-300">{det.slot}</span>
                       </div>
                     )}
                     {hasSize && (
                       <div className="flex gap-2">
-                        <span className="text-gray-500 w-16 shrink-0">Size</span>
+                        <span className="text-gray-500 w-32 shrink-0">Size</span>
                         <span className="text-gray-300">S{det.size}</span>
                       </div>
                     )}
                     {hasGrade && (
                       <div className="flex gap-2">
-                        <span className="text-gray-500 w-16 shrink-0">Grade</span>
+                        <span className="text-gray-500 w-32 shrink-0">Grade</span>
                         <span className="text-gray-300">{det.grade}</span>
                       </div>
                     )}
+                    {/* stats_json fields before description so RPM/fire modes group with structural info */}
+                    {statsEntries.map(({ k, label, display }) => (
+                      <div key={k} className="flex gap-2">
+                        <span className="text-gray-500 w-32 shrink-0">{label}</span>
+                        <span className="text-gray-300">{display}</span>
+                      </div>
+                    ))}
                     {hasDescription && (
-                      <p className="text-gray-400 text-[11px] leading-relaxed whitespace-pre-wrap">{det.description.replace(/\\n/g, '\n')}</p>
+                      <p className="text-gray-400 text-[11px] leading-relaxed whitespace-pre-wrap pt-1">
+                        {decodeMojibake(det.description.replace(/\\n/g, '\n'))}
+                      </p>
                     )}
-                    {hasStats && (() => {
-                      try {
-                        const stats = JSON.parse(det.stats_json)
-                        return Object.entries(stats).slice(0, 12).map(([k, v]) => (
-                          <div key={k} className="flex gap-2">
-                            <span className="text-gray-500 w-32 shrink-0 capitalize">{k.replace(/_/g, ' ')}</span>
-                            <span className="text-gray-300">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                          </div>
-                        ))
-                      } catch { return null }
-                    })()}
                   </div>
                 </div>
               )
@@ -769,6 +834,7 @@ export default function LootDB() {
   const detailItemId = detailItemMeta?.id ?? null
 
   return (
+    <>
     <div className="space-y-4 animate-fade-in-up">
       <PageHeader
         title="ITEM FINDER"
@@ -1351,19 +1417,20 @@ export default function LootDB() {
         </div>
       )}
 
-      {/* Detail slide-over */}
-      {detailUuid && (
-        <DetailPanel
-          uuid={detailUuid}
-          manufacturerName={detailItemMeta?.manufacturer_name ?? null}
-          collectionQty={collected.get(detailItemId) ?? 0}
-          onSetCollectionQty={handleSetCollectionQty}
-          wishlisted={wishlistIds.has(detailItemId)}
-          onToggleWishlist={handleToggleWishlist}
-          isAuthed={isAuthed}
-          onClose={() => setDetailUuid(null)}
-        />
-      )}
     </div>
+    {/* Detail slide-over — rendered outside animated container to avoid stacking context trap */}
+    {detailUuid && (
+      <DetailPanel
+        uuid={detailUuid}
+        manufacturerName={detailItemMeta?.manufacturer_name ?? null}
+        collectionQty={collected.get(detailItemId) ?? 0}
+        onSetCollectionQty={handleSetCollectionQty}
+        wishlisted={wishlistIds.has(detailItemId)}
+        onToggleWishlist={handleToggleWishlist}
+        isAuthed={isAuthed}
+        onClose={() => setDetailUuid(null)}
+      />
+    )}
+    </>
   )
 }
