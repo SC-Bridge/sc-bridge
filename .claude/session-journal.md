@@ -8,10 +8,12 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Import fix** — migration 0041 applied. Import now works. Other session (1b6a23b8) still has POI planning in progress.
+**DB column fixes** — 0041/0042/0043 applied. Import, ShipDB, ShipDetail loadout all working. Other session (1b6a23b8) still has POI planning in progress.
 
 ## Recent Changes
 
+- **Migration 0043** (`manufacturers_class`): Added `class TEXT` to manufacturers — was dropped in 0037 rebuild, broke `getShipLoadout` with 'no such column: m.class'.
+- **Migration 0042** (`vehicles_acquisition_source_name`): Added `acquisition_source_name TEXT` to vehicles — was never applied to D1, broke all `/api/ships` requests with SQLite error.
 - **Migration 0041** (`fix_fk_references`): Rebuilt 6 tables with broken FK references caused by SQLite 3.26+ auto-rename during migration 0037. Fixed: `user_fleet`, `paint_vehicles`, `vehicle_loaners`, `vehicle_images`, `vehicle_images_archive`, `fps_ammo`. All previously pointed to dropped `vehicles_old`/`manufacturers_old` tables.
 - **Location name corrections** (`82d8b52`): ASDDelving → 'Onyx Facility', ASDDelving_ScienceWing → 'Onyx Facility — Research Wing', Kaboos → 'QV Logistics Station' (from global.ini research).
 - **Friendly shop names** (`97913bc`): `shopNames.js` + `friendlyShopName()` — 98 known shops + fallback parser.
@@ -400,4 +402,8 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-03 08:38:47
+
+
+---
+**Session compacted at:** 2026-03-03 09:11:37
 
