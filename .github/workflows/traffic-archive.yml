@@ -33,16 +33,16 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%d)
 
-          gh api repos/gavinmcfall/fleet-manager/traffic/views \
+          gh api repos/SC-Bridge/sc-bridge/traffic/views \
             > traffic/views-${DATE}.json
 
-          gh api repos/gavinmcfall/fleet-manager/traffic/clones \
+          gh api repos/SC-Bridge/sc-bridge/traffic/clones \
             > traffic/clones-${DATE}.json
 
-          gh api repos/gavinmcfall/fleet-manager/traffic/popular/referrers \
+          gh api repos/SC-Bridge/sc-bridge/traffic/popular/referrers \
             > traffic/referrers-${DATE}.json
 
-          gh api repos/gavinmcfall/fleet-manager/traffic/popular/paths \
+          gh api repos/SC-Bridge/sc-bridge/traffic/popular/paths \
             > traffic/paths-${DATE}.json
 
       - name: Commit
