@@ -51,7 +51,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
         FROM vehicles v
         LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
-        WHERE v.slug = ?`,
+        WHERE v.slug = ? AND v.is_paint_variant = 0`,
       )
       .bind(slug)
       .first();

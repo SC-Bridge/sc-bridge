@@ -989,7 +989,7 @@ export async function loadVehicleMaps(
   byNameLower: Map<string, number>;
   allRows: VehicleRow[];
 }> {
-  const result = await db.prepare("SELECT id, slug, name FROM vehicles").all();
+  const result = await db.prepare("SELECT id, slug, name FROM vehicles WHERE is_paint_variant = 0").all();
   const bySlug = new Map<string, number>();
   const byNameLower = new Map<string, number>();
   const allRows: VehicleRow[] = [];
