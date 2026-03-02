@@ -795,17 +795,17 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
 
   if (item.fps_weapon_id) {
     details = await db
-      .prepare("SELECT name, sub_type as type, description, stats_json FROM fps_weapons WHERE id = ?")
+      .prepare("SELECT name, sub_type as type, size, description, stats_json FROM fps_weapons WHERE id = ?")
       .bind(item.fps_weapon_id)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_armour_id) {
     details = await db
-      .prepare("SELECT name, sub_type as type, description, stats_json FROM fps_armour WHERE id = ?")
+      .prepare("SELECT name, sub_type as type, size, grade, description, stats_json FROM fps_armour WHERE id = ?")
       .bind(item.fps_armour_id)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_attachment_id) {
     details = await db
-      .prepare("SELECT name, sub_type as type, description, stats_json FROM fps_attachments WHERE id = ?")
+      .prepare("SELECT name, sub_type as type, size, description, stats_json FROM fps_attachments WHERE id = ?")
       .bind(item.fps_attachment_id)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_utility_id) {
@@ -815,17 +815,17 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
       .first() as Record<string, unknown> | null;
   } else if (item.fps_helmet_id) {
     details = await db
-      .prepare("SELECT name, sub_type as type, description, stats_json FROM fps_helmets WHERE id = ?")
+      .prepare("SELECT name, sub_type as type, size, grade, description, stats_json FROM fps_helmets WHERE id = ?")
       .bind(item.fps_helmet_id)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_clothing_id) {
     details = await db
-      .prepare("SELECT name, slot, description, stats_json FROM fps_clothing WHERE id = ?")
+      .prepare("SELECT name, slot, size, grade, description, stats_json FROM fps_clothing WHERE id = ?")
       .bind(item.fps_clothing_id)
       .first() as Record<string, unknown> | null;
   } else if (item.consumable_id) {
     details = await db
-      .prepare("SELECT name, type, description FROM consumables WHERE id = ?")
+      .prepare("SELECT name, type, sub_type, description FROM consumables WHERE id = ?")
       .bind(item.consumable_id)
       .first() as Record<string, unknown> | null;
   } else if (item.harvestable_id) {
@@ -835,7 +835,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
       .first() as Record<string, unknown> | null;
   } else if (item.props_id) {
     details = await db
-      .prepare("SELECT name, type, description FROM props WHERE id = ?")
+      .prepare("SELECT name, type, sub_type, description FROM props WHERE id = ?")
       .bind(item.props_id)
       .first() as Record<string, unknown> | null;
   } else if (item.vehicle_component_id) {

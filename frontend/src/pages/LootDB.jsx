@@ -356,11 +356,12 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
               const det = item.item_details
               const hasDescription = !!det.description
               const hasType = det.type && det.type !== item.type
+              const hasSubType = !!det.sub_type && det.sub_type !== 'UNDEFINED' && det.sub_type !== det.type
               const hasSlot = !!det.slot
               const hasSize = det.size != null
               const hasGrade = det.grade != null
               const hasStats = det.stats_json && det.stats_json !== 'null'
-              if (!hasDescription && !hasType && !hasSlot && !hasSize && !hasGrade && !hasStats) return null
+              if (!hasDescription && !hasType && !hasSubType && !hasSlot && !hasSize && !hasGrade && !hasStats) return null
               return (
                 <div>
                   <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
@@ -369,6 +370,12 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                       <div className="flex gap-2">
                         <span className="text-gray-500 w-16 shrink-0">Type</span>
                         <span className="text-gray-300">{det.type}</span>
+                      </div>
+                    )}
+                    {hasSubType && (
+                      <div className="flex gap-2">
+                        <span className="text-gray-500 w-16 shrink-0">Sub Type</span>
+                        <span className="text-gray-300">{det.sub_type}</span>
                       </div>
                     )}
                     {hasSlot && (
