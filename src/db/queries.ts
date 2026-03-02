@@ -753,11 +753,13 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
       WHERE ${versionFilter}
         AND lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
-        AND (lm.fps_weapon_id IS NOT NULL OR lm.fps_armour_id IS NOT NULL
-          OR lm.fps_attachment_id IS NOT NULL OR lm.fps_utility_id IS NOT NULL
-          OR lm.fps_helmet_id IS NOT NULL OR lm.fps_clothing_id IS NOT NULL
-          OR lm.consumable_id IS NOT NULL OR lm.harvestable_id IS NOT NULL
-          OR lm.props_id IS NOT NULL OR lm.vehicle_component_id IS NOT NULL)
+        AND lm.type IS NOT NULL AND lm.type != ''
+        AND lm.type NOT IN (
+          'NOITEM_Vehicle','UNDEFINED',
+          'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
+          'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
+          'Currency','MobiGlas'
+        )
       ORDER BY lm.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
