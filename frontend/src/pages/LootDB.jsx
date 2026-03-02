@@ -6,6 +6,7 @@ import {
 import {
   useLoot, useLootItem, useLootCollection, toggleLootCollection,
   useLootWishlist, toggleLootWishlist,
+  setLootCollectionQuantity, setLootWishlistQuantity,
 } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
@@ -93,22 +94,66 @@ function SourceIcons({ item }) {
   )
 }
 
+// ── Collection quantity stepper ───────────────────────────────────────────────
+function CollectionStepper({ qty, onSetQty }) {
+  if (qty === 0) {
+    return (
+      <button
+        onClick={() => onSetQty(1)}
+        className="w-5 h-5 rounded border border-gray-600 flex items-center justify-center text-gray-500 hover:border-gray-400 hover:text-gray-300 transition-all shrink-0"
+        title="Mark collected"
+      >
+        <Plus className="w-3 h-3" />
+      </button>
+    )
+  }
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button
+        onClick={() => onSetQty(qty - 1)}
+        className="w-5 h-5 rounded border border-sc-accent/40 flex items-center justify-center text-sc-accent hover:bg-sc-accent/20 transition-all text-xs leading-none"
+        title={qty === 1 ? 'Remove from collection' : 'Decrease'}
+      >−</button>
+      <span className="text-[10px] font-mono text-sc-accent min-w-[14px] text-center">{qty}</span>
+      <button
+        onClick={() => onSetQty(qty + 1)}
+        className="w-5 h-5 rounded border border-sc-accent/40 flex items-center justify-center text-sc-accent hover:bg-sc-accent/20 transition-all"
+        title="Increase"
+      >
+        <Plus className="w-3 h-3" />
+      </button>
+    </div>
+  )
+}
+
 // ── Item card ─────────────────────────────────────────────────────────────────
-function ItemCard({ item, collected, onToggleCollect, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
+function ItemCard({ item, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
   const rs = rarityStyle(item.rarity)
   const catStyle = CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
   const catLabel = CATEGORY_LABELS[item.category] || item.category
 
   return (
     <div
-      className={`panel p-3 flex flex-col gap-2 cursor-pointer hover:border-sc-border/80 transition-all duration-150 ${collected ? 'opacity-75' : ''}`}
+      className={`panel p-3 flex flex-col gap-2 cursor-pointer hover:border-sc-border/80 transition-all duration-150 ${collectionQty > 0 ? 'opacity-75' : ''}`}
       onClick={() => onSelect(item.uuid)}
     >
-      {/* Top row: category badge + rarity badge */}
-      <div className="flex items-center justify-between gap-1">
+      {/* Top row: category badge + wishlist icon + rarity badge */}
+      <div className="flex items-center gap-1">
         <span className={`text-[9px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
           {catLabel}
         </span>
+        <div className="flex-1" />
+        {isAuthed && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleWishlist(item.uuid, wishlisted) }}
+            className={`flex items-center justify-center transition-all duration-150 shrink-0 ${
+              wishlisted ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'
+            }`}
+            title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+          >
+            {wishlisted ? <Bookmark className="w-3.5 h-3.5" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
+          </button>
+        )}
         {item.rarity && (
           <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
             {item.rarity}
@@ -121,33 +166,15 @@ function ItemCard({ item, collected, onToggleCollect, wishlisted, onToggleWishli
         {item.name}
       </p>
 
-      {/* Bottom row: sources + action buttons */}
+      {/* Bottom row: sources + collection stepper */}
       <div className="flex items-center justify-between">
         <SourceIcons item={item} />
         {isAuthed && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleWishlist(item.uuid, wishlisted) }}
-              className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
-                wishlisted
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
-              }`}
-              title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-            >
-              {wishlisted ? <Bookmark className="w-3 h-3" /> : <BookmarkPlus className="w-3 h-3" />}
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleCollect(item.uuid, collected) }}
-              className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
-                collected
-                  ? 'bg-sc-accent/20 border-sc-accent/50 text-sc-accent'
-                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
-              }`}
-              title={collected ? 'Mark uncollected' : 'Mark collected'}
-            >
-              {collected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-            </button>
+          <div onClick={(e) => e.stopPropagation()}>
+            <CollectionStepper
+              qty={collectionQty}
+              onSetQty={(qty) => onSetCollectionQty(item.uuid, qty)}
+            />
           </div>
         )}
       </div>
@@ -176,7 +203,7 @@ function LocationSection({ label, icon: Icon, data }) {
 }
 
 // ── Detail slide-over ─────────────────────────────────────────────────────────
-function DetailPanel({ uuid, collected, onToggleCollect, wishlisted, onToggleWishlist, isAuthed, onClose }) {
+function DetailPanel({ uuid, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
   const { data: item, loading } = useLootItem(uuid)
 
   if (!uuid) return null
@@ -258,17 +285,34 @@ function DetailPanel({ uuid, collected, onToggleCollect, wishlisted, onToggleWis
                   {wishlisted ? <Bookmark className="w-3.5 h-3.5" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
                   {wishlisted ? 'On Wishlist' : 'Add to Wishlist'}
                 </button>
-                <button
-                  onClick={() => onToggleCollect(uuid, collected)}
-                  className={`flex-1 py-2 rounded text-xs font-display uppercase tracking-wide border transition-all duration-150 flex items-center justify-center gap-2 ${
-                    collected
-                      ? 'bg-sc-accent/10 border-sc-accent/40 text-sc-accent'
-                      : 'border-sc-border text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                  }`}
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  {collected ? 'Collected' : 'Mark Collected'}
-                </button>
+                <div className="flex-1 border border-sc-border rounded flex items-center justify-center gap-2 py-2">
+                  {collectionQty === 0 ? (
+                    <button
+                      onClick={() => onSetCollectionQty(uuid, 1)}
+                      className="flex items-center gap-1.5 text-xs font-display uppercase tracking-wide text-gray-400 hover:text-gray-200 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Mark Collected
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onSetCollectionQty(uuid, collectionQty - 1)}
+                        className="w-5 h-5 flex items-center justify-center rounded text-sc-accent hover:bg-sc-accent/20 transition-colors text-base leading-none"
+                        title={collectionQty === 1 ? 'Remove from collection' : 'Decrease'}
+                      >−</button>
+                      <span className="text-sm font-mono text-sc-accent min-w-[20px] text-center">{collectionQty}</span>
+                      <button
+                        onClick={() => onSetCollectionQty(uuid, collectionQty + 1)}
+                        className="w-5 h-5 flex items-center justify-center rounded text-sc-accent hover:bg-sc-accent/20 transition-colors"
+                        title="Increase"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[10px] font-display uppercase tracking-wide text-sc-accent/70">Collected</span>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
@@ -330,7 +374,7 @@ function DetailPanel({ uuid, collected, onToggleCollect, wishlisted, onToggleWis
 }
 
 // ── Wishlist list row (no card boxes — clean flat list) ───────────────────────
-function WishlistRow({ item, collected, onToggleCollect, onToggleWishlist, onSelect }) {
+function WishlistRow({ item, collectionQty, onSetCollectionQty, wishlistQty, onSetWishlistQty, onSelect }) {
   const catStyle = CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
   const catLabel = CATEGORY_LABELS[item.category] || item.category
   const rs = item.rarity ? rarityStyle(item.rarity) : null
@@ -350,23 +394,29 @@ function WishlistRow({ item, collected, onToggleCollect, onToggleWishlist, onSel
         </span>
       )}
       <SourceIcons item={item} />
-      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={() => onToggleCollect(item.uuid, collected)}
-          className={`w-6 h-6 rounded flex items-center justify-center transition-all duration-150 ${
-            collected ? 'text-sc-accent' : 'text-gray-600 hover:text-gray-400'
-          }`}
-          title={collected ? 'Mark uncollected' : 'Mark collected'}
-        >
-          {collected ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-        </button>
-        <button
-          onClick={() => onToggleWishlist(item.uuid, true)}
-          className="w-6 h-6 rounded flex items-center justify-center text-amber-400 hover:text-amber-200 transition-colors"
-          title="Remove from wishlist"
-        >
-          <Bookmark className="w-3.5 h-3.5" />
-        </button>
+      <div className="flex items-center gap-4 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* Wishlist qty stepper (want N) — decrement to 0 removes from wishlist */}
+        <div className="flex items-center gap-0.5">
+          <span className="text-[9px] text-amber-500/60 font-mono mr-0.5">want</span>
+          <button
+            onClick={() => onSetWishlistQty(item.uuid, wishlistQty - 1)}
+            className="w-5 h-5 rounded border border-amber-500/30 flex items-center justify-center text-amber-400 hover:bg-amber-500/10 transition-all text-xs leading-none"
+            title={wishlistQty === 1 ? 'Remove from wishlist' : 'Decrease'}
+          >−</button>
+          <span className="text-[10px] font-mono text-amber-400 min-w-[14px] text-center">{wishlistQty}</span>
+          <button
+            onClick={() => onSetWishlistQty(item.uuid, wishlistQty + 1)}
+            className="w-5 h-5 rounded border border-amber-500/30 flex items-center justify-center text-amber-400 hover:bg-amber-500/10 transition-all"
+            title="Increase"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+        {/* Collection qty stepper (have N) */}
+        <div className="flex items-center gap-0.5">
+          <span className="text-[9px] text-gray-500 font-mono mr-0.5">have</span>
+          <CollectionStepper qty={collectionQty} onSetQty={(qty) => onSetCollectionQty(item.uuid, qty)} />
+        </div>
       </div>
     </div>
   )
@@ -417,11 +467,17 @@ export default function LootDB() {
   const { data: collectionIds, refetch: refetchCollection } = useLootCollection(isAuthed)
   const { data: wishlistItems, refetch: refetchWishlist } = useLootWishlist(isAuthed)
 
+  // Map<loot_map_id, quantity> — backend now returns [{loot_map_id, quantity}]
   const collected = useMemo(() => {
-    if (!collectionIds) return new Set()
-    return new Set(collectionIds)
+    if (!collectionIds) return new Map()
+    return new Map(collectionIds.map(e => [e.loot_map_id, e.quantity]))
   }, [collectionIds])
 
+  // Map<loot_map_id, wishlist_quantity>
+  const wishlistMap = useMemo(
+    () => new Map(wishlistItems?.map(i => [i.id, i.wishlist_quantity ?? 1]) ?? []),
+    [wishlistItems]
+  )
   const wishlistIds = useMemo(
     () => new Set(wishlistItems?.map(i => i.id) ?? []),
     [wishlistItems]
@@ -539,17 +595,18 @@ export default function LootDB() {
   const totalPages = Math.ceil(filtered.length / pageSize)
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
 
-  const collectionCount = collected.size
+  const collectionCount = collected.size  // unique items collected (not sum of quantities)
   const totalCount = allItems?.length || 0
 
   const shoppingList = useMemo(() => buildShoppingList(wishlistItems), [wishlistItems])
 
-  const handleToggleCollect = useCallback(async (uuid, isCollected) => {
+  // qty=0 removes from collection (backend handles via PATCH)
+  const handleSetCollectionQty = useCallback(async (uuid, qty) => {
     try {
-      await toggleLootCollection(uuid, isCollected)
+      await setLootCollectionQuantity(uuid, qty)
       refetchCollection()
     } catch (err) {
-      console.error('Collection toggle failed:', err)
+      console.error('Collection update failed:', err)
     }
   }, [refetchCollection])
 
@@ -559,6 +616,16 @@ export default function LootDB() {
       refetchWishlist()
     } catch (err) {
       console.error('Wishlist toggle failed:', err)
+    }
+  }, [refetchWishlist])
+
+  // qty=0 removes from wishlist (backend handles via PATCH)
+  const handleSetWishlistQty = useCallback(async (uuid, qty) => {
+    try {
+      await setLootWishlistQuantity(uuid, qty)
+      refetchWishlist()
+    } catch (err) {
+      console.error('Wishlist update failed:', err)
     }
   }, [refetchWishlist])
 
@@ -872,8 +939,8 @@ export default function LootDB() {
                   <ItemCard
                     key={item.id}
                     item={item}
-                    collected={collected.has(item.id)}
-                    onToggleCollect={handleToggleCollect}
+                    collectionQty={collected.get(item.id) ?? 0}
+                    onSetCollectionQty={handleSetCollectionQty}
                     wishlisted={wishlistIds.has(item.id)}
                     onToggleWishlist={handleToggleWishlist}
                     isAuthed={isAuthed}
@@ -887,7 +954,7 @@ export default function LootDB() {
                   const rs = item.rarity ? rarityStyle(item.rarity) : null
                   const catStyle = CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
                   const catLabel = CATEGORY_LABELS[item.category] || item.category
-                  const isCollected = collected.has(item.id)
+                  const itemCollectionQty = collected.get(item.id) ?? 0
                   const isWishlisted = wishlistIds.has(item.id)
                   return (
                     <div
@@ -907,27 +974,19 @@ export default function LootDB() {
                       <SourceIcons item={item} />
                       <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
                       {isAuthed && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleToggleWishlist(item.uuid, isWishlisted) }}
-                            className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
-                              isWishlisted
-                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                                : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
+                            onClick={() => handleToggleWishlist(item.uuid, isWishlisted)}
+                            className={`flex items-center justify-center transition-all duration-150 shrink-0 ${
+                              isWishlisted ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'
                             }`}
                           >
-                            {isWishlisted ? <Bookmark className="w-3 h-3" /> : <BookmarkPlus className="w-3 h-3" />}
+                            {isWishlisted ? <Bookmark className="w-3.5 h-3.5" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleToggleCollect(item.uuid, isCollected) }}
-                            className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
-                              isCollected
-                                ? 'bg-sc-accent/20 border-sc-accent/50 text-sc-accent'
-                                : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
-                            }`}
-                          >
-                            {isCollected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                          </button>
+                          <CollectionStepper
+                            qty={itemCollectionQty}
+                            onSetQty={(qty) => handleSetCollectionQty(item.uuid, qty)}
+                          />
                         </div>
                       )}
                     </div>
@@ -1009,9 +1068,10 @@ export default function LootDB() {
                   <WishlistRow
                     key={item.id}
                     item={item}
-                    collected={collected.has(item.id)}
-                    onToggleCollect={handleToggleCollect}
-                    onToggleWishlist={handleToggleWishlist}
+                    collectionQty={collected.get(item.id) ?? 0}
+                    onSetCollectionQty={handleSetCollectionQty}
+                    wishlistQty={wishlistMap.get(item.id) ?? 1}
+                    onSetWishlistQty={handleSetWishlistQty}
                     onSelect={setDetailUuid}
                   />
                 ))}
@@ -1030,8 +1090,8 @@ export default function LootDB() {
       {detailUuid && (
         <DetailPanel
           uuid={detailUuid}
-          collected={collected.has(detailItemId)}
-          onToggleCollect={handleToggleCollect}
+          collectionQty={collected.get(detailItemId) ?? 0}
+          onSetCollectionQty={handleSetCollectionQty}
           wishlisted={wishlistIds.has(detailItemId)}
           onToggleWishlist={handleToggleWishlist}
           isAuthed={isAuthed}

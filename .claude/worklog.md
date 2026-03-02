@@ -2,38 +2,15 @@
 
 @ACTIVE
 # sid|registered|last_active|scope
-1b6a23b8|2026-03-02T14:42+1300|2026-03-02T15:22+1300|loot-wishlist+0037-debug
-870781b4|2026-03-02T14:37+1300|2026-03-02T16:28+1300|svg-crash-fix+shipdetail-ab-removal
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
 @FILES
 # sid|file_path
-870781b4|src/routes/contracts.ts
-870781b4|src/index.ts
-870781b4|.claude/session-journal.md
-870781b4|frontend/src/pages/ShipDetail.jsx
-870781b4|frontend/src/assets/icons/pistol-s38.svg
-870781b4|frontend/src/assets/icons/brand-glsn.svg
-870781b4|frontend/src/assets/icons/selfdestruct.svg
-870781b4|frontend/src/assets/icons/scanner.svg
-870781b4|frontend/src/assets/icons/quantumfueltank.svg
-870781b4|frontend/src/assets/icons/maneuveringthruster.svg
-870781b4|frontend/src/assets/icons/mainthruster.svg
-870781b4|frontend/src/assets/icons/fueltank.svg
-870781b4|frontend/src/assets/icons/fuelnozzle.svg
-870781b4|frontend/src/assets/icons/fuelintake.svg
-870781b4|frontend/src/assets/icons/container.svg
-870781b4|frontend/src/assets/icons/utility.svg
-870781b4|frontend/src/assets/icons/quantumdrive.svg
-870781b4|frontend/src/assets/icons/cooler.svg
-a316152b|CLAUDE.md
-a316152b|README.md
-a316152b|SCWIKI_SYNC_PLAN.md
-a316152b|.claude/session-journal.md
-1b6a23b8|src/db/migrations/0037_patch_versioning.sql
-1b6a23b8|src/db/migrations/0038_user_loot_wishlist.sql
-1b6a23b8|src/db/queries.ts
-1b6a23b8|src/routes/loot.ts
-1b6a23b8|frontend/src/hooks/useAPI.js
-1b6a23b8|frontend/src/pages/LootDB.jsx
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
 
 @LOG
 # timestamp|sid|op|detail
@@ -71,3 +48,4 @@ a316152b|.claude/session-journal.md
 16:28+1300|a316152b|DONE|sync-reference-cleanup complete — committed 24b9ae4, session closed
 16:28+1300|870781b4|VRF|CI for d675cee succeeded (03:23 UTC) — all code live on scbridge.app
 16:28+1300|870781b4|VRF|session-journal.md: added 0037+0038 to migration table, updated Recent Changes
+17:03+1300|1b6a23b8|CLN|removed stale sessions 870781b4 + a316152b

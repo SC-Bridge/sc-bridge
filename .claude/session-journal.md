@@ -122,6 +122,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
 - **Loot detail stats**: `GET /api/loot/:uuid` fetches FK'd item table for stats_json — could surface more item details in the slide-over panel
 - **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
+- **Shopping list location names**: `containers_json` etc. use raw DataCore keys (AddDelving, DistributionCentres_HighSecurity). No friendly name exists yet — check loot extraction script in `scbridge/tools/scripts/loot_map/` to see if labels can be sourced or if a manual map is needed.
 
 ## Weapon Mount Pattern (for future reference)
 
@@ -358,4 +359,8 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 14:41:11
+
+
+---
+**Session compacted at:** 2026-03-02 17:01:52
 
