@@ -208,6 +208,17 @@ export function createAuth(env: Env) {
         },
       },
       user: {
+        create: {
+          before: async (_, context) => {
+            // Block new user creation via social OAuth callbacks.
+            // Email signups are pre-validated by the invite guard middleware in index.ts.
+            const req = (context as Record<string, unknown>)?.request;
+            const url = req instanceof Request ? req.url : "";
+            if (url.includes("/api/auth/callback/")) {
+              throw new Error("Account creation via social sign-in is not available. Use your invite link to register.");
+            }
+          },
+        },
         update: {
           after: async (user, context) => {
             const record = user as Record<string, unknown>;
