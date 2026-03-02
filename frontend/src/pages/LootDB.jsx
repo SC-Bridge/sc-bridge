@@ -365,9 +365,6 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                 <div>
                   <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-2">Item Details</p>
                   <div className="space-y-1 text-xs font-mono">
-                    {hasDescription && (
-                      <p className="text-gray-400 text-[11px] leading-relaxed whitespace-pre-wrap">{det.description.replace(/\\n/g, '\n')}</p>
-                    )}
                     {hasType && (
                       <div className="flex gap-2">
                         <span className="text-gray-500 w-16 shrink-0">Type</span>
@@ -391,6 +388,9 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                         <span className="text-gray-500 w-16 shrink-0">Grade</span>
                         <span className="text-gray-300">{det.grade}</span>
                       </div>
+                    )}
+                    {hasDescription && (
+                      <p className="text-gray-400 text-[11px] leading-relaxed whitespace-pre-wrap">{det.description.replace(/\\n/g, '\n')}</p>
                     )}
                     {hasStats && (() => {
                       try {
