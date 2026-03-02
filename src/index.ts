@@ -272,8 +272,18 @@ app.route("/api/patches", patchRoutes());
 app.use("/api/*", async (c) => c.json({ error: "Not Found" }, 404));
 
 // SPA catch-all — forward non-API requests to Workers Assets (serves index.html)
+// HTML responses get Cache-Control: no-cache so browsers always revalidate index.html.
+// Without this, stale index.html references old chunk hashes → "error loading dynamically
+// imported module" when the old .js files are purged from Workers Assets CDN.
 app.get("*", async (c) => {
-  return c.env.ASSETS.fetch(c.req.raw);
+  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const ct = res.headers.get("Content-Type") ?? "";
+  if (ct.startsWith("text/html")) {
+    const headers = new Headers(res.headers);
+    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    return new Response(res.body, { status: res.status, headers });
+  }
+  return res;
 });
 
 // Export for Cloudflare Workers
