@@ -1,11 +1,13 @@
-import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { signUp } from '../lib/auth-client'
-import { Rocket, Mail, Lock, User, AlertCircle } from 'lucide-react'
+import { Rocket, Mail, Lock, User, AlertCircle, Ticket } from 'lucide-react'
 import SocialLoginButtons from '../components/SocialLoginButtons'
 
 export default function Register() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('invite')
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -14,6 +16,18 @@ export default function Register() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
+  const [inviteValid, setInviteValid] = useState(null) // null = checking, true/false = result
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviteValid(false)
+      return
+    }
+    fetch(`/api/invites/validate?token=${encodeURIComponent(inviteToken)}`)
+      .then((r) => r.json())
+      .then((data) => setInviteValid(data.valid))
+      .catch(() => setInviteValid(false))
+  }, [inviteToken])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -36,10 +50,18 @@ export default function Register() {
         name,
         email,
         password,
+        fetchOptions: {
+          headers: { 'x-invite-token': inviteToken },
+        },
       })
 
       if (result.error) {
-        setError(result.error.message || 'Registration failed')
+        const code = result.error.code
+        if (code === 'INVITE_INVALID' || code === 'INVITE_REQUIRED') {
+          setError('This invite link is no longer valid. Please request a new one.')
+        } else {
+          setError(result.error.message || 'Registration failed')
+        }
       } else {
         navigate('/verify-email', { replace: true, state: { email } })
       }
@@ -50,6 +72,82 @@ export default function Register() {
     }
   }
 
+  // No invite param at all
+  if (!inviteToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
+        <div className="w-full max-w-md px-6">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Rocket className="w-8 h-8 text-sc-accent" />
+              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">
+                SC BRIDGE
+              </h1>
+            </div>
+            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
+          </div>
+          <div className="panel p-8 text-center">
+            <Ticket className="w-10 h-10 text-gray-600 mx-auto mb-4" />
+            <h2 className="font-display font-bold text-lg text-white mb-3">Invite Only</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              SC Bridge is currently in private beta. You need an invite link to create an account.
+            </p>
+            <Link to="/login" className="text-sc-accent hover:text-sc-accent/80 transition-colors text-sm">
+              Already have an account? Sign In
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Invite param present but checking / invalid
+  if (inviteValid === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
+        <div className="w-full max-w-md px-6">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Rocket className="w-8 h-8 text-sc-accent" />
+              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">SC BRIDGE</h1>
+            </div>
+            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
+          </div>
+          <div className="panel p-8 text-center">
+            <p className="text-sm text-gray-400">Validating invite...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!inviteValid) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
+        <div className="w-full max-w-md px-6">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Rocket className="w-8 h-8 text-sc-accent" />
+              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">SC BRIDGE</h1>
+            </div>
+            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
+          </div>
+          <div className="panel p-8 text-center">
+            <AlertCircle className="w-10 h-10 text-sc-danger mx-auto mb-4" />
+            <h2 className="font-display font-bold text-lg text-white mb-3">Invalid Invite</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              This invite link is not valid or has already been used. Please request a new one.
+            </p>
+            <Link to="/login" className="text-sc-accent hover:text-sc-accent/80 transition-colors text-sm">
+              Already have an account? Sign In
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Valid invite — show signup form
   return (
     <div className="min-h-screen flex items-center justify-center bg-sc-darker">
       <div className="w-full max-w-md px-6">
@@ -64,6 +162,11 @@ export default function Register() {
         </div>
 
         <div className="panel p-8">
+          <div className="flex items-center justify-center gap-2 mb-5">
+            <Ticket className="w-4 h-4 text-sc-success" />
+            <span className="text-xs font-mono text-sc-success uppercase tracking-wider">You've been invited</span>
+          </div>
+
           <h2 className="font-display font-bold text-lg text-white mb-6 text-center">Create Account</h2>
 
           {error && (

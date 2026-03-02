@@ -125,5 +125,33 @@ export function adminRoutes() {
     });
   });
 
+  /**
+   * POST /api/admin/invites
+   *
+   * Generates a single-use invite token and returns the signup URL.
+   * Returns { token, url }
+   */
+  routes.post("/invites", async (c) => {
+    const token = crypto.randomUUID();
+    const baseUrl = c.env.BETTER_AUTH_URL;
+    await c.env.DB
+      .prepare("INSERT INTO invite_tokens (token) VALUES (?)")
+      .bind(token).run();
+    return c.json({ token, url: `${baseUrl}/register?invite=${token}` });
+  });
+
+  /**
+   * GET /api/admin/invites
+   *
+   * Lists all invite tokens ordered by creation date descending.
+   * Returns [{ token, created_at, used_at }]
+   */
+  routes.get("/invites", async (c) => {
+    const rows = await c.env.DB
+      .prepare("SELECT token, created_at, used_at FROM invite_tokens ORDER BY created_at DESC")
+      .all<{ token: string; created_at: string; used_at: string | null }>();
+    return c.json(rows.results ?? []);
+  });
+
   return routes;
 }

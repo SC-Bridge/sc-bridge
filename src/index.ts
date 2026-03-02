@@ -87,6 +87,35 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
+// --- Invite guard — intercepts sign-up before Better Auth sees it
+// Token is consumed atomically: if valid, marked used_at = now() then request proceeds.
+app.post("/api/auth/sign-up/email", async (c, next) => {
+  const token = c.req.header("x-invite-token");
+  if (!token) {
+    return c.json({ message: "An invite is required to create an account.", code: "INVITE_REQUIRED" }, 403);
+  }
+  const row = await c.env.DB
+    .prepare("SELECT id FROM invite_tokens WHERE token = ? AND used_at IS NULL")
+    .bind(token).first<{ id: number }>();
+  if (!row) {
+    return c.json({ message: "This invite link is not valid or has already been used.", code: "INVITE_INVALID" }, 403);
+  }
+  await c.env.DB
+    .prepare("UPDATE invite_tokens SET used_at = datetime('now') WHERE token = ?")
+    .bind(token).run();
+  await next();
+});
+
+// --- Public invite validate route — called by Register.jsx on mount to check token
+app.get("/api/invites/validate", async (c) => {
+  const token = c.req.query("token");
+  if (!token) return c.json({ valid: false });
+  const row = await c.env.DB
+    .prepare("SELECT id FROM invite_tokens WHERE token = ? AND used_at IS NULL")
+    .bind(token).first<{ id: number }>();
+  return c.json({ valid: !!row });
+});
+
 // --- Better Auth handler — use app.use (middleware wildcard) not app.on (route wildcard)
 // app.on() with ** does not match multi-segment paths in the Workers runtime.
 // app.use() wildcard * is recursive in Hono middleware and correctly matches all sub-paths.
