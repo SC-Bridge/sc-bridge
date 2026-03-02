@@ -20,13 +20,16 @@ export default function Register() {
 
   useEffect(() => {
     if (!inviteToken) {
-      setInviteValid(false)
+      navigate('/login', { replace: true })
       return
     }
     fetch(`/api/invites/validate?token=${encodeURIComponent(inviteToken)}`)
       .then((r) => r.json())
-      .then((data) => setInviteValid(data.valid))
-      .catch(() => setInviteValid(false))
+      .then((data) => {
+        if (!data.valid) navigate('/login', { replace: true })
+        else setInviteValid(true)
+      })
+      .catch(() => navigate('/login', { replace: true }))
   }, [inviteToken])
 
   const handleSubmit = async (e) => {
@@ -72,80 +75,8 @@ export default function Register() {
     }
   }
 
-  // No invite param at all
-  if (!inviteToken) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
-        <div className="w-full max-w-md px-6">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Rocket className="w-8 h-8 text-sc-accent" />
-              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">
-                SC BRIDGE
-              </h1>
-            </div>
-            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
-          </div>
-          <div className="panel p-8 text-center">
-            <Ticket className="w-10 h-10 text-gray-600 mx-auto mb-4" />
-            <h2 className="font-display font-bold text-lg text-white mb-3">Invite Only</h2>
-            <p className="text-sm text-gray-400 mb-6">
-              SC Bridge is currently in private beta. You need an invite link to create an account.
-            </p>
-            <Link to="/login" className="text-sc-accent hover:text-sc-accent/80 transition-colors text-sm">
-              Already have an account? Sign In
-            </Link>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Invite param present but checking / invalid
-  if (inviteValid === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
-        <div className="w-full max-w-md px-6">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Rocket className="w-8 h-8 text-sc-accent" />
-              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">SC BRIDGE</h1>
-            </div>
-            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
-          </div>
-          <div className="panel p-8 text-center">
-            <p className="text-sm text-gray-400">Validating invite...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!inviteValid) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-sc-darker">
-        <div className="w-full max-w-md px-6">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Rocket className="w-8 h-8 text-sc-accent" />
-              <h1 className="font-display font-bold text-2xl tracking-wider text-sc-accent">SC BRIDGE</h1>
-            </div>
-            <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
-          </div>
-          <div className="panel p-8 text-center">
-            <AlertCircle className="w-10 h-10 text-sc-danger mx-auto mb-4" />
-            <h2 className="font-display font-bold text-lg text-white mb-3">Invalid Invite</h2>
-            <p className="text-sm text-gray-400 mb-6">
-              This invite link is not valid or has already been used. Please request a new one.
-            </p>
-            <Link to="/login" className="text-sc-accent hover:text-sc-accent/80 transition-colors text-sm">
-              Already have an account? Sign In
-            </Link>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Checking invite validity — show nothing until redirect or valid state resolves
+  if (!inviteValid) return null
 
   // Valid invite — show signup form
   return (
