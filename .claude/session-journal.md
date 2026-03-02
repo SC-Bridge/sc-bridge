@@ -8,16 +8,15 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**All session work deployed and CI green** — `d675cee` is live (CI run 03:23 UTC). Three parallel sessions completed today.
+**Loot item coverage expanded** — `b3a8278`. Group 1/2/3 loot fixes: ship_component category wired (218 items), name-based FK matching (39 items fixed), exclusion-based filter replacing FK-inclusion filter (4870 items now shown vs 4820).
 
 ## Recent Changes
 
-- **ShipDetail SVG crash fixed** (`cd25772`): 14 icon SVGs had `xml:space="preserve"` stripped — caused Firefox `DOMException: String contains an invalid character`. Root cause: namespace-prefixed XML attrs require `setAttributeNS` but React uses `setAttribute`.
-- **ShipDetail A/B toggle removed** (`4bf3b69`): Deleted classic OverviewTab, LoadoutItems, PerformanceTab; enhanced variants renamed to replace them; `layout` state + FlaskConical import removed.
-- **Docs cleanup** (`24b9ae4`): CLAUDE.md sync references updated (SC Wiki removed), README.md cron table corrected, SCWIKI_SYNC_PLAN.md deleted.
-- **Loot wishlist** (`40ef5d9`): brand/set sidebar filters, wishlist tab, shopping list; `manufacturer_name` JOINs in getLootItems; 3 wishlist API endpoints; `useLootWishlist` hook.
-- **0037_patch_versioning** applied out-of-band; `4.6.0-live.11319298` seeded; `d1_migrations` row inserted manually. **0038_user_loot_wishlist** applied via wrangler.
-- **Deployed**: version `61dd02c9` — `/api/loot` (5218 items + manufacturer_name), `/api/patches` (4 versions), `/api/contracts` (81 rows) all verified.
+- **Ship component loot category** (`99568b9`): `vehicle_component_id` added to CASE/WHERE/JOINs in `getLootItems`, `getLootByUuid`, `getUserLootWishlist`. `ship_component` category in `LootDB.jsx` (violet badge). Detail panel shows Size/Grade rows. 218 items now categorised as Ship Component.
+- **Name-based FK matching** (out-of-band D1 UPDATE): 29 fps_armour + 2 consumable + 8 harvestable rows linked by name where UUIDs differed between loot_map and FK tables.
+- **Exclusion-based loot filter** (`b3a8278`): `getLootItems` WHERE switches from FK-inclusion to type-exclusion list. 4870 items now shown (was 4820). Adds 50 real-name items previously hidden (missiles, eyewear, gimbal mounts, Ixonia clothing, undersuits, fuses, keycards).
+- **sub_type → type fix** (`f5c8d90`): `getLootByUuid` was selecting non-existent `type` column from fps_weapons/armour/attachments/utilities/helmets/harvestables (all use `sub_type`). D1 silently returned null. Fixed with `sub_type as type` alias.
+- **Detail panel polish** (`0e6843d`): `LocationSection` deduplicates by location/name key. Item Details header suppressed when all fields null. Added `pb-8` to scroll container.
 
 ## Key Decisions
 
@@ -39,7 +38,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0038_user_loot_wishlist.sql**
+Last applied: **0040_fix_collection_fk.sql**
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -59,6 +58,8 @@ Last applied: **0038_user_loot_wishlist.sql**
 | 0036 | user_loot_collection    | `user_loot_collection` table + indexes                            |
 | 0037 | patch_versioning        | `game_versions` table; 14 tables rebuilt with composite unique keys; seeded `4.6.0-live.11319298` |
 | 0038 | user_loot_wishlist      | `user_loot_wishlist` table + indexes                              |
+| 0039 | loot_quantity           | `quantity` column on `user_loot_collection` + `user_loot_wishlist` |
+| 0040 | fix_collection_fk       | Rebuild `user_loot_collection` — FK was pointing to dropped `loot_map_old` |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
 
@@ -120,9 +121,9 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
-- **Loot detail stats**: `GET /api/loot/:uuid` fetches FK'd item table for stats_json — could surface more item details in the slide-over panel
-- **loot_map remaining gaps** (optional): Char_Armor_Undersuit (9), eyewear (22), Missile/Missile (19) — diminishing returns at 92.2%
-- **Shopping list location names**: `containers_json` etc. use raw DataCore keys (AddDelving, DistributionCentres_HighSecurity). No friendly name exists yet — check loot extraction script in `scbridge/tools/scripts/loot_map/` to see if labels can be sourced or if a manual map is needed.
+- **Loot remaining 50 unmatched items** — need new FK tables or DataCore extraction for: Missile/Torpedo (25), Char_Accessory_Eyes eyewear (9), VariPuck gimbal mounts (5), Ixonia clothing (4), Karoby food bars (2), Inmate Workpack backpack (1), Char_Armor_Undersuit (1), FPS_Consumable/Hacking Tigersclaw (1), Misc/Fuse (1), RemovableChip (1). These show in the UI with 'Other' category — no item_details until tables exist.
+- **Shopping list location names**: `containers_json` uses raw DataCore keys (AddDelving, DistributionCentres_HighSecurity). No friendly name exists — check loot extraction script in `scbridge/tools/scripts/loot_map/`.
+- **stats_json for fps_helmets/clothing/attachments/utilities**: columns exist in D1 but all NULL — run DataCore extraction scripts.
 
 ## Weapon Mount Pattern (for future reference)
 
@@ -363,4 +364,16 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 17:01:52
+
+
+---
+**Session compacted at:** 2026-03-02 17:20:06
+
+
+---
+**Session compacted at:** 2026-03-02 18:00:00
+
+
+---
+**Session compacted at:** 2026-03-02 18:23:33
 

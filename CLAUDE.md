@@ -118,7 +118,7 @@ have caused bugs before or are easy to get wrong.
 - Never skip numbers. Never rename an applied migration file.
 - **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
 - Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
-- Current last migration: **0036_user_loot_collection.sql**
+- Current last migration: **0040_fix_collection_fk.sql**
 
 ### Out-of-Band Columns
 These were applied via `wrangler d1 execute`, not in migration files. They exist in D1 but
@@ -133,6 +133,7 @@ not in any `.sql` file. Document new ones in the session journal when applied.
 | `stats_json` | `fps_utilities` | DataCore utility stats |
 | `price_auec` | `vehicles` | aUEC in-game price |
 | `acquisition_type` | `vehicles` | How to obtain in-game |
+| `vehicle_component_id` | `loot_map` | FK to vehicle_components(id); 218 rows populated via correlated UPDATE matching by UUID (WeaponGun 69, PowerPlant 35, Cooler 27, MiningModifier 26, Shield 25, MissileLauncher 18, QuantumDrive 18) |
 
 ---
 
