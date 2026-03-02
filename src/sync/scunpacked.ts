@@ -67,20 +67,26 @@ interface ParsedPaint {
 interface GitHubTreeEntry {
   path: string;
   type: string;
+  sha: string;
   url: string;
 }
 
 interface GitHubTreeResponse {
   tree: GitHubTreeEntry[];
+  truncated?: boolean;
 }
 
 /**
  * Fetch paint file list from GitHub API, then fetch each paint file.
- * Uses the Git Trees API to list files matching paint_*.json in items/
+ *
+ * Uses a two-step tree approach to avoid the recursive tree API truncation
+ * bug (the full-repo tree exceeds GitHub's 7MB limit and silently truncates,
+ * returning only alphabetically-first files — i.e. just paint_100i_* entries).
+ *
+ * Step 1: fetch the root tree (non-recursive) to find the SHA of items/
+ * Step 2: fetch just the items/ subtree (recursive) — small enough not to truncate
  */
 async function fetchPaintFiles(repo: string, branch: string, githubToken?: string): Promise<ParsedPaint[]> {
-  // Use the Git Trees API to list items/ directory
-  const treeURL = `https://api.github.com/repos/${repo}/git/trees/${branch}?recursive=1`;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
     "User-Agent": "Fleet-Manager/1.0",
@@ -88,23 +94,40 @@ async function fetchPaintFiles(repo: string, branch: string, githubToken?: strin
   if (githubToken) {
     headers["Authorization"] = `token ${githubToken}`;
   }
-  const treeResp = await fetch(treeURL, { headers });
 
-  if (!treeResp.ok) {
-    throw new Error(`GitHub API error (${treeResp.status}): ${await treeResp.text()}`);
+  // Step 1: root tree (non-recursive) — find the SHA of the items/ subtree
+  const rootURL = `https://api.github.com/repos/${repo}/git/trees/${branch}`;
+  const rootResp = await fetch(rootURL, { headers });
+  if (!rootResp.ok) {
+    throw new Error(`GitHub API error (${rootResp.status}): ${await rootResp.text()}`);
+  }
+  const rootTree = (await rootResp.json()) as GitHubTreeResponse;
+  const itemsEntry = rootTree.tree.find((e) => e.path === "items" && e.type === "tree");
+  if (!itemsEntry) {
+    throw new Error("[scunpacked] items/ directory not found in repo root tree");
   }
 
-  const tree = (await treeResp.json()) as GitHubTreeResponse;
-  const paintFiles = tree.tree.filter(
+  // Step 2: items/ subtree (recursive) — safe, much smaller than full-repo tree
+  const itemsURL = `https://api.github.com/repos/${repo}/git/trees/${itemsEntry.sha}?recursive=1`;
+  const itemsResp = await fetch(itemsURL, { headers });
+  if (!itemsResp.ok) {
+    throw new Error(`GitHub API error (${itemsResp.status}): ${await itemsResp.text()}`);
+  }
+  const itemsTree = (await itemsResp.json()) as GitHubTreeResponse;
+  if (itemsTree.truncated) {
+    console.warn("[scunpacked] items/ subtree still truncated — results may be incomplete");
+  }
+
+  const paintFiles = itemsTree.tree.filter(
     (entry) =>
       entry.type === "blob" &&
-      entry.path.startsWith("items/paint_") &&
+      entry.path.startsWith("paint_") &&
       entry.path.endsWith(".json"),
   );
 
   console.log(`[scunpacked] Found ${paintFiles.length} paint files in GitHub repo`);
 
-  // Fetch paint files concurrently (10 at a time instead of sequential with 100ms delay)
+  // Fetch paint files concurrently (10 at a time)
   const rawHeaders: Record<string, string> = { "User-Agent": "Fleet-Manager/1.0" };
   if (githubToken) {
     rawHeaders["Authorization"] = `token ${githubToken}`;
@@ -112,7 +135,8 @@ async function fetchPaintFiles(repo: string, branch: string, githubToken?: strin
 
   const results = await concurrentMap(paintFiles, 10, async (file): Promise<ParsedPaint | null> => {
     try {
-      const rawURL = `https://raw.githubusercontent.com/${repo}/${branch}/${file.path}`;
+      // file.path is relative to items/ (e.g. "paint_100i_blue.json")
+      const rawURL = `https://raw.githubusercontent.com/${repo}/${branch}/items/${file.path}`;
       const resp = await fetch(rawURL, { headers: rawHeaders });
       if (!resp.ok) return null;
 
