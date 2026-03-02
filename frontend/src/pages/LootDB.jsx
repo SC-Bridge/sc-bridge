@@ -208,10 +208,12 @@ function resolveLocationEntry(entry, type) {
   }
   if (type === 'npcs' || type === 'corpses') {
     const rawFaction = entry.faction || entry.actor || entry.name
+    const faction = friendlyFaction(rawFaction)
     return {
-      label: friendlyFaction(rawFaction),
+      label: faction,
       detail: entry.slot || null,
       probability: entry.probability ?? null,
+      faction,
     }
   }
   // containers, contracts, default
@@ -243,13 +245,16 @@ function LocationRow({ row }) {
 function LocationSection({ label, icon: Icon, data, type }) {
   if (!data || !Array.isArray(data) || data.length === 0) return null
 
-  // Deduplicate by resolved label; track highest probability seen for each
+  // Deduplicate: npcs/corpses key by faction+slot; others by label
   const seen = new Map()
   for (const entry of data) {
     const row = resolveLocationEntry(entry, type)
-    const existing = seen.get(row.label)
+    const key = (type === 'npcs' || type === 'corpses')
+      ? `${row.label}|${row.detail || ''}`
+      : row.label
+    const existing = seen.get(key)
     if (!existing) {
-      seen.set(row.label, row)
+      seen.set(key, row)
     } else if (row.probability != null && (existing.probability == null || row.probability > existing.probability)) {
       existing.probability = row.probability
     }
@@ -299,7 +304,46 @@ function LocationSection({ label, icon: Icon, data, type }) {
     )
   }
 
-  // Default flat rendering (shops, npcs, corpses, contracts)
+  // Grouped rendering for npcs / corpses — group by faction
+  if (type === 'npcs' || type === 'corpses') {
+    const factionMap = new Map()
+    for (const row of rows) {
+      const key = row.faction || row.label
+      if (!factionMap.has(key)) factionMap.set(key, [])
+      factionMap.get(key).push(row)
+    }
+    const sortedFactions = [...factionMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+
+    return (
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <Icon className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
+        </div>
+        <div className="space-y-3">
+          {sortedFactions.map(([factionName, factionRows]) => (
+            <div key={factionName}>
+              <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
+                {factionName}
+              </p>
+              <div className="space-y-1">
+                {factionRows.map((row, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
+                    <span className="text-xs font-mono text-gray-300">{row.detail || '—'}</span>
+                    {row.probability != null && (
+                      <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Default flat rendering (shops, contracts)
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-2">
