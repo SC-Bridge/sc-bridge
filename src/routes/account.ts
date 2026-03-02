@@ -466,6 +466,8 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_loot_collection WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_loot_wishlist WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_rsi_profile WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values
       db.prepare(
@@ -556,6 +558,26 @@ async function collectUserData(
     .bind(user.id)
     .all();
 
+  const lootCollection = await db
+    .prepare(
+      `SELECT ulc.id, ulc.loot_map_id, ulc.quantity, ulc.created_at, lm.name, lm.type
+      FROM user_loot_collection ulc
+      LEFT JOIN loot_map lm ON lm.id = ulc.loot_map_id
+      WHERE ulc.user_id = ? ORDER BY lm.name`,
+    )
+    .bind(user.id)
+    .all();
+
+  const lootWishlist = await db
+    .prepare(
+      `SELECT ulw.id, ulw.loot_map_id, ulw.quantity, ulw.created_at, lm.name, lm.type
+      FROM user_loot_wishlist ulw
+      LEFT JOIN loot_map lm ON lm.id = ulw.loot_map_id
+      WHERE ulw.user_id = ? ORDER BY lm.name`,
+    )
+    .bind(user.id)
+    .all();
+
   // Get Better Auth user record for account metadata
   const authUser = await db
     .prepare("SELECT id, email, name, role, createdAt FROM user WHERE id = ?")
@@ -573,6 +595,8 @@ async function collectUserData(
     })),
     settings: settings.results,
     analyses: analyses.results,
+    loot_collection: lootCollection.results,
+    loot_wishlist: lootWishlist.results,
   };
 }
 
