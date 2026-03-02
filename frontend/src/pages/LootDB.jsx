@@ -10,6 +10,7 @@ import {
 } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
 import { friendlyShopName } from '../lib/shopNames'
+import { friendlyLocation, friendlyFaction } from '../lib/lootLocations'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -193,15 +194,16 @@ function resolveLocationEntry(entry, type) {
     return { label: friendlyShopName(entry.shop || entry.name), detail: price, probability: null }
   }
   if (type === 'npcs' || type === 'corpses') {
+    const rawFaction = entry.faction || entry.actor || entry.name
     return {
-      label: entry.faction || entry.actor || entry.name || '?',
+      label: friendlyFaction(rawFaction),
       detail: entry.slot || null,
       probability: entry.probability ?? null,
     }
   }
   // containers, contracts, default
   return {
-    label: entry.location || entry.locationTag || entry.name || '?',
+    label: entry.location ? friendlyLocation(entry.location) : (entry.locationTag || entry.name || '?'),
     detail: entry.containerType || null,
     probability: entry.perContainer ?? entry.probability ?? null,
   }
