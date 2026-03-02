@@ -39,9 +39,10 @@ export default function Dashboard() {
               <LogIn className="w-4 h-4" /> Sign In
             </Link>
           </div>
-          <p className="text-xs text-gray-600 font-display tracking-widest uppercase">
-            Coming Soon — Registration opening shortly
-          </p>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-sc-accent/10 border border-sc-accent/30 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-sc-accent animate-pulse shrink-0" />
+            <span className="text-xs font-mono text-sc-accent tracking-wider">Coming Soon — Registration opening shortly</span>
+          </div>
         </div>
 
       </div>
