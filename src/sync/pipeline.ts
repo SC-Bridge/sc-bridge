@@ -1,41 +1,20 @@
 /**
  * Sync pipeline orchestration
  *
- * Orchestrates the sync chain:
- * 1. scunpacked paint metadata (via GitHub API)
- * 2. RSI API images (ships + paints)
+ * RSI API images (ships + paints) — live sync from RSI GraphQL.
  *
- * Vehicle and component data is populated via DataCore extraction scripts
- * in scbridge/tools/scripts/ — not via live sync.
+ * Paint metadata is populated via the local DataCore extraction script
+ * in scbridge/tools/scripts/paints/ — not via live sync.
  *
  * Workers are single-threaded per invocation, so no sync mutex needed.
  */
 
-import { syncPaints as syncScunpackedPaints } from "./scunpacked";
 import { syncAll as syncRSI } from "./rsi";
 import { getVehicleCount } from "../db/queries";
 import type { Env } from "../lib/types";
 import { logEvent } from "../lib/logger";
 
 // --- Individual sync functions (for manual triggers) ---
-
-export async function triggerPaintSync(env: Env): Promise<string> {
-  const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
-  const branch = env.SCUNPACKED_BRANCH || "main";
-
-  console.log("[pipeline] Paint sync triggered");
-  logEvent("sync_start", { source: "paint_sync" });
-  const start = Date.now();
-  try {
-    await syncScunpackedPaints(env.DB, repo, branch, env.GITHUB_TOKEN);
-    logEvent("sync_complete", { source: "paint_sync", duration_s: (Date.now() - start) / 1000 });
-  } catch (err) {
-    logEvent("sync_error", { source: "paint_sync", error: String(err) });
-    throw err;
-  }
-
-  return "Paint sync complete";
-}
 
 export async function triggerRSISync(env: Env): Promise<string> {
   if (env.RSI_API_ENABLED !== "true") {
@@ -70,24 +49,14 @@ export async function runFullSync(env: Env): Promise<void> {
   const db = env.DB;
   const rsiEnabled = env.RSI_API_ENABLED === "true";
 
-  // Only run image syncs if vehicles exist
+  // Only run image sync if vehicles exist
   const vehicleCount = await getVehicleCount(db);
   if (vehicleCount === 0) {
-    console.warn("[pipeline] No vehicles in DB, skipping image and paint sync");
+    console.warn("[pipeline] No vehicles in DB, skipping image sync");
     return;
   }
 
-  // Step 1: scunpacked paint metadata
-  try {
-    const repo = env.SCUNPACKED_REPO || "StarCitizenWiki/scunpacked-data";
-    const branch = env.SCUNPACKED_BRANCH || "main";
-    console.log("[pipeline] scunpacked paint sync starting");
-    await syncScunpackedPaints(db, repo, branch, env.GITHUB_TOKEN);
-  } catch (err) {
-    console.error("[pipeline] scunpacked paint sync failed:", err);
-  }
-
-  // Step 2: RSI API images
+  // RSI API images
   if (rsiEnabled) {
     try {
       const baseURL = env.RSI_BASE_URL || "https://robertsspaceindustries.com";

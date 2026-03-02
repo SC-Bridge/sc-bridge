@@ -301,17 +301,13 @@ export default {
 };
 
 async function runScheduledSync(cron: string, env: Env): Promise<void> {
-  const {
-    triggerPaintSync,
-    triggerRSISync,
-  } = await import("./sync/pipeline");
+  const { triggerRSISync } = await import("./sync/pipeline");
 
   switch (cron) {
     case "30 3 * * *":
-      console.log("[cron] Session cleanup + paint sync (scunpacked)");
-      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup_and_paint_sync" });
+      console.log("[cron] Session cleanup");
+      logEvent("cron_trigger", { schedule: cron, task: "session_cleanup" });
       await cleanExpiredSessions(env);
-      await triggerPaintSync(env);
       break;
     case "45 3 * * *":
       console.log("[cron] RSI API images");

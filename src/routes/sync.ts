@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../lib/types";
 import {
-  triggerPaintSync,
   triggerRSISync,
   runFullSync,
 } from "../sync/pipeline";
@@ -29,17 +28,6 @@ export function syncRoutes<E extends { Bindings: Env }>() {
       )
       .all();
     return c.json(result.results);
-  });
-
-  // POST /api/sync/paints — trigger paint sync pipeline (background)
-  routes.post("/paints", async (c) => {
-    const env = c.env;
-    c.executionCtx.waitUntil(
-      triggerPaintSync(env).catch((err) =>
-        console.error("[sync] Paint sync failed:", err),
-      ),
-    );
-    return c.json({ message: "Paint sync triggered" });
   });
 
   // POST /api/sync/rsi — trigger RSI API image sync (background)

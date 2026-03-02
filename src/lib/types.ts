@@ -10,12 +10,9 @@ export interface Env {
   RSI_API_ENABLED: string;
   RSI_BASE_URL: string;
   RSI_RATE_LIMIT: string;
-  SCUNPACKED_REPO: string;
-  SCUNPACKED_BRANCH: string;
   ENVIRONMENT?: string;
   ENCRYPTION_KEY?: string;
   API_TOKEN?: string;
-  GITHUB_TOKEN?: string;
   LLM_DEFAULT_MODEL?: string;
   // Cloudflare Images
   CLOUDFLARE_IMAGES_TOKEN?: string;

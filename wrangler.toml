@@ -25,11 +25,10 @@ migrations_dir = "src/db/migrations"
 binding = "AVATARS"
 bucket_name = "sc-bridge-avatars"
 
-# Cron Triggers — staggered nightly sync to stay within Workers CPU limits
-# Each step runs as a separate invocation with its own 30s CPU budget
+# Cron Triggers
 [triggers]
 crons = [
-  "30 3 * * *",  # session cleanup + scunpacked paint metadata
+  "30 3 * * *",  # session cleanup
   "45 3 * * *",  # RSI API images (ships + paints)
 ]
 
@@ -38,8 +37,6 @@ crons = [
 RSI_API_ENABLED = "true"
 RSI_BASE_URL = "https://robertsspaceindustries.com"
 RSI_RATE_LIMIT = "1.0"
-SCUNPACKED_REPO = "StarCitizenWiki/scunpacked-data"
-SCUNPACKED_BRANCH = "master"
 ENVIRONMENT = "production"
 BETTER_AUTH_URL = "https://scbridge.app"
 EMAIL_FROM = "SC Bridge <noreply@scbridge.app>"
