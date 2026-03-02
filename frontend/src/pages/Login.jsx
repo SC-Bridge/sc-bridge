@@ -75,10 +75,6 @@ export default function Login() {
             </h1>
           </div>
           <p className="text-sm font-mono text-gray-500 tracking-widest">STAR CITIZEN COMPANION</p>
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 bg-sc-accent/10 border border-sc-accent/30 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-sc-accent animate-pulse" />
-            <span className="text-xs font-mono text-sc-accent tracking-wider">Coming Soon — Registration opening shortly</span>
-          </div>
         </div>
 
         <div className="panel p-8">
@@ -137,6 +133,11 @@ export default function Login() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-sc-accent animate-pulse shrink-0" />
+              <span className="text-xs font-mono text-sc-accent tracking-wider">Coming Soon — Registration opening shortly</span>
+            </div>
           </form>
 
           <div className="relative my-6">
