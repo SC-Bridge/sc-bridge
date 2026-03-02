@@ -1,11 +1,9 @@
 # WORKLOG v1
 
-@ACTIVE||2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
-# sid|registered|2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
-1b6a23b8|2026-03-02T14:42+1300|2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
-870781b4|2026-03-02T14:37+1300|2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
-a316152b|2026-03-02T14:40+1300|2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
-||2026-03-02T15:22+1300|svg-crash-fix+shipdetail-ab-removal
+@ACTIVE
+# sid|registered|last_active|scope
+1b6a23b8|2026-03-02T14:42+1300|2026-03-02T15:22+1300|loot-wishlist+0037-debug
+870781b4|2026-03-02T14:37+1300|2026-03-02T16:28+1300|svg-crash-fix+shipdetail-ab-removal
 @FILES
 # sid|file_path
 870781b4|src/routes/contracts.ts
@@ -63,3 +61,13 @@ a316152b|.claude/session-journal.md
 15:22+1300|870781b4|COMMIT|24b9ae4 docs: remove SC Wiki sync references, update cron schedule
 15:22+1300|870781b4|COMMIT|4bf3b69 fix(ship-detail): remove A/B toggle, collapse to enhanced view only
 15:22+1300|870781b4|DONE|all tasks complete — awaiting push
+15:22+1300|870781b4|PUSH|git push origin main → a038f2e..d675cee — CI/CD deploying
+15:22+1300|1b6a23b8|REC|0037 applied out-of-band by other session; tables already rebuilt in D1
+15:22+1300|1b6a23b8|FIX|marked 0037 applied in d1_migrations tracking table (INSERT)
+15:22+1300|1b6a23b8|APPLY|0038_user_loot_wishlist applied via wrangler migrations apply — ✅
+15:22+1300|1b6a23b8|VRF|typecheck clean; frontend build clean
+15:22+1300|1b6a23b8|DEPLOY|wrangler deploy → version 61dd02c9 — loot wishlist + brand/set filters + patches live
+15:22+1300|1b6a23b8|VRF|/api/loot → 5218 items with manufacturer_name; /api/patches → 4 versions
+16:28+1300|a316152b|DONE|sync-reference-cleanup complete — committed 24b9ae4, session closed
+16:28+1300|870781b4|VRF|CI for d675cee succeeded (03:23 UTC) — all code live on scbridge.app
+16:28+1300|870781b4|VRF|session-journal.md: added 0037+0038 to migration table, updated Recent Changes

@@ -8,14 +8,16 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**D1 patch versioning complete and deployed** — all game-data tables versioned, extraction pipeline run, fleet-manager Worker live with `GET /api/patches` and `?patch=` query params.
+**All session work deployed and CI green** — `d675cee` is live (CI run 03:23 UTC). Three parallel sessions completed today.
 
 ## Recent Changes
 
-- **0037_patch_versioning.sql** applied to D1: seeded `4.6.0-live.11319298` as `is_default=1` (id=32), rebuilt 15 game-data tables with `UNIQUE(uuid, game_version_id)`. Applied 2026-03-02.
-- **All 23 scbridge extract scripts** updated with patch versioning: conflict keys changed to `(uuid, game_version_id)`, UPDATE-only scripts filter by `game_version_id`. All run and applied for `4.6.0-live.11319298`.
-- **`GET /api/patches`** route deployed at `src/routes/patches.ts`. Returns all game_versions ordered by released_at DESC.
-- **Vite build gotcha fixed**: `wrangler deploy` uses `dist/sc_bridge/` bundle — MUST run `npm run build` before deploy, or routes added since the last build won't be live.
+- **ShipDetail SVG crash fixed** (`cd25772`): 14 icon SVGs had `xml:space="preserve"` stripped — caused Firefox `DOMException: String contains an invalid character`. Root cause: namespace-prefixed XML attrs require `setAttributeNS` but React uses `setAttribute`.
+- **ShipDetail A/B toggle removed** (`4bf3b69`): Deleted classic OverviewTab, LoadoutItems, PerformanceTab; enhanced variants renamed to replace them; `layout` state + FlaskConical import removed.
+- **Docs cleanup** (`24b9ae4`): CLAUDE.md sync references updated (SC Wiki removed), README.md cron table corrected, SCWIKI_SYNC_PLAN.md deleted.
+- **Loot wishlist** (`40ef5d9`): brand/set sidebar filters, wishlist tab, shopping list; `manufacturer_name` JOINs in getLootItems; 3 wishlist API endpoints; `useLootWishlist` hook.
+- **0037_patch_versioning** applied out-of-band; `4.6.0-live.11319298` seeded; `d1_migrations` row inserted manually. **0038_user_loot_wishlist** applied via wrangler.
+- **Deployed**: version `61dd02c9` — `/api/loot` (5218 items + manufacturer_name), `/api/patches` (4 versions), `/api/contracts` (81 rows) all verified.
 
 ## Key Decisions
 
@@ -37,24 +39,26 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0037_patch_versioning.sql** (2026-03-02 — 85 queries, 189,245 rows written)
+Last applied: **0038_user_loot_wishlist.sql**
 
-| #    | Migration               | What                                      |
-| ---- | ----------------------- | ----------------------------------------- |
-| 0017 | rename_components       | `components` → `vehicle_components`       |
-| 0018 | loot_map                | `loot_map` table + FK cross-references    |
-| 0019 | fps_helmets             | Helmet table                              |
-| 0020 | loot_map_helmet_fk      | `fps_helmet_id` on loot_map               |
-| 0021 | fps_clothing            | Clothing table (slot-based)               |
-| 0022 | loot_map_clothing_fk    | `fps_clothing_id` on loot_map             |
-| 0023 | consumables             | Food/Drink table                          |
-| 0024 | loot_map_consumable_fk  | `consumable_id` on loot_map               |
-| 0025 | harvestables            | Harvestable items table                   |
-| 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map              |
-| 0027 | props                   | Props table (plushies, medals, artifacts) |
-| 0028 | loot_map_props_fk       | `props_id` on loot_map                    |
-| 0035 | contracts               | `contracts` table + seed data (81 rows)   |
-| 0036 | user_loot_collection    | `user_loot_collection` table + indexes    |
+| #    | Migration               | What                                                              |
+| ---- | ----------------------- | ----------------------------------------------------------------- |
+| 0017 | rename_components       | `components` → `vehicle_components`                              |
+| 0018 | loot_map                | `loot_map` table + FK cross-references                           |
+| 0019 | fps_helmets             | Helmet table                                                      |
+| 0020 | loot_map_helmet_fk      | `fps_helmet_id` on loot_map                                       |
+| 0021 | fps_clothing            | Clothing table (slot-based)                                       |
+| 0022 | loot_map_clothing_fk    | `fps_clothing_id` on loot_map                                     |
+| 0023 | consumables             | Food/Drink table                                                  |
+| 0024 | loot_map_consumable_fk  | `consumable_id` on loot_map                                       |
+| 0025 | harvestables            | Harvestable items table                                           |
+| 0026 | loot_map_harvestable_fk | `harvestable_id` on loot_map                                      |
+| 0027 | props                   | Props table (plushies, medals, artifacts)                         |
+| 0028 | loot_map_props_fk       | `props_id` on loot_map                                            |
+| 0035 | contracts               | `contracts` table + seed data (81 rows)                           |
+| 0036 | user_loot_collection    | `user_loot_collection` table + indexes                            |
+| 0037 | patch_versioning        | `game_versions` table; 14 tables rebuilt with composite unique keys; seeded `4.6.0-live.11319298` |
+| 0038 | user_loot_wishlist      | `user_loot_wishlist` table + indexes                              |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
 
