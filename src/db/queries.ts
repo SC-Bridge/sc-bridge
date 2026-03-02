@@ -728,7 +728,12 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
         CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
-        COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) as manufacturer_name
+        CASE
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) LIKE '@%'
+          THEN NULL
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name)
+        END as manufacturer_name
       FROM loot_map lm
       LEFT JOIN fps_weapons    fw  ON lm.fps_weapon_id      = fw.id
       LEFT JOIN manufacturers  mw  ON fw.manufacturer_id    = mw.id
@@ -743,6 +748,8 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
       LEFT JOIN fps_clothing   fcc ON lm.fps_clothing_id    = fcc.id
       LEFT JOIN manufacturers  mc  ON fcc.manufacturer_id   = mc.id
       WHERE ${versionFilter}
+        AND lm.name NOT IN ('<= PLACEHOLDER =>')
+        AND lm.name NOT LIKE 'EntityClassDefinition.%'
         AND (lm.fps_weapon_id IS NOT NULL OR lm.fps_armour_id IS NOT NULL
           OR lm.fps_attachment_id IS NOT NULL OR lm.fps_utility_id IS NOT NULL
           OR lm.fps_helmet_id IS NOT NULL OR lm.fps_clothing_id IS NOT NULL
@@ -881,7 +888,12 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
         CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
-        COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) as manufacturer_name,
+        CASE
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name) LIKE '@%'
+          THEN NULL
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name)
+        END as manufacturer_name,
         lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
         ulw.quantity as wishlist_quantity
       FROM user_loot_wishlist ulw
