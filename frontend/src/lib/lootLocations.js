@@ -7,14 +7,16 @@
 
 /** @type {Record<string, string>} */
 const CONTAINER_LOCATIONS = {
-  // ASD (Associated Science & Development) facility
-  ASDDelving:                                   'ASD \u2014 Delving Wing',
-  ASDDelving_ScienceWing:                       'ASD \u2014 Science Wing',
+  // ASD Onyx Facility (Euterpe / Stanton 4c — underground contested zone)
+  // Wing names from FacilityDelve_Wing*_name localization keys:
+  //   WingA = Engineering Wing, WingB = Research Wing, WingD = Site-B Lab
+  ASDDelving:                                   'Onyx Facility',
+  ASDDelving_ScienceWing:                       'Onyx Facility \u2014 Research Wing',
 
-  // Pyro
+  // Pyro locations
   AsteroidBase_Pyro_Encounter:                  'Pyro \u2014 Asteroid Base',
   StormBreaker:                                 'Storm Breaker',
-  Kaboos:                                       'Kaboos',
+  Kaboos:                                       'QV Logistics Station',
   Orbageddon:                                   'Orbageddon',
 
   // Caves by moon / quality
