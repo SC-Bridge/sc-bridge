@@ -345,7 +345,7 @@ const SOURCE_DEFS = [
 function buildShoppingList(wishlistItems) {
   if (!wishlistItems?.length) return {}
   const groups = {}
-  const parseJson = (str) => { try { return JSON.parse(str) } catch { return [] } }
+  const parseJson = (str) => { try { return JSON.parse(str) || [] } catch { return [] } }
   const getLabel = (entry) => typeof entry === 'string' ? entry : (entry.name || entry.location || '?')
 
   wishlistItems.forEach(item => {
