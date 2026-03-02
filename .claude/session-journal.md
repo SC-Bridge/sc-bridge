@@ -8,19 +8,20 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**Auth routing fixed and deployed** — `/api/auth/**` routes now work correctly in production. Login, session, and all Better Auth endpoints functional.
+**D1 patch versioning complete and deployed** — all game-data tables versioned, extraction pipeline run, fleet-manager Worker live with `GET /api/patches` and `?patch=` query params.
 
 ## Recent Changes
 
-- **Auth routing fix** (`c6ed68c`): `app.on(["POST","GET"], "/api/auth/**", ...)` → `app.use("/api/auth/*", ...)`. Hono route wildcards don't match multi-segment paths in CF Workers runtime; middleware wildcards do. Auth was never working in production — CF edge cache was masking it.
-- **GV ships page verified**: `getShipLoadout` returns correct data for all GV slugs. All 13 GVs have CF Images, proper slugs, categorized ports with sizes.
-- **Port sizes backfill**: extract_sizes.py + 18,455 UPDATE statements applied to D1.
-- **Loot Item Finder** (`70b5905`): 5218 items, sidebar filters, grid+list, detail slide-over, auth-gated collection tracking live at `/loot`.
+- **0037_patch_versioning.sql** applied to D1: seeded `4.6.0-live.11319298` as `is_default=1` (id=32), rebuilt 15 game-data tables with `UNIQUE(uuid, game_version_id)`. Applied 2026-03-02.
+- **All 23 scbridge extract scripts** updated with patch versioning: conflict keys changed to `(uuid, game_version_id)`, UPDATE-only scripts filter by `game_version_id`. All run and applied for `4.6.0-live.11319298`.
+- **`GET /api/patches`** route deployed at `src/routes/patches.ts`. Returns all game_versions ordered by released_at DESC.
+- **Vite build gotcha fixed**: `wrangler deploy` uses `dist/sc_bridge/` bundle — MUST run `npm run build` before deploy, or routes added since the last build won't be live.
 
 ## Key Decisions
 
 - **Hono Workers routing gotcha**: `app.on()` / `app.get()` route wildcards (`*`, `**`) do NOT match multi-segment paths in CF Workers v8 runtime (works fine in Node.js). Use `app.use()` middleware wildcards for any multi-segment wildcard matching.
 - **CF edge cache vs Workers Assets CDN**: "Purge Everything" clears CF edge cache but NOT internal Workers Assets CDN cache. `run_worker_first = true` routes all requests through Worker before Assets CDN.
+- **Vite+Wrangler deploy order**: MUST `npm run build` then `wrangler deploy`. `wrangler deploy` alone uses cached `dist/sc_bridge/` — new routes added after last build will be missing from deployed Worker.
 - **Loot filtering**: Client-side only — fetch all 5218 items once (~1.3MB), filter in browser for instant UX. Server pagination would break search-as-you-type.
 - **Hono generic typing**: `lootRoutes()` uses `Hono<HonoEnv>` directly (NOT `<E extends HonoEnv>` generic) — generic context breaks `c.get('user')` and `c.env.DB` type inference.
 - `vehicle_images` is source of truth; `vehicles.image_url` is denormalized effective URL for query simplicity
@@ -36,7 +37,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0036_user_loot_collection.sql**
+Last applied: **0037_patch_versioning.sql** (2026-03-02 — 85 queries, 189,245 rows written)
 
 | #    | Migration               | What                                      |
 | ---- | ----------------------- | ----------------------------------------- |
@@ -309,4 +310,48 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-02 11:58:59
+
+
+---
+**Session compacted at:** 2026-03-02 12:37:22
+
+
+---
+**Session compacted at:** 2026-03-02 12:40:31
+
+
+---
+**Session compacted at:** 2026-03-02 12:40:51
+
+
+---
+**Session compacted at:** 2026-03-02 12:41:08
+
+
+---
+**Session compacted at:** 2026-03-02 12:41:24
+
+
+---
+**Session compacted at:** 2026-03-02 12:45:45
+
+
+---
+**Session compacted at:** 2026-03-02 12:46:11
+
+
+---
+**Session compacted at:** 2026-03-02 12:47:54
+
+
+---
+**Session compacted at:** 2026-03-02 12:48:28
+
+
+---
+**Session compacted at:** 2026-03-02 14:37:06
+
+
+---
+**Session compacted at:** 2026-03-02 14:41:11
 
