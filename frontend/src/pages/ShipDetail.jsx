@@ -2,8 +2,7 @@ import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ExternalLink, CheckCircle, Wrench, Lightbulb,
-  Rocket, Package, Users, Zap, Box, Palette, LayoutGrid, List,
-  FlaskConical
+  Rocket, Zap, Box, Palette, LayoutGrid, List,
 } from 'lucide-react'
 import { useShip, useShipLoadout, useShipPaints } from '../hooks/useAPI'
 import ShipImage from '../components/ShipImage'
@@ -147,64 +146,9 @@ function OverviewRightCol({ ship }) {
   )
 }
 
-// ─── Overview — Classic ───────────────────────────────────────────────────────
+// ─── Overview ─────────────────────────────────────────────────────────────────
 
 function OverviewTab({ ship }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 space-y-4">
-        <div className="panel">
-          <div className="panel-header">Specifications</div>
-          <div className="p-4 space-y-0">
-            <SpecRow label="Role" value={ship.focus} />
-            <SpecRow label="Classification" value={ship.classification} />
-            <SpecRow label="Size" value={ship.size_label} />
-            <SpecRow label="Cargo" value={ship.cargo > 0 ? `${ship.cargo} SCU` : null} />
-            <SpecRow label="Crew" value={
-              ship.crew_min != null && ship.crew_max != null
-                ? ship.crew_min === ship.crew_max
-                  ? String(ship.crew_min)
-                  : `${ship.crew_min} – ${ship.crew_max}`
-                : null
-            } />
-            <SpecRow label="SCM Speed" value={ship.speed_scm ? `${ship.speed_scm} m/s` : null} />
-            <SpecRow label="Max Speed" value={ship.speed_max ? `${ship.speed_max} m/s` : null} />
-          </div>
-        </div>
-
-        {(ship.length || ship.beam || ship.height || ship.mass || ship.health || ship.vehicle_inventory) && (
-          <div className="panel">
-            <div className="panel-header">Dimensions &amp; Physical</div>
-            <div className="p-4 space-y-0">
-              {(ship.length || ship.beam || ship.height) && (
-                <SpecRow
-                  label="L × B × H"
-                  value={`${ship.length ?? '?'} × ${ship.beam ?? '?'} × ${ship.height ?? '?'} m`}
-                />
-              )}
-              <SpecRow label="Mass" value={ship.mass ? `${ship.mass.toLocaleString()} kg` : null} />
-              <SpecRow label="Hull Health" value={ship.health ? ship.health.toLocaleString() : null} />
-              <SpecRow label="Vehicle Storage" value={ship.vehicle_inventory ? `${ship.vehicle_inventory} SCU` : null} />
-            </div>
-          </div>
-        )}
-
-        {ship.description && (
-          <div className="panel">
-            <div className="panel-header">Description</div>
-            <p className="p-4 text-sm text-gray-400 leading-relaxed">{ship.description}</p>
-          </div>
-        )}
-      </div>
-
-      <OverviewRightCol ship={ship} />
-    </div>
-  )
-}
-
-// ─── Overview — Enhanced ──────────────────────────────────────────────────────
-
-function OverviewTabEnhanced({ ship }) {
   const crewValue = ship.crew_min != null && ship.crew_max != null
     ? ship.crew_min === ship.crew_max ? String(ship.crew_min) : `${ship.crew_min} – ${ship.crew_max}`
     : null
@@ -261,117 +205,9 @@ function OverviewTabEnhanced({ ship }) {
   )
 }
 
-// ─── Loadout — Classic ────────────────────────────────────────────────────────
+// ─── Loadout ──────────────────────────────────────────────────────────────────
 
 function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
-  if (!items || items.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-500">
-        <Icon className="w-10 h-10 mx-auto mb-3 text-gray-600" />
-        <p className="text-sm">{emptyMessage}</p>
-      </div>
-    )
-  }
-
-  const turretPortIds = new Set(items.filter(i => i.port_type === 'turret').map(i => i.port_id))
-  const turretChildIds = new Set(items.filter(i => turretPortIds.has(i.parent_port_id)).map(i => i.port_id))
-
-  const grouped = items.reduce((acc, item) => {
-    if (turretChildIds.has(item.port_id)) return acc
-    const cat = item.category_label
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(item)
-    return acc
-  }, {})
-
-  const turretWeapons = new Map()
-  items.filter(i => turretChildIds.has(i.port_id)).forEach(item => {
-    const pid = item.parent_port_id
-    if (!turretWeapons.has(pid)) turretWeapons.set(pid, [])
-    turretWeapons.get(pid).push(item)
-  })
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-12 gap-2 px-4 py-1.5 text-xs text-gray-600 uppercase tracking-wider">
-        <span className="col-span-3">Hardpoint</span>
-        <span className="col-span-3">Component</span>
-        <span className="col-span-1 text-center">Size</span>
-        <span className="col-span-1 text-center">Grade</span>
-        <span className="col-span-1">Class</span>
-        <span className="col-span-3 text-right">Manufacturer</span>
-      </div>
-      {Object.entries(grouped).map(([category, rows]) => {
-        const TypeIcon = PORT_TYPE_ICON[rows[0]?.port_type]
-        return (
-        <div key={category} className="panel overflow-hidden">
-          <div className="panel-header flex items-center gap-2">
-            {TypeIcon && <TypeIcon className="w-4 h-4 shrink-0 opacity-70" />}
-            {category}
-          </div>
-          <div className="divide-y divide-sc-border/30">
-            {rows.map((item, i) => {
-              const sz = item.component_size ?? (item.size_max > 0 ? item.size_max : null)
-              const label = rows.length > 1 ? `${category} ${i}` : category
-              const weapons = item.port_type === 'turret' ? (turretWeapons.get(item.port_id) || []) : []
-              return (
-                <div key={i}>
-                  <div className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center">
-                    <span className="col-span-3 text-xs text-gray-400 truncate" title={item.port_name}>
-                      {label}
-                    </span>
-                    <span className={`col-span-3 text-sm truncate ${item.component_name ? 'text-white' : 'text-gray-600 italic'}`} title={item.component_name || ''}>
-                      {item.component_name || '—'}
-                    </span>
-                    <span className="col-span-1 text-xs font-mono text-sc-accent2 text-center">
-                      {sz != null ? `S${sz}` : '—'}
-                    </span>
-                    <span className="col-span-1 text-xs font-mono text-gray-400 text-center">
-                      {item.grade || '—'}
-                    </span>
-                    <span className="col-span-1 text-xs text-gray-500 truncate">
-                      {item.component_class || '—'}
-                    </span>
-                    <span className="col-span-3 text-xs text-gray-500 text-right">
-                      {item.manufacturer_name || '—'}
-                    </span>
-                  </div>
-                  {weapons.map((w, wi) => {
-                    const wsz = w.component_size ?? (w.size_max > 0 ? w.size_max : null)
-                    return (
-                      <div key={wi} className="grid grid-cols-12 gap-2 pl-8 pr-4 py-2 items-center bg-black/10 border-t border-sc-border/20">
-                        <span className="col-span-3 text-xs text-gray-600 truncate">└ Gun {wi + 1}</span>
-                        <span className={`col-span-3 text-xs truncate ${w.component_name ? 'text-gray-300' : 'text-gray-700 italic'}`}>
-                          {w.component_name || '—'}
-                        </span>
-                        <span className="col-span-1 text-xs font-mono text-sc-accent2/70 text-center">
-                          {wsz != null ? `S${wsz}` : '—'}
-                        </span>
-                        <span className="col-span-1 text-xs font-mono text-gray-500 text-center">
-                          {w.grade || '—'}
-                        </span>
-                        <span className="col-span-1 text-xs text-gray-600 truncate">
-                          {w.component_class || '—'}
-                        </span>
-                        <span className="col-span-3 text-xs text-gray-600 text-right">
-                          {w.manufacturer_name || '—'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )})}
-    </div>
-  )
-}
-
-// ─── Loadout — Enhanced ───────────────────────────────────────────────────────
-
-function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
   if (!items || items.length === 0) {
     return (
       <div className="text-center py-16 text-gray-500">
@@ -488,22 +324,20 @@ function LoadoutItemsEnhanced({ items, emptyIcon: Icon, emptyMessage }) {
 
 // ─── Component / Weapon tabs ──────────────────────────────────────────────────
 
-function ComponentsTab({ slug, layout }) {
+function ComponentsTab({ slug }) {
   const { data: loadout, loading, error } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading components..." />
   if (error) return <ErrorState message={error} />
   const items = (loadout || []).filter(r => COMPONENT_TYPES.has(r.port_type))
-  const Comp = layout === 'enhanced' ? LoadoutItemsEnhanced : LoadoutItems
-  return <Comp items={items} emptyIcon={Box} emptyMessage="No component data available" />
+  return <LoadoutItems items={items} emptyIcon={Box} emptyMessage="No component data available" />
 }
 
-function WeaponsTab({ slug, layout }) {
+function WeaponsTab({ slug }) {
   const { data: loadout, loading, error } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading weapons..." />
   if (error) return <ErrorState message={error} />
   const items = (loadout || []).filter(r => WEAPON_TYPES.has(r.port_type))
-  const Comp = layout === 'enhanced' ? LoadoutItemsEnhanced : LoadoutItems
-  return <Comp items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
+  return <LoadoutItems items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
 }
 
 // ─── Paints tab ───────────────────────────────────────────────────────────────
@@ -592,58 +426,9 @@ function PaintsTab({ slug }) {
   )
 }
 
-// ─── Performance — Classic ────────────────────────────────────────────────────
+// ─── Performance ──────────────────────────────────────────────────────────────
 
 function PerformanceTab({ ship }) {
-  const hasSpeed = ship.speed_scm || ship.speed_max || ship.boost_speed_back
-  const hasManeuvering = ship.angular_velocity_pitch || ship.angular_velocity_yaw || ship.angular_velocity_roll
-  const hasPropulsion = ship.fuel_capacity_hydrogen || ship.fuel_capacity_quantum || ship.thruster_count_main || ship.thruster_count_maneuvering
-
-  if (!hasSpeed && !hasManeuvering && !hasPropulsion) {
-    return (
-      <div className="text-center py-16 text-gray-500">
-        <Zap className="w-10 h-10 mx-auto mb-3 text-gray-600" />
-        <p className="text-sm">No performance data available</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div className="panel">
-        <div className="panel-header">Speeds</div>
-        <div className="p-4 space-y-0">
-          <SpecRow label="SCM Speed" value={ship.speed_scm ? `${ship.speed_scm} m/s` : null} />
-          <SpecRow label="Max Speed" value={ship.speed_max ? `${ship.speed_max} m/s` : null} />
-          <SpecRow label="Boost Backward" value={ship.boost_speed_back ? `${ship.boost_speed_back} m/s` : null} />
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">Maneuvering</div>
-        <div className="p-4 space-y-0">
-          <SpecRow label="Pitch" value={ship.angular_velocity_pitch != null ? `${ship.angular_velocity_pitch} °/s` : null} />
-          <SpecRow label="Yaw" value={ship.angular_velocity_yaw != null ? `${ship.angular_velocity_yaw} °/s` : null} />
-          <SpecRow label="Roll" value={ship.angular_velocity_roll != null ? `${ship.angular_velocity_roll} °/s` : null} />
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header">Propulsion</div>
-        <div className="p-4 space-y-0">
-          <SpecRow label="H₂ Fuel" value={ship.fuel_capacity_hydrogen != null ? `${ship.fuel_capacity_hydrogen} SCU` : null} />
-          <SpecRow label="QT Fuel" value={ship.fuel_capacity_quantum != null ? `${ship.fuel_capacity_quantum} SCU` : null} />
-          <SpecRow label="Main Thrusters" value={ship.thruster_count_main != null ? String(ship.thruster_count_main) : null} />
-          <SpecRow label="Maneuvering Thrusters" value={ship.thruster_count_maneuvering != null ? String(ship.thruster_count_maneuvering) : null} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Performance — Enhanced ───────────────────────────────────────────────────
-
-function PerformanceTabEnhanced({ ship }) {
   const hasSpeed = ship.speed_scm || ship.speed_max || ship.boost_speed_back
   const hasManeuvering = ship.angular_velocity_pitch != null || ship.angular_velocity_yaw != null || ship.angular_velocity_roll != null
   const hasPropulsion = ship.fuel_capacity_hydrogen || ship.fuel_capacity_quantum || ship.thruster_count_main || ship.thruster_count_maneuvering
@@ -707,7 +492,6 @@ export default function ShipDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
-  const [layout, setLayout] = useState('classic')
   const { data: ship, loading, error } = useShip(slug)
 
   if (loading) return <LoadingState message="Loading ship data..." />
@@ -761,64 +545,28 @@ export default function ShipDetail() {
         />
       </div>
 
-      {/* Tab bar + A/B toggle */}
-      <div className="flex items-center justify-between border-b border-sc-border">
-        <div className="flex items-center gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm font-display uppercase tracking-wider transition-colors border-b-2 -mb-px ${
-                activeTab === tab.id
-                  ? 'text-sc-accent border-sc-accent'
-                  : 'text-gray-500 border-transparent hover:text-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Layout toggle */}
-        <div className="flex items-center gap-2 pb-1">
-          <span className="flex items-center gap-1 text-xs text-gray-600 font-mono uppercase tracking-wider">
-            <FlaskConical className="w-3.5 h-3.5" />
-            A/B
-          </span>
-          <div className="flex rounded overflow-hidden border border-sc-border/60">
-            {[
-              { id: 'classic', label: 'Classic' },
-              { id: 'enhanced', label: 'Enhanced' },
-            ].map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => setLayout(opt.id)}
-                className={`px-3 py-1 text-xs font-mono uppercase tracking-wider transition-colors ${
-                  layout === opt.id
-                    ? 'bg-sc-accent/15 text-sc-accent'
-                    : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Tab bar */}
+      <div className="flex items-center border-b border-sc-border">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-display uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+              activeTab === tab.id
+                ? 'text-sc-accent border-sc-accent'
+                : 'text-gray-500 border-transparent hover:text-gray-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Tab content */}
-      {activeTab === 'overview' && (
-        layout === 'enhanced'
-          ? <OverviewTabEnhanced ship={ship} />
-          : <OverviewTab ship={ship} />
-      )}
-      {activeTab === 'components' && <ComponentsTab slug={slug} layout={layout} />}
-      {activeTab === 'weapons' && <WeaponsTab slug={slug} layout={layout} />}
-      {activeTab === 'performance' && (
-        layout === 'enhanced'
-          ? <PerformanceTabEnhanced ship={ship} />
-          : <PerformanceTab ship={ship} />
-      )}
+      {activeTab === 'overview' && <OverviewTab ship={ship} />}
+      {activeTab === 'components' && <ComponentsTab slug={slug} />}
+      {activeTab === 'weapons' && <WeaponsTab slug={slug} />}
+      {activeTab === 'performance' && <PerformanceTab ship={ship} />}
       {activeTab === 'paints' && <PaintsTab slug={slug} />}
     </div>
   )
