@@ -203,7 +203,7 @@ function LocationSection({ label, icon: Icon, data }) {
 }
 
 // ── Detail slide-over ─────────────────────────────────────────────────────────
-function DetailPanel({ uuid, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
+function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
   const { data: item, loading } = useLootItem(uuid)
 
   if (!uuid) return null
@@ -254,6 +254,9 @@ function DetailPanel({ uuid, collectionQty, onSetCollectionQty, wishlisted, onTo
             {/* Name + badges */}
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-white leading-tight">{item.name}</h2>
+              {manufacturerName && (
+                <p className="text-[10px] font-mono text-gray-500">{manufacturerName}</p>
+              )}
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className={`text-[9px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
                   {catLabel}
@@ -351,21 +354,29 @@ function DetailPanel({ uuid, collectionQty, onSetCollectionQty, wishlisted, onTo
               </div>
             )}
 
-            {/* Where to find */}
-            {(item.has_shops || item.has_containers || item.has_npcs || item.has_corpses || item.has_contracts) ? (
-              <div>
-                <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-3">Where to Find</p>
-                <div className="space-y-4">
-                  <LocationSection label="Shops" icon={ShoppingCart} data={parsedJson('shops_json')} />
-                  <LocationSection label="Containers" icon={Package} data={parsedJson('containers_json')} />
-                  <LocationSection label="NPCs" icon={Swords} data={parsedJson('npcs_json')} />
-                  <LocationSection label="Corpses" icon={Skull} data={parsedJson('corpses_json')} />
-                  <LocationSection label="Contracts" icon={FileText} data={parsedJson('contracts_json')} />
+            {/* Where to find — parse JSON directly (has_* flags not present in detail response) */}
+            {(() => {
+              const locationSections = [
+                { label: 'Shops',      icon: ShoppingCart, data: parsedJson('shops_json') },
+                { label: 'Containers', icon: Package,      data: parsedJson('containers_json') },
+                { label: 'NPCs',       icon: Swords,       data: parsedJson('npcs_json') },
+                { label: 'Corpses',    icon: Skull,        data: parsedJson('corpses_json') },
+                { label: 'Contracts',  icon: FileText,     data: parsedJson('contracts_json') },
+              ]
+              const hasAny = locationSections.some(s => s.data.length > 0)
+              return hasAny ? (
+                <div>
+                  <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-3">Where to Find</p>
+                  <div className="space-y-4">
+                    {locationSections.map(({ label, icon, data }) => (
+                      <LocationSection key={label} label={label} icon={icon} data={data} />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500 font-mono">No location data available.</p>
-            )}
+              ) : (
+                <p className="text-xs text-gray-500 font-mono">No location data available.</p>
+              )
+            })()}
           </div>
         )}
       </div>
@@ -494,6 +505,10 @@ export default function LootDB() {
   const [detailUuid, setDetailUuid] = useState(null)
   const [page, setPage] = useState(1)
 
+  // Collection tab state
+  const [collSearch, setCollSearch] = useState('')
+  const [collCategory, setCollCategory] = useState('all')
+
   // Reset cascades
   useEffect(() => { setBrand(null); setSetName(null) }, [category])
   useEffect(() => { setSetName(null) }, [brand])
@@ -510,6 +525,34 @@ export default function LootDB() {
     }
     return counts
   }, [allItems])
+
+  // Collection tab — items the user has collected
+  const collectedItems = useMemo(() => {
+    if (!allItems) return []
+    return allItems.filter(i => collected.has(i.id))
+  }, [allItems, collected])
+
+  // Per-category collection stats: { weapon: { total, collected }, ... }
+  const collectionCategoryStats = useMemo(() => {
+    if (!allItems) return {}
+    const stats = {}
+    for (const item of allItems) {
+      if (!stats[item.category]) stats[item.category] = { total: 0, collected: 0 }
+      stats[item.category].total++
+      if (collected.has(item.id)) stats[item.category].collected++
+    }
+    return stats
+  }, [allItems, collected])
+
+  const filteredCollectedItems = useMemo(() => {
+    let items = collectedItems
+    if (collCategory !== 'all') items = items.filter(i => i.category === collCategory)
+    if (collSearch.trim()) {
+      const q = collSearch.toLowerCase()
+      items = items.filter(i => i.name.toLowerCase().includes(q))
+    }
+    return items
+  }, [collectedItems, collCategory, collSearch])
 
   // All categories present in data
   const categories = useMemo(() => {
@@ -646,8 +689,9 @@ export default function LootDB() {
 
   const wishlistCount = wishlistIds.size
 
-  // Find the wishlisted/collected state for the detail panel item
-  const detailItemId = detailUuid ? allItems?.find(i => i.uuid === detailUuid)?.id : null
+  // Lookup full item from allItems for the detail panel (provides id, manufacturer_name)
+  const detailItemMeta = detailUuid ? allItems?.find(i => i.uuid === detailUuid) ?? null : null
+  const detailItemId = detailItemMeta?.id ?? null
 
   return (
     <div className="space-y-4 animate-fade-in-up">
@@ -669,6 +713,23 @@ export default function LootDB() {
             }`}
           >
             Browse
+          </button>
+          <button
+            onClick={() => setActiveTab('collection')}
+            className={`px-4 py-2 text-xs font-display uppercase tracking-wide border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
+              activeTab === 'collection'
+                ? 'border-sc-accent text-sc-accent'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Collection
+            {collectionCount > 0 && (
+              <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${
+                activeTab === 'collection' ? 'bg-sc-accent/20 text-sc-accent' : 'bg-gray-700 text-gray-400'
+              }`}>
+                {collectionCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('wishlist')}
@@ -1025,6 +1086,135 @@ export default function LootDB() {
         </div>
       )}
 
+      {/* ── Collection tab ── */}
+      {activeTab === 'collection' && isAuthed && (
+        <div className="space-y-6">
+          {collectedItems.length === 0 ? (
+            <div className="text-center py-16 text-gray-500 font-mono text-sm">
+              Nothing collected yet. Browse items and use the{' '}
+              <Plus className="w-3.5 h-3.5 inline-block mx-0.5" /> button to mark them.
+            </div>
+          ) : (
+            <>
+              {/* Overall progress */}
+              <div className="panel p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-display uppercase tracking-widest text-gray-500">Overall Progress</p>
+                  <span className="text-xs font-mono text-sc-accent">
+                    {collectionCount.toLocaleString()} / {totalCount.toLocaleString()} items
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-sc-accent/70 rounded-full transition-all duration-500"
+                    style={{ width: `${(collectionCount / totalCount) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] font-mono text-gray-500 text-right">
+                  {((collectionCount / totalCount) * 100).toFixed(1)}%
+                </p>
+              </div>
+
+              {/* Per-category breakdown */}
+              <div>
+                <p className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-3">By Category</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                  {['weapon','armour','helmet','clothing','attachment','consumable','harvestable','prop','utility'].map(cat => {
+                    const s = collectionCategoryStats[cat]
+                    if (!s || s.total === 0) return null
+                    const pct = (s.collected / s.total) * 100
+                    const catStyle = CATEGORY_BADGE_STYLES[cat]
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setCollCategory(collCategory === cat ? 'all' : cat)}
+                        className={`panel p-3 space-y-2 text-left transition-all ${
+                          collCategory === cat ? 'border-sc-accent/60' : 'hover:border-sc-border/80'
+                        }`}
+                      >
+                        <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded ${catStyle}`}>
+                          {CATEGORY_LABELS[cat]}
+                        </span>
+                        <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-sc-accent/60 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-sc-accent">{s.collected}</span>
+                          <span className="text-[10px] font-mono text-gray-600">/ {s.total}</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Search + filter */}
+              <div className="flex items-center gap-2">
+                <SearchInput
+                  value={collSearch}
+                  onChange={(e) => setCollSearch(e.target.value)}
+                  placeholder="Search collection..."
+                  className="flex-1"
+                />
+                {collCategory !== 'all' && (
+                  <button
+                    onClick={() => setCollCategory('all')}
+                    className="flex items-center gap-1 text-[10px] font-mono bg-sc-accent/10 border border-sc-accent/30 text-sc-accent px-2 py-1 rounded"
+                  >
+                    {CATEGORY_LABELS[collCategory]}
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Collected items list */}
+              <div>
+                <p className="text-[10px] font-mono text-gray-500 mb-2">
+                  {filteredCollectedItems.length.toLocaleString()} item{filteredCollectedItems.length !== 1 ? 's' : ''}
+                  {collSearch || collCategory !== 'all' ? ' matching filters' : ' collected'}
+                </p>
+                <div className="border border-sc-border rounded overflow-hidden">
+                  {filteredCollectedItems.map((item) => {
+                    const rs = item.rarity ? rarityStyle(item.rarity) : null
+                    const catStyle = CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
+                    const catLabel = CATEGORY_LABELS[item.category] || item.category
+                    const qty = collected.get(item.id) ?? 0
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 px-3 py-2.5 border-b border-sc-border last:border-0 hover:bg-white/3 cursor-pointer transition-colors"
+                        onClick={() => setDetailUuid(item.uuid)}
+                      >
+                        <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${catStyle}`}>
+                          {catLabel}
+                        </span>
+                        <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
+                        {item.rarity && rs && (
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
+                            {item.rarity}
+                          </span>
+                        )}
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <CollectionStepper
+                            qty={qty}
+                            onSetQty={(q) => handleSetCollectionQty(item.uuid, q)}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {filteredCollectedItems.length === 0 && (
+                    <div className="py-8 text-center text-gray-500 font-mono text-sm">
+                      No items match your filters.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── Wishlist tab ── */}
       {activeTab === 'wishlist' && isAuthed && (
         <div className="space-y-8">
@@ -1090,6 +1280,7 @@ export default function LootDB() {
       {detailUuid && (
         <DetailPanel
           uuid={detailUuid}
+          manufacturerName={detailItemMeta?.manufacturer_name ?? null}
           collectionQty={collected.get(detailItemId) ?? 0}
           onSetCollectionQty={handleSetCollectionQty}
           wishlisted={wishlistIds.has(detailItemId)}
