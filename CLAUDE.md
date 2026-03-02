@@ -27,7 +27,7 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `paints.ts` — Paint variants
 - `import.ts` — HangarXplor JSON import (clean slate: DELETE + INSERT)
 - `settings.ts` — User settings
-- `sync.ts` — Trigger SC Wiki / FleetYards / RSI syncs
+- `sync.ts` — Trigger scunpacked paint metadata and RSI image syncs
 - `analysis.ts` — Fleet gap analysis, redundancy detection
 - `account.ts` — Account management, email verification, 2FA
 - `orgs.ts` — Organisation management and visibility
@@ -41,10 +41,9 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `CONVENTIONS.md` — Full DB conventions reference. Read this before writing any migration or query.
 
 ### Sync (`/src/sync/`)
-- `scwiki.ts` — SC Wiki sync: manufacturers, vehicles (specs, status, dimensions), loaners, components
-- `rsi.ts` — RSI API sync: ship and paint images from public GraphQL API
+- `rsi.ts` — RSI API sync: paint images from public GraphQL API (ship image sync is a no-op — all ships have CF Images)
 - `scunpacked.ts` — Paint metadata from scunpacked-data JSON files
-- `pipeline.ts` — Sync pipeline orchestration (SC Wiki → FleetYards → scunpacked → RSI)
+- `pipeline.ts` — Sync pipeline orchestration (scunpacked paint metadata → RSI paint images)
 
 ### Frontend (`/frontend/src/pages/`)
 React SPA. Key pages: `Dashboard`, `FleetTable`, `ShipDB`, `Insurance`, `Analysis`, `Import`,
@@ -54,18 +53,15 @@ React SPA. Key pages: `Dashboard`, `FleetTable`, `ShipDB`, `Insurance`, `Analysi
 
 | Source | What | When |
 |--------|------|------|
-| SC Wiki API | Ship specs, dimensions, pricing, production status, manufacturers, loaners | Nightly + on startup |
-| FleetYards API | Store images for ships and paints | After SC Wiki sync |
-| scunpacked-data | Paint names, descriptions, ship compatibility tags | After FleetYards sync |
-| RSI GraphQL API | Ship and paint images (new CDN) — opt-in | After paint sync |
+| scunpacked-data | Paint names, descriptions, ship compatibility tags | Nightly (3:30 AM cron) |
+| RSI GraphQL API | Paint images (ship images are no-op — all ships have CF Images) | Nightly (3:45 AM cron) |
 | HangarXplor JSON | User fleet: insurance, pledge cost/date | User-triggered import |
 | DataCore (scbridge/tools) | Component stats, FPS gear, loot map | One-time extract scripts |
 
 ## Key Design Decisions
 - **Clean slate import**: HangarXplor import does DELETE all user_fleet + INSERT. No merging.
 - **No UNIQUE on user_fleet**: users can own multiples of the same ship (two PTVs, etc.).
-- **SC Wiki is primary data source**: specs, status, descriptions, manufacturers, loaners.
-- **FleetYards is images only**: retained solely for store images. All non-image code removed.
+- **RSI sync is paint-images-only**: ship image sync is guarded by CF Images check (no-op for all ships). Paint sync has no CF Images guard — fix before uploading paint CF Images.
 - **Paints are many-to-many**: `paint_vehicles` junction table links paints to all compatible vehicles.
 - **Insurance is typed**: `insurance_types` lookup table with `duration_months` (LTI, 120-month, etc.)
 - **Better Auth org tables use camelCase** in D1: `organizationId`, `userId`, `createdAt`.
@@ -122,7 +118,7 @@ have caused bugs before or are easy to get wrong.
 - Never skip numbers. Never rename an applied migration file.
 - **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
 - Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
-- Current last migration: **0018_loot_map.sql**
+- Current last migration: **0036_user_loot_collection.sql**
 
 ### Out-of-Band Columns
 These were applied via `wrangler d1 execute`, not in migration files. They exist in D1 but

@@ -83,10 +83,8 @@ Nightly cron triggers (defined in `wrangler.toml`) keep ship and item data curre
 
 | Time (UTC) | What |
 |------------|------|
-| 03:00 | SC Wiki vehicles + session cleanup |
-| 03:05 | SC Wiki items (components, FPS weapons, armour, etc.) |
-| 03:30 | scunpacked paint metadata |
-| 03:45 | RSI API images (ships + paints) |
+| 03:30 | session cleanup + scunpacked paint metadata |
+| 03:45 | RSI API paint images |
 
 Manual sync is available via the admin panel or `POST /api/sync/*` endpoints.
 
