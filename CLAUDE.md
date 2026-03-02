@@ -70,11 +70,13 @@ React SPA. Key pages: `Dashboard`, `FleetTable`, `ShipDB`, `Insurance`, `Analysi
 
 ## Build & Deploy
 ```bash
-# Frontend
-cd frontend && npm install && npm run build
-
 # Type check
 npm run typecheck
+
+# Build — root vite build compiles worker + frontend into dist/
+# IMPORTANT: `cd frontend && npm run build` only updates frontend/dist/ which wrangler ignores.
+# Wrangler reads from dist/client/ (populated by the root build via @cloudflare/vite-plugin).
+npm run build
 
 # Deploy (requires CLOUDFLARE_API_TOKEN in env)
 source ~/.secrets
@@ -118,7 +120,7 @@ have caused bugs before or are easy to get wrong.
 - Never skip numbers. Never rename an applied migration file.
 - **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
 - Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
-- Current last migration: **0043_manufacturers_class.sql**
+- Current last migration: **0044_invite_tokens.sql**
 
 ### Out-of-Band Columns
 These were applied via `wrangler d1 execute`, not in migration files. They exist in D1 but
