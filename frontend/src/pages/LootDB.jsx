@@ -185,27 +185,39 @@ function ItemCard({ item, collectionQty, onSetCollectionQty, wishlisted, onToggl
 }
 
 // ── Location section renderer ─────────────────────────────────────────────────
-function LocationSection({ label, icon: Icon, data }) {
+function resolveLocationEntry(entry, type) {
+  if (typeof entry === 'string') return { label: entry, detail: null, probability: null }
+  if (type === 'shops') {
+    const price = entry.buyPrice ? `${Math.round(entry.buyPrice).toLocaleString()} aUEC` : null
+    return { label: entry.shop || entry.name || '?', detail: price, probability: null }
+  }
+  if (type === 'npcs' || type === 'corpses') {
+    return {
+      label: entry.faction || entry.actor || entry.name || '?',
+      detail: entry.slot || null,
+      probability: entry.probability ?? null,
+    }
+  }
+  // containers, contracts, default
+  return {
+    label: entry.location || entry.locationTag || entry.name || '?',
+    detail: entry.containerType || null,
+    probability: entry.perContainer ?? entry.probability ?? null,
+  }
+}
+
+function LocationSection({ label, icon: Icon, data, type }) {
   if (!data || !Array.isArray(data) || data.length === 0) return null
 
-  // Deduplicate by location/name key; track highest probability seen for each
+  // Deduplicate by resolved label; track highest probability seen for each
   const seen = new Map()
   for (const entry of data) {
-    if (typeof entry === 'string') {
-      if (!seen.has(entry)) seen.set(entry, { label: entry })
-    } else {
-      const key = entry.location || entry.name || '?'
-      const existing = seen.get(key)
-      const prob = entry.perContainer ?? null
-      if (!existing) {
-        seen.set(key, {
-          label: key,
-          containerType: entry.containerType || null,
-          probability: prob,
-        })
-      } else if (prob != null && (existing.probability == null || prob > existing.probability)) {
-        existing.probability = prob
-      }
+    const row = resolveLocationEntry(entry, type)
+    const existing = seen.get(row.label)
+    if (!existing) {
+      seen.set(row.label, row)
+    } else if (row.probability != null && (existing.probability == null || row.probability > existing.probability)) {
+      existing.probability = row.probability
     }
   }
 
@@ -220,8 +232,8 @@ function LocationSection({ label, icon: Icon, data }) {
           <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
             <span className="text-xs font-mono text-gray-300 truncate">{row.label}</span>
             <div className="flex items-center gap-1.5 shrink-0">
-              {row.containerType && (
-                <span className="text-[9px] font-mono text-gray-500">{row.containerType}</span>
+              {row.detail && (
+                <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
               )}
               {row.probability != null && (
                 <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
@@ -418,19 +430,19 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
             {/* Where to find — parse JSON directly (has_* flags not present in detail response) */}
             {(() => {
               const locationSections = [
-                { label: 'Shops',      icon: ShoppingCart, data: parsedJson('shops_json') },
-                { label: 'Containers', icon: Package,      data: parsedJson('containers_json') },
-                { label: 'NPCs',       icon: Swords,       data: parsedJson('npcs_json') },
-                { label: 'Corpses',    icon: Skull,        data: parsedJson('corpses_json') },
-                { label: 'Contracts',  icon: FileText,     data: parsedJson('contracts_json') },
+                { label: 'Shops',      icon: ShoppingCart, type: 'shops',      data: parsedJson('shops_json') },
+                { label: 'Containers', icon: Package,      type: 'containers', data: parsedJson('containers_json') },
+                { label: 'NPCs',       icon: Swords,       type: 'npcs',       data: parsedJson('npcs_json') },
+                { label: 'Corpses',    icon: Skull,        type: 'corpses',    data: parsedJson('corpses_json') },
+                { label: 'Contracts',  icon: FileText,     type: 'contracts',  data: parsedJson('contracts_json') },
               ]
               const hasAny = locationSections.some(s => s.data.length > 0)
               return hasAny ? (
                 <div>
                   <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-3">Where to Find</p>
                   <div className="space-y-4">
-                    {locationSections.map(({ label, icon, data }) => (
-                      <LocationSection key={label} label={label} icon={icon} data={data} />
+                    {locationSections.map(({ label, icon, data, type }) => (
+                      <LocationSection key={label} label={label} icon={icon} data={data} type={type} />
                     ))}
                   </div>
                 </div>
@@ -511,7 +523,6 @@ function buildShoppingList(wishlistItems) {
   if (!wishlistItems?.length) return {}
   const groups = {}
   const parseJson = (str) => { try { return JSON.parse(str) || [] } catch { return [] } }
-  const getLabel = (entry) => typeof entry === 'string' ? entry : (entry.name || entry.location || '?')
 
   wishlistItems.forEach(item => {
     SOURCE_DEFS.forEach(({ key, label, jsonKey, icon }) => {
@@ -520,7 +531,7 @@ function buildShoppingList(wishlistItems) {
       if (!groups[key]) groups[key] = { label, icon, locations: {} }
       // Deduplicate locations within this item's JSON array (same location can appear
       // many times — one per container/NPC instance — which would duplicate item names)
-      const uniqueLocs = [...new Set(entries.map(getLabel))]
+      const uniqueLocs = [...new Set(entries.map(e => resolveLocationEntry(e, key).label))]
       uniqueLocs.forEach(loc => {
         if (!groups[key].locations[loc]) groups[key].locations[loc] = []
         groups[key].locations[loc].push(item.name)
