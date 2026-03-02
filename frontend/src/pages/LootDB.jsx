@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import {
   Search, Package, ShoppingCart, Swords, Skull, FileText,
-  LayoutGrid, List, X, ChevronRight, Check, Bookmark, BookmarkPlus
+  LayoutGrid, List, X, ChevronRight, Check, Plus, Bookmark, BookmarkPlus
 } from 'lucide-react'
 import {
   useLoot, useLootItem, useLootCollection, toggleLootCollection,
@@ -131,7 +131,7 @@ function ItemCard({ item, collected, onToggleCollect, wishlisted, onToggleWishli
               className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
                 wishlisted
                   ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                  : 'border-gray-600 text-transparent hover:border-gray-400 hover:text-gray-400'
+                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
               }`}
               title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
             >
@@ -142,11 +142,11 @@ function ItemCard({ item, collected, onToggleCollect, wishlisted, onToggleWishli
               className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
                 collected
                   ? 'bg-sc-accent/20 border-sc-accent/50 text-sc-accent'
-                  : 'border-gray-600 text-transparent hover:border-gray-400'
+                  : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
               }`}
               title={collected ? 'Mark uncollected' : 'Mark collected'}
             >
-              <Check className="w-3 h-3" />
+              {collected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
             </button>
           </div>
         )}
@@ -326,6 +326,49 @@ function DetailPanel({ uuid, collected, onToggleCollect, wishlisted, onToggleWis
         )}
       </div>
     </>
+  )
+}
+
+// ── Wishlist list row (no card boxes — clean flat list) ───────────────────────
+function WishlistRow({ item, collected, onToggleCollect, onToggleWishlist, onSelect }) {
+  const catStyle = CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
+  const catLabel = CATEGORY_LABELS[item.category] || item.category
+  const rs = item.rarity ? rarityStyle(item.rarity) : null
+
+  return (
+    <div
+      className="flex items-center gap-3 px-3 py-2.5 border-b border-sc-border hover:bg-white/3 cursor-pointer transition-colors"
+      onClick={() => onSelect(item.uuid)}
+    >
+      <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${catStyle}`}>
+        {catLabel}
+      </span>
+      <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
+      {item.rarity && rs && (
+        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
+          {item.rarity}
+        </span>
+      )}
+      <SourceIcons item={item} />
+      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={() => onToggleCollect(item.uuid, collected)}
+          className={`w-6 h-6 rounded flex items-center justify-center transition-all duration-150 ${
+            collected ? 'text-sc-accent' : 'text-gray-600 hover:text-gray-400'
+          }`}
+          title={collected ? 'Mark uncollected' : 'Mark collected'}
+        >
+          {collected ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          onClick={() => onToggleWishlist(item.uuid, true)}
+          className="w-6 h-6 rounded flex items-center justify-center text-amber-400 hover:text-amber-200 transition-colors"
+          title="Remove from wishlist"
+        >
+          <Bookmark className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -870,7 +913,7 @@ export default function LootDB() {
                             className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
                               isWishlisted
                                 ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                                : 'border-gray-600 text-transparent hover:border-gray-400 hover:text-gray-400'
+                                : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
                             }`}
                           >
                             {isWishlisted ? <Bookmark className="w-3 h-3" /> : <BookmarkPlus className="w-3 h-3" />}
@@ -880,10 +923,10 @@ export default function LootDB() {
                             className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-150 shrink-0 ${
                               isCollected
                                 ? 'bg-sc-accent/20 border-sc-accent/50 text-sc-accent'
-                                : 'border-gray-600 text-transparent hover:border-gray-400'
+                                : 'border-gray-700 text-gray-600 hover:border-gray-500 hover:text-gray-400'
                             }`}
                           >
-                            <Check className="w-3 h-3" />
+                            {isCollected ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                           </button>
                         </div>
                       )}
@@ -955,22 +998,20 @@ export default function LootDB() {
             </div>
           )}
 
-          {/* Wishlisted items grid */}
+          {/* Wishlisted items list */}
           {wishlistItems && wishlistItems.length > 0 ? (
             <div>
               <p className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-3">
                 Wishlisted Items ({wishlistItems.length})
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">
+              <div className="border border-sc-border rounded overflow-hidden">
                 {wishlistItems.map((item) => (
-                  <ItemCard
+                  <WishlistRow
                     key={item.id}
                     item={item}
                     collected={collected.has(item.id)}
                     onToggleCollect={handleToggleCollect}
-                    wishlisted={true}
                     onToggleWishlist={handleToggleWishlist}
-                    isAuthed={isAuthed}
                     onSelect={setDetailUuid}
                   />
                 ))}
