@@ -266,7 +266,7 @@ export function getLocationGroup(raw) {
   if (s.startsWith('Cave_') || s.startsWith('Loot_Caves_') || s === 'Caves') return 'cave'
   if (s.startsWith('ColonialOutpost') || s === 'DerelictOutpost' || s === 'TechOutpost') return 'outpost'
   if (s.startsWith('DistributionCentres_') || s === 'DCDelving') return 'dc'
-  if (s === 'ASDDelving' || s.startsWith('ASDDelving_')) return 'facility'
+  if (s === 'ASDDelving' || s.startsWith('ASDDelving_') || s === 'UGFs') return 'facility'
   if (s.startsWith('ContestedZone') || s.startsWith('GhostArena') || s === 'ContestedZones') return 'contested'
   if (s.startsWith('Station_') || s === 'Station') return 'station'
   if (s === 'Derelict' || s === 'Derelict_Small' || s === 'SpaceDerelict') return 'derelict'

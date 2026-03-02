@@ -365,7 +365,10 @@ function LocationSection({ label, icon: Icon, data, type }) {
  */
 function decodeMojibake(str) {
   if (!str || typeof str !== 'string') return str
-  try { return decodeURIComponent(escape(str)) } catch { return str }
+  try {
+    const encoded = str.replace(/[\x80-\xFF]/g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())
+    return decodeURIComponent(encoded)
+  } catch { return str }
 }
 
 /**
@@ -539,8 +542,7 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                       const label = STAT_LABELS[k] ?? k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
                       let display
                       if (k === 'fire_modes') {
-                        const burstCount = JSON.parse(det.stats_json).burst_count
-                        display = formatFireModes(v, burstCount)
+                        display = formatFireModes(v, stats.burst_count)
                       } else if (Array.isArray(v)) {
                         display = v.join(', ')
                       } else {
