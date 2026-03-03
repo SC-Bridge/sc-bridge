@@ -386,15 +386,46 @@ function formatFireModes(modes, burstCount) {
 
 /** Human-readable labels for known stats_json fields. null = hidden. */
 const STAT_LABELS = {
-  item_port_count:  'Attachment Slots',
-  ammo_capacity:    'Ammo Capacity',
-  rounds_per_minute:'Rounds / Min',
-  fire_modes:       'Fire Modes',
-  burst_count:      null,           // merged into fire_modes display
+  // FPS weapons
+  item_port_count:       'Attachment Slots',
+  ammo_capacity:         'Ammo Capacity',
+  rounds_per_minute:     'Rounds / Min',
+  fire_modes:            'Fire Modes',
+  burst_count:           null,           // merged into fire_modes display
+  // Helmet damage resistances (multiplier: lower = more resistant)
+  physical_resistance:   'Physical Resist',
+  energy_resistance:     'Energy Resist',
+  distortion_resistance: 'Distortion Resist',
+  thermal_resistance:    'Thermal Resist',
+  biochemical_resistance:'Biochemical Resist',
+  stun_resistance:       'Stun Resist',
+  // Helmet misc
+  atmosphere_capacity:   'Atmosphere',
+  ir_emission:           'IR Emission',
+  em_emission:           'EM Emission',
+  // Attachments
+  zoom_scale:            'Zoom',
+  second_zoom_scale:     'Alt Zoom',
+  damage_multiplier:     'Damage Modifier',
+  sound_radius_multiplier:'Sound Radius',
 }
 
 /** Display order for known stats fields. Unknown fields sort alphabetically after. */
-const STAT_ORDER = ['item_port_count', 'ammo_capacity', 'rounds_per_minute', 'fire_modes']
+const STAT_ORDER = [
+  'item_port_count', 'ammo_capacity', 'rounds_per_minute', 'fire_modes',
+  'zoom_scale', 'second_zoom_scale', 'damage_multiplier', 'sound_radius_multiplier',
+  'physical_resistance', 'energy_resistance', 'distortion_resistance',
+  'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
+  'atmosphere_capacity', 'ir_emission', 'em_emission',
+]
+
+/** Keys where the stored value is a multiplier (1.0 = base); display as % of base. */
+const MULTIPLIER_STATS = new Set(['damage_multiplier', 'sound_radius_multiplier'])
+/** Keys where the stored value is a damage resistance multiplier (lower = more resistant). */
+const RESISTANCE_STATS = new Set([
+  'physical_resistance', 'energy_resistance', 'distortion_resistance',
+  'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
+])
 
 // ── Detail slide-over ─────────────────────────────────────────────────────────
 function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
@@ -547,6 +578,14 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                         display = formatFireModes(v, stats.burst_count)
                       } else if (Array.isArray(v)) {
                         display = v.join(', ')
+                      } else if (RESISTANCE_STATS.has(k) && typeof v === 'number') {
+                        // e.g. 0.6 → "40% reduction"
+                        display = `${Math.round((1 - v) * 100)}% reduction`
+                      } else if (MULTIPLIER_STATS.has(k) && typeof v === 'number') {
+                        // e.g. 0.66 → "66% of base"
+                        display = `${Math.round(v * 100)}% of base`
+                      } else if ((k === 'zoom_scale' || k === 'second_zoom_scale') && typeof v === 'number') {
+                        display = `${v}x`
                       } else {
                         display = String(v)
                       }
