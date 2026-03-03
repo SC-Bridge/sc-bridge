@@ -2,6 +2,7 @@
 
 @ACTIVE
 # sid|registered|last_active|scope
+52b8f8c3|2026-03-03T16:07+1300|2026-03-03T16:07+1300|unset
 9e177591|2026-03-03T15:27+1300|2026-03-03T15:56+1300|journal+worklog cleanup, commit+push
 50793e8f|2026-03-03T15:15+1300|2026-03-03T15:15+1300|unset
 683587a8|2026-03-03T15:03+1300|2026-03-03T15:03+1300|unset
@@ -10,20 +11,11 @@ c7e45d0f|2026-03-03T14:06+1300|2026-03-03T14:13+1300|stats_json extraction
 2e01fb82|2026-03-03T13:47+1300|2026-03-03T13:56+1300|missile+eyewear loot FKs
 4b622282|2026-03-03T13:22+1300|2026-03-03T13:22+1300|unset
 2e16a9b4|2026-03-03T12:07+1300|2026-03-03T12:35+1300|loot unmatched items
-985e21d3|2026-03-03T12:07+1300|2026-03-03T12:07+1300|unset
-faf5b909|2026-03-03T11:35+1300|2026-03-03T11:35+1300|push paint extraction commits
-e495048d|2026-03-03T11:35+1300|2026-03-03T11:35+1300|invite token signup system
 @FILES
 # sid|file_path
-9e177591|.claude/session-journal.md
-9e177591|.claude/worklog.md
 
 @LOG
 # timestamp|sid|op|detail
-09:15+1300|e667d40d|MOD|src/db/migrations/0042_vehicles_acquisition_source_name.sql
-09:16+1300|e667d40d|CMT|d4280f3 fix(db): missing acquisition_source_name column
-09:20+1300|e667d40d|CMT|2af8b58 fix(db): missing manufacturers.class column
-09:43+1300|d846531a|REG|started
 09:43+1300|c09b4dc2|SCO|github community setup
 09:55+1300|c09b4dc2|CMT|725f6a9 feat(github): community infrastructure for beta
 09:47+1300|cee1b559|REG|started
@@ -71,3 +63,7 @@ e495048d|2026-03-03T11:35+1300|2026-03-03T11:35+1300|invite token signup system
 15:27+1300|9e177591|REG|started
 15:28+1300|9e177591|SCO|stats_json knives+grenades
 15:56+1300|9e177591|CMT|chore: journal+worklog cleanup
+15:57+1300|9e177591|PUSH|411a303..44145f8 → main
+16:07+1300|52b8f8c3|CLN|stale:985e21d3,faf5b909,e495048d
+16:07+1300|52b8f8c3|REG|started
+16:08+1300|52b8f8c3|CMT|c99306b fix(loot): stats panel labels+format

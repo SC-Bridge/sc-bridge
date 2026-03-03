@@ -158,3 +158,7 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 **Session compacted at:** 2026-03-03 15:26:23
 
+
+---
+**Session compacted at:** 2026-03-03 16:06:05
+
