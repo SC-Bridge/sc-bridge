@@ -209,12 +209,22 @@ export function createAuth(env: Env) {
       },
       user: {
         create: {
-          before: async (_, context) => {
+          before: async (user, context) => {
             // Block new user creation via social OAuth callbacks.
             // Email signups are pre-validated by the invite guard middleware in index.ts.
             const req = (context as Record<string, unknown>)?.request;
             const url = req instanceof Request ? req.url : "";
             if (url.includes("/api/auth/callback/")) {
+              // Allow if a user with this email already exists — this is account linking
+              // for an existing user, not a new signup.
+              const email = (user as Record<string, unknown>).email as string | undefined;
+              if (email) {
+                const existing = await env.DB
+                  .prepare("SELECT id FROM user WHERE email = ?")
+                  .bind(email)
+                  .first();
+                if (existing) return;
+              }
               throw new Error("Account creation via social sign-in is not available. Use your invite link to register.");
             }
           },
