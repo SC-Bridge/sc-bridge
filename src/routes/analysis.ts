@@ -620,6 +620,83 @@ Recommendation: [Specific ship to add]
 /**
  * Fleet analysis — ported from internal/analysis/analysis.go
  */
+// Map granular vehicle focus values to broad role categories for charts and redundancy.
+// Every distinct vehicles.focus value must appear here; unmapped values fall back to the raw focus.
+const ROLE_GROUP_MAP: Record<string, string> = {
+  // Combat
+  "Light Fighter": "Combat",
+  "Medium Fighter": "Combat",
+  "Heavy Fighter": "Combat",
+  "Snub Fighter": "Combat",
+  "Bomber": "Combat",
+  "Heavy Bomber": "Combat",
+  "Stealth Bomber": "Combat",
+  "Stealth Fighter": "Combat",
+  "Stealth": "Combat",
+  "Gunship": "Combat",
+  "Heavy Gunship": "Combat",
+  "Heavy Gun Ship": "Combat",
+  "Assault": "Combat",
+  "Patrol": "Combat",
+  "Military": "Combat",
+  "Anti-Air": "Combat",
+  "Anti-aircraft": "Combat",
+  // Cargo & Transport
+  "Cargo": "Cargo",
+  "Freight": "Cargo",
+  "Light Freight": "Cargo",
+  "Medium Freight": "Cargo",
+  "Medium Freighter": "Cargo",
+  "Heavy Freight": "Cargo",
+  "Cargo Loader": "Cargo",
+  "Transport": "Transport",
+  "Military Transport": "Transport",
+  "Luxury Transport": "Transport",
+  "Passenger": "Transport",
+  "Dropship": "Transport",
+  // Exploration & Science
+  "Exploration": "Exploration",
+  "Expedition": "Exploration",
+  "Pathfinder": "Exploration",
+  "Recon": "Exploration",
+  "Reconnaissance": "Exploration",
+  "Light Science": "Exploration",
+  "Medium Data": "Exploration",
+  // Industrial
+  "Mining": "Mining",
+  "Salvage": "Salvage",
+  "Light Salvage": "Salvage",
+  "Medium Salvage": "Salvage",
+  "Heavy Salvage": "Salvage",
+  "Recovery": "Salvage",
+  "Industrial": "Industrial",
+  "Heavy Refuelling": "Refueling",
+  // Medical
+  "Medical": "Medical",
+  "Ambulance": "Medical",
+  // Support
+  "Combat Support": "Support",
+  "Interdiction": "Support",
+  "Interdictor": "Support",
+  "Reporting": "Support",
+  // Capital
+  "Corvette": "Capital",
+  "Destroyer": "Capital",
+  "Frigate": "Capital",
+  // Lifestyle
+  "Racing": "Racing",
+  "Touring": "Touring",
+  "Luxury": "Touring",
+  "Luxury Touring": "Touring",
+  // Multi-Role
+  "Generalist": "Multi-Role",
+  "Starter": "Multi-Role",
+};
+
+function getRoleGroup(focus: string): string {
+  return ROLE_GROUP_MAP[focus] ?? focus;
+}
+
 export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): FleetAnalysis {
   // Overview stats
   let flightReady = 0;
@@ -664,12 +741,12 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
     const size = entry.size_label || "Unknown";
     sizeDistribution[size] = (sizeDistribution[size] ?? 0) + 1;
 
-    // Role categories
-    const focus = entry.focus || "Unknown";
-    if (!roleCategories[focus]) {
-      roleCategories[focus] = [];
+    // Role categories — group granular focus values into broad roles
+    const roleGroup = getRoleGroup(entry.focus || "Unknown");
+    if (!roleCategories[roleGroup]) {
+      roleCategories[roleGroup] = [];
     }
-    roleCategories[focus].push(entry.vehicle_name ?? "Unknown");
+    roleCategories[roleGroup].push(entry.vehicle_name ?? "Unknown");
 
     // Insurance
     const insEntry = {
@@ -699,62 +776,58 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
   // Each role maps to multiple search terms that satisfy it, matching against
   // the full range of focus values in the vehicles table (e.g. "Medium Freighter"
   // satisfies Cargo, "Ambulance" satisfies Medical, "Pathfinder" satisfies Exploration).
+  // Gap roles match against the broad group names produced by getRoleGroup().
+  // If a role group name isn't in roleCategories, it's a gap.
   const GAP_ROLES: {
     role: string;
     priority: string;
     description: string;
-    terms: string[];
     suggestions: string[];
   }[] = [
     {
       role: "Mining",
       priority: "high",
       description: "No dedicated mining ship",
-      terms: ["mining"],
       suggestions: ["MISC Prospector", "ARGO MOLE", "Greycat ROC"],
     },
     {
       role: "Salvage",
       priority: "high",
       description: "No salvage capability",
-      terms: ["salvage", "recovery"],
       suggestions: ["Drake Vulture", "Aegis Reclaimer"],
     },
     {
       role: "Medical",
       priority: "medium",
       description: "No medical ship",
-      terms: ["medical", "ambulance"],
       suggestions: ["RSI Apollo Medivac", "Crusader C8R Pisces Rescue", "Drake Cutlass Red"],
     },
     {
       role: "Refueling",
       priority: "medium",
       description: "No refueling capability",
-      terms: ["refuel"],
       suggestions: ["MISC Starfarer Gemini", "MISC Starfarer"],
     },
     {
       role: "Exploration",
       priority: "medium",
       description: "No dedicated exploration ship",
-      terms: ["explor", "pathfind", "expedition", "recon", "science"],
       suggestions: ["RSI Constellation Aquila", "Anvil Carrack", "MISC Freelancer DUR"],
     },
     {
       role: "Cargo",
       priority: "low",
       description: "No dedicated cargo hauler",
-      terms: ["cargo", "freight", "hauler"],
       suggestions: ["Drake Caterpillar", "MISC Hull C", "RSI Constellation Taurus"],
     },
   ];
 
-  const ownedFocuses = Object.keys(roleCategories).map((f) => f.toLowerCase());
+  // Gap analysis compares against the broad role group names (keys of roleCategories),
+  // which already match GAP_ROLES.role names thanks to getRoleGroup().
+  const ownedRoleGroups = new Set(Object.keys(roleCategories));
 
   const gaps = GAP_ROLES.filter((gr) => {
-    // A role is satisfied if ANY owned focus contains ANY of the role's terms
-    return !ownedFocuses.some((focus) => gr.terms.some((term) => focus.includes(term)));
+    return !ownedRoleGroups.has(gr.role);
   }).map((gr) => ({
     role: gr.role,
     priority: gr.priority,
