@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { HonoEnv, UserFleetEntry, Vehicle, FleetAnalysis } from "../lib/types";
+import { getAuthUser, type HonoEnv, type UserFleetEntry, type Vehicle, type FleetAnalysis } from "../lib/types";
 import { decrypt } from "../lib/crypto";
 import { logEvent } from "../lib/logger";
 
@@ -12,7 +12,7 @@ export function analysisRoutes() {
   // GET /api/analysis — fleet gap analysis, redundancies, insurance summary
   routes.get("/analysis", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const fleetResult = await db
       .prepare(
@@ -55,7 +55,7 @@ export function analysisRoutes() {
   // POST /api/llm/test-connection
   routes.post("/llm/test-connection", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const body = await c.req.json<{ provider?: string; api_key?: string }>().catch((): { provider?: string; api_key?: string } => ({}));
 
@@ -105,7 +105,7 @@ export function analysisRoutes() {
   // POST /api/llm/generate-analysis
   routes.post("/llm/generate-analysis", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const config = await db
       .prepare(
@@ -235,7 +235,7 @@ export function analysisRoutes() {
   // GET /api/llm/latest-analysis
   routes.get("/llm/latest-analysis", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const row = await db
       .prepare(
@@ -253,7 +253,7 @@ export function analysisRoutes() {
   // GET /api/llm/analysis-history
   routes.get("/llm/analysis-history", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const result = await db
       .prepare(
@@ -273,7 +273,7 @@ export function analysisRoutes() {
     }
 
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     await db.prepare("DELETE FROM ai_analyses WHERE id = ? AND user_id = ?").bind(id, userID).run();
     return c.json({ success: true });

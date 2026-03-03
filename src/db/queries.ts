@@ -78,40 +78,6 @@ export async function getVehicleIDBySlug(db: D1Database, slug: string): Promise<
   return row?.id ?? null;
 }
 
-export async function findVehicleSlug(
-  db: D1Database,
-  candidateSlugs: string[],
-  displayName: string,
-): Promise<string | null> {
-  for (const slug of candidateSlugs) {
-    if (!slug) continue;
-    const row = await db
-      .prepare("SELECT slug FROM vehicles WHERE slug = ? LIMIT 1")
-      .bind(slug)
-      .first<{ slug: string }>();
-    if (row) return row.slug;
-  }
-
-  if (displayName) {
-    const row = await db
-      .prepare("SELECT slug FROM vehicles WHERE LOWER(name) = LOWER(?) LIMIT 1")
-      .bind(displayName)
-      .first<{ slug: string }>();
-    if (row) return row.slug;
-  }
-
-  for (const slug of candidateSlugs) {
-    if (!slug || slug.length < 3) continue;
-    const row = await db
-      .prepare("SELECT slug FROM vehicles WHERE slug LIKE ? LIMIT 1")
-      .bind(slug + "%")
-      .first<{ slug: string }>();
-    if (row) return row.slug;
-  }
-
-  return null;
-}
-
 export async function getAllVehicleNameSlugs(
   db: D1Database,
 ): Promise<Array<{ name: string; slug: string }>> {
@@ -280,17 +246,6 @@ export async function upsertPaint(
     .bind(p.class_name)
     .first<{ id: number }>();
   return row?.id ?? 0;
-}
-
-export async function setPaintVehicles(db: D1Database, paintID: number, vehicleIDs: number[]): Promise<void> {
-  await db.prepare("DELETE FROM paint_vehicles WHERE paint_id = ?").bind(paintID).run();
-
-  for (const vid of vehicleIDs) {
-    await db
-      .prepare("INSERT OR IGNORE INTO paint_vehicles (paint_id, vehicle_id) VALUES (?, ?)")
-      .bind(paintID, vid)
-      .run();
-  }
 }
 
 export async function getAllPaints(db: D1Database): Promise<Paint[]> {

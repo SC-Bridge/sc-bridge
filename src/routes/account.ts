@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, HonoEnv } from "../lib/types";
+import { getAuthUser, type Env, type HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
 import { hashPassword } from "../lib/password";
@@ -26,7 +26,7 @@ export function accountRoutes() {
 
   // GET /api/account/providers — list linked auth providers for current user
   routes.get("/providers", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const accounts = await db
@@ -47,7 +47,7 @@ export function accountRoutes() {
 
   // POST /api/account/unlink-provider — remove a linked OAuth provider
   routes.post("/unlink-provider", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const body = await c.req
@@ -106,7 +106,7 @@ export function accountRoutes() {
 
   // POST /api/account/set-password — OAuth-only users: set initial password
   routes.post("/set-password", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const body = await c.req
@@ -158,7 +158,7 @@ export function accountRoutes() {
 
   // GET /api/account/export — Download all user data as JSON
   routes.get("/export", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const data = await collectUserData(db, user);
@@ -174,7 +174,7 @@ export function accountRoutes() {
 
   // POST /api/account/export-email — Email data export to user
   routes.post("/export-email", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const data = await collectUserData(db, user);
@@ -192,7 +192,7 @@ export function accountRoutes() {
 
   // GET /api/account/rsi-profile — return cached RSI profile for current user
   routes.get("/rsi-profile", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const row = await c.env.DB
       .prepare("SELECT * FROM user_rsi_profile WHERE user_id = ?")
       .bind(user.id)
@@ -216,7 +216,7 @@ export function accountRoutes() {
   // POST /api/account/rsi-sync — fetch + cache RSI citizen profile
   // Rate-limited: one sync per 10 minutes per user.
   routes.post("/rsi-sync", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const body = await c.req.json<{ handle?: string }>().catch(() => ({ handle: undefined }));
@@ -303,7 +303,7 @@ export function accountRoutes() {
 
   // GET /api/account/avatar-info — return avatar sources for current user
   routes.get("/avatar-info", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const row = await db
@@ -332,7 +332,7 @@ export function accountRoutes() {
 
   // PATCH /api/account/avatar — set avatar source (gravatar or rsi)
   routes.patch("/avatar", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const body = await c.req
@@ -371,7 +371,7 @@ export function accountRoutes() {
 
   // DELETE /api/account/avatar — remove avatar (set user.image = NULL)
   routes.delete("/avatar", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     await c.env.DB
       .prepare("UPDATE user SET image = NULL WHERE id = ?")
       .bind(user.id)
@@ -381,7 +381,7 @@ export function accountRoutes() {
 
   // PATCH /api/account/gravatar-opt-out — set gravatar_opted_out flag
   routes.patch("/gravatar-opt-out", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const db = c.env.DB;
 
     const body = await c.req
@@ -402,7 +402,7 @@ export function accountRoutes() {
 
   // POST /api/account/avatar/upload — upload custom avatar to R2
   routes.post("/avatar/upload", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
 
     const formData = await c.req.formData().catch(() => null);
     if (!formData) {
@@ -441,7 +441,7 @@ export function accountRoutes() {
 
   // DELETE /api/account — Self-service account deletion
   routes.delete("/", async (c) => {
-    const user = c.get("user")!;
+    const user = getAuthUser(c);
     const body = await c.req.json<{ confirmation?: string }>().catch(() => ({ confirmation: undefined }));
 
     if (body.confirmation !== "DELETE") {

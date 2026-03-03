@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { HonoEnv } from "../lib/types";
+import { getAuthUser, type HonoEnv } from "../lib/types";
 import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
 import { logUserChange } from "../lib/change-history";
 
@@ -12,7 +12,7 @@ export function settingsRoutes() {
   // GET /api/settings/llm-config
   routes.get("/llm-config", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const config = await db
       .prepare(
@@ -63,7 +63,7 @@ export function settingsRoutes() {
   // PUT /api/settings/llm-config
   routes.put("/llm-config", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const body = await c.req.json<{
       provider?: string;
@@ -126,7 +126,7 @@ export function settingsRoutes() {
   // GET /api/settings/preferences
   routes.get("/preferences", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const rows = await db
       .prepare("SELECT key, value FROM user_settings WHERE user_id = ?")
@@ -144,7 +144,7 @@ export function settingsRoutes() {
   // PUT /api/settings/preferences
   routes.put("/preferences", async (c) => {
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const body = await c.req.json<Record<string, string>>();
 

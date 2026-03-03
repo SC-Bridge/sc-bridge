@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import type { HonoEnv } from "../lib/types";
+import { Hono, type Context, type Next } from "hono";
+import { getAuthUser, type HonoEnv } from "../lib/types";
 import {
   getLootItems,
   getLootByUuid,
@@ -12,6 +12,12 @@ import {
   setLootWishlistQuantity,
   removeFromLootWishlist,
 } from "../db/queries";
+
+// Auth middleware — reused for collection and wishlist sub-paths
+async function requireUser(c: Context<HonoEnv>, next: Next): Promise<Response | void> {
+  if (!c.get("user")) return c.json({ error: "Unauthorized" }, 401);
+  return next();
+}
 
 /**
  * /api/loot — Loot/item finder (public browsing, auth-gated collection tracking)
@@ -29,18 +35,22 @@ export function lootRoutes() {
     return c.json(items);
   });
 
-  // GET /api/loot/collection — current user's collected loot_map_ids (auth required)
+  // Auth middleware for collection and wishlist
+  app.use("/collection", requireUser);
+  app.use("/collection/*", requireUser);
+  app.use("/wishlist", requireUser);
+  app.use("/wishlist/*", requireUser);
+
+  // GET /api/loot/collection — current user's collected loot_map_ids
   app.get("/collection", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const ids = await getUserLootCollection(c.env.DB, user.id);
     return c.json(ids);
   });
 
-  // POST /api/loot/collection/:uuid — mark item collected (auth required)
+  // POST /api/loot/collection/:uuid — mark item collected
   app.post("/collection/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
 
     const row = await c.env.DB
@@ -53,10 +63,9 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // PATCH /api/loot/collection/:uuid — set quantity (auth required); quantity=0 removes
+  // PATCH /api/loot/collection/:uuid — set quantity; quantity=0 removes
   app.patch("/collection/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
     const body = await c.req.json<{ quantity: number }>();
     const quantity = Number(body.quantity);
@@ -76,10 +85,9 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // DELETE /api/loot/collection/:uuid — unmark item collected (auth required)
+  // DELETE /api/loot/collection/:uuid — unmark item collected
   app.delete("/collection/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
 
     const row = await c.env.DB
@@ -92,18 +100,16 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // GET /api/loot/wishlist — current user's wishlisted items with location JSON (auth required)
+  // GET /api/loot/wishlist — current user's wishlisted items with location JSON
   app.get("/wishlist", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const items = await getUserLootWishlist(c.env.DB, user.id);
     return c.json(items);
   });
 
-  // POST /api/loot/wishlist/:uuid — add item to wishlist (auth required)
+  // POST /api/loot/wishlist/:uuid — add item to wishlist
   app.post("/wishlist/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
 
     const row = await c.env.DB
@@ -116,10 +122,9 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // PATCH /api/loot/wishlist/:uuid — set quantity (auth required); quantity=0 removes
+  // PATCH /api/loot/wishlist/:uuid — set quantity; quantity=0 removes
   app.patch("/wishlist/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
     const body = await c.req.json<{ quantity: number }>();
     const quantity = Number(body.quantity);
@@ -139,10 +144,9 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // DELETE /api/loot/wishlist/:uuid — remove item from wishlist (auth required)
+  // DELETE /api/loot/wishlist/:uuid — remove item from wishlist
   app.delete("/wishlist/:uuid", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
 
     const row = await c.env.DB

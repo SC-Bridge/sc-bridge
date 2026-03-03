@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { HonoEnv } from "../lib/types";
+import { getAuthUser, type HonoEnv } from "../lib/types";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -9,12 +9,12 @@ export function fleetRoutes() {
 
   // GET /api/vehicles — list user fleet with full reference data
   routes.get("/", async (c) => {
-    return getFleetList(c.env.DB, c.get("user")!.id, c);
+    return getFleetList(c.env.DB, getAuthUser(c).id, c);
   });
 
   // GET /api/vehicles/with-insurance — alias (insurance is already part of fleet data)
   routes.get("/with-insurance", async (c) => {
-    return getFleetList(c.env.DB, c.get("user")!.id, c);
+    return getFleetList(c.env.DB, getAuthUser(c).id, c);
   });
 
   // PATCH /api/vehicles/:id/visibility — update org_visibility and/or available_for_ops
@@ -23,7 +23,7 @@ export function fleetRoutes() {
     if (isNaN(id)) return c.json({ error: "Invalid fleet entry ID" }, 400);
 
     const db = c.env.DB;
-    const userID = c.get("user")!.id;
+    const userID = getAuthUser(c).id;
 
     const body = await c.req
       .json<{ org_visibility?: string; available_for_ops?: boolean }>()

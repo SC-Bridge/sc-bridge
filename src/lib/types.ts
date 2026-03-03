@@ -1,3 +1,6 @@
+import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
+
 // --- Cloudflare Bindings ---
 
 export interface Env {
@@ -507,4 +510,14 @@ export interface InsuranceEntry {
   duration_months?: number;
   is_lifetime: boolean;
   warbond: boolean;
+}
+
+/**
+ * Extract the authenticated user from Hono context.
+ * Throws 401 if called outside auth-protected routes.
+ */
+export function getAuthUser(c: Context<HonoEnv>) {
+  const user = c.get("user");
+  if (!user) throw new HTTPException(401, { message: "Unauthorized" });
+  return user;
 }
