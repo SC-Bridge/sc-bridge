@@ -710,6 +710,7 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
 
   const sizeDistribution: Record<string, number> = {};
   const roleCategories: Record<string, string[]> = {};
+  const focusCategories: Record<string, string[]> = {};
   const ltiShips: Array<{
     ship_name: string;
     custom_name?: string;
@@ -747,6 +748,13 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
       roleCategories[roleGroup] = [];
     }
     roleCategories[roleGroup].push(entry.vehicle_name ?? "Unknown");
+
+    // Fine-grained focus tracking for redundancy (e.g. "Light Fighter" not just "Combat")
+    const focus = entry.focus || "Unknown";
+    if (!focusCategories[focus]) {
+      focusCategories[focus] = [];
+    }
+    focusCategories[focus].push(entry.vehicle_name ?? "Unknown");
 
     // Insurance
     const insEntry = {
@@ -835,11 +843,13 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
     suggestions: gr.suggestions,
   }));
 
-  // Redundancies — roles with 3+ ships
-  const redundancies = Object.entries(roleCategories)
+  // Redundancies — detect ships with the same granular focus (e.g. "Light Fighter"),
+  // not the broad role group (e.g. "Combat"). A Gladius and Perseus are both "Combat"
+  // but "Light Fighter" vs "Heavy Gunship" is fleet diversity, not redundancy.
+  const redundancies = Object.entries(focusCategories)
     .filter(([, ships]) => ships.length >= 3)
-    .map(([role, ships]) => ({
-      role,
+    .map(([focus, ships]) => ({
+      role: focus,
       ships,
       notes: `${ships.length} ships in this role`,
     }));
