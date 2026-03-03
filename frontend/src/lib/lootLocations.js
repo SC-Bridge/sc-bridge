@@ -57,10 +57,10 @@ const CONTAINER_LOCATIONS = {
   ColonialOutpost_Outlaw_Large:                 'Colonial Outpost \u2014 Outlaw (Large)',
 
   // Contested zones
-  ContestedZones:                               'Contested Zones',
-  'contestedzones/ContestedZone_1a':            'Contested Zone',
-  'contestedzones/ContestedZone_1a_RewardRoom_001': 'Contested Zone \u2014 Reward Room',
-  'contestedzones/ContestedZone_1b_RewardRoom_002': 'Contested Zone \u2014 Reward Room',
+  ContestedZones:                               'Contested Zones (General)',
+  'contestedzones/ContestedZone_1a':            'Contested Zone 1A',
+  'contestedzones/ContestedZone_1a_RewardRoom_001': 'Contested Zone 1A \u2014 Reward Room',
+  'contestedzones/ContestedZone_1b_RewardRoom_002': 'Contested Zone 1B \u2014 Reward Room',
   'contestedzones/GhostArena_01':               'Ghost Arena',
 
   // Named locations
@@ -218,11 +218,12 @@ export function friendlyLocation(raw) {
   const scMatch = s.match(/^ShippingContainer_(\w+)$/)
   if (scMatch) return `Shipping Container (${toWords(scMatch[1])})`
 
-  // Contested zone areas
-  const czRoom = s.match(/^ContestedZone_\w+_RewardRoom_\d+$/)
-  if (czRoom) return 'Contested Zone \u2014 Reward Room'
-  const czMatch = s.match(/^ContestedZone/)
-  if (czMatch) return 'Contested Zone'
+  // Contested zone areas — preserve zone identifier (1a, 1b, etc.)
+  const czRoom = s.match(/^ContestedZone_(\w+?)_RewardRoom_(\d+)$/)
+  if (czRoom) return `Contested Zone ${czRoom[1].toUpperCase()} \u2014 Reward Room`
+  const czZone = s.match(/^ContestedZone_(\w+)$/)
+  if (czZone) return `Contested Zone ${czZone[1].toUpperCase()}`
+  if (s === 'ContestedZones') return 'Contested Zones (General)'
 
   // Ghost arena
   if (s.startsWith('GhostArena')) return 'Ghost Arena'
