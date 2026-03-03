@@ -695,32 +695,72 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
     }
   }
 
-  // Gap analysis — check for missing key roles
-  const ownedFocuses = new Set(Object.keys(roleCategories).map((f) => f.toLowerCase()));
-  const keyRoles = [
-    { role: "Mining", priority: "high", description: "No dedicated mining ship" },
-    { role: "Salvage", priority: "high", description: "No salvage capability" },
-    { role: "Medical", priority: "medium", description: "No medical ship" },
-    { role: "Refueling", priority: "medium", description: "No refueling capability" },
-    { role: "Exploration", priority: "medium", description: "No dedicated exploration ship" },
-    { role: "Cargo", priority: "low", description: "No dedicated cargo hauler" },
+  // Gap analysis — check for missing key roles.
+  // Each role maps to multiple search terms that satisfy it, matching against
+  // the full range of focus values in the vehicles table (e.g. "Medium Freighter"
+  // satisfies Cargo, "Ambulance" satisfies Medical, "Pathfinder" satisfies Exploration).
+  const GAP_ROLES: {
+    role: string;
+    priority: string;
+    description: string;
+    terms: string[];
+    suggestions: string[];
+  }[] = [
+    {
+      role: "Mining",
+      priority: "high",
+      description: "No dedicated mining ship",
+      terms: ["mining"],
+      suggestions: ["MISC Prospector", "ARGO MOLE", "Drake Vulture"],
+    },
+    {
+      role: "Salvage",
+      priority: "high",
+      description: "No salvage capability",
+      terms: ["salvage", "recovery"],
+      suggestions: ["Drake Vulture", "Aegis Reclaimer"],
+    },
+    {
+      role: "Medical",
+      priority: "medium",
+      description: "No medical ship",
+      terms: ["medical", "ambulance"],
+      suggestions: ["RSI Apollo Medivac", "Crusader C8R Pisces Rescue", "Drake Cutlass Red"],
+    },
+    {
+      role: "Refueling",
+      priority: "medium",
+      description: "No refueling capability",
+      terms: ["refuel"],
+      suggestions: ["MISC Starfarer Gemini", "MISC Starfarer"],
+    },
+    {
+      role: "Exploration",
+      priority: "medium",
+      description: "No dedicated exploration ship",
+      terms: ["explor", "pathfind", "expedition", "recon", "science"],
+      suggestions: ["RSI Constellation Aquila", "Anvil Carrack", "MISC Freelancer DUR"],
+    },
+    {
+      role: "Cargo",
+      priority: "low",
+      description: "No dedicated cargo hauler",
+      terms: ["cargo", "freight", "hauler"],
+      suggestions: ["Drake Caterpillar", "MISC Hull C", "RSI Constellation Taurus"],
+    },
   ];
 
-  const gaps = keyRoles
-    .filter((kr) => {
-      const term = kr.role.toLowerCase();
-      // Check if any owned focus contains this term
-      for (const focus of ownedFocuses) {
-        if (focus.includes(term)) return false;
-      }
-      return true;
-    })
-    .map((kr) => ({
-      role: kr.role,
-      priority: kr.priority,
-      description: kr.description,
-      suggestions: [] as string[],
-    }));
+  const ownedFocuses = Object.keys(roleCategories).map((f) => f.toLowerCase());
+
+  const gaps = GAP_ROLES.filter((gr) => {
+    // A role is satisfied if ANY owned focus contains ANY of the role's terms
+    return !ownedFocuses.some((focus) => gr.terms.some((term) => focus.includes(term)));
+  }).map((gr) => ({
+    role: gr.role,
+    priority: gr.priority,
+    description: gr.description,
+    suggestions: gr.suggestions,
+  }));
 
   // Redundancies — roles with 3+ ships
   const redundancies = Object.entries(roleCategories)
