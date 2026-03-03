@@ -722,6 +722,7 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
           WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
           ELSE 'unknown'
         END as category,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
@@ -730,10 +731,10 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
         CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) LIKE '@%'
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) LIKE '@%'
           THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name)
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name)
         END as manufacturer_name
       FROM loot_map lm
       LEFT JOIN fps_weapons       fw  ON lm.fps_weapon_id         = fw.id
@@ -750,6 +751,8 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
       LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
       LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
       LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
+      LEFT JOIN ship_missiles     sm  ON lm.ship_missile_id        = sm.id
+      LEFT JOIN manufacturers     msm ON sm.manufacturer_id        = msm.id
       WHERE ${versionFilter}
         AND lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
@@ -782,6 +785,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
           WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
           ELSE 'unknown'
         END as category
       FROM loot_map lm
@@ -843,6 +847,11 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
       .prepare("SELECT name, type, sub_type, size, grade, description, stats_json FROM vehicle_components WHERE id = ?")
       .bind(item.vehicle_component_id)
       .first() as Record<string, unknown> | null;
+  } else if (item.ship_missile_id) {
+    details = await db
+      .prepare("SELECT name, type, sub_type, size, grade, description FROM ship_missiles WHERE id = ?")
+      .bind(item.ship_missile_id)
+      .first() as Record<string, unknown> | null;
   }
 
   return { ...item, item_details: details };
@@ -893,6 +902,7 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
           WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
           WHEN lm.props_id IS NOT NULL THEN 'prop'
           WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
           ELSE 'unknown'
         END as category,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
@@ -901,10 +911,10 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
         CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name) LIKE '@%'
+          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) IN ('<= PLACEHOLDER =>', '987')
+            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) LIKE '@%'
           THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name)
+          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name)
         END as manufacturer_name,
         lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
         ulw.quantity as wishlist_quantity
@@ -924,6 +934,8 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
       LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
       LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
       LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
+      LEFT JOIN ship_missiles     sm  ON lm.ship_missile_id        = sm.id
+      LEFT JOIN manufacturers     msm ON sm.manufacturer_id        = msm.id
       WHERE ulw.user_id = ?
       ORDER BY lm.name ASC`,
     )

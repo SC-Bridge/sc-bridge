@@ -43,6 +43,7 @@ const CATEGORY_LABELS = {
   prop:           'Prop',
   utility:        'Utility',
   ship_component: 'Ship Component',
+  missile:        'Missile',
   unknown:        'Other',
 }
 
@@ -57,6 +58,7 @@ const CATEGORY_BADGE_STYLES = {
   prop:           'bg-gray-700/60 text-gray-300',
   utility:        'bg-yellow-900/40 text-yellow-300',
   ship_component: 'bg-violet-900/40 text-violet-300',
+  missile:        'bg-rose-900/40 text-rose-300',
   unknown:        'bg-gray-700/60 text-gray-400',
 }
 
@@ -808,7 +810,7 @@ export default function LootDB() {
   const categories = useMemo(() => {
     if (!allItems) return []
     const seen = new Set(allItems.map((i) => i.category))
-    const ordered = ['weapon', 'armour', 'helmet', 'clothing', 'attachment', 'consumable', 'harvestable', 'prop', 'utility', 'unknown']
+    const ordered = ['weapon', 'armour', 'helmet', 'clothing', 'attachment', 'consumable', 'harvestable', 'prop', 'utility', 'ship_component', 'missile', 'unknown']
     return ordered.filter((c) => seen.has(c))
   }, [allItems])
 
@@ -1370,7 +1372,7 @@ export default function LootDB() {
               <div>
                 <p className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-3">By Category</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                  {['weapon','armour','helmet','clothing','attachment','consumable','harvestable','prop','utility'].map(cat => {
+                  {['weapon','armour','helmet','clothing','attachment','consumable','harvestable','prop','utility','ship_component','missile'].map(cat => {
                     const s = collectionCategoryStats[cat]
                     if (!s || s.total === 0) return null
                     const pct = (s.collected / s.total) * 100
