@@ -2,6 +2,7 @@
 
 @ACTIVE
 # sid|registered|last_active|scope
+c7e45d0f|2026-03-03T14:06+1300|2026-03-03T14:13+1300|stats_json extraction
 2e01fb82|2026-03-03T13:47+1300|2026-03-03T13:56+1300|missile+eyewear loot FKs
 4b622282|2026-03-03T13:22+1300|2026-03-03T13:22+1300|unset
 2e16a9b4|2026-03-03T12:07+1300|2026-03-03T12:35+1300|loot unmatched items
@@ -12,8 +13,8 @@ b6129c05|2026-03-03T10:56+1300|2026-03-03T10:56+1300|unset
 0b7dbfad|2026-03-03T10:45+1300|2026-03-03T10:45+1300|unset
 af0da55c|2026-03-03T10:44+1300|2026-03-03T10:44+1300|unset
 424aa96f|2026-03-03T10:07+1300|2026-03-03T10:12+1300|full audit + code fixes
-cee1b559|2026-03-03T09:47+1300|2026-03-03T09:48+1300|full audit + code fixes
 # sid|registered|last_active|scope
+c7e45d0f|2026-03-03T14:06+1300|2026-03-03T14:13+1300|stats_json extraction
 2e01fb82|2026-03-03T13:47+1300|2026-03-03T13:56+1300|missile+eyewear loot FKs
 4b622282|2026-03-03T13:22+1300|2026-03-03T13:22+1300|unset
 2e16a9b4|2026-03-03T12:07+1300|2026-03-03T12:35+1300|loot unmatched items
@@ -24,7 +25,6 @@ b6129c05|2026-03-03T10:56+1300|2026-03-03T10:56+1300|unset
 0b7dbfad|2026-03-03T10:45+1300|2026-03-03T10:45+1300|unset
 af0da55c|2026-03-03T10:44+1300|2026-03-03T10:44+1300|unset
 424aa96f|2026-03-03T10:07+1300|2026-03-03T10:12+1300|full audit + code fixes
-cee1b559|2026-03-03T09:47+1300|2026-03-03T09:48+1300|full audit + code fixes
 @FILES
 # sid|file_path
 4b622282|src/lib/auth.ts
@@ -36,12 +36,6 @@ e495048d|frontend/src/pages/Admin.jsx
 
 @LOG
 # timestamp|sid|op|detail
-18:05+1300|1b6a23b8|CMT|0e6843d fix(loot-detail): dedup locations, empty item details, pb-8
-18:25+1300|1b6a23b8|SCO|group1/2/3 loot fixes
-18:55+1300|1b6a23b8|CMT|99568b9,b3a8278,380457f loot expansion
-06:57+1300|1b6a23b8|CMT|97913bc feat(loot): friendly shop name lookup
-07:10+1300|1b6a23b8|CMT|3436594 feat(loot): friendly location/faction names
-08:10+1300|1b6a23b8|SCO|Points of Interest planning
 08:15+1300|1b6a23b8|SCO|POI plan complete — 7 tasks created
 08:25+1300|1b6a23b8|MOD|frontend/src/pages/LootDB.jsx
 08:35+1300|1b6a23b8|CMT|201ebdd fix(loot-detail): stacking/encoding/fire modes/stat order
@@ -90,3 +84,7 @@ e495048d|frontend/src/pages/Admin.jsx
 13:56+1300|2e01fb82|MOD|queries.ts+LootDB+0045 migration
 13:58+1300|2e01fb82|CMT|cbb298c feat(loot): missile+eyewear FKs
 14:00+1300|2e01fb82|CMT|chore: worklog+journal update
+14:06+1300|c7e45d0f|CLN|stale:cee1b559,cee1b559
+14:06+1300|c7e45d0f|REG|started
+14:13+1300|c7e45d0f|CMT|411a303 feat(loot): stats_json helmets+attachments
+14:14+1300|c7e45d0f|PUSH|6c66aff..411a303 → main — CI deploying

@@ -8,12 +8,12 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-Loot unmatched items — **COMPLETE**. Zero visible unmatched items in UI.
+stats_json population — **COMPLETE** for helmets and attachments.
 
 ## Recent Changes
 
+- **stats_json: helmets + attachments** (`411a303`): Fixed broken DataCore component names. 614/614 helmets now have resistance/emission/atmosphere stats. 69/99 attachments have zoom/sound/damage modifier stats. LootDB updated with labels, ordering, and formatted display (40% reduction, 4x zoom, etc.).
 - **Loot FK: missiles + eyewear** (`cbb298c`): Migration 0045 (ship_missiles table + ship_missile_id FK). 64 missiles extracted → 25 matched in loot_map. fps_clothing extended with Char_Accessory_Eyes (slot='Eyes') → 9 eyewear matched. UI visible unmatched: **0**.
-- **Loot FK improvements** (`9c979ed` in scbridge/tools): fps_clothing/extract.py now scans pu_armor/ (picks up Ixonia Pants/Armor). New ship_turrets/extract.py includes GunTurret (VariPuck S2-S6). Manual inserts for Inmate Workpack, OMNI-CFS Flight Suit, Tigersclaw, ASD Access Card, Fuse.
 - **Invite tokens** (`b7c4b95`): Migration 0044 applied. Invite guard middleware, `/api/invites/validate`, `/api/admin/invites` POST+GET, Register.jsx token-aware UI, Admin.jsx InvitePanel. **DONE and working.**
 
 ## Key Decisions
@@ -119,9 +119,13 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 - **Paint images** — CF Images upload pipeline for paints
 - **Org Settings page** (v2): update org metadata (RSI SID, social links)
-- **Loot remaining 50 unmatched items** — need new FK tables or DataCore extraction for: Missile/Torpedo (25), Char_Accessory_Eyes eyewear (9), VariPuck gimbal mounts (5), Ixonia clothing (4), Karoby food bars (2), Inmate Workpack backpack (1), Char_Armor_Undersuit (1), FPS_Consumable/Hacking Tigersclaw (1), Misc/Fuse (1), RemovableChip (1). These show in the UI with 'Other' category — no item_details until tables exist.
-- **Shopping list location names**: `containers_json` uses raw DataCore keys (AddDelving, DistributionCentres_HighSecurity). No friendly name exists — check loot extraction script in `scbridge/tools/scripts/loot_map/`.
-- **stats_json for fps_helmets/clothing/attachments/utilities**: columns exist in D1 but all NULL — run DataCore extraction scripts.
+- **stats_json for fps_utilities**: `SCItemConsumableParams` has no primitive heal/damage fields — consumable effects are file-referenced subtypes. Skip unless DataCore adds direct values.
+- **stats_json for fps_armour (body)**: Same wrong component name bug as helmets — needs same fix (`SCItemSuitArmorParams`). Not yet done.
+
+**COMPLETED:**
+- Shopping list location names — already fully implemented via `lootLocations.js` (84 keys). Journal note was stale.
+- stats_json helmets (614/614) + attachments (69/99 with modifiers)
+- Loot unmatched items — 0 visible in UI
 
 ## Weapon Mount Pattern (for future reference)
 
@@ -442,4 +446,8 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-03 13:45:41
+
+
+---
+**Session compacted at:** 2026-03-03 14:05:03
 
