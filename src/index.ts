@@ -88,21 +88,19 @@ app.use("/api/*", async (c, next) => {
 });
 
 // --- Invite guard — intercepts sign-up before Better Auth sees it
-// Token is consumed atomically: if valid, marked used_at = now() then request proceeds.
+// Atomic: UPDATE with WHERE ... AND used_at IS NULL consumes the token in a single
+// statement. If two requests race, only one sees changes === 1.
 app.post("/api/auth/sign-up/email", async (c, next) => {
   const token = c.req.header("x-invite-token");
   if (!token) {
     return c.json({ message: "An invite is required to create an account.", code: "INVITE_REQUIRED" }, 403);
   }
-  const row = await c.env.DB
-    .prepare("SELECT id FROM invite_tokens WHERE token = ? AND used_at IS NULL")
-    .bind(token).first<{ id: number }>();
-  if (!row) {
+  const result = await c.env.DB
+    .prepare("UPDATE invite_tokens SET used_at = datetime('now') WHERE token = ? AND used_at IS NULL")
+    .bind(token).run();
+  if (result.meta.changes === 0) {
     return c.json({ message: "This invite link is not valid or has already been used.", code: "INVITE_INVALID" }, 403);
   }
-  await c.env.DB
-    .prepare("UPDATE invite_tokens SET used_at = datetime('now') WHERE token = ?")
-    .bind(token).run();
   await next();
 });
 
@@ -181,14 +179,37 @@ async function requireAuth(c: Context<HonoEnv>, next: Next): Promise<Response | 
   return c.json({ error: "Unauthorized" }, 401);
 }
 
-// requireRole middleware factory
+// requireRole middleware factory — inlines auth checks to avoid double-next() from
+// calling requireAuth with a no-op callback. API token users are always rejected
+// because role checks require a session user with a role field.
 function requireRole(...roles: string[]) {
   return async (c: Context<HonoEnv>, next: Next): Promise<Response | void> => {
-    const authResp = await requireAuth(c, async () => {});
-    if (authResp) return authResp;
-
     const user = c.get("user");
-    if (!user?.role || !roles.includes(user.role)) {
+    if (!user) {
+      // API token fallback check — valid tokens get 403 (no role context), invalid get 401
+      const token = c.env.API_TOKEN;
+      if (token) {
+        const provided = c.req.header("X-API-Key") || c.req.query("token") || "";
+        const encoder = new TextEncoder();
+        const [hashA, hashB] = await Promise.all([
+          crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+          crypto.subtle.digest("SHA-256", encoder.encode(token)),
+        ]);
+        if (crypto.subtle.timingSafeEqual(hashA, hashB)) {
+          return c.json({ error: "Forbidden" }, 403);
+        }
+      }
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    // Reject deleted/suspended/banned users
+    const record = await c.env.DB
+      .prepare("SELECT status FROM user WHERE id = ?")
+      .bind(user.id)
+      .first<{ status: string }>();
+    if (!record || record.status !== "active") {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    if (!user.role || !roles.includes(user.role)) {
       return c.json({ error: "Forbidden" }, 403);
     }
     return next();

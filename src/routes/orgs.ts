@@ -84,6 +84,9 @@ export function orgRoutes() {
       callerRole = membership?.role ?? null;
     }
 
+    // SAFETY: visibilityClause is built from callerRole which comes from the DB
+    // (member.role column), not from user input. All branches produce static SQL
+    // string literals, so this interpolation is not a SQL injection vector.
     let visibilityClause: string;
     if (callerRole === "owner" || callerRole === "admin") {
       visibilityClause = "uf.org_visibility IN ('public', 'org', 'officers')";
@@ -172,6 +175,7 @@ export function orgRoutes() {
       .first<{ role: string }>();
     if (!membership) return c.json({ error: "Forbidden" }, 403);
 
+    // SAFETY: see fleet endpoint above — callerRole from DB, static SQL literals only
     const callerRole = membership.role;
     let visibilityClause: string;
     if (callerRole === "owner" || callerRole === "admin") {

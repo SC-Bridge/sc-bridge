@@ -20,11 +20,11 @@ export function debugRoutes() {
       .prepare("SELECT COUNT(*) as count FROM user_fleet")
       .first<{ count: number }>();
 
-    // Sample fleet entries (from any user for debug purposes)
+    // Sample fleet entries — vehicle/insurance data only, no user PII (user_id, custom_name)
     const sampleResult = await db
       .prepare(
-        `SELECT uf.id, uf.user_id, uf.vehicle_id, v.name as vehicle_name, v.slug as vehicle_slug,
-          it.label as insurance, uf.custom_name
+        `SELECT uf.id, uf.vehicle_id, v.name as vehicle_name, v.slug as vehicle_slug,
+          it.label as insurance
         FROM user_fleet uf
         JOIN vehicles v ON v.id = uf.vehicle_id
         LEFT JOIN insurance_types it ON it.id = uf.insurance_type_id

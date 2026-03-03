@@ -204,7 +204,7 @@ export function analysisRoutes() {
         )
         .bind(
           userID,
-          config.provider,
+          provider,
           model,
           fleet.length,
           analysisText,
@@ -214,7 +214,7 @@ export function analysisRoutes() {
       logEvent("llm_analysis", {
         model,
         vehicle_count: fleet.length,
-        provider: config.provider,
+        provider,
       });
 
       return c.json({

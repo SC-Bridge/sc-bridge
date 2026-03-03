@@ -76,7 +76,7 @@ export function createAuth(env: Env) {
           buildTransactionalEmailHtml("Reset Your Password", `
             <p>We received a request to reset the password for your SC Bridge account.</p>
             <p>Click the button below to choose a new password:</p>
-            <p style="text-align:center;"><a href="${url}" class="cta">Reset Password</a></p>
+            <p style="text-align:center;"><a href="${escapeHtml(url)}" class="cta">Reset Password</a></p>
             <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email. Your password won't be changed.</p>
           `),
         );
@@ -94,7 +94,7 @@ export function createAuth(env: Env) {
             "Verify your new email",
             buildTransactionalEmailHtml("Verify New Email", `
               <p>Click the button below to confirm <strong>${escapeHtml(user.email)}</strong> as your new SC Bridge email address.</p>
-              <p style="text-align:center;"><a href="${url}" class="cta">Verify New Email</a></p>
+              <p style="text-align:center;"><a href="${escapeHtml(url)}" class="cta">Verify New Email</a></p>
               <p style="font-size:12px;color:#888;">If you didn't request this change, you can safely ignore this email.</p>
             `),
           );
@@ -106,7 +106,7 @@ export function createAuth(env: Env) {
             buildTransactionalEmailHtml("Verify Your Email", `
               <p>Welcome to SC Bridge! Please verify your email address to activate your account.</p>
               <p>Click the button below to get started:</p>
-              <p style="text-align:center;"><a href="${url}" class="cta">Verify Email</a></p>
+              <p style="text-align:center;"><a href="${escapeHtml(url)}" class="cta">Verify Email</a></p>
               <p style="font-size:12px;color:#888;">If you didn't create an SC Bridge account, you can safely ignore this email.</p>
             `),
           );
@@ -212,6 +212,9 @@ export function createAuth(env: Env) {
           before: async (user, context) => {
             // Block new user creation via social OAuth callbacks.
             // Email signups are pre-validated by the invite guard middleware in index.ts.
+            // NOTE: url.includes("/api/auth/callback/") relies on Better Auth's internal
+            // routing convention (verified for v1.4.18). If upgrading Better Auth, verify
+            // that OAuth callbacks still route through this path pattern.
             const req = (context as Record<string, unknown>)?.request;
             const url = req instanceof Request ? req.url : "";
             if (url.includes("/api/auth/callback/")) {
@@ -367,7 +370,7 @@ export function createAuth(env: Env) {
             buildTransactionalEmailHtml("You've Been Invited", `
               <p>You've been invited to join <strong>${escapeHtml(data.organization.name)}</strong> on SC Bridge.</p>
               <p>Click the button below to accept your invitation:</p>
-              <p style="text-align:center;"><a href="${invitationUrl}" class="cta">Accept Invitation</a></p>
+              <p style="text-align:center;"><a href="${escapeHtml(invitationUrl)}" class="cta">Accept Invitation</a></p>
               <p style="font-size:12px;color:#888;">This invitation will expire in 48 hours. If you don't have an SC Bridge account yet, you'll be prompted to create one.</p>
             `),
           );
@@ -382,7 +385,7 @@ export function createAuth(env: Env) {
             "Sign in to SC Bridge",
             buildTransactionalEmailHtml("Sign In to SC Bridge", `
               <p>Click the button below to sign in to your SC Bridge account. This link expires in 10 minutes.</p>
-              <p style="text-align:center;"><a href="${url}" class="cta">Sign In</a></p>
+              <p style="text-align:center;"><a href="${escapeHtml(url)}" class="cta">Sign In</a></p>
               <p style="font-size:12px;color:#888;">If you didn't request this, you can safely ignore this email. The link will expire automatically.</p>
             `),
           );

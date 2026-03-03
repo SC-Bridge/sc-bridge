@@ -849,7 +849,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
       .first() as Record<string, unknown> | null;
   } else if (item.ship_missile_id) {
     details = await db
-      .prepare("SELECT name, type, sub_type, size, grade, description FROM ship_missiles WHERE id = ?")
+      .prepare("SELECT name, type, sub_type, size, grade, description, stats_json FROM ship_missiles WHERE id = ?")
       .bind(item.ship_missile_id)
       .first() as Record<string, unknown> | null;
   }

@@ -456,6 +456,9 @@ export function accountRoutes() {
       ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
     });
 
+    // Delete R2 avatar if present (best-effort — don't block deletion if this fails)
+    try { await c.env.AVATARS.delete(`avatars/${user.id}`); } catch { /* avatar may not exist */ }
+
     // Atomic deletion: all app data + all auth credentials in a single batch
     // user_change_history rows are kept (tombstone audit trail) but PII fields are scrubbed
     // user row itself is soft-deleted below (anonymised, not hard-deleted)

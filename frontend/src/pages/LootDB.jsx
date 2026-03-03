@@ -587,7 +587,7 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                         display = `${Math.round(v * 100)}% of base`
                       } else if ((k === 'zoom_scale' || k === 'second_zoom_scale') && typeof v === 'number') {
                         display = `${v}x`
-                      } else if (k === 'atmosphere_capacity') {
+                      } else if (k === 'atmosphere_capacity' && typeof v === 'number') {
                         display = v > 0 ? 'Yes' : 'No'
                       } else {
                         display = String(v)
