@@ -171,6 +171,16 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       `WITH ship_ports AS (
         SELECT * FROM vehicle_ports
         WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
+      ),
+      child_components AS (
+        SELECT
+          c.parent_port_id,
+          vc2.name, vc2.type, vc2.sub_type, vc2.size, vc2.grade, vc2.stats_json,
+          m2.name AS manufacturer_name, m2.class AS manufacturer_class,
+          ROW_NUMBER() OVER (PARTITION BY c.parent_port_id ORDER BY c.id) AS rn
+        FROM ship_ports c
+        JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid
+        LEFT JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id
       )
       SELECT
         p.id AS port_id,
@@ -180,17 +190,18 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         p.port_type,
         p.size_min,
         p.size_max,
-        COALESCE(vc.name,  (SELECT vc2.name  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_name,
-        COALESCE(vc.type,  (SELECT vc2.type  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_type,
-        COALESCE(vc.sub_type, (SELECT vc2.sub_type FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS sub_type,
-        COALESCE(vc.size,  (SELECT vc2.size  FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS component_size,
-        COALESCE(vc.grade, (SELECT vc2.grade FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS grade,
-        COALESCE(vc.stats_json, (SELECT vc2.stats_json FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid WHERE c.parent_port_id = p.id LIMIT 1)) AS stats_json,
-        COALESCE(m.name, (SELECT m2.name FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS manufacturer_name,
-        COALESCE(m.class, (SELECT m2.class FROM ship_ports c JOIN vehicle_components vc2 ON vc2.uuid = c.equipped_item_uuid JOIN manufacturers m2 ON m2.id = vc2.manufacturer_id WHERE c.parent_port_id = p.id LIMIT 1)) AS component_class
+        COALESCE(vc.name, child.name) AS component_name,
+        COALESCE(vc.type, child.type) AS component_type,
+        COALESCE(vc.sub_type, child.sub_type) AS sub_type,
+        COALESCE(vc.size, child.size) AS component_size,
+        COALESCE(vc.grade, child.grade) AS grade,
+        COALESCE(vc.stats_json, child.stats_json) AS stats_json,
+        COALESCE(m.name, child.manufacturer_name) AS manufacturer_name,
+        COALESCE(m.class, child.manufacturer_class) AS component_class
       FROM ship_ports p
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
+      LEFT JOIN child_components child ON child.parent_port_id = p.id AND child.rn = 1
       WHERE p.category_label IS NOT NULL
         AND (
           p.parent_port_id IS NULL
@@ -664,61 +675,59 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
   const versionFilter = patchCode
     ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
     : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
-  const sql = `SELECT
-        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+  // Manufacturer is resolved via a single CASE subquery per row instead of 16 LEFT JOINs.
+  // Only the matching FK branch executes — each is a PK lookup + FK join.
+  const sql = `SELECT lb.id, lb.uuid, lb.name, lb.type, lb.sub_type, lb.rarity,
+        lb.category, lb.has_containers, lb.has_shops, lb.has_npcs, lb.has_corpses, lb.has_contracts,
         CASE
-          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-          WHEN lm.props_id IS NOT NULL THEN 'prop'
-          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-          ELSE 'unknown'
-        END as category,
-        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
-        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
-        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
-        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
-        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
-        CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) LIKE '@%'
-          THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name)
+          WHEN lb.mfr_raw IN ('<= PLACEHOLDER =>', '987') OR lb.mfr_raw LIKE '@%' THEN NULL
+          ELSE lb.mfr_raw
         END as manufacturer_name
-      FROM loot_map lm
-      LEFT JOIN fps_weapons       fw  ON lm.fps_weapon_id         = fw.id
-      LEFT JOIN manufacturers     mw  ON fw.manufacturer_id        = mw.id
-      LEFT JOIN fps_armour        fa  ON lm.fps_armour_id          = fa.id
-      LEFT JOIN manufacturers     ma  ON fa.manufacturer_id        = ma.id
-      LEFT JOIN fps_attachments   fat ON lm.fps_attachment_id      = fat.id
-      LEFT JOIN manufacturers     mat ON fat.manufacturer_id       = mat.id
-      LEFT JOIN fps_utilities     fu  ON lm.fps_utility_id         = fu.id
-      LEFT JOIN manufacturers     mu  ON fu.manufacturer_id        = mu.id
-      LEFT JOIN fps_helmets       fh  ON lm.fps_helmet_id          = fh.id
-      LEFT JOIN manufacturers     mh  ON fh.manufacturer_id        = mh.id
-      LEFT JOIN fps_clothing      fcc ON lm.fps_clothing_id        = fcc.id
-      LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
-      LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
-      LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
-      LEFT JOIN ship_missiles     sm  ON lm.ship_missile_id        = sm.id
-      LEFT JOIN manufacturers     msm ON sm.manufacturer_id        = msm.id
-      WHERE ${versionFilter}
-        AND lm.name NOT IN ('<= PLACEHOLDER =>')
-        AND lm.name NOT LIKE 'EntityClassDefinition.%'
-        AND lm.type IS NOT NULL AND lm.type != ''
-        AND lm.type NOT IN (
-          'NOITEM_Vehicle','UNDEFINED',
-          'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
-          'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
-          'Currency','MobiGlas'
-        )
-      ORDER BY lm.name ASC`;
+      FROM (
+        SELECT
+          lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+          CASE
+            WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+            WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+            WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+            WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+            WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+            WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+            WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+            WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+            WHEN lm.props_id IS NOT NULL THEN 'prop'
+            WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+            WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
+            ELSE 'unknown'
+          END as category,
+          CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+          CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+          CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+          CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+          CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+          CASE
+            WHEN lm.fps_weapon_id IS NOT NULL THEN (SELECT m.name FROM fps_weapons t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_weapon_id)
+            WHEN lm.fps_armour_id IS NOT NULL THEN (SELECT m.name FROM fps_armour t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_armour_id)
+            WHEN lm.fps_attachment_id IS NOT NULL THEN (SELECT m.name FROM fps_attachments t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_attachment_id)
+            WHEN lm.fps_utility_id IS NOT NULL THEN (SELECT m.name FROM fps_utilities t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_utility_id)
+            WHEN lm.fps_helmet_id IS NOT NULL THEN (SELECT m.name FROM fps_helmets t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_helmet_id)
+            WHEN lm.fps_clothing_id IS NOT NULL THEN (SELECT m.name FROM fps_clothing t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_clothing_id)
+            WHEN lm.vehicle_component_id IS NOT NULL THEN (SELECT m.name FROM vehicle_components t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.vehicle_component_id)
+            WHEN lm.ship_missile_id IS NOT NULL THEN (SELECT m.name FROM ship_missiles t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.ship_missile_id)
+          END as mfr_raw
+        FROM loot_map lm
+        WHERE ${versionFilter}
+          AND lm.name NOT IN ('<= PLACEHOLDER =>')
+          AND lm.name NOT LIKE 'EntityClassDefinition.%'
+          AND lm.type IS NOT NULL AND lm.type != ''
+          AND lm.type NOT IN (
+            'NOITEM_Vehicle','UNDEFINED',
+            'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
+            'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
+            'Currency','MobiGlas'
+          )
+      ) lb
+      ORDER BY lb.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
 }
