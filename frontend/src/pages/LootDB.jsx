@@ -392,15 +392,16 @@ const STAT_LABELS = {
   rounds_per_minute:     'Rounds / Min',
   fire_modes:            'Fire Modes',
   burst_count:           null,           // merged into fire_modes display
-  // Helmet damage resistances (multiplier: lower = more resistant)
+  physical_damage:       'Physical Damage',
+  // Helmet / armour damage resistances (multiplier: lower = more resistant)
   physical_resistance:   'Physical Resist',
   energy_resistance:     'Energy Resist',
   distortion_resistance: 'Distortion Resist',
   thermal_resistance:    'Thermal Resist',
   biochemical_resistance:'Biochemical Resist',
   stun_resistance:       'Stun Resist',
-  // Helmet misc
-  atmosphere_capacity:   'Atmosphere',
+  // Helmet / armour misc
+  atmosphere_capacity:   'EVA Support',
   ir_emission:           'IR Emission',
   em_emission:           'EM Emission',
   // Attachments
@@ -412,7 +413,7 @@ const STAT_LABELS = {
 
 /** Display order for known stats fields. Unknown fields sort alphabetically after. */
 const STAT_ORDER = [
-  'item_port_count', 'ammo_capacity', 'rounds_per_minute', 'fire_modes',
+  'item_port_count', 'ammo_capacity', 'rounds_per_minute', 'fire_modes', 'physical_damage',
   'zoom_scale', 'second_zoom_scale', 'damage_multiplier', 'sound_radius_multiplier',
   'physical_resistance', 'energy_resistance', 'distortion_resistance',
   'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
@@ -586,6 +587,8 @@ function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty
                         display = `${Math.round(v * 100)}% of base`
                       } else if ((k === 'zoom_scale' || k === 'second_zoom_scale') && typeof v === 'number') {
                         display = `${v}x`
+                      } else if (k === 'atmosphere_capacity') {
+                        display = v > 0 ? 'Yes' : 'No'
                       } else {
                         display = String(v)
                       }
