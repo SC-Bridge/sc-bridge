@@ -118,7 +118,7 @@ export default function Dashboard() {
             <Package className="w-4 h-4 text-sc-accent2" />
             <span className="stat-label">Cargo (SCU)</span>
           </div>
-          <p className="text-4xl font-display font-bold text-white">{(overview.total_cargo || 0).toLocaleString()}</p>
+          <p className="text-4xl font-display font-bold text-white">{Math.round(overview.total_cargo || 0).toLocaleString()}</p>
         </div>
 
         {/* Min Crew */}

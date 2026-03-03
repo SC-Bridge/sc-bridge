@@ -711,7 +711,7 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[]): 
       priority: "high",
       description: "No dedicated mining ship",
       terms: ["mining"],
-      suggestions: ["MISC Prospector", "ARGO MOLE", "Drake Vulture"],
+      suggestions: ["MISC Prospector", "ARGO MOLE", "Greycat ROC"],
     },
     {
       role: "Salvage",

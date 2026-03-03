@@ -156,7 +156,7 @@ export default function Analysis() {
             <Package className="w-4 h-4 text-sc-accent2" />
             <span className="stat-label">Cargo (SCU)</span>
           </div>
-          <p className="text-4xl font-display font-bold text-white">{(overview.total_cargo || 0).toLocaleString()}</p>
+          <p className="text-4xl font-display font-bold text-white">{Math.round(overview.total_cargo || 0).toLocaleString()}</p>
         </div>
 
         {/* Min Crew */}
@@ -236,13 +236,13 @@ export default function Analysis() {
         <PanelSection title="Role Categories" icon={Shield}>
           <div className="p-4 h-64 bg-grid" role="img" aria-label={`Role categories: ${roleData.map(d => `${d.name}: ${d.count}`).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={roleData} layout="vertical" margin={{ left: 80 }}>
-                <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <BarChart data={roleData} layout="vertical" margin={{ left: 100 }}>
+                <XAxis type="number" allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
                 <YAxis
                   dataKey="name"
                   type="category"
                   tick={{ fill: '#9ca3af', fontSize: 11 }}
-                  width={75}
+                  width={95}
                 />
                 <Tooltip {...TOOLTIP_STYLE} />
                 <Bar dataKey="count" fill={CHART_COLORS[0]} fillOpacity={0.7} radius={[0, 4, 4, 0]} />
@@ -257,19 +257,10 @@ export default function Analysis() {
         <h3 className="font-display font-semibold text-sm uppercase tracking-widest text-gray-400 mb-3">
           Insurance Summary
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatCard icon={Shield} label="LTI Ships" value={ltiCount} color="text-sc-lti" accentBorder="border-sc-lti" />
           <StatCard icon={Shield} label="Non-LTI Ships" value={nonLtiCount} color="text-sc-warn" accentBorder="border-sc-warn" />
           <StatCard icon={Shield} label="Unknown Insurance" value={unknownCount} color="text-gray-400" />
-        </div>
-        <div className="panel p-4">
-          <div className="flex justify-between text-xs font-mono mb-1">
-            <span className="text-sc-lti">LTI Coverage</span>
-            <span className="text-gray-400">{ltiCount}/{totalVehicles} ({ltiPercent}%)</span>
-          </div>
-          <div className="status-bar" role="progressbar" aria-valuenow={ltiPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`LTI coverage: ${ltiPercent}%`}>
-            <div className="status-bar-fill bg-sc-lti" style={{ width: `${ltiPercent}%` }} />
-          </div>
         </div>
         {highValueNonLti.length > 0 && (
           <div className="panel p-4 mt-3 border-l-2 border-sc-warn/40">
