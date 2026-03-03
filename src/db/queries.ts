@@ -1140,7 +1140,10 @@ interface LootByLocationResult {
 }
 
 export async function getLootByLocation(db: D1Database): Promise<LootByLocationResult> {
-  const sql = `SELECT
+  // Fetching all JSON blobs in one query exceeds D1's 20MB result limit (~61MB total).
+  // Paginate in batches and aggregate progressively. Use Sets for O(1) dedup.
+  const PAGE_SIZE = 500;
+  const baseSql = `SELECT
         lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         lm.containers_json, lm.shops_json, lm.npcs_json,
         CASE
@@ -1172,77 +1175,94 @@ export async function getLootByLocation(db: D1Database): Promise<LootByLocationR
           (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
           OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
           OR (lm.npcs_json IS NOT NULL AND lm.npcs_json NOT IN ('null','[]',''))
-        )`;
-
-  const result = await db.prepare(sql).all<LootLocationRow>();
-  const rows = result.results;
+        )
+      ORDER BY lm.id
+      LIMIT ? OFFSET ?`;
 
   const containers: Record<string, LocationBucket> = {};
   const shops: Record<string, LocationBucket> = {};
   const npcs: Record<string, LocationBucket> = {};
+
+  // Dedup sets: "locationKey::uuid" to avoid O(n²) .some() scans
+  const containerSeen = new Set<string>();
+  const shopSeen = new Set<string>();
+  const npcSeen = new Set<string>();
 
   const parseJson = (val: string | null): unknown[] => {
     if (!val || val === "null" || val === "[]" || val === "") return [];
     try { return JSON.parse(val) as unknown[]; } catch { return []; }
   };
 
-  for (const row of rows) {
-    const baseItem = {
-      uuid: row.uuid,
-      name: row.name,
-      type: row.type,
-      sub_type: row.sub_type,
-      rarity: row.rarity,
-      category: row.category,
-    };
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const result = await db.prepare(baseSql).bind(PAGE_SIZE, offset).all<LootLocationRow>();
+    const rows = result.results;
+    if (rows.length === 0) break;
 
-    // Aggregate containers by location key
-    for (const entry of parseJson(row.containers_json) as Array<Record<string, unknown>>) {
-      const locKey = (entry.location || entry.locationTag || "") as string;
-      if (!locKey) continue;
-      if (!containers[locKey]) containers[locKey] = { items: [], itemCount: 0 };
-      const bucket = containers[locKey];
-      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
-        bucket.items.push({
+    for (const row of rows) {
+      const baseItem = {
+        uuid: row.uuid,
+        name: row.name,
+        type: row.type,
+        sub_type: row.sub_type,
+        rarity: row.rarity,
+        category: row.category,
+      };
+
+      // Aggregate containers by location key
+      for (const entry of parseJson(row.containers_json) as Array<Record<string, unknown>>) {
+        const locKey = (entry.location || entry.locationTag || "") as string;
+        if (!locKey) continue;
+        const dedupKey = `${locKey}::${row.uuid}`;
+        if (containerSeen.has(dedupKey)) continue;
+        containerSeen.add(dedupKey);
+        if (!containers[locKey]) containers[locKey] = { items: [], itemCount: 0 };
+        containers[locKey].items.push({
           ...baseItem,
           perContainer: (entry.perContainer as number) ?? undefined,
           containerType: (entry.containerType as string) ?? undefined,
         });
-        bucket.itemCount = bucket.items.length;
       }
-    }
 
-    // Aggregate shops by shop key
-    for (const entry of parseJson(row.shops_json) as Array<Record<string, unknown>>) {
-      const shopKey = (entry.shop || entry.name || "") as string;
-      if (!shopKey) continue;
-      if (!shops[shopKey]) shops[shopKey] = { items: [], itemCount: 0 };
-      const bucket = shops[shopKey];
-      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
-        bucket.items.push({
+      // Aggregate shops by shop key
+      for (const entry of parseJson(row.shops_json) as Array<Record<string, unknown>>) {
+        const shopKey = (entry.shop || entry.name || "") as string;
+        if (!shopKey) continue;
+        const dedupKey = `${shopKey}::${row.uuid}`;
+        if (shopSeen.has(dedupKey)) continue;
+        shopSeen.add(dedupKey);
+        if (!shops[shopKey]) shops[shopKey] = { items: [], itemCount: 0 };
+        shops[shopKey].items.push({
           ...baseItem,
           buyPrice: (entry.buyPrice as number) ?? undefined,
         });
-        bucket.itemCount = bucket.items.length;
       }
-    }
 
-    // Aggregate NPCs by faction key
-    for (const entry of parseJson(row.npcs_json) as Array<Record<string, unknown>>) {
-      const factionKey = (entry.faction || entry.actor || entry.name || "") as string;
-      if (!factionKey) continue;
-      if (!npcs[factionKey]) npcs[factionKey] = { items: [], itemCount: 0 };
-      const bucket = npcs[factionKey];
-      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
-        bucket.items.push({
+      // Aggregate NPCs by faction key
+      for (const entry of parseJson(row.npcs_json) as Array<Record<string, unknown>>) {
+        const factionKey = (entry.faction || entry.actor || entry.name || "") as string;
+        if (!factionKey) continue;
+        const dedupKey = `${factionKey}::${row.uuid}`;
+        if (npcSeen.has(dedupKey)) continue;
+        npcSeen.add(dedupKey);
+        if (!npcs[factionKey]) npcs[factionKey] = { items: [], itemCount: 0 };
+        npcs[factionKey].items.push({
           ...baseItem,
           probability: (entry.probability as number) ?? undefined,
           slot: (entry.slot as string) ?? undefined,
         });
-        bucket.itemCount = bucket.items.length;
       }
     }
+
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
   }
+
+  // Update itemCount for all buckets
+  for (const bucket of Object.values(containers)) bucket.itemCount = bucket.items.length;
+  for (const bucket of Object.values(shops)) bucket.itemCount = bucket.items.length;
+  for (const bucket of Object.values(npcs)) bucket.itemCount = bucket.items.length;
 
   return { containers, shops, npcs };
 }

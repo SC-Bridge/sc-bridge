@@ -87,7 +87,7 @@ export default function Analysis() {
   }
 
   const sizeData = Object.entries(sizeDist).map(([name, value]) => ({ name, value }))
-  const roleData = Object.entries(roles).map(([name, ships]) => ({ name, count: ships.length }))
+  const roleData = Object.entries(roles).map(([name, ships]) => ({ name, count: ships.length, ships: [...ships].sort() }))
 
   const ltiCount = overview.lti_count || 0
   const nonLtiCount = overview.non_lti_count || 0
@@ -244,7 +244,20 @@ export default function Analysis() {
                   tick={{ fill: '#9ca3af', fontSize: 11 }}
                   width={95}
                 />
-                <Tooltip {...TOOLTIP_STYLE} />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.[0]) return null
+                    const { name, ships } = payload[0].payload
+                    return (
+                      <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '8px 12px', maxWidth: 260 }}>
+                        <p style={{ ...TOOLTIP_STYLE.labelStyle, marginBottom: 4 }}>{name} ({ships.length})</p>
+                        {ships.map((s, i) => (
+                          <p key={i} style={{ ...TOOLTIP_STYLE.itemStyle, margin: 0, lineHeight: 1.5 }}>{s}</p>
+                        ))}
+                      </div>
+                    )
+                  }}
+                />
                 <Bar dataKey="count" fill={CHART_COLORS[0]} fillOpacity={0.7} radius={[0, 4, 4, 0]}>
                   <LabelList dataKey="count" position="right" fill="#9ca3af" fontSize={11} />
                 </Bar>
