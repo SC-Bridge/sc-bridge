@@ -8,14 +8,17 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-stats_json population — **COMPLETE** for all major item categories.
+POI feature (Epic #9, Issues #14–20) — **COMPLETE**, pending deploy.
 
 ## Recent Changes
 
-- **stats_json: knives** (applied to D1): 29 regular knives = `{"physical_damage": 30}`, 3 gungame variants = `{"physical_damage": 25}`. Grenades skipped (glowsticks have no weapon stats; frag grenade has no accessible damage values in DataCore).
-- **stats_json: thrusters** (applied to D1): Created new `ship_thrusters/extract.py`. Generates UPDATE statements (not INSERT) since thrusters enter vehicle_components via ship_ports. 1193 UPDATEs → 1107 thruster rows populated with `{thrustCapacity, fuelBurnRatePer10KNewton, thrusterType}`.
-- **stats_json: FLTR mining filter modules** (applied to D1): Fixed `ship_mining/extract.py` — old loop skipped `MiningFilterItemModifierParams` type. FLTR mk1/2/3 = 20/23/24% filter. XTR modules now get both laser + filter stats. 26/26 mining modules have stats.
-- **stats_json: fps_armour** (applied to D1): Fixed broken DataCore component names (`SCItemSuitArmorParams`). 1584/1781 body armour items now have resistance/emission/attachment slot stats.
+- **POI feature** (Epic #9): Full implementation of Points of Interest — "what drops at Location X?"
+  - Backend: `getLootByLocation()` in `queries.ts` + `GET /api/loot/by-location` in `loot.ts`. JS aggregation on Worker (not D1 json_each).
+  - Frontend: `POI.jsx` (directory page, 3 tabs: containers/shops/NPCs, group filters, search), `POIDetail.jsx` (detail page, items grouped by category, rarity badges, drop rates)
+  - Routes: `/poi`, `/poi/:slug`, `/poi/shop/:slug`, `/poi/npc/:slug`, `/loot/:uuid` deep link
+  - LootDB: Auto-open detail panel via `/loot/:uuid` route param. Location chips link to `/poi/` pages.
+  - Nav: "Locations" item with MapPin icon added after "Item Finder"
+- **Analysis fix** (#33): Multi-term role matching for gap detection, chart axis fixes, duplicate bar fix
 
 ## Key Decisions
 
@@ -117,16 +120,38 @@ UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid)
 WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 ```
 
+## Open Issues (GitHub) — validated 2026-03-03
+
+### Bugs
+| # | Title | Notes |
+|---|-------|-------|
+| 32 | INSURANCE TRACKER Mobile | `grid-cols-3` no responsive breakpoint, `shrink-0` overflow on rows. CSS fix. |
+
+### Enhancements
+| # | Title | Notes |
+|---|-------|-------|
+| 31 | CF Images upload pipeline for paints | No CF Images support for paints yet. Needs migration, sync guard, upload pipeline. |
+| 30 | Org settings page | Read-only display works. Needs PATCH endpoint + settings form. |
+| 10 | Paint browser | Backend 100% done (API, junction table, types). Frontend page needed (~200-300 LOC). |
+
+### POI Feature (epic #9, area: loot) — #14–20, ALL COMPLETE
+Implemented in single commit. Backend aggregation + 2 new pages + deep linking + nav.
+
 ## What's Next
 
-- **Paint images** — CF Images upload pipeline for paints
-- **Org Settings page** (v2): update org metadata (RSI SID, social links)
-- **stats_json for fps_utilities**: `SCItemConsumableParams` has no primitive heal/damage fields — consumable effects are file-referenced subtypes. Skip unless DataCore adds direct values.
+- **Bug**: #32 (Insurance Mobile) — quick CSS fix
+- **Paint browser** (#10) — backend done, frontend only
+- **Org Settings** (#30) — backend + frontend
+- **CF Images for paints** (#31) — larger pipeline work
 
-**COMPLETED:**
-- Shopping list location names — already fully implemented via `lootLocations.js` (84 keys). Journal note was stale.
-- stats_json helmets (614/614) + attachments (69/99 with modifiers)
-- stats_json fps_armour (1584/1781) + fps_weapons knives (32/32) + thrusters (1107) + mining modules (26/26)
+## Recently Closed (this session)
+
+- #33 — Fleet Analysis "no ships detected" (fixed in e19760c)
+- #11 — Item stats for helmets/clothing/attachments (done)
+- #12 — Org settings (duplicate of #30)
+- #13 — Shopping list friendly names (done via lootLocations.js)
+- #24 — fps_clothing stats_json (won't-do, cosmetic only)
+- #26 — fps_utilities stats_json (done, script existed and ran)
 - Loot unmatched items — 0 visible in UI
 
 ## Weapon Mount Pattern (for future reference)
@@ -161,4 +186,48 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-03 16:06:05
+
+
+---
+**Session compacted at:** 2026-03-03 16:21:45
+
+
+---
+**Session compacted at:** 2026-03-03 16:27:32
+
+
+---
+**Session compacted at:** 2026-03-03 17:11:54
+
+
+---
+**Session compacted at:** 2026-03-03 17:17:59
+
+
+---
+**Session compacted at:** 2026-03-03 17:35:47
+
+
+---
+**Session compacted at:** 2026-03-03 18:06:52
+
+
+---
+**Session compacted at:** 2026-03-03 19:40:30
+
+
+---
+**Session compacted at:** 2026-03-03 19:40:37
+
+
+---
+**Session compacted at:** 2026-03-03 19:45:04
+
+
+---
+**Session compacted at:** 2026-03-03 20:18:41
+
+
+---
+**Session compacted at:** 2026-03-03 20:19:33
 
