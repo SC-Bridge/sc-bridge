@@ -5,7 +5,7 @@ import { useAnalysis, useLLMConfig, generateAIAnalysis, useLatestAIAnalysis } fr
 import useTimezone from '../hooks/useTimezone'
 import { formatDateOnly } from '../lib/dates'
 import { AlertCircle, AlertTriangle, Info, Copy, ChevronRight, Sparkles, Loader, Rocket, Package, Users, DollarSign, Activity, Crosshair, Shield } from 'lucide-react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from 'recharts'
 import { CHART_COLORS, TOOLTIP_STYLE } from '../lib/theme'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -236,8 +236,8 @@ export default function Analysis() {
         <PanelSection title="Role Categories" icon={Shield}>
           <div className="p-4 h-64 bg-grid" role="img" aria-label={`Role categories: ${roleData.map(d => `${d.name}: ${d.count}`).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={roleData} layout="vertical" margin={{ left: 100 }}>
-                <XAxis type="number" allowDecimals={false} tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <BarChart data={roleData} layout="vertical" margin={{ left: 100, right: 30 }}>
+                <XAxis type="number" allowDecimals={false} domain={[0, 'dataMax + 1']} tick={{ fill: '#6b7280', fontSize: 11 }} />
                 <YAxis
                   dataKey="name"
                   type="category"
@@ -245,7 +245,9 @@ export default function Analysis() {
                   width={95}
                 />
                 <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={CHART_COLORS[0]} fillOpacity={0.7} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="count" fill={CHART_COLORS[0]} fillOpacity={0.7} radius={[0, 4, 4, 0]}>
+                  <LabelList dataKey="count" position="right" fill="#9ca3af" fontSize={11} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
