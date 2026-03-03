@@ -8,17 +8,13 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-**DB column fixes** — 0041/0042/0043 applied. Import, ShipDB, ShipDetail loadout all working. Other session (1b6a23b8) still has POI planning in progress.
+Loot unmatched items — **COMPLETE**. Zero visible unmatched items in UI.
 
 ## Recent Changes
 
-- **Migration 0043** (`manufacturers_class`): Added `class TEXT` to manufacturers — was dropped in 0037 rebuild, broke `getShipLoadout` with 'no such column: m.class'.
-- **Migration 0042** (`vehicles_acquisition_source_name`): Added `acquisition_source_name TEXT` to vehicles — was never applied to D1, broke all `/api/ships` requests with SQLite error.
-- **Migration 0041** (`fix_fk_references`): Rebuilt 6 tables with broken FK references caused by SQLite 3.26+ auto-rename during migration 0037. Fixed: `user_fleet`, `paint_vehicles`, `vehicle_loaners`, `vehicle_images`, `vehicle_images_archive`, `fps_ammo`. All previously pointed to dropped `vehicles_old`/`manufacturers_old` tables.
-- **Location name corrections** (`82d8b52`): ASDDelving → 'Onyx Facility', ASDDelving_ScienceWing → 'Onyx Facility — Research Wing', Kaboos → 'QV Logistics Station' (from global.ini research).
-- **Friendly shop names** (`97913bc`): `shopNames.js` + `friendlyShopName()` — 98 known shops + fallback parser.
-- **Friendly location/faction names** (`3436594`): `lootLocations.js` + `friendlyLocation()` / `friendlyFaction()` — all DataCore container location keys.
-- **POI feature planned** (7 tasks): `poiData.js` → backend `/api/loot/by-location` → `/loot/:uuid` URL route → location chip links → `/poi` directory → `/poi/:slug` detail → App.jsx wiring.
+- **Loot FK: missiles + eyewear** (`cbb298c`): Migration 0045 (ship_missiles table + ship_missile_id FK). 64 missiles extracted → 25 matched in loot_map. fps_clothing extended with Char_Accessory_Eyes (slot='Eyes') → 9 eyewear matched. UI visible unmatched: **0**.
+- **Loot FK improvements** (`9c979ed` in scbridge/tools): fps_clothing/extract.py now scans pu_armor/ (picks up Ixonia Pants/Armor). New ship_turrets/extract.py includes GunTurret (VariPuck S2-S6). Manual inserts for Inmate Workpack, OMNI-CFS Flight Suit, Tigersclaw, ASD Access Card, Fuse.
+- **Invite tokens** (`b7c4b95`): Migration 0044 applied. Invite guard middleware, `/api/invites/validate`, `/api/admin/invites` POST+GET, Register.jsx token-aware UI, Admin.jsx InvitePanel. **DONE and working.**
 
 ## Key Decisions
 
@@ -40,7 +36,7 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Applied Migrations (D1)
 
-Last applied: **0041_fix_fk_references.sql**
+Last applied: **0043_manufacturers_class.sql** (0044 committed, not yet applied)
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -406,4 +402,44 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-03 09:11:37
+
+
+---
+**Session compacted at:** 2026-03-03 09:42:21
+
+
+---
+**Session compacted at:** 2026-03-03 09:46:27
+
+
+---
+**Session compacted at:** 2026-03-03 10:02:11
+
+
+---
+**Session compacted at:** 2026-03-03 10:43:08
+
+
+---
+**Session compacted at:** 2026-03-03 10:44:04
+
+
+---
+**Session compacted at:** 2026-03-03 10:55:49
+
+
+---
+**Session compacted at:** 2026-03-03 11:33:46
+
+
+---
+**Session compacted at:** 2026-03-03 12:34:07
+
+
+---
+**Session compacted at:** 2026-03-03 13:21:07
+
+
+---
+**Session compacted at:** 2026-03-03 13:45:41
 

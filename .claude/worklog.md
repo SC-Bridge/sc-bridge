@@ -2,50 +2,91 @@
 
 @ACTIVE
 # sid|registered|last_active|scope
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+2e01fb82|2026-03-03T13:47+1300|2026-03-03T13:56+1300|missile+eyewear loot FKs
+4b622282|2026-03-03T13:22+1300|2026-03-03T13:22+1300|unset
+2e16a9b4|2026-03-03T12:07+1300|2026-03-03T12:35+1300|loot unmatched items
+985e21d3|2026-03-03T12:07+1300|2026-03-03T12:07+1300|unset
+faf5b909|2026-03-03T11:35+1300|2026-03-03T11:35+1300|push paint extraction commits
+e495048d|2026-03-03T11:35+1300|2026-03-03T11:35+1300|invite token signup system
+b6129c05|2026-03-03T10:56+1300|2026-03-03T10:56+1300|unset
+0b7dbfad|2026-03-03T10:45+1300|2026-03-03T10:45+1300|unset
+af0da55c|2026-03-03T10:44+1300|2026-03-03T10:44+1300|unset
+424aa96f|2026-03-03T10:07+1300|2026-03-03T10:12+1300|full audit + code fixes
+cee1b559|2026-03-03T09:47+1300|2026-03-03T09:48+1300|full audit + code fixes
+# sid|registered|last_active|scope
+2e01fb82|2026-03-03T13:47+1300|2026-03-03T13:56+1300|missile+eyewear loot FKs
+4b622282|2026-03-03T13:22+1300|2026-03-03T13:22+1300|unset
+2e16a9b4|2026-03-03T12:07+1300|2026-03-03T12:35+1300|loot unmatched items
+985e21d3|2026-03-03T12:07+1300|2026-03-03T12:07+1300|unset
+faf5b909|2026-03-03T11:35+1300|2026-03-03T11:35+1300|push paint extraction commits
+e495048d|2026-03-03T11:35+1300|2026-03-03T11:35+1300|invite token signup system
+b6129c05|2026-03-03T10:56+1300|2026-03-03T10:56+1300|unset
+0b7dbfad|2026-03-03T10:45+1300|2026-03-03T10:45+1300|unset
+af0da55c|2026-03-03T10:44+1300|2026-03-03T10:44+1300|unset
+424aa96f|2026-03-03T10:07+1300|2026-03-03T10:12+1300|full audit + code fixes
+cee1b559|2026-03-03T09:47+1300|2026-03-03T09:48+1300|full audit + code fixes
 @FILES
 # sid|file_path
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
-1b6a23b8|2026-03-02T17:03+1300|2026-03-02T17:03+1300|loot-qty-frontend
+4b622282|src/lib/auth.ts
+e495048d|src/db/migrations/0044_invite_tokens.sql
+e495048d|src/index.ts
+e495048d|src/routes/admin.ts
+e495048d|frontend/src/pages/Register.jsx
+e495048d|frontend/src/pages/Admin.jsx
 
 @LOG
 # timestamp|sid|op|detail
-14:37+1300|870781b4|REG|started
-14:38+1300|870781b4|DEBUG|/api/contracts returning HTML — Worker running but contracts route absent from deployed bundle
-14:38+1300|870781b4|FIX|root cause: wrangler deploy used stale Vite bundle; @cloudflare/vite-plugin compiles Worker — must npm run build first
-14:38+1300|870781b4|BUILD|npm run build — contracts route present in new bundle
-14:38+1300|870781b4|DEPLOY|wrangler deploy → version 39ba5b50 — /api/contracts now live
-14:38+1300|870781b4|VRF|curl scbridge.app/api/contracts → 81 contracts, application/json
-14:39+1300|870781b4|FIX|14 SVGs: stripped xml:space=preserve + legacy Illustrator attrs (DOMException crash in Firefox)
-14:39+1300|870781b4|REFACTOR|ShipDetail.jsx: removed A/B toggle, deleted classic OverviewTab/LoadoutItems/PerformanceTab
-14:39+1300|870781b4|REFACTOR|ShipDetail.jsx: renamed Enhanced variants, removed layout state + FlaskConical import
-14:39+1300|870781b4|BUILD|npm run build passed cleanly
-14:40+1300|a316152b|REG|started
-14:40+1300|a316152b|DOC|CLAUDE.md: removed scwiki.ts line, fixed pipeline/sync.ts descriptions, data sources table, key decisions, last migration → 0036
-14:40+1300|a316152b|DOC|README.md: removed stale 03:00 and 03:05 SC Wiki cron entries
-14:40+1300|a316152b|DEL|SCWIKI_SYNC_PLAN.md: deleted abandoned Go architecture planning doc
-14:42+1300|1b6a23b8|REG|started
-14:42+1300|1b6a23b8|FEAT|Phases 1-3 loot wishlist: manufacturer JOINs in getLootItems, 0038 migration, LootDB brand/set filters + wishlist tab + shopping list
-14:42+1300|1b6a23b8|DEBUG|0037_patch_versioning: PRAGMA legacy_alter_table=ON — D1 does not support, no effect
-14:42+1300|1b6a23b8|DEBUG|0037_patch_versioning: PRAGMA foreign_keys=OFF — no-op inside D1 transaction wrapper
-14:42+1300|1b6a23b8|RCA|0037 root cause: D1 blocks DROP TABLE when FKs reference it; SQLite 3.26+ auto-updates FK refs on RENAME causing DROP to fail
-14:42+1300|1b6a23b8|FIX|identified fix: replace rename→drop pattern with ALTER TABLE ADD COLUMN + UPDATE (no rebuild)
-14:42+1300|1b6a23b8|PAUSE|user handling 0037 fix + R2 game file uploads in separate chat
-15:22+1300|870781b4|COMMIT|24b9ae4 docs: remove SC Wiki sync references, update cron schedule
-15:22+1300|870781b4|COMMIT|4bf3b69 fix(ship-detail): remove A/B toggle, collapse to enhanced view only
-15:22+1300|870781b4|DONE|all tasks complete — awaiting push
-15:22+1300|870781b4|PUSH|git push origin main → a038f2e..d675cee — CI/CD deploying
-15:22+1300|1b6a23b8|REC|0037 applied out-of-band by other session; tables already rebuilt in D1
-15:22+1300|1b6a23b8|FIX|marked 0037 applied in d1_migrations tracking table (INSERT)
-15:22+1300|1b6a23b8|APPLY|0038_user_loot_wishlist applied via wrangler migrations apply — ✅
-15:22+1300|1b6a23b8|VRF|typecheck clean; frontend build clean
-15:22+1300|1b6a23b8|DEPLOY|wrangler deploy → version 61dd02c9 — loot wishlist + brand/set filters + patches live
-15:22+1300|1b6a23b8|VRF|/api/loot → 5218 items with manufacturer_name; /api/patches → 4 versions
-16:28+1300|a316152b|DONE|sync-reference-cleanup complete — committed 24b9ae4, session closed
-16:28+1300|870781b4|VRF|CI for d675cee succeeded (03:23 UTC) — all code live on scbridge.app
-16:28+1300|870781b4|VRF|session-journal.md: added 0037+0038 to migration table, updated Recent Changes
-17:03+1300|1b6a23b8|CLN|removed stale sessions 870781b4 + a316152b
+18:05+1300|1b6a23b8|CMT|0e6843d fix(loot-detail): dedup locations, empty item details, pb-8
+18:25+1300|1b6a23b8|SCO|group1/2/3 loot fixes
+18:55+1300|1b6a23b8|CMT|99568b9,b3a8278,380457f loot expansion
+06:57+1300|1b6a23b8|CMT|97913bc feat(loot): friendly shop name lookup
+07:10+1300|1b6a23b8|CMT|3436594 feat(loot): friendly location/faction names
+08:10+1300|1b6a23b8|SCO|Points of Interest planning
+08:15+1300|1b6a23b8|SCO|POI plan complete — 7 tasks created
+08:25+1300|1b6a23b8|MOD|frontend/src/pages/LootDB.jsx
+08:35+1300|1b6a23b8|CMT|201ebdd fix(loot-detail): stacking/encoding/fire modes/stat order
+08:40+1300|1b6a23b8|CMT|18f09be feat(loot): grouped container locations
+08:51+1300|0f84d034|REG|started
+09:10+1300|0f84d034|MOD|src/db/migrations/0041_fix_fk_references.sql
+09:10+1300|0f84d034|CMT|b4298ed fix(db): broken FK refs from 0037
+09:12+1300|e667d40d|REG|started
+09:13+1300|c09b4dc2|REG|started
+09:14+1300|c09b4dc2|SCO|orientation
+09:15+1300|e667d40d|MOD|src/db/migrations/0042_vehicles_acquisition_source_name.sql
+09:16+1300|e667d40d|CMT|d4280f3 fix(db): missing acquisition_source_name column
+09:20+1300|e667d40d|CMT|2af8b58 fix(db): missing manufacturers.class column
+09:43+1300|d846531a|REG|started
+09:43+1300|c09b4dc2|SCO|github community setup
+09:55+1300|c09b4dc2|CMT|725f6a9 feat(github): community infrastructure for beta
+09:47+1300|cee1b559|REG|started
+09:58+1300|c09b4dc2|CMT|dc228e0 docs(github): discussions opening posts
+09:48+1300|cee1b559|SCO|full audit + code fixes
+10:02+1300|c09b4dc2|CMT|2e52544 docs(github): revise discussions posts for actual categories
+10:07+1300|424aa96f|REG|started
+10:12+1300|424aa96f|CMT|bac3058 fix(account): GDPR loot export
+10:12+1300|424aa96f|CMT|2dafa6b fix(loot): UGFs group/double-parse/escape
+10:12+1300|424aa96f|PUSH|3e3d626..2dafa6b → main
+10:44+1300|af0da55c|REG|started
+10:45+1300|0b7dbfad|REG|started
+10:56+1300|b6129c05|REG|started
+10:57+1300|af0da55c|CMT|2e4466c fix(vehicles): paint variant guards
+10:58+1300|af0da55c|CMT|fc293cd fix(sync): paint tree truncation
+11:00+1300|af0da55c|CMT|eb03a38 refactor(sync): local paint extraction
+11:35+1300|e495048d|REG|started
+11:35+1300|faf5b909|REG|started
+11:35+1300|e495048d|SCO|invite token signup system
+11:36+1300|faf5b909|PUSH|fc293cd..eb03a38 → main — CI deploying
+11:38+1300|e495048d|CMT|feat(auth): invite token signup system
+12:07+1300|985e21d3|REG|started
+12:35+1300|2e16a9b4|CLN|stale:1b6a23b8,1b6a23b8
+12:35+1300|2e16a9b4|REG|started
+12:35+1300|2e16a9b4|CMT|scbridge/tools: loot unmatched items fix (9c979ed)
+13:22+1300|4b622282|CLN|stale:e667d40d,0f84d034,e667d40d,0f84d034
+13:22+1300|4b622282|REG|started
+13:28+1300|4b622282|CMT|67884db fix(auth): social sign-in existing users
+13:47+1300|2e01fb82|CLN|stale:d846531a,c09b4dc2,d846531a,c09b4dc2
+13:47+1300|2e01fb82|REG|started
+13:56+1300|2e01fb82|MOD|queries.ts+LootDB+0045 migration
+13:56+1300|2e01fb82|MOD|queries.ts+LootDB+0045 migration
+13:58+1300|2e01fb82|CMT|cbb298c feat(loot): missile+eyewear FKs
+14:00+1300|2e01fb82|CMT|chore: worklog+journal update
