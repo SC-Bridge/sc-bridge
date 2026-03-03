@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -32,6 +32,8 @@ const OrgProfile = lazy(() => import('./pages/OrgProfile'))
 const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'))
 const Contracts = lazy(() => import('./pages/Contracts'))
 const LootDB = lazy(() => import('./pages/LootDB'))
+const POI = lazy(() => import('./pages/POI'))
+const POIDetail = lazy(() => import('./pages/POIDetail'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
@@ -40,6 +42,7 @@ const publicNavItems = [
 const authNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
   { to: '/loot', icon: Search, label: 'Item Finder' },
+  { to: '/poi', icon: MapPin, label: 'Locations' },
   { to: '/contracts', icon: FileText, label: 'Contracts' },
   { to: '/fleet', icon: Rocket, label: 'Fleet' },
   { to: '/insurance', icon: Shield, label: 'Insurance' },
@@ -347,6 +350,10 @@ export default function App() {
                       <Route path="/ships" element={<RequireAuth><ShipDB /></RequireAuth>} />
                       <Route path="/ships/:slug" element={<RequireAuth><ShipDetail /></RequireAuth>} />
                       <Route path="/loot" element={<RequireAuth><LootDB /></RequireAuth>} />
+                      <Route path="/loot/:uuid" element={<RequireAuth><LootDB /></RequireAuth>} />
+                      <Route path="/poi" element={<RequireAuth><POI /></RequireAuth>} />
+                      <Route path="/poi/:slug" element={<RequireAuth><POIDetail /></RequireAuth>} />
+                      <Route path="/poi/:type/:slug" element={<RequireAuth><POIDetail /></RequireAuth>} />
                       <Route path="/contracts" element={<RequireAuth><Contracts /></RequireAuth>} />
                       <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
                       <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />

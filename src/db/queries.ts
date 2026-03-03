@@ -1099,6 +1099,154 @@ export async function getVehiclesNeedingCFUpload(
   return result.results;
 }
 
+// --- Loot by-location aggregation (POI feature) ---
+
+interface LootLocationRow {
+  id: number;
+  uuid: string;
+  name: string;
+  type: string | null;
+  sub_type: string | null;
+  rarity: string | null;
+  category: string;
+  containers_json: string | null;
+  shops_json: string | null;
+  npcs_json: string | null;
+}
+
+interface LocationItem {
+  uuid: string;
+  name: string;
+  type: string | null;
+  sub_type: string | null;
+  rarity: string | null;
+  category: string;
+  perContainer?: number;
+  containerType?: string;
+  buyPrice?: number;
+  probability?: number;
+  slot?: string;
+}
+
+interface LocationBucket {
+  items: LocationItem[];
+  itemCount: number;
+}
+
+interface LootByLocationResult {
+  containers: Record<string, LocationBucket>;
+  shops: Record<string, LocationBucket>;
+  npcs: Record<string, LocationBucket>;
+}
+
+export async function getLootByLocation(db: D1Database): Promise<LootByLocationResult> {
+  const sql = `SELECT
+        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+        lm.containers_json, lm.shops_json, lm.npcs_json,
+        CASE
+          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+          WHEN lm.props_id IS NOT NULL THEN 'prop'
+          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
+          ELSE 'unknown'
+        END as category
+      FROM loot_map lm
+      WHERE lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)
+        AND lm.name NOT IN ('<= PLACEHOLDER =>')
+        AND lm.name NOT LIKE 'EntityClassDefinition.%'
+        AND lm.type IS NOT NULL AND lm.type != ''
+        AND lm.type NOT IN (
+          'NOITEM_Vehicle','UNDEFINED',
+          'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
+          'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
+          'Currency','MobiGlas'
+        )
+        AND (
+          (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
+          OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
+          OR (lm.npcs_json IS NOT NULL AND lm.npcs_json NOT IN ('null','[]',''))
+        )`;
+
+  const result = await db.prepare(sql).all<LootLocationRow>();
+  const rows = result.results;
+
+  const containers: Record<string, LocationBucket> = {};
+  const shops: Record<string, LocationBucket> = {};
+  const npcs: Record<string, LocationBucket> = {};
+
+  const parseJson = (val: string | null): unknown[] => {
+    if (!val || val === "null" || val === "[]" || val === "") return [];
+    try { return JSON.parse(val) as unknown[]; } catch { return []; }
+  };
+
+  for (const row of rows) {
+    const baseItem = {
+      uuid: row.uuid,
+      name: row.name,
+      type: row.type,
+      sub_type: row.sub_type,
+      rarity: row.rarity,
+      category: row.category,
+    };
+
+    // Aggregate containers by location key
+    for (const entry of parseJson(row.containers_json) as Array<Record<string, unknown>>) {
+      const locKey = (entry.location || entry.locationTag || "") as string;
+      if (!locKey) continue;
+      if (!containers[locKey]) containers[locKey] = { items: [], itemCount: 0 };
+      const bucket = containers[locKey];
+      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
+        bucket.items.push({
+          ...baseItem,
+          perContainer: (entry.perContainer as number) ?? undefined,
+          containerType: (entry.containerType as string) ?? undefined,
+        });
+        bucket.itemCount = bucket.items.length;
+      }
+    }
+
+    // Aggregate shops by shop key
+    for (const entry of parseJson(row.shops_json) as Array<Record<string, unknown>>) {
+      const shopKey = (entry.shop || entry.name || "") as string;
+      if (!shopKey) continue;
+      if (!shops[shopKey]) shops[shopKey] = { items: [], itemCount: 0 };
+      const bucket = shops[shopKey];
+      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
+        bucket.items.push({
+          ...baseItem,
+          buyPrice: (entry.buyPrice as number) ?? undefined,
+        });
+        bucket.itemCount = bucket.items.length;
+      }
+    }
+
+    // Aggregate NPCs by faction key
+    for (const entry of parseJson(row.npcs_json) as Array<Record<string, unknown>>) {
+      const factionKey = (entry.faction || entry.actor || entry.name || "") as string;
+      if (!factionKey) continue;
+      if (!npcs[factionKey]) npcs[factionKey] = { items: [], itemCount: 0 };
+      const bucket = npcs[factionKey];
+      if (!bucket.items.some((i) => i.uuid === row.uuid)) {
+        bucket.items.push({
+          ...baseItem,
+          probability: (entry.probability as number) ?? undefined,
+          slot: (entry.slot as string) ?? undefined,
+        });
+        bucket.itemCount = bucket.items.length;
+      }
+    }
+  }
+
+  return { containers, shops, npcs };
+}
+
 export async function setVehicleCFImagesID(
   db: D1Database,
   vehicleId: number,

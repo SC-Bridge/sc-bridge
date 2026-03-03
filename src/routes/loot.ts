@@ -3,6 +3,7 @@ import { getAuthUser, type HonoEnv } from "../lib/types";
 import {
   getLootItems,
   getLootByUuid,
+  getLootByLocation,
   getUserLootCollection,
   addToLootCollection,
   setLootCollectionQuantity,
@@ -157,6 +158,14 @@ export function lootRoutes() {
 
     await removeFromLootWishlist(c.env.DB, user.id, row.id);
     return c.json({ ok: true });
+  });
+
+  // GET /api/loot/by-location — all items aggregated by location (public)
+  // Cache-Control: public, max-age=300 (CDN caches 5 min)
+  app.get("/by-location", async (c) => {
+    const data = await getLootByLocation(c.env.DB);
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(data);
   });
 
   // GET /api/loot/:uuid — full detail + location JSON (public)

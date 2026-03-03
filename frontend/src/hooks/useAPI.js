@@ -216,6 +216,10 @@ export function useLootItem(uuid) {
   return useAPI(uuid ? `/loot/${uuid}` : null, { skip: !uuid })
 }
 
+export function useLootByLocation() {
+  return useAPI('/loot/by-location')
+}
+
 export function useLootCollection(isAuthed) {
   return useAPI('/loot/collection', { skip: !isAuthed })
 }

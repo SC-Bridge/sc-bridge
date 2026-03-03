@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   Search, Package, ShoppingCart, Swords, Skull, FileText,
   LayoutGrid, List, X, ChevronRight, Check, Plus, Bookmark, BookmarkPlus
@@ -205,8 +206,9 @@ const LOCATION_GROUP_CONFIG = {
 function resolveLocationEntry(entry, type) {
   if (typeof entry === 'string') return { label: entry, detail: null, probability: null }
   if (type === 'shops') {
+    const rawShopKey = entry.shop || entry.name || ''
     const price = entry.buyPrice ? `${Math.round(entry.buyPrice).toLocaleString()} aUEC` : null
-    return { label: friendlyShopName(entry.shop || entry.name), detail: price, probability: null }
+    return { label: friendlyShopName(rawShopKey), detail: price, probability: null, rawKey: rawShopKey, shopKey: true }
   }
   if (type === 'npcs' || type === 'corpses') {
     const rawFaction = entry.faction || entry.actor || entry.name
@@ -216,6 +218,8 @@ function resolveLocationEntry(entry, type) {
       detail: entry.slot || null,
       probability: entry.probability ?? null,
       faction,
+      rawKey: rawFaction,
+      npcKey: true,
     }
   }
   // containers, contracts, default
@@ -228,10 +232,18 @@ function resolveLocationEntry(entry, type) {
   }
 }
 
-function LocationRow({ row }) {
+function LocationRow({ row, linkTo }) {
+  const labelContent = linkTo ? (
+    <Link to={linkTo} className="text-xs font-mono text-sc-accent hover:text-sc-accent/80 break-words min-w-0 transition-colors">
+      {row.label}
+    </Link>
+  ) : (
+    <span className="text-xs font-mono text-gray-300 break-words min-w-0">{row.label}</span>
+  )
+
   return (
     <div className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
-      <span className="text-xs font-mono text-gray-300 break-words min-w-0">{row.label}</span>
+      {labelContent}
       <div className="flex items-center gap-1.5 shrink-0">
         {row.detail && (
           <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
@@ -297,7 +309,13 @@ function LocationSection({ label, icon: Icon, data, type }) {
                 {LOCATION_GROUP_CONFIG[groupKey]?.label ?? groupKey}
               </p>
               <div className="space-y-1">
-                {groupRows.map((row, i) => <LocationRow key={i} row={row} />)}
+                {groupRows.map((row, i) => (
+                  <LocationRow
+                    key={i}
+                    row={row}
+                    linkTo={row.rawKey ? `/poi/${encodeURIComponent(row.rawKey)}` : undefined}
+                  />
+                ))}
               </div>
             </div>
           ))}
@@ -323,11 +341,19 @@ function LocationSection({ label, icon: Icon, data, type }) {
           <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
         </div>
         <div className="space-y-3">
-          {sortedFactions.map(([factionName, factionRows]) => (
+          {sortedFactions.map(([factionName, factionRows]) => {
+            const rawFactionKey = factionRows[0]?.rawKey
+            return (
             <div key={factionName}>
-              <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
-                {factionName}
-              </p>
+              {rawFactionKey ? (
+                <Link to={`/poi/npc/${encodeURIComponent(rawFactionKey)}`} className="text-[9px] font-display uppercase tracking-wider text-sc-accent hover:text-sc-accent/80 mb-1 pl-2 block transition-colors">
+                  {factionName}
+                </Link>
+              ) : (
+                <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
+                  {factionName}
+                </p>
+              )}
               <div className="space-y-1">
                 {factionRows.map((row, i) => (
                   <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
@@ -339,7 +365,8 @@ function LocationSection({ label, icon: Icon, data, type }) {
                 ))}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     )
@@ -353,7 +380,17 @@ function LocationSection({ label, icon: Icon, data, type }) {
         <span className="text-[10px] font-display uppercase tracking-wider text-gray-400">{label}</span>
       </div>
       <div className="space-y-1">
-        {rows.map((row, i) => <LocationRow key={i} row={row} />)}
+        {rows.map((row, i) => (
+          <LocationRow
+            key={i}
+            row={row}
+            linkTo={
+              row.shopKey && row.rawKey ? `/poi/shop/${encodeURIComponent(row.rawKey)}`
+              : row.npcKey && row.rawKey ? `/poi/npc/${encodeURIComponent(row.rawKey)}`
+              : undefined
+            }
+          />
+        ))}
       </div>
     </div>
   )
@@ -765,6 +802,8 @@ function buildShoppingList(wishlistItems) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LootDB() {
+  const { uuid: routeUuid } = useParams()
+  const navigate = useNavigate()
   const { data: session } = useSession()
   const isAuthed = !!session?.user
 
@@ -796,7 +835,12 @@ export default function LootDB() {
   const [rarities, setRarities] = useState(new Set())
   const [sources, setSources] = useState(new Set())
   const [viewMode, setViewMode] = useState('grid')
-  const [detailUuid, setDetailUuid] = useState(null)
+  const [detailUuid, setDetailUuid] = useState(routeUuid || null)
+
+  // Auto-open detail panel when arriving via /loot/:uuid route
+  useEffect(() => {
+    if (routeUuid) setDetailUuid(routeUuid)
+  }, [routeUuid])
   const [page, setPage] = useState(1)
 
   // Collection tab state
@@ -1582,7 +1626,7 @@ export default function LootDB() {
         wishlisted={wishlistIds.has(detailItemId)}
         onToggleWishlist={handleToggleWishlist}
         isAuthed={isAuthed}
-        onClose={() => setDetailUuid(null)}
+        onClose={() => { setDetailUuid(null); if (routeUuid) navigate('/loot', { replace: true }) }}
       />
     )}
     </>
