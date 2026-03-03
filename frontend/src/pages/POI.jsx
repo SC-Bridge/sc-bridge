@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MapPin, Package, ShoppingCart, Swords } from 'lucide-react'
-import { useLootByLocation } from '../hooks/useAPI'
+import { useLootLocations } from '../hooks/useAPI'
 import { friendlyLocation, friendlyFaction, getLocationGroup } from '../lib/lootLocations'
 import { friendlyShopName } from '../lib/shopNames'
 import PageHeader from '../components/PageHeader'
@@ -33,20 +33,15 @@ const RARITY_DOT = {
   Legendary: 'text-amber-400',
 }
 
-function RaritySummary({ items }) {
-  const counts = {}
-  for (const item of items) {
-    const r = item.rarity || 'Common'
-    counts[r] = (counts[r] || 0) + 1
-  }
+function RaritySummary({ rarities }) {
   const ordered = ['Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
-  const present = ordered.filter(r => counts[r])
+  const present = ordered.filter(r => rarities[r])
   if (present.length === 0) return null
   return (
     <div className="flex items-center gap-1.5">
       {present.slice(0, 3).map(r => (
         <span key={r} className={`text-[9px] font-mono ${RARITY_DOT[r] || 'text-gray-500'}`}>
-          {counts[r]} {r}
+          {rarities[r]} {r}
         </span>
       ))}
     </div>
@@ -54,7 +49,7 @@ function RaritySummary({ items }) {
 }
 
 // ── Location card ──────────────────────────────────────────────────────────
-function LocationCard({ rawKey, friendlyName, items, linkPrefix }) {
+function LocationCard({ rawKey, friendlyName, itemCount, rarities, linkPrefix }) {
   return (
     <Link
       to={`${linkPrefix}${encodeURIComponent(rawKey)}`}
@@ -62,9 +57,9 @@ function LocationCard({ rawKey, friendlyName, items, linkPrefix }) {
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="text-xs font-medium text-gray-200 leading-tight line-clamp-2">{friendlyName}</h3>
-        <span className="text-[10px] font-mono text-gray-500 shrink-0">{items.length} items</span>
+        <span className="text-[10px] font-mono text-gray-500 shrink-0">{itemCount} items</span>
       </div>
-      <RaritySummary items={items} />
+      <RaritySummary rarities={rarities} />
     </Link>
   )
 }
@@ -78,7 +73,7 @@ const SECTIONS = [
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function POI() {
-  const { data, loading, error } = useLootByLocation()
+  const { data, loading, error } = useLootLocations()
   const [search, setSearch] = useState('')
   const [activeSection, setActiveSection] = useState('containers')
   const [activeGroup, setActiveGroup] = useState('all')
@@ -86,31 +81,34 @@ export default function POI() {
   // Containers: grouped by location group
   const containerEntries = useMemo(() => {
     if (!data?.containers) return []
-    return Object.entries(data.containers).map(([key, bucket]) => ({
-      rawKey: key,
-      friendlyName: friendlyLocation(key),
-      group: getLocationGroup(key),
-      items: bucket.items,
+    return data.containers.map((loc) => ({
+      rawKey: loc.key,
+      friendlyName: friendlyLocation(loc.key),
+      group: getLocationGroup(loc.key),
+      itemCount: loc.itemCount,
+      rarities: loc.rarities || {},
     }))
   }, [data])
 
   // Shops
   const shopEntries = useMemo(() => {
     if (!data?.shops) return []
-    return Object.entries(data.shops).map(([key, bucket]) => ({
-      rawKey: key,
-      friendlyName: friendlyShopName(key),
-      items: bucket.items,
+    return data.shops.map((loc) => ({
+      rawKey: loc.key,
+      friendlyName: friendlyShopName(loc.key),
+      itemCount: loc.itemCount,
+      rarities: loc.rarities || {},
     }))
   }, [data])
 
   // NPCs
   const npcEntries = useMemo(() => {
     if (!data?.npcs) return []
-    return Object.entries(data.npcs).map(([key, bucket]) => ({
-      rawKey: key,
-      friendlyName: friendlyFaction(key),
-      items: bucket.items,
+    return data.npcs.map((loc) => ({
+      rawKey: loc.key,
+      friendlyName: friendlyFaction(loc.key),
+      itemCount: loc.itemCount,
+      rarities: loc.rarities || {},
     }))
   }, [data])
 
@@ -267,7 +265,8 @@ export default function POI() {
                         key={entry.rawKey}
                         rawKey={entry.rawKey}
                         friendlyName={entry.friendlyName}
-                        items={entry.items}
+                        itemCount={entry.itemCount}
+                        rarities={entry.rarities}
                         linkPrefix="/poi/"
                       />
                     ))}
@@ -282,7 +281,8 @@ export default function POI() {
                   key={entry.rawKey}
                   rawKey={entry.rawKey}
                   friendlyName={entry.friendlyName}
-                  items={entry.items}
+                  itemCount={entry.itemCount}
+                  rarities={entry.rarities}
                   linkPrefix="/poi/"
                 />
               ))}
@@ -299,7 +299,8 @@ export default function POI() {
               key={entry.rawKey}
               rawKey={entry.rawKey}
               friendlyName={entry.friendlyName}
-              items={entry.items}
+              itemCount={entry.itemCount}
+              rarities={entry.rarities}
               linkPrefix="/poi/shop/"
             />
           ))}
@@ -314,7 +315,8 @@ export default function POI() {
               key={entry.rawKey}
               rawKey={entry.rawKey}
               friendlyName={entry.friendlyName}
-              items={entry.items}
+              itemCount={entry.itemCount}
+              rarities={entry.rarities}
               linkPrefix="/poi/npc/"
             />
           ))}

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { MapPin, ArrowLeft } from 'lucide-react'
-import { useLootByLocation } from '../hooks/useAPI'
+import { useLootLocationDetail } from '../hooks/useAPI'
 import { friendlyLocation, friendlyFaction, getLocationGroup } from '../lib/lootLocations'
 import { friendlyShopName } from '../lib/shopNames'
 import PageHeader from '../components/PageHeader'
@@ -70,45 +70,29 @@ const GROUP_LABELS = {
 // ── Detail page ────────────────────────────────────────────────────────────
 export default function POIDetail() {
   const { type, slug } = useParams()
-  const { data, loading, error } = useLootByLocation()
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('all')
 
-  // Resolve which bucket to use based on the URL type prefix
-  const { locationName, groupBadge, items, backLabel } = useMemo(() => {
-    if (!data || !slug) return { locationName: null, groupBadge: null, items: [], backLabel: 'Locations' }
-    const decodedSlug = decodeURIComponent(slug)
+  // Resolve the API type param from the URL structure
+  // /poi/:slug → container, /poi/shop/:slug → shop, /poi/npc/:slug → npc
+  const apiType = type === 'shop' ? 'shop' : type === 'npc' ? 'npc' : 'container'
+  const decodedSlug = slug ? decodeURIComponent(slug) : ''
 
-    if (type === 'shop') {
-      const bucket = data.shops?.[decodedSlug]
-      return {
-        locationName: friendlyShopName(decodedSlug),
-        groupBadge: 'Shop',
-        items: bucket?.items || [],
-        backLabel: 'Locations',
-      }
-    }
+  const { data, loading, error } = useLootLocationDetail(apiType, decodedSlug)
+  const items = data?.items || []
 
-    if (type === 'npc') {
-      const bucket = data.npcs?.[decodedSlug]
-      return {
-        locationName: friendlyFaction(decodedSlug),
-        groupBadge: 'NPC Faction',
-        items: bucket?.items || [],
-        backLabel: 'Locations',
-      }
-    }
+  // Resolve display names
+  const locationName = apiType === 'shop'
+    ? friendlyShopName(decodedSlug)
+    : apiType === 'npc'
+    ? friendlyFaction(decodedSlug)
+    : friendlyLocation(decodedSlug)
 
-    // Default: container location
-    const bucket = data.containers?.[decodedSlug]
-    const group = getLocationGroup(decodedSlug)
-    return {
-      locationName: friendlyLocation(decodedSlug),
-      groupBadge: GROUP_LABELS[group] || group,
-      items: bucket?.items || [],
-      backLabel: 'Locations',
-    }
-  }, [data, slug, type])
+  const groupBadge = apiType === 'shop'
+    ? 'Shop'
+    : apiType === 'npc'
+    ? 'NPC Faction'
+    : GROUP_LABELS[getLocationGroup(decodedSlug)] || getLocationGroup(decodedSlug)
 
   // Group items by category
   const categorizedItems = useMemo(() => {
@@ -159,12 +143,12 @@ export default function POIDetail() {
   if (loading) return <LoadingState message="Loading location..." />
   if (error) return <ErrorState message={error} />
 
-  if (!locationName || items.length === 0) {
+  if (!slug || items.length === 0) {
     return (
       <div className="space-y-4 animate-fade-in-up">
         <Link to="/poi" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to {backLabel}
+          Back to Locations
         </Link>
         <EmptyState
           message={`No items found for this location.`}
@@ -180,7 +164,7 @@ export default function POIDetail() {
     <div className="space-y-4 animate-fade-in-up">
       <Link to="/poi" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />
-        Back to {backLabel}
+        Back to Locations
       </Link>
 
       <PageHeader

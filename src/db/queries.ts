@@ -1101,19 +1101,139 @@ export async function getVehiclesNeedingCFUpload(
 
 // --- Loot by-location aggregation (POI feature) ---
 
-interface LootLocationRow {
-  id: number;
+interface LootSummaryRow {
   uuid: string;
-  name: string;
-  type: string | null;
-  sub_type: string | null;
   rarity: string | null;
-  category: string;
   containers_json: string | null;
   shops_json: string | null;
   npcs_json: string | null;
 }
 
+interface LocationSummary {
+  key: string;
+  itemCount: number;
+  rarities: Record<string, number>;
+}
+
+interface LootLocationSummaryResult {
+  containers: LocationSummary[];
+  shops: LocationSummary[];
+  npcs: LocationSummary[];
+}
+
+const LOOT_BASE_WHERE = `
+  lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)
+  AND lm.name NOT IN ('<= PLACEHOLDER =>')
+  AND lm.name NOT LIKE 'EntityClassDefinition.%'
+  AND lm.type IS NOT NULL AND lm.type != ''
+  AND lm.type NOT IN (
+    'NOITEM_Vehicle','UNDEFINED',
+    'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
+    'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
+    'Currency','MobiGlas'
+  )`;
+
+const LOOT_CATEGORY_CASE = `CASE
+  WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
+  WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
+  WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
+  WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
+  WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
+  WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
+  WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
+  WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
+  WHEN lm.props_id IS NOT NULL THEN 'prop'
+  WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
+  WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
+  ELSE 'unknown'
+END`;
+
+function parseJsonArray(val: string | null): unknown[] {
+  if (!val || val === "null" || val === "[]" || val === "") return [];
+  try { return JSON.parse(val) as unknown[]; } catch { return []; }
+}
+
+/**
+ * Lightweight summary for the POI directory page.
+ * Returns location keys + item counts + rarity distributions — no item arrays.
+ * Paginated D1 reads but tiny response (~20KB).
+ */
+export async function getLootLocationSummary(db: D1Database): Promise<LootLocationSummaryResult> {
+  const PAGE_SIZE = 500;
+  const sql = `SELECT lm.uuid, lm.rarity, lm.containers_json, lm.shops_json, lm.npcs_json
+    FROM loot_map lm
+    WHERE ${LOOT_BASE_WHERE}
+      AND (
+        (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
+        OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
+        OR (lm.npcs_json IS NOT NULL AND lm.npcs_json NOT IN ('null','[]',''))
+      )
+    ORDER BY lm.id
+    LIMIT ? OFFSET ?`;
+
+  // key → { uuids: Set, rarities: Record<string, number> }
+  const containerAcc: Record<string, { uuids: Set<string>; rarities: Record<string, number> }> = {};
+  const shopAcc: Record<string, { uuids: Set<string>; rarities: Record<string, number> }> = {};
+  const npcAcc: Record<string, { uuids: Set<string>; rarities: Record<string, number> }> = {};
+
+  function addToAcc(
+    acc: Record<string, { uuids: Set<string>; rarities: Record<string, number> }>,
+    key: string,
+    uuid: string,
+    rarity: string | null,
+  ) {
+    if (!acc[key]) acc[key] = { uuids: new Set(), rarities: {} };
+    const bucket = acc[key];
+    if (bucket.uuids.has(uuid)) return;
+    bucket.uuids.add(uuid);
+    const r = rarity || "Common";
+    bucket.rarities[r] = (bucket.rarities[r] || 0) + 1;
+  }
+
+  let offset = 0;
+  while (true) {
+    const result = await db.prepare(sql).bind(PAGE_SIZE, offset).all<LootSummaryRow>();
+    const rows = result.results;
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      for (const e of parseJsonArray(row.containers_json) as Array<Record<string, unknown>>) {
+        const k = (e.location || e.locationTag || "") as string;
+        if (k) addToAcc(containerAcc, k, row.uuid, row.rarity);
+      }
+      for (const e of parseJsonArray(row.shops_json) as Array<Record<string, unknown>>) {
+        const k = (e.shop || e.name || "") as string;
+        if (k) addToAcc(shopAcc, k, row.uuid, row.rarity);
+      }
+      for (const e of parseJsonArray(row.npcs_json) as Array<Record<string, unknown>>) {
+        const k = (e.faction || e.actor || e.name || "") as string;
+        if (k) addToAcc(npcAcc, k, row.uuid, row.rarity);
+      }
+    }
+
+    if (rows.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  function toSummaries(acc: Record<string, { uuids: Set<string>; rarities: Record<string, number> }>): LocationSummary[] {
+    return Object.entries(acc).map(([key, { uuids, rarities }]) => ({
+      key,
+      itemCount: uuids.size,
+      rarities,
+    }));
+  }
+
+  return {
+    containers: toSummaries(containerAcc),
+    shops: toSummaries(shopAcc),
+    npcs: toSummaries(npcAcc),
+  };
+}
+
+/**
+ * Full item list for a single location (POI detail page).
+ * Uses LIKE pre-filter on the JSON column so D1 returns ~50-200 rows instead of 5000+.
+ */
 interface LocationItem {
   uuid: string;
   name: string;
@@ -1128,143 +1248,84 @@ interface LocationItem {
   slot?: string;
 }
 
-interface LocationBucket {
+interface LocationDetailResult {
   items: LocationItem[];
-  itemCount: number;
 }
 
-interface LootByLocationResult {
-  containers: Record<string, LocationBucket>;
-  shops: Record<string, LocationBucket>;
-  npcs: Record<string, LocationBucket>;
-}
+export async function getLootLocationDetail(
+  db: D1Database,
+  locType: "container" | "shop" | "npc",
+  slug: string,
+): Promise<LocationDetailResult> {
+  const jsonCol =
+    locType === "container" ? "containers_json"
+    : locType === "shop" ? "shops_json"
+    : "npcs_json";
 
-export async function getLootByLocation(db: D1Database): Promise<LootByLocationResult> {
-  // Fetching all JSON blobs in one query exceeds D1's 20MB result limit (~61MB total).
-  // Paginate in batches and aggregate progressively. Use Sets for O(1) dedup.
-  const PAGE_SIZE = 500;
-  const baseSql = `SELECT
-        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-        lm.containers_json, lm.shops_json, lm.npcs_json,
-        CASE
-          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-          WHEN lm.props_id IS NOT NULL THEN 'prop'
-          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-          ELSE 'unknown'
-        END as category
-      FROM loot_map lm
-      WHERE lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)
-        AND lm.name NOT IN ('<= PLACEHOLDER =>')
-        AND lm.name NOT LIKE 'EntityClassDefinition.%'
-        AND lm.type IS NOT NULL AND lm.type != ''
-        AND lm.type NOT IN (
-          'NOITEM_Vehicle','UNDEFINED',
-          'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
-          'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
-          'Currency','MobiGlas'
-        )
-        AND (
-          (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
-          OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
-          OR (lm.npcs_json IS NOT NULL AND lm.npcs_json NOT IN ('null','[]',''))
-        )
-      ORDER BY lm.id
-      LIMIT ? OFFSET ?`;
+  // LIKE pre-filter: dramatically reduces rows. False positives are filtered in JS.
+  const likePattern = `%${slug.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`;
 
-  const containers: Record<string, LocationBucket> = {};
-  const shops: Record<string, LocationBucket> = {};
-  const npcs: Record<string, LocationBucket> = {};
+  const sql = `SELECT
+      lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+      lm.${jsonCol} as target_json,
+      ${LOOT_CATEGORY_CASE} as category
+    FROM loot_map lm
+    WHERE ${LOOT_BASE_WHERE}
+      AND lm.${jsonCol} IS NOT NULL
+      AND lm.${jsonCol} NOT IN ('null','[]','')
+      AND lm.${jsonCol} LIKE ? ESCAPE '\\'
+    ORDER BY lm.name`;
 
-  // Dedup sets: "locationKey::uuid" to avoid O(n²) .some() scans
-  const containerSeen = new Set<string>();
-  const shopSeen = new Set<string>();
-  const npcSeen = new Set<string>();
+  const result = await db.prepare(sql).bind(likePattern).all<{
+    uuid: string;
+    name: string;
+    type: string | null;
+    sub_type: string | null;
+    rarity: string | null;
+    category: string;
+    target_json: string | null;
+  }>();
 
-  const parseJson = (val: string | null): unknown[] => {
-    if (!val || val === "null" || val === "[]" || val === "") return [];
-    try { return JSON.parse(val) as unknown[]; } catch { return []; }
-  };
+  const items: LocationItem[] = [];
+  const seen = new Set<string>();
 
-  let offset = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const result = await db.prepare(baseSql).bind(PAGE_SIZE, offset).all<LootLocationRow>();
-    const rows = result.results;
-    if (rows.length === 0) break;
+  for (const row of result.results) {
+    if (seen.has(row.uuid)) continue;
+    const entries = parseJsonArray(row.target_json) as Array<Record<string, unknown>>;
 
-    for (const row of rows) {
-      const baseItem = {
-        uuid: row.uuid,
-        name: row.name,
-        type: row.type,
-        sub_type: row.sub_type,
-        rarity: row.rarity,
-        category: row.category,
-      };
-
-      // Aggregate containers by location key
-      for (const entry of parseJson(row.containers_json) as Array<Record<string, unknown>>) {
-        const locKey = (entry.location || entry.locationTag || "") as string;
-        if (!locKey) continue;
-        const dedupKey = `${locKey}::${row.uuid}`;
-        if (containerSeen.has(dedupKey)) continue;
-        containerSeen.add(dedupKey);
-        if (!containers[locKey]) containers[locKey] = { items: [], itemCount: 0 };
-        containers[locKey].items.push({
-          ...baseItem,
-          perContainer: (entry.perContainer as number) ?? undefined,
-          containerType: (entry.containerType as string) ?? undefined,
-        });
-      }
-
-      // Aggregate shops by shop key
-      for (const entry of parseJson(row.shops_json) as Array<Record<string, unknown>>) {
-        const shopKey = (entry.shop || entry.name || "") as string;
-        if (!shopKey) continue;
-        const dedupKey = `${shopKey}::${row.uuid}`;
-        if (shopSeen.has(dedupKey)) continue;
-        shopSeen.add(dedupKey);
-        if (!shops[shopKey]) shops[shopKey] = { items: [], itemCount: 0 };
-        shops[shopKey].items.push({
-          ...baseItem,
-          buyPrice: (entry.buyPrice as number) ?? undefined,
-        });
-      }
-
-      // Aggregate NPCs by faction key
-      for (const entry of parseJson(row.npcs_json) as Array<Record<string, unknown>>) {
-        const factionKey = (entry.faction || entry.actor || entry.name || "") as string;
-        if (!factionKey) continue;
-        const dedupKey = `${factionKey}::${row.uuid}`;
-        if (npcSeen.has(dedupKey)) continue;
-        npcSeen.add(dedupKey);
-        if (!npcs[factionKey]) npcs[factionKey] = { items: [], itemCount: 0 };
-        npcs[factionKey].items.push({
-          ...baseItem,
-          probability: (entry.probability as number) ?? undefined,
-          slot: (entry.slot as string) ?? undefined,
-        });
-      }
+    // Find the entry that exactly matches the slug
+    let matched: Record<string, unknown> | undefined;
+    for (const e of entries) {
+      const key =
+        locType === "container" ? ((e.location || e.locationTag || "") as string)
+        : locType === "shop" ? ((e.shop || e.name || "") as string)
+        : ((e.faction || e.actor || e.name || "") as string);
+      if (key === slug) { matched = e; break; }
     }
+    if (!matched) continue;
 
-    if (rows.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+    seen.add(row.uuid);
+    const item: LocationItem = {
+      uuid: row.uuid,
+      name: row.name,
+      type: row.type,
+      sub_type: row.sub_type,
+      rarity: row.rarity,
+      category: row.category,
+    };
+    if (locType === "container") {
+      if (matched.perContainer != null) item.perContainer = matched.perContainer as number;
+      if (matched.containerType != null) item.containerType = matched.containerType as string;
+    } else if (locType === "shop") {
+      if (matched.buyPrice != null) item.buyPrice = matched.buyPrice as number;
+    } else {
+      if (matched.probability != null) item.probability = matched.probability as number;
+      if (matched.slot != null) item.slot = matched.slot as string;
+    }
+    items.push(item);
   }
 
-  // Update itemCount for all buckets
-  for (const bucket of Object.values(containers)) bucket.itemCount = bucket.items.length;
-  for (const bucket of Object.values(shops)) bucket.itemCount = bucket.items.length;
-  for (const bucket of Object.values(npcs)) bucket.itemCount = bucket.items.length;
-
-  return { containers, shops, npcs };
+  return { items };
 }
 
 export async function setVehicleCFImagesID(

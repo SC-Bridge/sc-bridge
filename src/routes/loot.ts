@@ -3,7 +3,8 @@ import { getAuthUser, type HonoEnv } from "../lib/types";
 import {
   getLootItems,
   getLootByUuid,
-  getLootByLocation,
+  getLootLocationSummary,
+  getLootLocationDetail,
   getUserLootCollection,
   addToLootCollection,
   setLootCollectionQuantity,
@@ -160,10 +161,21 @@ export function lootRoutes() {
     return c.json({ ok: true });
   });
 
-  // GET /api/loot/by-location — all items aggregated by location (public)
-  // Cache-Control: public, max-age=300 (CDN caches 5 min)
-  app.get("/by-location", async (c) => {
-    const data = await getLootByLocation(c.env.DB);
+  // GET /api/loot/locations — lightweight summary for POI directory (public)
+  app.get("/locations", async (c) => {
+    const data = await getLootLocationSummary(c.env.DB);
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(data);
+  });
+
+  // GET /api/loot/locations/:type/:slug — items for a single location (public)
+  app.get("/locations/:type/:slug", async (c) => {
+    const type = c.req.param("type") as "container" | "shop" | "npc";
+    if (!["container", "shop", "npc"].includes(type)) {
+      return c.json({ error: "Invalid location type" }, 400);
+    }
+    const slug = decodeURIComponent(c.req.param("slug"));
+    const data = await getLootLocationDetail(c.env.DB, type, slug);
     c.header("Cache-Control", "public, max-age=300");
     return c.json(data);
   });
