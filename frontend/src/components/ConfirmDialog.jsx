@@ -49,7 +49,7 @@ export default function ConfirmDialog({ open, onConfirm, onCancel, title, messag
           </div>
         </div>
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="btn-ghost">Cancel</button>
+          <button onClick={onCancel} className="btn-ghost" autoFocus>Cancel</button>
           <button onClick={onConfirm} className={cfg.confirmClass}>{confirmLabel}</button>
         </div>
       </div>

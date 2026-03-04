@@ -670,6 +670,7 @@ const ROLE_GROUP_MAP: Record<string, string> = {
   "Heavy Salvage": "Salvage",
   "Recovery": "Salvage",
   "Industrial": "Industrial",
+  "Repair": "Support",
   "Heavy Refuelling": "Refueling",
   // Medical
   "Medical": "Medical",

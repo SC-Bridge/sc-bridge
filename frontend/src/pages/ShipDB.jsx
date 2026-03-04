@@ -1,18 +1,19 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useShips } from '../hooks/useAPI'
-import { Database, ArrowUpDown, CheckCircle, Wrench, Lightbulb, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Database, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
 import ShipImage from '../components/ShipImage'
+import StatusBadge from '../components/StatusBadge'
 
 const PAGE_SIZE = 30
 
 export default function ShipDB() {
-  const { data: ships, loading, error } = useShips()
+  const { data: ships, loading, error, refetch } = useShips()
   const [filter, setFilter] = useState('')
   const [mfrFilter, setMfrFilter] = useState('all')
   const [sizeFilter, setSizeFilter] = useState('all')
@@ -145,7 +146,7 @@ export default function ShipDB() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   if (loading) return <LoadingState message="Loading ship database..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-4 animate-fade-in-up">
@@ -238,25 +239,7 @@ export default function ShipDB() {
                       <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
                     )}
                   </div>
-                  <span className="text-xs font-mono text-gray-500">
-                    {ship.production_status === 'flight_ready' ? (
-                      <span className="inline-flex items-center gap-1 text-sc-success">
-                        <CheckCircle className="w-3 h-3" /> Flight Ready
-                      </span>
-                    ) : ship.production_status === 'in_production' ? (
-                      <span className="inline-flex items-center gap-1 text-sc-warn">
-                        <Wrench className="w-3 h-3" /> In Production
-                      </span>
-                    ) : ship.production_status === 'in_concept' ? (
-                      <span className="inline-flex items-center gap-1 text-blue-400">
-                        <Lightbulb className="w-3 h-3" /> In Concept
-                      </span>
-                    ) : ship.production_status ? (
-                      <span className="inline-flex items-center gap-1 text-sc-warn">
-                        <Wrench className="w-3 h-3" /> {ship.production_status}
-                      </span>
-                    ) : null}
-                  </span>
+                  <StatusBadge status={ship.production_status} size="sm" />
                 </div>
                 <div className="mt-1 min-h-[1rem]">
                   {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (

@@ -73,7 +73,7 @@ const SECTIONS = [
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function POI() {
-  const { data, loading, error } = useLootLocations()
+  const { data, loading, error, refetch } = useLootLocations()
   const [search, setSearch] = useState('')
   const [activeSection, setActiveSection] = useState('containers')
   const [activeGroup, setActiveGroup] = useState('all')
@@ -175,7 +175,7 @@ export default function POI() {
     (activeSection === 'npcs' ? npcEntries.length : 0)
 
   if (loading) return <LoadingState message="Loading locations..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-4 animate-fade-in-up">

@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ExternalLink, CheckCircle, Wrench, Lightbulb,
+  ArrowLeft, ExternalLink,
   Rocket, Zap, Box, Palette, LayoutGrid, List,
 } from 'lucide-react'
 import { useShip, useShipLoadout, useShipPaints } from '../hooks/useAPI'
 import ShipImage from '../components/ShipImage'
+import StatusBadge from '../components/StatusBadge'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import {
@@ -44,41 +45,6 @@ const PORT_TYPE_ICON = {
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
-function StatusBadge({ status }) {
-  if (status === 'flight_ready') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sc-success font-mono text-sm">
-        <CheckCircle className="w-4 h-4" />
-        Flight Ready
-      </span>
-    )
-  }
-  if (status === 'in_production') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sc-warn font-mono text-sm">
-        <Wrench className="w-4 h-4" />
-        In Production
-      </span>
-    )
-  }
-  if (status === 'in_concept') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-blue-400 font-mono text-sm">
-        <Lightbulb className="w-4 h-4" />
-        In Concept
-      </span>
-    )
-  }
-  if (status) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sc-warn font-mono text-sm">
-        <Wrench className="w-4 h-4" />
-        {status}
-      </span>
-    )
-  }
-  return null
-}
 
 function SpecRow({ label, value }) {
   if (value == null || value === '' || value === 0) return null
@@ -325,17 +291,17 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage }) {
 // ─── Component / Weapon tabs ──────────────────────────────────────────────────
 
 function ComponentsTab({ slug }) {
-  const { data: loadout, loading, error } = useShipLoadout(slug)
+  const { data: loadout, loading, error, refetch } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading components..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
   const items = (loadout || []).filter(r => COMPONENT_TYPES.has(r.port_type))
   return <LoadoutItems items={items} emptyIcon={Box} emptyMessage="No component data available" />
 }
 
 function WeaponsTab({ slug }) {
-  const { data: loadout, loading, error } = useShipLoadout(slug)
+  const { data: loadout, loading, error, refetch } = useShipLoadout(slug)
   if (loading) return <LoadingState message="Loading weapons..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
   const items = (loadout || []).filter(r => WEAPON_TYPES.has(r.port_type))
   return <LoadoutItems items={items} emptyIcon={Rocket} emptyMessage="No weapon hardpoints" />
 }
@@ -343,11 +309,11 @@ function WeaponsTab({ slug }) {
 // ─── Paints tab ───────────────────────────────────────────────────────────────
 
 function PaintsTab({ slug }) {
-  const { data: paints, loading, error } = useShipPaints(slug)
+  const { data: paints, loading, error, refetch } = useShipPaints(slug)
   const [view, setView] = useState('list')
 
   if (loading) return <LoadingState message="Loading paints..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   if (!paints || paints.length === 0) {
     return (
@@ -492,10 +458,10 @@ export default function ShipDetail() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
-  const { data: ship, loading, error } = useShip(slug)
+  const { data: ship, loading, error, refetch } = useShip(slug)
 
   if (loading) return <LoadingState message="Loading ship data..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
   if (!ship) return <ErrorState message="Ship not found" />
 
   return (

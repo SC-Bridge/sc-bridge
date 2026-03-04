@@ -9,7 +9,7 @@ import FilterSelect from '../components/FilterSelect'
 import InsuranceBadge from '../components/InsuranceBadge'
 
 export default function Insurance() {
-  const { data: analysis, loading, error } = useAnalysis()
+  const { data: analysis, loading, error, refetch } = useAnalysis()
   const [filterLTI, setFilterLTI] = useState('all')
   const [filterWarbond, setFilterWarbond] = useState('all')
 
@@ -41,7 +41,7 @@ export default function Insurance() {
   }, [ins, filterLTI, filterWarbond])
 
   if (loading) return <LoadingState message="Loading insurance data..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-6">

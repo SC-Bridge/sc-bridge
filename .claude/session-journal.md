@@ -8,17 +8,22 @@ All tools/scripts/extractors which are propriatary are stored in a private repo 
 
 ## Current Focus
 
-POI feature (Epic #9, Issues #14–20) — **COMPLETE**, pending deploy.
+Codebase audit — executing improvement proposals. **SMALL items complete**, MEDIUM next.
 
 ## Recent Changes
 
-- **POI feature** (Epic #9): Full implementation of Points of Interest — "what drops at Location X?"
-  - Backend: `getLootByLocation()` in `queries.ts` + `GET /api/loot/by-location` in `loot.ts`. JS aggregation on Worker (not D1 json_each).
-  - Frontend: `POI.jsx` (directory page, 3 tabs: containers/shops/NPCs, group filters, search), `POIDetail.jsx` (detail page, items grouped by category, rarity badges, drop rates)
-  - Routes: `/poi`, `/poi/:slug`, `/poi/shop/:slug`, `/poi/npc/:slug`, `/loot/:uuid` deep link
-  - LootDB: Auto-open detail panel via `/loot/:uuid` route param. Location chips link to `/poi/` pages.
-  - Nav: "Locations" item with MapPin icon added after "Item Finder"
-- **Analysis fix** (#33): Multi-term role matching for gap detection, chart axis fixes, duplicate bar fix
+- **Codebase audit**: 3-agent parallel audit (backend, frontend, data/schema) → 64 findings in `docs/research/improvement-proposals.md`
+- **SMALL improvements executed** (10 items done, 6 false positives identified, 1 skipped):
+  - S01: Migration collision fixed (0045→0046)
+  - S02: Cache-Control on `loot/:uuid` endpoint
+  - S06: Deduplicated LOOT_CATEGORY_CASE (3 inline copies → shared constant in queries.ts)
+  - S07/S08: Migration 0047 — 8 missing FK indexes
+  - S10: `onRetry={refetch}` on all 19 ErrorState calls across 13 pages
+  - S12: Extracted `StatusBadge` component from ShipDetail, used in ShipDetail + ShipDB
+  - S13: LootDB silent `console.error` → user-visible error banner for collection/wishlist failures
+  - S14: ConfirmDialog autoFocus on cancel button
+- **Component class robustness**: Migration 0046 (class column on vehicle_components), updated queries.ts COALESCE chain, extraction scripts, research doc
+- **Audit quality note**: ~37% of SMALL findings were false positives — verify MEDIUM/LARGE/HUGE findings before implementing
 
 ## Key Decisions
 
@@ -28,6 +33,7 @@ POI feature (Epic #9, Issues #14–20) — **COMPLETE**, pending deploy.
 - **Loot filtering**: Client-side only — fetch all 5218 items once (~1.3MB), filter in browser for instant UX. Server pagination would break search-as-you-type.
 - **Hono generic typing**: `lootRoutes()` uses `Hono<HonoEnv>` directly (NOT `<E extends HonoEnv>` generic) — generic context breaks `c.get('user')` and `c.env.DB` type inference.
 - `vehicle_images` is source of truth; `vehicles.image_url` is denormalized effective URL for query simplicity
+- **Audit false positives**: Always verify audit findings against actual code before implementing. Subagent auditors can hallucinate issues that don't exist (e.g. claiming files/functions exist that don't, reporting already-fixed issues).
 
 ## Production
 
@@ -40,7 +46,7 @@ POI feature (Epic #9, Issues #14–20) — **COMPLETE**, pending deploy.
 
 ## Applied Migrations (D1)
 
-Last applied: **0043_manufacturers_class.sql** (0044 committed, not yet applied)
+Last applied: **0044_invite_tokens.sql** (0046, 0047 committed, not yet applied)
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -62,6 +68,8 @@ Last applied: **0043_manufacturers_class.sql** (0044 committed, not yet applied)
 | 0038 | user_loot_wishlist      | `user_loot_wishlist` table + indexes                              |
 | 0039 | loot_quantity           | `quantity` column on `user_loot_collection` + `user_loot_wishlist` |
 | 0040 | fix_collection_fk       | Rebuild `user_loot_collection` — FK was pointing to dropped `loot_map_old` |
+| 0046 | component_class         | `class` column on vehicle_components + corrected manufacturers.class |
+| 0047 | missing_indexes         | 8 FK indexes (user_fleet, paint_vehicles, vehicles, loot_map)    |
 
 **Out-of-band columns** (applied via wrangler execute, not in migration files):
 
@@ -92,7 +100,7 @@ eyewear (~22), Char_Armor_Undersuit (9), Char_Armor_Helmet/Helmet (9), misc othe
 | `acquisition_types/`      | `acquisition_type`                                 | Contract + CZ JSONs                          |
 | `loot_map/`               | `loot_map` table (5218 items)                      | `Resolved/loot_map.json`                     |
 | `lib/datacore.py`         | Shared helpers                                     | —                                            |
-| `ship_components_core/`   | Power/cooler/shield/QD                             | DataCore ship component dirs                 |
+| `ship_components_core/`   | Power/cooler/shield/QD + class extraction          | DataCore ship component dirs                 |
 | `ship_weapons/`           | Ship guns                                          | DataCore weapon dirs                         |
 | `ship_missiles/`          | Missile racks                                      | DataCore missile dirs                        |
 | `ship_misc/`              | Countermeasures/QED/jumpdrive                      | Multiple DataCore dirs                       |
@@ -139,20 +147,11 @@ Implemented in single commit. Backend aggregation + 2 new pages + deep linking +
 
 ## What's Next
 
+- **MEDIUM audit items** — validate findings then execute
 - **Bug**: #32 (Insurance Mobile) — quick CSS fix
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
 - **CF Images for paints** (#31) — larger pipeline work
-
-## Recently Closed (this session)
-
-- #33 — Fleet Analysis "no ships detected" (fixed in e19760c)
-- #11 — Item stats for helmets/clothing/attachments (done)
-- #12 — Org settings (duplicate of #30)
-- #13 — Shopping list friendly names (done via lootLocations.js)
-- #24 — fps_clothing stats_json (won't-do, cosmetic only)
-- #26 — fps_utilities stats_json (done, script existed and ran)
-- Loot unmatched items — 0 visible in UI
 
 ## Weapon Mount Pattern (for future reference)
 
@@ -178,56 +177,3 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 **`hardpoint_weapon_gun` / `hardpoint_weapon_class` / `hardpoint_weapon_missile` prefixes** were missing from PORT_CATEGORIES — now fixed. These appear on Avenger, Vanguard, Pisces, Merlin, Archimedes.
 extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows.
-
----
-
-**Session compacted at:** 2026-03-03 15:26:23
-
-
----
-**Session compacted at:** 2026-03-03 16:06:05
-
-
----
-**Session compacted at:** 2026-03-03 16:21:45
-
-
----
-**Session compacted at:** 2026-03-03 16:27:32
-
-
----
-**Session compacted at:** 2026-03-03 17:11:54
-
-
----
-**Session compacted at:** 2026-03-03 17:17:59
-
-
----
-**Session compacted at:** 2026-03-03 17:35:47
-
-
----
-**Session compacted at:** 2026-03-03 18:06:52
-
-
----
-**Session compacted at:** 2026-03-03 19:40:30
-
-
----
-**Session compacted at:** 2026-03-03 19:40:37
-
-
----
-**Session compacted at:** 2026-03-03 19:45:04
-
-
----
-**Session compacted at:** 2026-03-03 20:18:41
-
-
----
-**Session compacted at:** 2026-03-03 20:19:33
-

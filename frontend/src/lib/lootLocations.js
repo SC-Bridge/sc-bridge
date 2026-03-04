@@ -7,17 +7,15 @@
 
 /** @type {Record<string, string>} */
 const CONTAINER_LOCATIONS = {
-  // ASD Onyx Facility (Euterpe / Stanton 4c — underground contested zone)
-  // Wing names from FacilityDelve_Wing*_name localization keys:
-  //   WingA = Engineering Wing, WingB = Research Wing, WingD = Site-B Lab
-  ASDDelving:                                   'Onyx Facility',
-  ASDDelving_ScienceWing:                       'Onyx Facility \u2014 Research Wing',
+  // ASD Onyx Facility — many exist across the verse, keep generic
+  ASDDelving:                                   'ASD Onyx Facility',
+  ASDDelving_ScienceWing:                       'ASD Onyx Facility \u2014 Research Wing',
 
   // Pyro locations
   AsteroidBase_Pyro_Encounter:                  'Pyro \u2014 Asteroid Base',
-  StormBreaker:                                 'Storm Breaker',
-  Kaboos:                                       'QV Logistics Station',
-  Orbageddon:                                   'Orbageddon',
+  StormBreaker:                                 'Storm Breaker (Pyro)',
+  Kaboos:                                       'QV Logistics Station (Pyro)',
+  Orbageddon:                                   'Orbageddon (Pyro)',
 
   // Caves by moon / quality
   Cave_Aberdeen_Poor:                           'Aberdeen \u2014 Cave (Poor)',
@@ -56,22 +54,23 @@ const CONTAINER_LOCATIONS = {
   ColonialOutpost_Outlaw_Medium:                'Colonial Outpost \u2014 Outlaw (Medium)',
   ColonialOutpost_Outlaw_Large:                 'Colonial Outpost \u2014 Outlaw (Large)',
 
-  // Contested zones
-  ContestedZones:                               'Contested Zones (General)',
-  'contestedzones/ContestedZone_1a':            'Contested Zone 1A',
-  'contestedzones/ContestedZone_1a_RewardRoom_001': 'Contested Zone 1A \u2014 Reward Room',
-  'contestedzones/ContestedZone_1b_RewardRoom_002': 'Contested Zone 1B \u2014 Reward Room',
-  'contestedzones/GhostArena_01':               'Ghost Arena',
+  // Contested zones — Pyro system stations (all have identical loot)
+  // GhostArena confirmed via starmap; 1a/1b mapping is high-confidence circumstantial
+  ContestedZones:                               'Pyro \u2014 Contested Zones',
+  'contestedzones/ContestedZone_1a':            'Checkmate \u2014 Contested Zone (Pyro II)',
+  'contestedzones/ContestedZone_1a_RewardRoom_001': 'Checkmate \u2014 Reward Room (Pyro II)',
+  'contestedzones/ContestedZone_1b_RewardRoom_002': 'Orbituary \u2014 Reward Room (Pyro III)',
+  'contestedzones/GhostArena_01':               'Ruin Station \u2014 Ghost Arena (Pyro VI)',
 
-  // Named locations
-  Covalex:                                      'Covalex Shipping Hub',
-  Jumptown:                                     'Jumptown',
+  // Named locations — add moon/body context
+  Covalex:                                      'Covalex Shipping Hub, Daymar',
+  Jumptown:                                     'Jumptown, Daymar',
   Junksites:                                    'Junk Sites',
-  Kareah:                                       'Security Post Kareah',
+  Kareah:                                       'Security Post Kareah, Cellin',
   FloatingIslands:                              'Floating Islands (Orison)',
 
-  // Distribution centres
-  DCDelving:                                    'Distribution Centre \u2014 Delving',
+  // Distribution centres — many exist, keep generic
+  DCDelving:                                    'Distribution Centre',
   // Note: typo "HighSecurtiy" preserved from DataCore source
   DistributionCentres_HighSecurtiy:             'Distribution Centre (High Security)',
   DistributionCentres_LowSecurity:              'Distribution Centre (Low Security)',
@@ -218,12 +217,12 @@ export function friendlyLocation(raw) {
   const scMatch = s.match(/^ShippingContainer_(\w+)$/)
   if (scMatch) return `Shipping Container (${toWords(scMatch[1])})`
 
-  // Contested zone areas — preserve zone identifier (1a, 1b, etc.)
+  // Contested zone areas — fallback for unknown CZ identifiers
   const czRoom = s.match(/^ContestedZone_(\w+?)_RewardRoom_(\d+)$/)
-  if (czRoom) return `Contested Zone ${czRoom[1].toUpperCase()} \u2014 Reward Room`
+  if (czRoom) return `Pyro \u2014 Contested Zone ${czRoom[1].toUpperCase()} \u2014 Reward Room`
   const czZone = s.match(/^ContestedZone_(\w+)$/)
-  if (czZone) return `Contested Zone ${czZone[1].toUpperCase()}`
-  if (s === 'ContestedZones') return 'Contested Zones (General)'
+  if (czZone) return `Pyro \u2014 Contested Zone ${czZone[1].toUpperCase()}`
+  if (s === 'ContestedZones') return 'Pyro \u2014 Contested Zones'
 
   // Ghost arena
   if (s.startsWith('GhostArena')) return 'Ghost Arena'

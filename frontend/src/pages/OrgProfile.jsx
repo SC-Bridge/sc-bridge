@@ -30,9 +30,9 @@ const VISIBILITY_LABELS = {
 }
 
 function OrgFleet({ slug, callerRole }) {
-  const { data, loading, error } = useOrgFleet(slug)
+  const { data, loading, error, refetch } = useOrgFleet(slug)
   if (loading) return <LoadingState message="Loading fleet..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   const fleet = data?.fleet ?? []
 
@@ -81,9 +81,9 @@ function OrgFleet({ slug, callerRole }) {
 }
 
 function OrgMembers({ slug }) {
-  const { data, loading, error } = useOrgMembers(slug)
+  const { data, loading, error, refetch } = useOrgMembers(slug)
   if (loading) return <LoadingState message="Loading members..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   const members = data?.members ?? []
 
@@ -112,9 +112,9 @@ function OrgMembers({ slug }) {
 }
 
 function OrgAnalysis({ slug }) {
-  const { data, loading, error } = useOrgAnalysis(slug)
+  const { data, loading, error, refetch } = useOrgAnalysis(slug)
   if (loading) return <LoadingState message="Running analysis..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
   if (!data) return null
 
   const overview = data.overview
@@ -182,11 +182,11 @@ function OrgAnalysis({ slug }) {
 export default function OrgProfile() {
   const { slug } = useParams()
   const { data: session } = useSession()
-  const { data: org, loading, error } = useOrgProfile(slug)
+  const { data: org, loading, error, refetch } = useOrgProfile(slug)
   const [activeTab, setActiveTab] = useState('fleet')
 
   if (loading) return <LoadingState message="Loading organisation..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
   if (!org) return null
 
   // Caller's role is returned by the fleet endpoint — but we get it separately via the members check

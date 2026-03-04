@@ -106,7 +106,7 @@ function ContractCard({ contract }) {
 }
 
 export default function Contracts() {
-  const { data: contracts, loading, error } = useContracts()
+  const { data: contracts, loading, error, refetch } = useContracts()
   const [giverTab, setGiverTab] = useState('all')
   const [search, setSearch] = useState('')
 
@@ -132,7 +132,7 @@ export default function Contracts() {
   }, [contracts, giverTab, search])
 
   if (loading) return <LoadingState message="Loading contracts..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-4 animate-fade-in-up">

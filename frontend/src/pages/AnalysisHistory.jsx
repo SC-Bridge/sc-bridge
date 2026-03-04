@@ -47,7 +47,7 @@ export default function AnalysisHistory() {
   }
 
   if (loading) return <LoadingState message="Loading history..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   const history = data?.history || []
 

@@ -106,7 +106,7 @@ export default function FleetTable() {
   }, [handleKeyDown])
 
   if (loading) return <LoadingState message="Loading fleet..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-4 animate-fade-in-up">

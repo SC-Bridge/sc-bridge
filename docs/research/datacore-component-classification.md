@@ -1,5 +1,5 @@
 ---
-description: How SC ship component class (Civilian/Military/Industrial/Stealth/Competition) is determined from DataCore data — investigation findings and manufacturer mapping.
+description: How SC ship component class (Civilian/Military/Industrial/Stealth/Competition) is determined — investigation findings, corrected mappings, and per-component extraction approach.
 tags: [datacore, components, classification, manufacturers, ship-loadout]
 audience: { human: 40, agent: 60 }
 purpose: { research: 50, reference: 30, findings: 20 }
@@ -9,94 +9,109 @@ purpose: { research: 50, reference: 30, findings: 20 }
 
 ## Finding
 
-**Component class is NOT stored in DataCore component JSON files.** It is determined entirely by manufacturer identity, and the ground-truth mapping is encoded in DataCore loot harvestable filenames.
+**Component class IS available in DataCore** — embedded in localization description text as a structured `Class: <value>` header line. This is more accurate than manufacturer-based derivation because some manufacturers produce components across multiple classes.
+
+Previous approach (manufacturer→class mapping via migration 0031) had **5 incorrect mappings** and couldn't handle multi-class manufacturers.
 
 ---
 
-## Investigation
+## The Two Sources of Class Data
 
-### What Was Checked (All Negative)
+### 1. Component Description Text (Primary — per-component)
 
-| Field / Location | Expected | Actual |
-|-----------------|----------|--------|
-| `AttachDef.SubType` in component JSON | class value | `"UNDEFINED"` for all coolers, shields, power plants, QDs |
-| `AttachDef.DisplayType` | class value | generic type string |
-| Tag database hierarchy under `Ship/Components` | class node | Only: Powerplant, QuantumDrive, Cooler, Sizes (0–4), Grade (A/B/C/D), Fuse, FlightBlade |
-| `SCItemPurchasableParams` | any class field | not present |
-| Localization strings in component JSON | class name | absent |
-| Manufacturer JSON (`scitemmanufacturer.*.json`) | class field | only: Code, Name, Logo reference |
-
-### The Actual Source
-
-DataCore ships/utility harvestable loot files use a naming convention that encodes class directly:
+Every component's localization description contains a structured header:
 
 ```
-loot_{type}_{size}_{grade}_{mfr}_{name}_{class}.json
+Item Type: Cooler
+Manufacturer: ACOM
+Size: 1
+Grade: C
+Class: Competition
+
+Descriptive text follows...
 ```
 
-**Examples:**
-```
-loot_cooler_s2_gradeb_acom_absolutezero_competition.json    → ACOM = Competition
-loot_cooler_s2_gradeb_asas_shadowcooler_stealth.json        → ASAS = Stealth
-loot_powerplant_s1_gradeb_amrs_dynaflux_military.json       → AMRS = Military
-loot_shield_s1_gradeb_aegs_vanguard_military.json           → AEGS = Military
-loot_cooler_s1_gradea_raco_snowpack_stealth.json            → RACO = Stealth
-loot_cooler_s2_gradec_wetk_heatsink_military.json           → WETK = Military
-loot_quantumdrive_s2_gradeb_tydt_strider_stealth.json       → TYDT = Stealth
-```
+Parseable via `Class:\s*(\w+)` regex. Coverage: **266/296 (90%)** purchasable components. The 30 missing are placeholders or capital ship bespoke items.
 
-These files live at:
-```
-DataCore/libs/foundry/records/entities/scitem/ships/loot/
-```
+Extracted by: `scbridge/tools/scripts/ship_components_core/extract.py`
+Stored in: `vehicle_components.class` (added in migration 0045)
+
+### 2. Manufacturer Identity (Fallback)
+
+Stored in `manufacturers.class`. Used as fallback for components without description-based class. This mapping was:
+- Originally applied in migration 0031
+- Lost when `manufacturers` table was rebuilt in migration 0037
+- Repopulated with corrected values in migration 0045
 
 ---
 
-## Manufacturer → Class Mapping
+## Corrected Manufacturer → Class Mapping
 
-### Ground Truth (from loot file naming — most reliable)
+### Changes from Original 0031 Mapping
 
-| Code | Manufacturer | Class | Evidence |
-|------|-------------|-------|----------|
-| ACOM | Amon & Reese Co. | Competition | loot filenames |
-| AEGS | Aegis Dynamics | Military | loot filenames (note: DB uses `AEG`) |
-| AMRS | Amon & Reese | Military | loot filenames (**not** Civilian — surprising) |
-| ASAS | Talon Defense | Stealth | loot filenames |
-| GODI | Greycat Industrial | Military | loot filenames |
-| RACO | RAMP Corporation | Stealth | loot filenames (**not** Industrial — surprising) |
-| SASU | Sasu Inc. | Civilian | loot filenames |
-| TYDT | TDynamic | Stealth | loot filenames |
-| WETK | Wei-Tek | Military | loot filenames |
+| Code | Original (0031) | Corrected (0045) | Evidence |
+|------|-----------------|-------------------|----------|
+| ACAS | Civilian | **Competition** | Description text on 4 QDs |
+| BEH | Military | **Civilian** | Description text on 11 shields |
+| WCPR | Industrial | **Civilian** | Description text on 14 coolers |
+| YORM | Industrial | **Competition** | Description text on 7 shields |
+| BANU | NULL | **Military** | Description text on 2 shields |
 
-### User-Confirmed
+### Multi-Class Manufacturers
 
-| Code | Manufacturer | Class | Evidence |
-|------|-------------|-------|----------|
-| LPLT | Lightning Power Ltd. | Civilian | user example |
-| BASL | Behring Applied Science | Industrial | user example |
+Some manufacturers make components of different classes. The per-component `class` column handles these; the manufacturer gets its primary class.
 
-### SC Community Knowledge (manufacturer identity/lore)
+| Code | Primary Class | Exceptions |
+|------|--------------|------------|
+| AEGS | Military (19) | Industrial (2) — bespoke Reclaimer cooler + shield |
+| ORIG | Civilian (3) | Industrial (1) — bespoke 890 Jump shield |
+
+### Full Mapping (as applied in migration 0045)
 
 | Code | Manufacturer | Class |
 |------|-------------|-------|
-| BEH | Behring | Military |
-| ACAS | Anvil Aerospace | Civilian |
+| ACOM | Amon & Reese Co. | Competition |
+| ACAS | Anvil Aerospace | Competition |
+| YORM | Yormundir | Competition |
+| AEG | Aegis Dynamics | Military |
+| AMRS | Amon & Reese | Military |
+| GODI | Greycat Industrial | Military |
+| WETK | Wei-Tek | Military |
+| BANU | Banu | Military |
+| ASAS | Talon Defense | Stealth |
+| RACO | RAMP Corporation | Stealth |
+| TYDT | TDynamic | Stealth |
+| BEH | Behring | Civilian |
+| WCPR | WillsOps Systems | Civilian |
+| LPLT | Lightning Power Ltd. | Civilian |
 | ARCC | Rocktenon | Civilian |
 | JSPN | Joker Engineering | Civilian |
 | ORIG | Origin Jumpworks | Civilian |
 | RSI | Roberts Space Industries | Civilian |
 | SECO | Sakura Sun | Civilian |
 | TARS | Talon Armaments | Civilian |
+| SASU | Sasu Inc. | Civilian |
+| BASL | Behring Applied Science | Industrial |
 | JUST | Klaus & Werner | Industrial |
-| WCPR | WillsOps Systems | Industrial |
-| YORM | Yormundir | Industrial |
-| BANU | Banu | NULL (alien — no human class designation) |
 
-### Key Surprises
+---
 
-- **AMRS (Amon & Reese) = Military**, not Civilian. Despite a civilian-sounding name.
-- **ACOM = Competition**, not Civilian or Military.
-- **RACO (RAMP Corporation) = Stealth**, not Industrial as might be assumed.
+## Implementation
+
+### Database
+
+- **Migration 0045**: Added `class TEXT` column to `vehicle_components`, repopulated `manufacturers.class`
+- **Query**: `getShipLoadout()` in `queries.ts` uses `COALESCE(vc.class, m.class, child.class, child.manufacturer_class)` — prefers per-component class, falls back to manufacturer class
+
+### Extraction
+
+- **Script**: `scbridge/tools/scripts/ship_components_core/extract.py`
+- **Helper**: `scbridge/tools/scripts/lib/datacore.py` — `extract_class_from_description()`
+- **Process**: Walks DataCore component JSON → resolves localization description → regex extracts class → generates UPDATE SQL
+
+### Frontend
+
+Displayed in `ShipDetail.jsx` `LoadoutTab` as the "Class" column (lines 276-278, 302-304).
 
 ---
 
@@ -105,20 +120,6 @@ DataCore/libs/foundry/records/entities/scitem/ships/loot/
 DataCore loot files use `aegs` as the manufacturer code for Aegis Dynamics.
 The D1 `manufacturers` table uses `AEG` (from the SC Wiki sync).
 These are the same manufacturer — `AEG` in DB = `AEGS` in DataCore loot files.
-
-When adding future manufacturers from DataCore, verify against the existing `manufacturers.code` values.
-
----
-
-## Implementation
-
-Applied in **migration 0031** (`src/db/migrations/0031_manufacturer_class.sql`):
-- Added `class TEXT` column to `manufacturers` table
-- Populated 21 manufacturer codes across 5 class values
-
-Surfaced via `getShipLoadout` in `queries.ts` as `component_class`, using the same COALESCE child-port fallback pattern as `manufacturer_name` to resolve through weapon mounts.
-
-Displayed in `ShipDetail.jsx` `LoadoutTab` as the "Class" column.
 
 ---
 

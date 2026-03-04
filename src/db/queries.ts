@@ -175,7 +175,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       child_components AS (
         SELECT
           c.parent_port_id,
-          vc2.name, vc2.type, vc2.sub_type, vc2.size, vc2.grade, vc2.stats_json,
+          vc2.name, vc2.type, vc2.sub_type, vc2.size, vc2.grade, vc2.class, vc2.stats_json,
           m2.name AS manufacturer_name, m2.class AS manufacturer_class,
           ROW_NUMBER() OVER (PARTITION BY c.parent_port_id ORDER BY c.id) AS rn
         FROM ship_ports c
@@ -197,7 +197,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         COALESCE(vc.grade, child.grade) AS grade,
         COALESCE(vc.stats_json, child.stats_json) AS stats_json,
         COALESCE(m.name, child.manufacturer_name) AS manufacturer_name,
-        COALESCE(m.class, child.manufacturer_class) AS component_class
+        COALESCE(vc.class, m.class, child.class, child.manufacturer_class) AS component_class
       FROM ship_ports p
       LEFT JOIN vehicle_components vc ON vc.uuid = p.equipped_item_uuid
       LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
@@ -686,20 +686,7 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
       FROM (
         SELECT
           lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-          CASE
-            WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-            WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-            WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-            WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-            WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-            WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-            WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-            WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-            WHEN lm.props_id IS NOT NULL THEN 'prop'
-            WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-            WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-            ELSE 'unknown'
-          END as category,
+          ${LOOT_CATEGORY_CASE} as category,
           CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
           CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
           CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
@@ -738,20 +725,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
     : `AND lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
   const sql = `SELECT
         lm.*,
-        CASE
-          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-          WHEN lm.props_id IS NOT NULL THEN 'prop'
-          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-          ELSE 'unknown'
-        END as category
+        ${LOOT_CATEGORY_CASE} as category
       FROM loot_map lm
       WHERE lm.uuid = ? ${versionFilter}`;
   const row = await (patchCode ? db.prepare(sql).bind(uuid, patchCode) : db.prepare(sql).bind(uuid)).first();
@@ -855,20 +829,7 @@ export async function getUserLootWishlist(db: D1Database, userId: string): Promi
     .prepare(
       `SELECT
         lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-        CASE
-          WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-          WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-          WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-          WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-          WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-          WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-          WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-          WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-          WHEN lm.props_id IS NOT NULL THEN 'prop'
-          WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-          WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-          ELSE 'unknown'
-        END as category,
+        ${LOOT_CATEGORY_CASE} as category,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
         CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
         CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,

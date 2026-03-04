@@ -807,7 +807,7 @@ export default function LootDB() {
   const { data: session } = useSession()
   const isAuthed = !!session?.user
 
-  const { data: allItems, loading, error } = useLoot()
+  const { data: allItems, loading, error, refetch } = useLoot()
   const { data: collectionIds, refetch: refetchCollection } = useLootCollection(isAuthed)
   const { data: wishlistItems, refetch: refetchWishlist } = useLootWishlist(isAuthed)
 
@@ -827,6 +827,7 @@ export default function LootDB() {
     [wishlistItems]
   )
 
+  const [actionError, setActionError] = useState(null)
   const [activeTab, setActiveTab] = useState('browse')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
@@ -987,7 +988,8 @@ export default function LootDB() {
       await setLootCollectionQuantity(uuid, qty)
       refetchCollection()
     } catch (err) {
-      console.error('Collection update failed:', err)
+      setActionError('Collection update failed: ' + err.message)
+      setTimeout(() => setActionError(null), 3000)
     }
   }, [refetchCollection])
 
@@ -996,7 +998,8 @@ export default function LootDB() {
       await toggleLootWishlist(uuid, isWishlisted)
       refetchWishlist()
     } catch (err) {
-      console.error('Wishlist toggle failed:', err)
+      setActionError('Wishlist toggle failed: ' + err.message)
+      setTimeout(() => setActionError(null), 3000)
     }
   }, [refetchWishlist])
 
@@ -1006,7 +1009,8 @@ export default function LootDB() {
       await setLootWishlistQuantity(uuid, qty)
       refetchWishlist()
     } catch (err) {
-      console.error('Wishlist update failed:', err)
+      setActionError('Wishlist update failed: ' + err.message)
+      setTimeout(() => setActionError(null), 3000)
     }
   }, [refetchWishlist])
 
@@ -1023,7 +1027,7 @@ export default function LootDB() {
   })
 
   if (loading) return <LoadingState message="Loading items..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   const wishlistCount = wishlistIds.size
 
@@ -1039,6 +1043,12 @@ export default function LootDB() {
         subtitle={`${totalCount.toLocaleString()} items — find loot, gear, and collectibles`}
         actions={<Search className="w-5 h-5 text-gray-500" />}
       />
+
+      {actionError && (
+        <div className="panel p-4 flex items-center gap-2 text-sm animate-fade-in border-sc-danger/30 text-sc-danger">
+          {actionError}
+        </div>
+      )}
 
       {/* Tab bar (auth only) */}
       {isAuthed && (

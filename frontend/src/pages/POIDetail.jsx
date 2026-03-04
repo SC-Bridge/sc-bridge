@@ -78,7 +78,7 @@ export default function POIDetail() {
   const apiType = type === 'shop' ? 'shop' : type === 'npc' ? 'npc' : 'container'
   const decodedSlug = slug ? decodeURIComponent(slug) : ''
 
-  const { data, loading, error } = useLootLocationDetail(apiType, decodedSlug)
+  const { data, loading, error, refetch } = useLootLocationDetail(apiType, decodedSlug)
   const items = data?.items || []
 
   // Resolve display names
@@ -141,7 +141,7 @@ export default function POIDetail() {
   const filteredCount = categorizedItems.reduce((sum, [, catItems]) => sum + catItems.length, 0)
 
   if (loading) return <LoadingState message="Loading location..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   if (!slug || items.length === 0) {
     return (

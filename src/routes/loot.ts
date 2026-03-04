@@ -188,6 +188,7 @@ export function lootRoutes() {
     const patch = c.req.query("patch");
     const item = await getLootByUuid(c.env.DB, uuid, patch);
     if (!item) return c.json({ error: "Item not found" }, 404);
+    c.header("Cache-Control", "public, max-age=300");
     return c.json(item);
   });
 

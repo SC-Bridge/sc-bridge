@@ -57,7 +57,7 @@ export default function Orgs() {
   }
 
   if (loading) return <LoadingState message="Loading organisations..." />
-  if (error) return <ErrorState message={error} />
+  if (error) return <ErrorState message={error} onRetry={refetch} />
 
   return (
     <div className="space-y-6 animate-fade-in-up">
