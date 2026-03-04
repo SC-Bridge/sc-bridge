@@ -8,14 +8,14 @@ All tools/scripts/extractors which are proprietary are stored in a private repo 
 
 ## Current Focus
 
-Committing H02 (Zod validation) and H03 (LootDB decomposition), updating docs, pushing.
+H04: Loot page performance optimization — denormalization complete, rarity data fixed, loader script built. Ready to apply migration + load data to D1.
 
 ## Recent Changes
 
-- **H03: LootDB decomposition** — `LootDB.jsx` (1602 lines) → 8 files in `LootDB/` directory (index.jsx 870 lines + 7 extracted components/helpers)
-- **H02: Zod input validation** — `src/lib/validation.ts` with `zBody`/`zParams`/`zQuery` helpers, applied across 7 route files (account, admin, analysis, fleet, import, loot, settings)
-- **H01: Test suite** — 66 tests across 6 files (committed)
-- **Codebase audit** — SMALL (10), MEDIUM (7), LARGE (6) improvements executed. See `docs/research/improvement-proposals.md` for full audit.
+- **H04: Loot denormalization** — Added `manufacturer_name` and `category` columns to `loot_map`, simplified 4 query functions, removed `LOOT_CATEGORY_CASE` constant. Migration `0048_loot_denormalize.sql`.
+- **H04: Rarity data fix** — Fixed `build_loot_map.py` tag path from `LootGeneration.Rarity.*` to `LootGeneration.LootRarity.*`. Rebuilt loot_map.json: 4779/5294 items now have rarity.
+- **H04: Loader script** — Created `scbridge/tools/scripts/loot_map/load_to_d1.py` for batched SQL generation (53 batches, ~6.5MB avg).
+- **H01-H03** — Test suite (66 tests), Zod validation, LootDB decomposition (all committed).
 
 ## Key Decisions
 
@@ -38,7 +38,7 @@ Committing H02 (Zod validation) and H03 (LootDB decomposition), updating docs, p
 
 ## Applied Migrations (D1)
 
-Last applied: **0044_invite_tokens.sql** (0045-0047 committed, not yet applied)
+Last applied: **0044_invite_tokens.sql** (0045-0048 committed, not yet applied)
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -67,6 +67,7 @@ Last applied: **0044_invite_tokens.sql** (0045-0047 committed, not yet applied)
 | 0045 | ship_missiles           | `ship_missiles` table + `ship_missile_id` FK on loot_map          |
 | 0046 | component_class         | `class` column on vehicle_components + corrected manufacturers.class |
 | 0047 | missing_indexes         | 8 FK indexes (user_fleet, paint_vehicles, vehicles, loot_map)    |
+| 0048 | loot_denormalize        | `manufacturer_name` + `category` columns on loot_map + backfill  |
 
 **Note:** All previously out-of-band columns are now included in migration files (rebuilt in 0037).
 
@@ -118,7 +119,8 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **HUGE audit items** (H04-H06) — validate before implementing
+- **Apply 0045-0048 migrations** to remote D1, then run loot_map loader batches
+- **HUGE audit items** (H05-H06) — validate before implementing
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
 - **CF Images for paints** (#31) — larger pipeline work
@@ -147,3 +149,7 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 **`hardpoint_weapon_gun` / `hardpoint_weapon_class` / `hardpoint_weapon_missile` prefixes** were missing from PORT_CATEGORIES — now fixed. These appear on Avenger, Vanguard, Pisces, Merlin, Archimedes.
 extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows.
+
+---
+**Session compacted at:** 2026-03-05 09:00:47
+

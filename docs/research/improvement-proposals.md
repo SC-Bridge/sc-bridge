@@ -54,10 +54,10 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 **Impact:** Each mutation does 2 DB round-trips. Subquery reduces to 1.
 **Fix:** `INSERT INTO user_loot_collection (user_id, loot_map_id) SELECT ?, id FROM loot_map WHERE uuid = ?`
 
-### S06 [D] Deduplicate `LOOT_CATEGORY_CASE` in queries.ts
+### S06 [DONE] Deduplicate `LOOT_CATEGORY_CASE` in queries.ts
 **Where:** `src/db/queries.ts` — 3 copies of the same 30-line CASE expression
 **Impact:** Bug risk — adding a new FK column requires updating 3 places in sync.
-**Fix:** Replace inline copies with the existing `LOOT_CATEGORY_CASE` constant (line 1136).
+**Fix:** Eliminated entirely — `category` is now a stored column on `loot_map` (H04 denormalization). `LOOT_CATEGORY_CASE` constant removed.
 
 ### S07 [D] Add missing indexes on FK columns
 **Where:** `user_fleet.vehicle_id`, `paint_vehicles.paint_id`, `vehicles.manufacturer_id`
@@ -232,10 +232,10 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 **Impact:** Disaster recovery risk — recreating DB from migrations loses these columns.
 **Fix:** Migration that adds all out-of-band columns idempotently.
 
-### L11 [D] Fix rarity data in loot_map
+### L11 [DONE] Fix rarity data in loot_map
 **Where:** `loot_map.rarity` — all NULL/"Unknown"
 **Impact:** Rarity badges and POI rarity distribution are meaningless. Documented known bug.
-**Fix:** Fix extraction pipeline to pull rarity from DataCore. Re-extract.
+**Fix:** Fixed `determine_rarity()` in `build_loot_map.py` — tag path was `LootGeneration.Rarity.*` but actual DataCore paths are `LootGeneration.LootRarity.*`. Added fallback rules: junk types → N/A, NPC-only FPS gear → Uncommon, everything else → Common. Result: 5294/5294 items have rarity (0 empty).
 
 ### L12 [D] Split queries.ts into domain modules
 **Where:** `src/db/queries.ts` — 1364 lines
@@ -261,10 +261,11 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 **Impact:** ~15 sub-components, display constants, data transforms all in one file. Largest in codebase.
 **Fix:** Directory structure: `LootDB/index.jsx`, `DetailPanel.jsx`, `ItemCard.jsx`, `WishlistTab.jsx`, etc.
 
-### H04 [D] Normalize loot location JSON blobs
-**Where:** `loot_map.containers_json`, `shops_json`, `npcs_json` — JSON TEXT columns
-**Impact:** All location queries parse JSON in JS on Worker. LIKE pre-filtering is fragile.
-**Fix:** Junction tables `loot_containers`, `loot_shops`, `loot_npcs` with proper indexes.
+### H04 [DONE] Denormalize loot query performance
+**Where:** `getLootItems()`, `getUserLootWishlist()`, `getLootLocationDetail()` in `queries.ts`
+**Impact:** 8 correlated CASE subqueries per row for manufacturer_name; LOOT_CATEGORY_CASE per row for category. ~5000 rows.
+**Fix:** Denormalized `manufacturer_name` and `category` onto `loot_map` table (migration 0048). Simplified 4 query functions, removed `LOOT_CATEGORY_CASE`. Fixed rarity data in `build_loot_map.py` (`LootRarity` tag path fix + fallback rules). Created `load_to_d1.py` batched loader.
+**Note:** Original proposal was to normalize JSON blobs into junction tables — investigation found JSON blobs aren't the bottleneck (excluded from summary endpoint). The actual fix was denormalization of computed columns.
 
 ### H05 [D] Automate extraction pipeline
 **Where:** All scripts in `scbridge/tools/scripts/`
@@ -290,7 +291,7 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 ### High Impact (user-facing quality)
 | ID | Item | Effort |
 |----|------|--------|
-| L11 | Fix loot rarity data | Large |
+| L11 | Fix loot rarity data (**fixed**) | Done |
 | S10 | onRetry on all error states | Small |
 | L01 | 404 page | Large |
 | S02 | Cache-Control on loot detail | Small |
@@ -312,7 +313,7 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 | S03 | Fix patches response | Small |
 | S04 | Remove dead escapeHtml | Small |
 | S05 | Subquery loot UUID lookups | Small |
-| S06 | Deduplicate LOOT_CATEGORY_CASE | Small |
+| S06 | Deduplicate LOOT_CATEGORY_CASE (**fixed**) | Done |
 | S07 | FK indexes (3) | Small |
 | S12 | Extract StatusBadge | Small |
 

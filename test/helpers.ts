@@ -232,6 +232,8 @@ export async function seedLootItem(
     sub_type?: string;
     rarity?: string;
     containers_json?: string;
+    category?: string;
+    manufacturer_name?: string;
   }
 ): Promise<{ id: number; uuid: string }> {
   const uuid = overrides?.uuid ?? crypto.randomUUID();
@@ -240,8 +242,8 @@ export async function seedLootItem(
   await db
     .prepare(
       `INSERT INTO loot_map (uuid, name, type, sub_type, rarity, containers_json,
-         game_version_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?,
+         category, manufacturer_name, game_version_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?,
          (SELECT id FROM game_versions WHERE is_default = 1), datetime('now'))`
     )
     .bind(
@@ -250,7 +252,9 @@ export async function seedLootItem(
       overrides?.type ?? "Weapon",
       overrides?.sub_type ?? "Pistol",
       overrides?.rarity ?? "Rare",
-      overrides?.containers_json ?? null
+      overrides?.containers_json ?? null,
+      overrides?.category ?? "weapon",
+      overrides?.manufacturer_name ?? null
     )
     .run();
 

@@ -675,46 +675,25 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
   const versionFilter = patchCode
     ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
     : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
-  // Manufacturer is resolved via a single CASE subquery per row instead of 16 LEFT JOINs.
-  // Only the matching FK branch executes — each is a PK lookup + FK join.
-  const sql = `SELECT lb.id, lb.uuid, lb.name, lb.type, lb.sub_type, lb.rarity,
-        lb.category, lb.has_containers, lb.has_shops, lb.has_npcs, lb.has_corpses, lb.has_contracts,
-        CASE
-          WHEN lb.mfr_raw IN ('<= PLACEHOLDER =>', '987') OR lb.mfr_raw LIKE '@%' THEN NULL
-          ELSE lb.mfr_raw
-        END as manufacturer_name
-      FROM (
-        SELECT
-          lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-          ${LOOT_CATEGORY_CASE} as category,
-          CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
-          CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
-          CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
-          CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
-          CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
-          CASE
-            WHEN lm.fps_weapon_id IS NOT NULL THEN (SELECT m.name FROM fps_weapons t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_weapon_id)
-            WHEN lm.fps_armour_id IS NOT NULL THEN (SELECT m.name FROM fps_armour t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_armour_id)
-            WHEN lm.fps_attachment_id IS NOT NULL THEN (SELECT m.name FROM fps_attachments t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_attachment_id)
-            WHEN lm.fps_utility_id IS NOT NULL THEN (SELECT m.name FROM fps_utilities t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_utility_id)
-            WHEN lm.fps_helmet_id IS NOT NULL THEN (SELECT m.name FROM fps_helmets t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_helmet_id)
-            WHEN lm.fps_clothing_id IS NOT NULL THEN (SELECT m.name FROM fps_clothing t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_clothing_id)
-            WHEN lm.vehicle_component_id IS NOT NULL THEN (SELECT m.name FROM vehicle_components t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.vehicle_component_id)
-            WHEN lm.ship_missile_id IS NOT NULL THEN (SELECT m.name FROM ship_missiles t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.ship_missile_id)
-          END as mfr_raw
-        FROM loot_map lm
-        WHERE ${versionFilter}
-          AND lm.name NOT IN ('<= PLACEHOLDER =>')
-          AND lm.name NOT LIKE 'EntityClassDefinition.%'
-          AND lm.type IS NOT NULL AND lm.type != ''
-          AND lm.type NOT IN (
-            'NOITEM_Vehicle','UNDEFINED',
-            'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
-            'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
-            'Currency','MobiGlas'
-          )
-      ) lb
-      ORDER BY lb.name ASC`;
+  const sql = `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+        lm.category, lm.manufacturer_name,
+        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
+      FROM loot_map lm
+      WHERE ${versionFilter}
+        AND lm.name NOT IN ('<= PLACEHOLDER =>')
+        AND lm.name NOT LIKE 'EntityClassDefinition.%'
+        AND lm.type IS NOT NULL AND lm.type != ''
+        AND lm.type NOT IN (
+          'NOITEM_Vehicle','UNDEFINED',
+          'Char_Skin_Color','Char_Head_Hair','Char_Hair_Color',
+          'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
+          'Currency','MobiGlas'
+        )
+      ORDER BY lm.name ASC`;
   const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
 }
@@ -723,9 +702,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: st
   const versionFilter = patchCode
     ? `AND lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
     : `AND lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
-  const sql = `SELECT
-        lm.*,
-        ${LOOT_CATEGORY_CASE} as category
+  const sql = `SELECT lm.*
       FROM loot_map lm
       WHERE lm.uuid = ? ${versionFilter}`;
   const row = await (patchCode ? db.prepare(sql).bind(uuid, patchCode) : db.prepare(sql).bind(uuid)).first();
@@ -825,43 +802,21 @@ export async function removeFromLootCollection(db: D1Database, userId: string, l
 }
 
 export async function getUserLootWishlist(db: D1Database, userId: string): Promise<WishlistItem[]> {
-  // Manufacturer resolved via CASE subquery (matches getLootItems pattern) instead of 16 LEFT JOINs.
   const result = await db
     .prepare(
-      `SELECT lb.id, lb.uuid, lb.name, lb.type, lb.sub_type, lb.rarity,
-        lb.category, lb.has_containers, lb.has_shops, lb.has_npcs, lb.has_corpses, lb.has_contracts,
-        CASE
-          WHEN lb.mfr_raw IN ('<= PLACEHOLDER =>', '987') OR lb.mfr_raw LIKE '@%' THEN NULL
-          ELSE lb.mfr_raw
-        END as manufacturer_name,
-        lb.shops_json, lb.containers_json, lb.npcs_json, lb.corpses_json, lb.contracts_json,
-        lb.wishlist_quantity
-      FROM (
-        SELECT
-          lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-          ${LOOT_CATEGORY_CASE} as category,
-          CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
-          CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
-          CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
-          CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
-          CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
-          CASE
-            WHEN lm.fps_weapon_id IS NOT NULL THEN (SELECT m.name FROM fps_weapons t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_weapon_id)
-            WHEN lm.fps_armour_id IS NOT NULL THEN (SELECT m.name FROM fps_armour t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_armour_id)
-            WHEN lm.fps_attachment_id IS NOT NULL THEN (SELECT m.name FROM fps_attachments t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_attachment_id)
-            WHEN lm.fps_utility_id IS NOT NULL THEN (SELECT m.name FROM fps_utilities t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_utility_id)
-            WHEN lm.fps_helmet_id IS NOT NULL THEN (SELECT m.name FROM fps_helmets t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_helmet_id)
-            WHEN lm.fps_clothing_id IS NOT NULL THEN (SELECT m.name FROM fps_clothing t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_clothing_id)
-            WHEN lm.vehicle_component_id IS NOT NULL THEN (SELECT m.name FROM vehicle_components t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.vehicle_component_id)
-            WHEN lm.ship_missile_id IS NOT NULL THEN (SELECT m.name FROM ship_missiles t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.ship_missile_id)
-          END as mfr_raw,
-          lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
-          ulw.quantity as wishlist_quantity
-        FROM user_loot_wishlist ulw
-        JOIN loot_map lm ON lm.id = ulw.loot_map_id
-        WHERE ulw.user_id = ?
-      ) lb
-      ORDER BY lb.name ASC`,
+      `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+        lm.category, lm.manufacturer_name,
+        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+        lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
+        ulw.quantity as wishlist_quantity
+      FROM user_loot_wishlist ulw
+      JOIN loot_map lm ON lm.id = ulw.loot_map_id
+      WHERE ulw.user_id = ?
+      ORDER BY lm.name ASC`,
     )
     .bind(userId)
     .all();
@@ -1093,20 +1048,6 @@ const LOOT_BASE_WHERE = `
     'Currency','MobiGlas'
   )`;
 
-const LOOT_CATEGORY_CASE = `CASE
-  WHEN lm.fps_weapon_id IS NOT NULL THEN 'weapon'
-  WHEN lm.fps_armour_id IS NOT NULL THEN 'armour'
-  WHEN lm.fps_attachment_id IS NOT NULL THEN 'attachment'
-  WHEN lm.fps_utility_id IS NOT NULL THEN 'utility'
-  WHEN lm.fps_helmet_id IS NOT NULL THEN 'helmet'
-  WHEN lm.fps_clothing_id IS NOT NULL THEN 'clothing'
-  WHEN lm.consumable_id IS NOT NULL THEN 'consumable'
-  WHEN lm.harvestable_id IS NOT NULL THEN 'harvestable'
-  WHEN lm.props_id IS NOT NULL THEN 'prop'
-  WHEN lm.vehicle_component_id IS NOT NULL THEN 'ship_component'
-  WHEN lm.ship_missile_id IS NOT NULL THEN 'missile'
-  ELSE 'unknown'
-END`;
 
 function parseJsonArray(val: string | null): unknown[] {
   if (!val || val === "null" || val === "[]" || val === "") return [];
@@ -1228,7 +1169,7 @@ export async function getLootLocationDetail(
   const sql = `SELECT
       lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
       lm.${jsonCol} as target_json,
-      ${LOOT_CATEGORY_CASE} as category
+      lm.category
     FROM loot_map lm
     WHERE ${LOOT_BASE_WHERE}
       AND lm.${jsonCol} IS NOT NULL
