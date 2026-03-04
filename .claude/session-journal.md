@@ -8,38 +8,14 @@ All tools/scripts/extractors which are proprietary are stored in a private repo 
 
 ## Current Focus
 
-Codebase audit — SMALL, MEDIUM, and LARGE improvements complete. HUGE items remain (H01-H06).
+Committing H02 (Zod validation) and H03 (LootDB decomposition), updating docs, pushing.
 
 ## Recent Changes
 
-- **Codebase audit**: 3-agent parallel audit (backend, frontend, data/schema) → 64 findings in `docs/research/improvement-proposals.md`
-- **SMALL improvements executed** (10 items done, 6 false positives identified, 1 skipped):
-  - S01: Migration collision fixed (0045→0046)
-  - S02: Cache-Control on `loot/:uuid` endpoint
-  - S06: Deduplicated LOOT_CATEGORY_CASE (3 inline copies → shared constant in queries.ts)
-  - S07/S08: Migration 0047 — 8 missing FK indexes
-  - S10: `onRetry={refetch}` on all ErrorState calls across pages
-  - S12: Extracted `StatusBadge` component from ShipDetail, used in ShipDetail + ShipDB
-  - S13: LootDB silent `console.error` → user-visible error banner for collection/wishlist failures
-  - S14: ConfirmDialog autoFocus on cancel button
-- **MEDIUM improvements executed** (7 items done, 2 false positives, 3 deferred):
-  - M02: Parallelized 8 sequential GDPR export queries with `Promise.all()` in account.ts
-  - M04: Replaced sequential CF Images upload loop with `concurrentMap(vehicles, 5, ...)` in admin.ts
-  - M06: Refactored `getUserLootWishlist` — 16 LEFT JOINs → CASE subqueries (matches `getLootItems` pattern)
-  - M07: Replaced `window.confirm()` in UserManagement.jsx with ConfirmDialog component
-  - M08: SearchInput API — `onChange` now passes value string (not event), all 7 callers updated
-  - M09: FleetTable selected ship persists in URL (`?ship=123`) via `useSearchParams`
-  - M10: Extracted shared `parseDate()` helper in dates.js, eliminating duplication
-- **Component class robustness**: Migration 0046 (class column on vehicle_components), updated queries.ts COALESCE chain, extraction scripts
-- **LARGE improvements executed** (6 items done, 1 false positive, 5 deferred):
-  - L01: 404 page — `NotFound.jsx` component + catch-all route in App.jsx
-  - L02: Shared loot constants — `frontend/src/lib/lootDisplay.js` (RARITY_STYLES, CATEGORY_LABELS, etc.), updated LootDB, POIDetail, POI
-  - L03: Shared fleet overview grid — `FleetOverviewGrid.jsx` component, replaced ~80 lines in both Dashboard + Analysis
-  - L04: useAPI refactor — single `apiFetch(method, path, body)` base, 3 standalone functions converted from raw fetch
-  - L06: Section error boundaries — `SectionBoundary.jsx` wrapping charts + AI insights in Dashboard/Analysis
-  - L08: Analysis prompt extraction — `src/lib/analysis-prompt.ts` (~150 lines out of analysis.ts)
-  - Deferred: L05 (mobile filter — partially valid), L07 (inline SQL — diminishing returns), L09 (rate limiting — CF WAF), L11 (rarity data — pipeline), L12 (split queries.ts — has internal organization)
-  - False positive: L10 (out-of-band columns — all in migration files since 0037)
+- **H03: LootDB decomposition** — `LootDB.jsx` (1602 lines) → 8 files in `LootDB/` directory (index.jsx 870 lines + 7 extracted components/helpers)
+- **H02: Zod input validation** — `src/lib/validation.ts` with `zBody`/`zParams`/`zQuery` helpers, applied across 7 route files (account, admin, analysis, fleet, import, loot, settings)
+- **H01: Test suite** — 66 tests across 6 files (committed)
+- **Codebase audit** — SMALL (10), MEDIUM (7), LARGE (6) improvements executed. See `docs/research/improvement-proposals.md` for full audit.
 
 ## Key Decisions
 
@@ -131,12 +107,7 @@ UPDATE loot_map SET x_id = (SELECT id FROM x WHERE uuid = loot_map.uuid)
 WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 ```
 
-## Open Issues (GitHub) — validated 2026-03-04
-
-### Bugs
-| # | Title | Notes |
-|---|-------|-------|
-| 32 | INSURANCE TRACKER Mobile | `grid-cols-3` no responsive breakpoint, `shrink-0` overflow on rows. CSS fix. |
+## Open Issues (GitHub) — validated 2026-03-05
 
 ### Enhancements
 | # | Title | Notes |
@@ -145,14 +116,9 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 | 30 | Org settings page | Read-only display works. Needs PATCH endpoint + settings form. |
 | 10 | Paint browser | Backend 100% done (API, junction table, types). Frontend page needed. |
 
-### POI Feature (epic #9, area: loot) — #14-20
-Feature implemented in code. GitHub issues #9, #14-20 still OPEN (never closed after implementation).
-
 ## What's Next
 
-- **HUGE audit items** (H01-H06) — validate before implementing
-- **Close POI issues** (#9, #14-20) on GitHub — code is shipped
-- **Bug**: #32 (Insurance Mobile) — quick CSS fix
+- **HUGE audit items** (H04-H06) — validate before implementing
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
 - **CF Images for paints** (#31) — larger pipeline work
@@ -181,11 +147,3 @@ Port sizes live in the XML, not in DataCore JSON. Walk `<Part name="hardpoint_*"
 
 **`hardpoint_weapon_gun` / `hardpoint_weapon_class` / `hardpoint_weapon_missile` prefixes** were missing from PORT_CATEGORIES — now fixed. These appear on Avenger, Vanguard, Pisces, Merlin, Archimedes.
 extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows.
-
----
-**Session compacted at:** 2026-03-04 19:11:34
-
-
----
-**Session compacted at:** 2026-03-04 19:25:05
-

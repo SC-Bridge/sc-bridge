@@ -28,6 +28,7 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `lib/gravatar.ts` — Gravatar URL generation
 - `lib/password.ts` — Password utilities
 - `lib/rsi.ts` — RSI API client helpers
+- `lib/validation.ts` — Zod input validation helpers (`zBody`, `zParams`, `zQuery`)
 
 ### Routes (`/src/routes/`)
 - `fleet.ts` — User fleet CRUD, ship custom names
@@ -57,8 +58,15 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 
 ### Frontend (`/frontend/src/pages/`)
 React SPA. 25 page components including: `Dashboard`, `FleetTable`, `ShipDB`, `ShipDetail`,
-`Insurance`, `Analysis`, `AnalysisHistory`, `Import`, `Account`, `LootDB`, `POI`, `POIDetail`,
+`Insurance`, `Analysis`, `AnalysisHistory`, `Import`, `Account`, `LootDB/`, `POI`, `POIDetail`,
 `Contracts`, `Orgs`, `OrgProfile`, `Settings`, `Admin`, `UserManagement`, `Login`, `Register`.
+
+`LootDB/` is the first directory-based page decomposition:
+- `index.jsx` — Main component (state, tabs, Browse/Collection/Wishlist inline)
+- `DetailPanel.jsx` — Item detail slide-over + stat helpers/constants
+- `LocationSection.jsx` — Location grouping (containers, NPCs, shops)
+- `lootHelpers.js` — `extractSetName`, `resolveLocationEntry`, `buildShoppingList`, pagination constants
+- `ItemCard.jsx`, `WishlistRow.jsx`, `CollectionStepper.jsx`, `SourceIcons.jsx` — Extracted sub-components
 
 ## Cron Jobs (wrangler.toml)
 
