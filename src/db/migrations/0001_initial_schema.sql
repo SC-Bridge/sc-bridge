@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     image_url_large TEXT,
     pledge_url TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
+    acquisition_type TEXT,
     raw_data TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS components (
     description TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
     raw_data TEXT,
+    stats_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -147,6 +149,7 @@ CREATE TABLE IF NOT EXISTS fps_weapons (
     description TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
     raw_data TEXT,
+    stats_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -164,6 +167,7 @@ CREATE TABLE IF NOT EXISTS fps_armour (
     description TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
     raw_data TEXT,
+    stats_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -180,6 +184,7 @@ CREATE TABLE IF NOT EXISTS fps_attachments (
     description TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
     raw_data TEXT,
+    stats_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -210,6 +215,7 @@ CREATE TABLE IF NOT EXISTS fps_utilities (
     description TEXT,
     game_version_id INTEGER REFERENCES game_versions(id),
     raw_data TEXT,
+    stats_json TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
