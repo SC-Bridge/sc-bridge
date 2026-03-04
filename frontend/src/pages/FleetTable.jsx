@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useFleet, useUserOrgs, updateShipVisibility } from '../hooks/useAPI'
 import { ArrowUpDown, SearchX } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
@@ -20,11 +21,20 @@ const VISIBILITY_OPTIONS = [
 export default function FleetTable() {
   const { data: fleet, loading, error, refetch } = useFleet()
   const { data: orgsData } = useUserOrgs()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [sortKey, setSortKey] = useState('vehicle_name')
   const [sortDir, setSortDir] = useState('asc')
   const [filter, setFilter] = useState('')
   const [sizeFilter, setSizeFilter] = useState('all')
-  const [selectedId, setSelectedId] = useState(null)
+
+  const selectedId = searchParams.get('ship') ? Number(searchParams.get('ship')) : null
+  const setSelectedId = useCallback((id) => {
+    setSearchParams((prev) => {
+      if (id == null) { prev.delete('ship'); return prev }
+      prev.set('ship', String(id))
+      return prev
+    }, { replace: true })
+  }, [setSearchParams])
 
   const inOrgs = !!(orgsData?.orgs?.length > 0)
 
@@ -118,7 +128,7 @@ export default function FleetTable() {
       <div className="flex gap-3 items-center">
         <SearchInput
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={setFilter}
           placeholder="Search ships..."
           className="flex-1 max-w-sm"
         />

@@ -16,52 +16,10 @@ import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import SearchInput from '../components/SearchInput'
-
-// ── Rarity system ────────────────────────────────────────────────────────────
-const RARITY_ORDER = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary']
-
-const RARITY_STYLES = {
-  Common:    { badge: 'bg-gray-700/60 text-gray-300 border-gray-600/40', dot: 'text-gray-400', label: '● Common' },
-  Uncommon:  { badge: 'bg-green-900/40 text-green-300 border-green-700/40', dot: 'text-green-400', label: '◆ Uncommon' },
-  Rare:      { badge: 'bg-sc-accent/20 text-sc-accent border-sc-accent/40', dot: 'text-sc-accent', label: '✦ Rare' },
-  Epic:      { badge: 'bg-purple-900/40 text-purple-300 border-purple-700/40', dot: 'text-purple-400', label: '★ Epic' },
-  Legendary: { badge: 'bg-amber-900/40 text-amber-300 border-amber-700/40', dot: 'text-amber-400', label: '✸ Legendary' },
-}
-
-function rarityStyle(rarity) {
-  return RARITY_STYLES[rarity] || RARITY_STYLES.Common
-}
-
-// ── Category display ─────────────────────────────────────────────────────────
-const CATEGORY_LABELS = {
-  weapon:         'Weapon',
-  armour:         'Armour',
-  helmet:         'Helmet',
-  clothing:       'Clothing',
-  attachment:     'Attachment',
-  consumable:     'Consumable',
-  harvestable:    'Harvestable',
-  prop:           'Prop',
-  utility:        'Utility',
-  ship_component: 'Ship Component',
-  missile:        'Missile',
-  unknown:        'Other',
-}
-
-const CATEGORY_BADGE_STYLES = {
-  weapon:         'bg-red-900/40 text-red-300',
-  armour:         'bg-blue-900/40 text-blue-300',
-  helmet:         'bg-sky-900/40 text-sky-300',
-  clothing:       'bg-indigo-900/40 text-indigo-300',
-  attachment:     'bg-orange-900/40 text-orange-300',
-  consumable:     'bg-green-900/40 text-green-300',
-  harvestable:    'bg-teal-900/40 text-teal-300',
-  prop:           'bg-gray-700/60 text-gray-300',
-  utility:        'bg-yellow-900/40 text-yellow-300',
-  ship_component: 'bg-violet-900/40 text-violet-300',
-  missile:        'bg-rose-900/40 text-rose-300',
-  unknown:        'bg-gray-700/60 text-gray-400',
-}
+import {
+  RARITY_ORDER, RARITY_STYLES, rarityStyle,
+  CATEGORY_LABELS, CATEGORY_BADGE_STYLES,
+} from '../lib/lootDisplay'
 
 // ── Set name extraction ───────────────────────────────────────────────────────
 const PIECE_SUFFIXES = [
@@ -1262,7 +1220,7 @@ export default function LootDB() {
             <div className="flex items-center gap-2 flex-wrap">
               <SearchInput
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={setSearch}
                 placeholder="Search items..."
                 className="flex-1 min-w-48"
               />
@@ -1501,7 +1459,7 @@ export default function LootDB() {
               <div className="flex items-center gap-2">
                 <SearchInput
                   value={collSearch}
-                  onChange={(e) => setCollSearch(e.target.value)}
+                  onChange={setCollSearch}
                   placeholder="Search collection..."
                   className="flex-1"
                 />

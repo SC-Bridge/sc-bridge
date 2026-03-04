@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { uploadToCFImages } from "../lib/cfImages";
 import { getVehiclesNeedingCFUpload, setVehicleCFImagesID } from "../db/queries";
+import { concurrentMap } from "../lib/utils";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -33,29 +34,29 @@ export function adminRoutes() {
 
     const vehicles = await getVehiclesNeedingCFUpload(c.env.DB, limit, offset);
 
-    let succeeded = 0;
-    let failed = 0;
     const errors: { slug: string; error: string }[] = [];
 
-    for (const v of vehicles) {
+    const results = await concurrentMap(vehicles, 5, async (v) => {
       try {
         const cfImagesId = await uploadToCFImages(accountId, token, v.best_image_url, {
           slug: v.slug,
           vehicle_id: String(v.vehicle_id),
         });
         await setVehicleCFImagesID(c.env.DB, v.vehicle_id, cfImagesId, accountHash);
-        succeeded++;
+        return true;
       } catch (err) {
-        failed++;
         errors.push({ slug: v.slug, error: String(err) });
         console.error(`[admin/images] CF upload failed for ${v.slug}:`, err);
+        return false;
       }
-    }
+    });
+
+    const succeeded = results.filter(Boolean).length;
 
     return c.json({
       processed: vehicles.length,
       succeeded,
-      failed,
+      failed: results.length - succeeded,
       errors,
     });
   });

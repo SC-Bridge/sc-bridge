@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 
 const BASE = '/api'
 
-async function fetchJSON(path) {
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: 'same-origin',
-  })
+async function apiFetch(method, path, body) {
+  const opts = { method, credentials: 'same-origin' }
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' }
+    opts.body = JSON.stringify(body)
+  }
+  const res = await fetch(`${BASE}${path}`, opts)
   if (res.status === 401) {
     window.location.href = '/login'
     throw new Error('Session expired')
@@ -17,59 +20,10 @@ async function fetchJSON(path) {
   return res.json()
 }
 
-async function postJSON(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
-}
-
-async function patchJSON(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
-}
-
-async function putJSON(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
-}
+const fetchJSON = (path) => apiFetch('GET', path)
+const postJSON = (path, body) => apiFetch('POST', path, body)
+const patchJSON = (path, body) => apiFetch('PATCH', path, body)
+const putJSON = (path, body) => apiFetch('PUT', path, body)
 
 export function useAPI(path, { skip = false } = {}) {
   const [data, setData] = useState(null)
@@ -230,19 +184,7 @@ export function useLootCollection(isAuthed) {
 }
 
 export async function toggleLootCollection(uuid, isCurrentlyCollected) {
-  const res = await fetch(`/api/loot/collection/${uuid}`, {
-    method: isCurrentlyCollected ? 'DELETE' : 'POST',
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
+  return apiFetch(isCurrentlyCollected ? 'DELETE' : 'POST', `/loot/collection/${uuid}`)
 }
 
 export async function setLootCollectionQuantity(uuid, quantity) {
@@ -258,33 +200,9 @@ export function useLootWishlist(isAuthed) {
 }
 
 export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {
-  const res = await fetch(`/api/loot/wishlist/${uuid}`, {
-    method: isCurrentlyWishlisted ? 'DELETE' : 'POST',
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
+  return apiFetch(isCurrentlyWishlisted ? 'DELETE' : 'POST', `/loot/wishlist/${uuid}`)
 }
 
 export async function deleteAIAnalysis(id) {
-  const res = await fetch(`${BASE}/llm/analysis/${id}`, {
-    method: 'DELETE',
-    credentials: 'same-origin',
-  })
-  if (res.status === 401) {
-    window.location.href = '/login'
-    throw new Error('Session expired')
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
-  }
-  return res.json()
+  return apiFetch('DELETE', `/llm/analysis/${id}`)
 }

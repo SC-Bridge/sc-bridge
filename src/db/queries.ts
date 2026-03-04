@@ -825,44 +825,43 @@ export async function removeFromLootCollection(db: D1Database, userId: string, l
 }
 
 export async function getUserLootWishlist(db: D1Database, userId: string): Promise<WishlistItem[]> {
+  // Manufacturer resolved via CASE subquery (matches getLootItems pattern) instead of 16 LEFT JOINs.
   const result = await db
     .prepare(
-      `SELECT
-        lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
-        ${LOOT_CATEGORY_CASE} as category,
-        CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
-        CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
-        CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
-        CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
-        CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+      `SELECT lb.id, lb.uuid, lb.name, lb.type, lb.sub_type, lb.rarity,
+        lb.category, lb.has_containers, lb.has_shops, lb.has_npcs, lb.has_corpses, lb.has_contracts,
         CASE
-          WHEN COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) IN ('<= PLACEHOLDER =>', '987')
-            OR COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name) LIKE '@%'
-          THEN NULL
-          ELSE COALESCE(mw.name, ma.name, mat.name, mu.name, mh.name, mc.name, mvc.name, msm.name)
+          WHEN lb.mfr_raw IN ('<= PLACEHOLDER =>', '987') OR lb.mfr_raw LIKE '@%' THEN NULL
+          ELSE lb.mfr_raw
         END as manufacturer_name,
-        lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
-        ulw.quantity as wishlist_quantity
-      FROM user_loot_wishlist ulw
-      JOIN loot_map lm ON lm.id = ulw.loot_map_id
-      LEFT JOIN fps_weapons       fw  ON lm.fps_weapon_id         = fw.id
-      LEFT JOIN manufacturers     mw  ON fw.manufacturer_id        = mw.id
-      LEFT JOIN fps_armour        fa  ON lm.fps_armour_id          = fa.id
-      LEFT JOIN manufacturers     ma  ON fa.manufacturer_id        = ma.id
-      LEFT JOIN fps_attachments   fat ON lm.fps_attachment_id      = fat.id
-      LEFT JOIN manufacturers     mat ON fat.manufacturer_id       = mat.id
-      LEFT JOIN fps_utilities     fu  ON lm.fps_utility_id         = fu.id
-      LEFT JOIN manufacturers     mu  ON fu.manufacturer_id        = mu.id
-      LEFT JOIN fps_helmets       fh  ON lm.fps_helmet_id          = fh.id
-      LEFT JOIN manufacturers     mh  ON fh.manufacturer_id        = mh.id
-      LEFT JOIN fps_clothing      fcc ON lm.fps_clothing_id        = fcc.id
-      LEFT JOIN manufacturers     mc  ON fcc.manufacturer_id       = mc.id
-      LEFT JOIN vehicle_components vc ON lm.vehicle_component_id   = vc.id
-      LEFT JOIN manufacturers     mvc ON vc.manufacturer_id        = mvc.id
-      LEFT JOIN ship_missiles     sm  ON lm.ship_missile_id        = sm.id
-      LEFT JOIN manufacturers     msm ON sm.manufacturer_id        = msm.id
-      WHERE ulw.user_id = ?
-      ORDER BY lm.name ASC`,
+        lb.shops_json, lb.containers_json, lb.npcs_json, lb.corpses_json, lb.contracts_json,
+        lb.wishlist_quantity
+      FROM (
+        SELECT
+          lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
+          ${LOOT_CATEGORY_CASE} as category,
+          CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+          CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+          CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+          CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+          CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts,
+          CASE
+            WHEN lm.fps_weapon_id IS NOT NULL THEN (SELECT m.name FROM fps_weapons t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_weapon_id)
+            WHEN lm.fps_armour_id IS NOT NULL THEN (SELECT m.name FROM fps_armour t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_armour_id)
+            WHEN lm.fps_attachment_id IS NOT NULL THEN (SELECT m.name FROM fps_attachments t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_attachment_id)
+            WHEN lm.fps_utility_id IS NOT NULL THEN (SELECT m.name FROM fps_utilities t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_utility_id)
+            WHEN lm.fps_helmet_id IS NOT NULL THEN (SELECT m.name FROM fps_helmets t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_helmet_id)
+            WHEN lm.fps_clothing_id IS NOT NULL THEN (SELECT m.name FROM fps_clothing t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.fps_clothing_id)
+            WHEN lm.vehicle_component_id IS NOT NULL THEN (SELECT m.name FROM vehicle_components t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.vehicle_component_id)
+            WHEN lm.ship_missile_id IS NOT NULL THEN (SELECT m.name FROM ship_missiles t JOIN manufacturers m ON m.id = t.manufacturer_id WHERE t.id = lm.ship_missile_id)
+          END as mfr_raw,
+          lm.shops_json, lm.containers_json, lm.npcs_json, lm.corpses_json, lm.contracts_json,
+          ulw.quantity as wishlist_quantity
+        FROM user_loot_wishlist ulw
+        JOIN loot_map lm ON lm.id = ulw.loot_map_id
+        WHERE ulw.user_id = ?
+      ) lb
+      ORDER BY lb.name ASC`,
     )
     .bind(userId)
     .all();

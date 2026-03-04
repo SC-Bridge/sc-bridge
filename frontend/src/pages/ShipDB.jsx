@@ -140,7 +140,7 @@ export default function ShipDB() {
 
   const resetPage = () => setPage(1)
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); resetPage() }
-  const handleSearchChange = (e) => { setFilter(e.target.value); resetPage() }
+  const handleSearchChange = (val) => { setFilter(val); resetPage() }
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)

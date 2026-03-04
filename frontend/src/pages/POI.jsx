@@ -8,6 +8,7 @@ import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import SearchInput from '../components/SearchInput'
+import { RARITY_STYLES } from '../lib/lootDisplay'
 
 // ── Location group config ──────────────────────────────────────────────────
 const LOCATION_GROUP_CONFIG = {
@@ -24,15 +25,6 @@ const LOCATION_GROUP_CONFIG = {
 
 const GROUP_KEYS = Object.keys(LOCATION_GROUP_CONFIG)
 
-// ── Rarity summary ─────────────────────────────────────────────────────────
-const RARITY_DOT = {
-  Common:    'text-gray-400',
-  Uncommon:  'text-green-400',
-  Rare:      'text-sc-accent',
-  Epic:      'text-purple-400',
-  Legendary: 'text-amber-400',
-}
-
 function RaritySummary({ rarities }) {
   const ordered = ['Legendary', 'Epic', 'Rare', 'Uncommon', 'Common']
   const present = ordered.filter(r => rarities[r])
@@ -40,7 +32,7 @@ function RaritySummary({ rarities }) {
   return (
     <div className="flex items-center gap-1.5">
       {present.slice(0, 3).map(r => (
-        <span key={r} className={`text-[9px] font-mono ${RARITY_DOT[r] || 'text-gray-500'}`}>
+        <span key={r} className={`text-[9px] font-mono ${RARITY_STYLES[r]?.dot || 'text-gray-500'}`}>
           {rarities[r]} {r}
         </span>
       ))}
@@ -205,7 +197,7 @@ export default function POI() {
 
       <SearchInput
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={setSearch}
         placeholder={
           activeSection === 'containers' ? 'Search locations...'
           : activeSection === 'shops' ? 'Search shops...'

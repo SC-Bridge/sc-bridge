@@ -6,7 +6,7 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 
 ## Tech Stack
 - **Backend:** TypeScript, Hono framework, Cloudflare Workers
-- **Database:** Cloudflare D1 (SQLite dialect), 40 tables
+- **Database:** Cloudflare D1 (SQLite dialect), 47 migrations
 - **Frontend:** React SPA (Vite), Tailwind CSS, Lucide icons, Recharts
 - **Auth:** Better Auth v1.4.18 with Kysely D1 dialect
 - **Deployment:** `wrangler deploy` via GitHub Actions on push to `main`
@@ -20,6 +20,14 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `lib/logger.ts` — Structured JSON logging to Workers Observability
 - `lib/crypto.ts` — ENCRYPTION_KEY validation and use
 - `lib/slug.ts` — Slug generation utilities
+- `lib/utils.ts` — Shared utilities (`concurrentMap`, etc.)
+- `lib/cfImages.ts` — Cloudflare Images upload helpers
+- `lib/email.ts` — Email sending via MailChannels
+- `lib/constants.ts` — Shared constants
+- `lib/change-history.ts` — User change history logging
+- `lib/gravatar.ts` — Gravatar URL generation
+- `lib/password.ts` — Password utilities
+- `lib/rsi.ts` — RSI API client helpers
 
 ### Routes (`/src/routes/`)
 - `fleet.ts` — User fleet CRUD, ship custom names
@@ -27,13 +35,16 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `paints.ts` — Paint variants
 - `import.ts` — HangarXplor JSON import (clean slate: DELETE + INSERT)
 - `settings.ts` — User settings
-- `sync.ts` — Trigger scunpacked paint metadata and RSI image syncs
+- `sync.ts` — Trigger RSI image syncs
 - `analysis.ts` — Fleet gap analysis, redundancy detection
 - `account.ts` — Account management, email verification, 2FA
 - `orgs.ts` — Organisation management and visibility
-- `admin.ts` — Admin-only operations
+- `admin.ts` — Admin-only operations (CF Images bulk upload, invites)
 - `debug.ts` — `/api/debug/imports` — vehicle linkage, fleet counts
 - `migrate.ts` — On-demand migration trigger
+- `loot.ts` — Loot database, collection, wishlist, POI endpoints
+- `contracts.ts` — Contract data
+- `patches.ts` — Game version/patch endpoints
 
 ### Database (`/src/db/`)
 - `queries.ts` — All D1 prepared statements. Single source of truth for DB access.
@@ -41,27 +52,33 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `CONVENTIONS.md` — Full DB conventions reference. Read this before writing any migration or query.
 
 ### Sync (`/src/sync/`)
-- `rsi.ts` — RSI API sync: paint images from public GraphQL API (ship image sync is a no-op — all ships have CF Images)
-- `scunpacked.ts` — Paint metadata from scunpacked-data JSON files
-- `pipeline.ts` — Sync pipeline orchestration (scunpacked paint metadata → RSI paint images)
+- `rsi.ts` — RSI API sync: ship + paint images from public GraphQL API (ship image sync is a no-op — all ships have CF Images)
+- `pipeline.ts` — Sync pipeline orchestration (RSI image sync only; paint metadata comes from DataCore extraction scripts, not live sync)
 
 ### Frontend (`/frontend/src/pages/`)
-React SPA. Key pages: `Dashboard`, `FleetTable`, `ShipDB`, `Insurance`, `Analysis`, `Import`,
-`Account`, `Orgs`, `Settings`, `Admin`.
+React SPA. 25 page components including: `Dashboard`, `FleetTable`, `ShipDB`, `ShipDetail`,
+`Insurance`, `Analysis`, `AnalysisHistory`, `Import`, `Account`, `LootDB`, `POI`, `POIDetail`,
+`Contracts`, `Orgs`, `OrgProfile`, `Settings`, `Admin`, `UserManagement`, `Login`, `Register`.
+
+## Cron Jobs (wrangler.toml)
+
+| Schedule | Task |
+|----------|------|
+| `30 3 * * *` | Session cleanup — expired sessions + verifications |
+| `45 3 * * *` | RSI API images — ship + paint images from RSI GraphQL |
 
 ## Data Sources
 
 | Source | What | When |
 |--------|------|------|
-| scunpacked-data | Paint names, descriptions, ship compatibility tags | Nightly (3:30 AM cron) |
-| RSI GraphQL API | Paint images (ship images are no-op — all ships have CF Images) | Nightly (3:45 AM cron) |
+| RSI GraphQL API | Ship + paint images from public store API | Nightly (3:45 AM cron) |
 | HangarXplor JSON | User fleet: insurance, pledge cost/date | User-triggered import |
-| DataCore (scbridge/tools) | Component stats, FPS gear, loot map | One-time extract scripts |
+| DataCore (scbridge/tools) | Component stats, FPS gear, loot map, paint metadata | One-time extract scripts |
 
 ## Key Design Decisions
 - **Clean slate import**: HangarXplor import does DELETE all user_fleet + INSERT. No merging.
 - **No UNIQUE on user_fleet**: users can own multiples of the same ship (two PTVs, etc.).
-- **RSI sync is paint-images-only**: ship image sync is guarded by CF Images check (no-op for all ships). Paint sync has no CF Images guard — fix before uploading paint CF Images.
+- **RSI sync**: ship image sync is guarded by CF Images check (no-op for all ships). Paint image sync has no CF Images guard — fix before uploading paint CF Images.
 - **Paints are many-to-many**: `paint_vehicles` junction table links paints to all compatible vehicles.
 - **Insurance is typed**: `insurance_types` lookup table with `duration_months` (LTI, 120-month, etc.)
 - **Better Auth org tables use camelCase** in D1: `organizationId`, `userId`, `createdAt`.
@@ -86,11 +103,12 @@ npx wrangler deploy
 npx wrangler d1 migrations apply sc-companion --remote
 ```
 
-## Wrangler Config
+## Wrangler Config (`wrangler.toml`)
 - **Worker name:** `sc-bridge`
 - **Account:** NERDZ (`4214879ee537a4840de659aafb7bf201`)
 - **D1 database:** `sc-companion` (`56875a7e-0ebd-4455-887d-5d1e1afdb416`)
-- **Assets dir:** `./frontend/dist`
+- **R2 bucket:** `sc-bridge-avatars` (bound as `AVATARS`)
+- **Assets dir:** `./frontend/dist` (with `run_worker_first = true`)
 
 ---
 
@@ -120,28 +138,18 @@ have caused bugs before or are easy to get wrong.
 - Never skip numbers. Never rename an applied migration file.
 - **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
 - Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
-- Current last migration: **0046_component_class.sql**
+- Current last migration: **0047_missing_indexes.sql**
 
 ### Out-of-Band Columns
-These were applied via `wrangler d1 execute`, not in migration files. They exist in D1 but
-not in any `.sql` file. Document new ones in the session journal when applied.
-
-| Column | Table | Notes |
-|--------|-------|-------|
-| `stats_json` | `vehicle_components` | DataCore component stats |
-| `stats_json` | `fps_weapons` | DataCore weapon stats |
-| `stats_json` | `fps_armour` | DataCore armour stats |
-| `stats_json` | `fps_attachments` | DataCore attachment stats |
-| `stats_json` | `fps_utilities` | DataCore utility stats |
-| `price_auec` | `vehicles` | aUEC in-game price |
-| `acquisition_type` | `vehicles` | How to obtain in-game |
-| `vehicle_component_id` | `loot_map` | FK to vehicle_components(id); 218 rows populated via correlated UPDATE matching by UUID (WeaponGun 69, PowerPlant 35, Cooler 27, MiningModifier 26, Shield 25, MissileLauncher 18, QuantumDrive 18) |
+Previously these columns were applied via `wrangler d1 execute` outside migration files.
+As of migration `0037_patch_versioning`, all tables were rebuilt and these columns are now
+included in migration files. No current out-of-band columns exist.
 
 ---
 
 ## Image Data Rules (DO NOT BREAK THESE)
 
-Image data is fragile. SC Wiki sync runs nightly and will silently overwrite if these rules
+Image data is fragile. RSI API sync runs nightly and will silently overwrite if these rules
 are violated.
 
 ### Priority Order

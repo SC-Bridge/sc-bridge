@@ -4,29 +4,35 @@
  */
 
 /**
+ * Parse any date-like input into a Date object.
+ * Handles Date instances, millisecond timestamps, and SQLite datetime strings
+ * (which lack timezone info — treated as UTC).
+ * @param {string|number|Date|null|undefined} input
+ * @returns {Date|null}
+ */
+function parseDate(input) {
+  if (!input) return null
+  if (input instanceof Date) return input
+  if (typeof input === 'number') return new Date(input)
+  // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" — no T, no Z.
+  // Browsers treat that space-separated format as local time, not UTC.
+  // Normalise to ISO 8601 UTC so conversion is always correct.
+  let s = String(input).trim()
+  const hasTimezone = s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)
+  if (!hasTimezone) s = s.replace(' ', 'T') + 'Z'
+  const date = new Date(s)
+  return isNaN(date.getTime()) ? null : date
+}
+
+/**
  * Format an ISO date string to: YYYY-MMM-DD HH:MM AM/PM TZ
  * @param {string|null|undefined} isoString
  * @param {string} timezone - IANA timezone (e.g. 'Pacific/Auckland')
  * @returns {string}
  */
 export function formatDate(isoString, timezone) {
-  if (!isoString) return '\u2014'
-  let date
-  if (isoString instanceof Date) {
-    date = isoString
-  } else if (typeof isoString === 'number') {
-    // Assumes milliseconds (Better Auth convention). Unix seconds would produce a 1970 date.
-    date = new Date(isoString)
-  } else {
-    // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" — no T, no Z.
-    // Browsers treat that space-separated format as local time, not UTC.
-    // Normalise to ISO 8601 UTC so conversion is always correct.
-    let s = String(isoString).trim()
-    const hasTimezone = s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)
-    if (!hasTimezone) s = s.replace(' ', 'T') + 'Z'
-    date = new Date(s)
-  }
-  if (isNaN(date.getTime())) return '\u2014'
+  const date = parseDate(isoString)
+  if (!date) return '\u2014'
 
   const parts = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
@@ -59,19 +65,8 @@ export function formatDate(isoString, timezone) {
  * @returns {string}
  */
 export function formatDateOnly(isoString, timezone) {
-  if (!isoString) return '\u2014'
-  let date
-  if (isoString instanceof Date) {
-    date = isoString
-  } else if (typeof isoString === 'number') {
-    date = new Date(isoString)
-  } else {
-    let s = String(isoString).trim()
-    const hasTimezone = s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)
-    if (!hasTimezone) s = s.replace(' ', 'T') + 'Z'
-    date = new Date(s)
-  }
-  if (isNaN(date.getTime())) return '\u2014'
+  const date = parseDate(isoString)
+  if (!date) return '\u2014'
 
   const parts = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',

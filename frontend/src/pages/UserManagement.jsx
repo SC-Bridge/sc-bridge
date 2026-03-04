@@ -6,6 +6,7 @@ import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import PanelSection from '../components/PanelSection'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const ROLES = ['user', 'admin', 'super_admin']
 
@@ -17,6 +18,7 @@ export default function UserManagement() {
   const [error, setError] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [actionLoading, setActionLoading] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -63,12 +65,14 @@ export default function UserManagement() {
     }
   }
 
-  const handleDelete = async (userId, userName) => {
-    if (!window.confirm(`Delete user "${userName}"? This cannot be undone.`)) return
-    setActionLoading(userId)
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    const { id } = deleteTarget
+    setDeleteTarget(null)
+    setActionLoading(id)
     setActionError(null)
     try {
-      await authClient.admin.removeUser({ userId })
+      await authClient.admin.removeUser({ userId: id })
       await fetchUsers()
     } catch (err) {
       setActionError(err.message || 'Failed to delete user')
@@ -176,7 +180,7 @@ export default function UserManagement() {
                           <Ban className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(u.id, u.name || u.email)}
+                          onClick={() => setDeleteTarget({ id: u.id, name: u.name || u.email })}
                           disabled={actionLoading === u.id}
                           title="Delete user"
                           className="p-1.5 rounded text-sc-danger hover:bg-sc-danger/10 transition-colors disabled:opacity-50"
@@ -192,6 +196,16 @@ export default function UserManagement() {
           </div>
         </PanelSection>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+        title="Delete User"
+        message={deleteTarget ? `Delete user "${deleteTarget.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </div>
   )
 }

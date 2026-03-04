@@ -161,7 +161,7 @@ export default function Contracts() {
 
       <SearchInput
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={setSearch}
         placeholder="Search contracts..."
         className="max-w-md"
       />

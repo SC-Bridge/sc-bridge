@@ -34,6 +34,7 @@ const Contracts = lazy(() => import('./pages/Contracts'))
 const LootDB = lazy(() => import('./pages/LootDB'))
 const POI = lazy(() => import('./pages/POI'))
 const POIDetail = lazy(() => import('./pages/POIDetail'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 const publicNavItems = [
   { to: '/', icon: BarChart3, label: 'Dashboard' },
@@ -366,6 +367,7 @@ export default function App() {
                       <Route path="/users" element={<RequireAuth><UserManagement /></RequireAuth>} />
                       <Route path="/orgs" element={<RequireAuth><Orgs /></RequireAuth>} />
                       <Route path="/orgs/:slug" element={<RequireAuth><OrgProfile /></RequireAuth>} />
+                      <Route path="*" element={<NotFound />} />
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>

@@ -9,50 +9,9 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
-
-// ── Category display (mirrors LootDB.jsx) ──────────────────────────────────
-const CATEGORY_LABELS = {
-  weapon:         'Weapon',
-  armour:         'Armour',
-  helmet:         'Helmet',
-  clothing:       'Clothing',
-  attachment:     'Attachment',
-  consumable:     'Consumable',
-  harvestable:    'Harvestable',
-  prop:           'Prop',
-  utility:        'Utility',
-  ship_component: 'Ship Component',
-  missile:        'Missile',
-  unknown:        'Other',
-}
-
-const CATEGORY_BADGE_STYLES = {
-  weapon:         'bg-red-900/40 text-red-300',
-  armour:         'bg-blue-900/40 text-blue-300',
-  helmet:         'bg-sky-900/40 text-sky-300',
-  clothing:       'bg-indigo-900/40 text-indigo-300',
-  attachment:     'bg-orange-900/40 text-orange-300',
-  consumable:     'bg-green-900/40 text-green-300',
-  harvestable:    'bg-teal-900/40 text-teal-300',
-  prop:           'bg-gray-700/60 text-gray-300',
-  utility:        'bg-yellow-900/40 text-yellow-300',
-  ship_component: 'bg-violet-900/40 text-violet-300',
-  missile:        'bg-rose-900/40 text-rose-300',
-  unknown:        'bg-gray-700/60 text-gray-400',
-}
-
-const CATEGORY_ORDER = [
-  'weapon', 'armour', 'helmet', 'clothing', 'attachment',
-  'consumable', 'harvestable', 'prop', 'utility', 'ship_component', 'missile', 'unknown',
-]
-
-const RARITY_STYLES = {
-  Common:    'bg-gray-700/60 text-gray-300 border-gray-600/40',
-  Uncommon:  'bg-green-900/40 text-green-300 border-green-700/40',
-  Rare:      'bg-sc-accent/20 text-sc-accent border-sc-accent/40',
-  Epic:      'bg-purple-900/40 text-purple-300 border-purple-700/40',
-  Legendary: 'bg-amber-900/40 text-amber-300 border-amber-700/40',
-}
+import {
+  RARITY_STYLES, CATEGORY_LABELS, CATEGORY_BADGE_STYLES, CATEGORY_ORDER,
+} from '../lib/lootDisplay'
 
 // ── Location group badges ──────────────────────────────────────────────────
 const GROUP_LABELS = {
@@ -179,7 +138,7 @@ export default function POIDetail() {
 
       <SearchInput
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={setSearch}
         placeholder="Search items at this location..."
         className="max-w-md"
       />
@@ -238,7 +197,7 @@ export default function POIDetail() {
                   )}
                   {item.rarity && (
                     <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                      RARITY_STYLES[item.rarity] || RARITY_STYLES.Common
+                      (RARITY_STYLES[item.rarity] || RARITY_STYLES.Common).badge
                     }`}>
                       {item.rarity}
                     </span>

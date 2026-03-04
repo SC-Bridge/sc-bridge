@@ -51,7 +51,7 @@ export default function Insurance() {
       />
 
       {/* Filters */}
-      <div className="flex gap-3 items-center">
+      <div className="flex flex-wrap gap-3 items-center">
         <FilterSelect
           value={filterLTI}
           onChange={(e) => setFilterLTI(e.target.value)}
@@ -76,7 +76,7 @@ export default function Insurance() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={Shield} label="LTI Ships" value={lti.length} color="text-sc-lti" accentBorder="border-l-sc-lti" />
         <StatCard icon={ShieldAlert} label="Non-LTI Ships" value={nonLTI.length} color="text-sc-warn" accentBorder="border-l-sc-warn" />
         <StatCard icon={ShieldQuestion} label="Unknown" value={unknown.length} color="text-gray-500" accentBorder="border-l-gray-600" />
@@ -140,7 +140,7 @@ export default function Insurance() {
 
 function InsuranceRow({ ship }) {
   return (
-    <div className="px-5 py-3 flex items-center gap-4">
+    <div className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-white">{ship.ship_name}</span>
@@ -155,7 +155,7 @@ function InsuranceRow({ ship }) {
           </div>
         )}
       </div>
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-3 flex-wrap">
         {ship.pledge_cost && (
           <span className="flex items-center gap-1 text-xs font-mono text-gray-400">
             <DollarSign className="w-3 h-3" />

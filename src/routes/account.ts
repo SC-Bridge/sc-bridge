@@ -512,8 +512,8 @@ async function collectUserData(
   db: D1Database,
   user: { id: string; name: string; email: string; role?: string | null },
 ) {
-  const fleet = await db
-    .prepare(
+  const [fleet, paints, llmConfigs, settings, analyses, lootCollection, lootWishlist, authUser] = await Promise.all([
+    db.prepare(
       `SELECT uf.id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
         uf.equipped_paint_id, uf.imported_at,
@@ -526,66 +526,38 @@ async function collectUserData(
       LEFT JOIN insurance_types it ON it.id = uf.insurance_type_id
       WHERE uf.user_id = ?
       ORDER BY v.name`,
-    )
-    .bind(user.id)
-    .all();
-
-  const paints = await db
-    .prepare(
+    ).bind(user.id).all(),
+    db.prepare(
       `SELECT up.id, up.paint_id, p.name as paint_name
       FROM user_paints up
       LEFT JOIN paints p ON p.id = up.paint_id
       WHERE up.user_id = ?`,
-    )
-    .bind(user.id)
-    .all();
-
-  const llmConfigs = await db
-    .prepare(
+    ).bind(user.id).all(),
+    db.prepare(
       `SELECT id, provider, model, created_at, updated_at
       FROM user_llm_configs WHERE user_id = ?`,
-    )
-    .bind(user.id)
-    .all();
-
-  const settings = await db
-    .prepare("SELECT id, key, value FROM user_settings WHERE user_id = ?")
-    .bind(user.id)
-    .all();
-
-  const analyses = await db
-    .prepare(
+    ).bind(user.id).all(),
+    db.prepare("SELECT id, key, value FROM user_settings WHERE user_id = ?")
+      .bind(user.id).all(),
+    db.prepare(
       `SELECT id, created_at, provider, model, vehicle_count, analysis
       FROM ai_analyses WHERE user_id = ? ORDER BY created_at DESC`,
-    )
-    .bind(user.id)
-    .all();
-
-  const lootCollection = await db
-    .prepare(
+    ).bind(user.id).all(),
+    db.prepare(
       `SELECT ulc.id, ulc.loot_map_id, ulc.quantity, ulc.created_at, lm.name, lm.type
       FROM user_loot_collection ulc
       LEFT JOIN loot_map lm ON lm.id = ulc.loot_map_id
       WHERE ulc.user_id = ? ORDER BY lm.name`,
-    )
-    .bind(user.id)
-    .all();
-
-  const lootWishlist = await db
-    .prepare(
+    ).bind(user.id).all(),
+    db.prepare(
       `SELECT ulw.id, ulw.loot_map_id, ulw.quantity, ulw.created_at, lm.name, lm.type
       FROM user_loot_wishlist ulw
       LEFT JOIN loot_map lm ON lm.id = ulw.loot_map_id
       WHERE ulw.user_id = ? ORDER BY lm.name`,
-    )
-    .bind(user.id)
-    .all();
-
-  // Get Better Auth user record for account metadata
-  const authUser = await db
-    .prepare("SELECT id, email, name, role, createdAt FROM user WHERE id = ?")
-    .bind(user.id)
-    .first();
+    ).bind(user.id).all(),
+    db.prepare("SELECT id, email, name, role, createdAt FROM user WHERE id = ?")
+      .bind(user.id).first(),
+  ]);
 
   return {
     exported_at: new Date().toISOString(),
