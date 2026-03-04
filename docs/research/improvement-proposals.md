@@ -264,7 +264,7 @@ These can be knocked out individually. Many are zero-risk, high-clarity fixes.
 ### H04 [DONE] Denormalize loot query performance
 **Where:** `getLootItems()`, `getUserLootWishlist()`, `getLootLocationDetail()` in `queries.ts`
 **Impact:** 8 correlated CASE subqueries per row for manufacturer_name; LOOT_CATEGORY_CASE per row for category. ~5000 rows.
-**Fix:** Denormalized `manufacturer_name` and `category` onto `loot_map` table (migration 0048). Simplified 4 query functions, removed `LOOT_CATEGORY_CASE`. Fixed rarity data in `build_loot_map.py` (`LootRarity` tag path fix + fallback rules). Created `load_to_d1.py` batched loader.
+**Fix:** Denormalized `manufacturer_name` and `category` onto `loot_map` table (migration 0048). Simplified 4 query functions, removed `LOOT_CATEGORY_CASE`. Fixed rarity data in `build_loot_map.py` (`LootRarity` tag path fix + fallback rules). Loader refactored to two-pass approach (metadata UPSERT + JSON blob UPDATE) to avoid D1 SQLITE_TOOBIG errors. Deployed to production.
 **Note:** Original proposal was to normalize JSON blobs into junction tables — investigation found JSON blobs aren't the bottleneck (excluded from summary endpoint). The actual fix was denormalization of computed columns.
 
 ### H05 [D] Automate extraction pipeline

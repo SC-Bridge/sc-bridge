@@ -8,13 +8,13 @@ All tools/scripts/extractors which are proprietary are stored in a private repo 
 
 ## Current Focus
 
-H04: Loot page performance optimization — denormalization complete, rarity data fixed, loader script built. Ready to apply migration + load data to D1.
+H04 complete — deployed to production. Loader script refactored for D1 size limits.
 
 ## Recent Changes
 
-- **H04: Loot denormalization** — Added `manufacturer_name` and `category` columns to `loot_map`, simplified 4 query functions, removed `LOOT_CATEGORY_CASE` constant. Migration `0048_loot_denormalize.sql`.
-- **H04: Rarity data fix** — Fixed `build_loot_map.py` tag path from `LootGeneration.Rarity.*` to `LootGeneration.LootRarity.*`. Rebuilt loot_map.json: 4779/5294 items now have rarity.
-- **H04: Loader script** — Created `scbridge/tools/scripts/loot_map/load_to_d1.py` for batched SQL generation (53 batches, ~6.5MB avg).
+- **H04: Deployed** — Migration 0048 applied, rarity data loaded to D1 (4,730 rows updated). All loot items now have rarity.
+- **H04: Loader refactor** — Rewrote `load_to_d1.py` as two-pass (metadata UPSERT + JSON blob UPDATE). Size-aware batching stays under D1's ~1MB SQLITE_MAX_SQL_LENGTH. 11 meta + 484 json batches.
+- **H04: Rarity fallback rules** — `build_loot_map.py` `determine_rarity()` now auto-assigns: junk→N/A, NPC-only FPS gear→Uncommon, rest→Common. Zero empty rarity.
 - **H01-H03** — Test suite (66 tests), Zod validation, LootDB decomposition (all committed).
 
 ## Key Decisions
@@ -38,7 +38,7 @@ H04: Loot page performance optimization — denormalization complete, rarity dat
 
 ## Applied Migrations (D1)
 
-Last applied: **0044_invite_tokens.sql** (0045-0048 committed, not yet applied)
+Last applied: **0048_loot_denormalize.sql**
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -119,7 +119,7 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **Apply 0045-0048 migrations** to remote D1, then run loot_map loader batches
+- **JSON blob loading** — 484 json batch files generated but not yet loaded to D1. Run pass 2 when ready.
 - **HUGE audit items** (H05-H06) — validate before implementing
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
@@ -152,4 +152,8 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-05 09:00:47
+
+
+---
+**Session compacted at:** 2026-03-05 11:28:12
 
