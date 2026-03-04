@@ -35,7 +35,7 @@ describe("Import API — /api/import/hangarxplor", () => {
       });
       expect(res.status).toBe(400);
       const body = (await res.json()) as Record<string, unknown>;
-      expect(body.error).toBe("Expected JSON array");
+      expect(body.error).toBeDefined();
     });
 
     it("imports a single ship successfully", async () => {

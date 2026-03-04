@@ -4,6 +4,7 @@ import { slugFromShipCode, slugFromName, compactSlug } from "../lib/slug";
 import { loadInsuranceTypes } from "../db/queries";
 import { logEvent } from "../lib/logger";
 import { logUserChange } from "../lib/change-history";
+import { validate, HangarXplorImportSchema } from "../lib/validation";
 
 /**
  * /api/import/* — HangarXplor import
@@ -15,14 +16,11 @@ export function importRoutes() {
   const routes = new Hono<HonoEnv>();
 
   // POST /api/import/hangarxplor — import HangarXplor JSON export
-  routes.post("/hangarxplor", async (c) => {
+  routes.post("/hangarxplor", validate("json", HangarXplorImportSchema), async (c) => {
     const db = c.env.DB;
     const userID = c.get("user")!.id;
 
-    const entries: HangarXplorEntry[] = await c.req.json();
-    if (!Array.isArray(entries)) {
-      return c.json({ error: "Expected JSON array" }, 400);
-    }
+    const entries: HangarXplorEntry[] = c.req.valid("json");
 
     // Preload all vehicle slugs+names into memory (avoids per-entry queries)
     const vehicleMap = await preloadVehicleMap(db);

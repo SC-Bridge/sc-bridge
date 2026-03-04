@@ -1,4 +1,5 @@
 import { Hono, type Context, type Next } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import {
   getLootItems,
@@ -14,6 +15,7 @@ import {
   setLootWishlistQuantity,
   removeFromLootWishlist,
 } from "../db/queries";
+import { validate } from "../lib/validation";
 
 // Auth middleware — reused for collection and wishlist sub-paths
 async function requireUser(c: Context<HonoEnv>, next: Next): Promise<Response | void> {
@@ -66,12 +68,12 @@ export function lootRoutes() {
   });
 
   // PATCH /api/loot/collection/:uuid — set quantity; quantity=0 removes
-  app.patch("/collection/:uuid", async (c) => {
+  app.patch("/collection/:uuid",
+    validate("json", z.object({ quantity: z.number().int().min(0, "quantity must be >= 0") })),
+    async (c) => {
     const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
-    const body = await c.req.json<{ quantity: number }>();
-    const quantity = Number(body.quantity);
-    if (!Number.isInteger(quantity) || quantity < 0) return c.json({ error: "Invalid quantity" }, 400);
+    const { quantity } = c.req.valid("json");
 
     const row = await c.env.DB
       .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")
@@ -125,12 +127,12 @@ export function lootRoutes() {
   });
 
   // PATCH /api/loot/wishlist/:uuid — set quantity; quantity=0 removes
-  app.patch("/wishlist/:uuid", async (c) => {
+  app.patch("/wishlist/:uuid",
+    validate("json", z.object({ quantity: z.number().int().min(0, "quantity must be >= 0") })),
+    async (c) => {
     const user = getAuthUser(c);
     const uuid = c.req.param("uuid");
-    const body = await c.req.json<{ quantity: number }>();
-    const quantity = Number(body.quantity);
-    if (!Number.isInteger(quantity) || quantity < 0) return c.json({ error: "Invalid quantity" }, 400);
+    const { quantity } = c.req.valid("json");
 
     const row = await c.env.DB
       .prepare("SELECT id FROM loot_map WHERE uuid = ? LIMIT 1")

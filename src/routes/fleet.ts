@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
+import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -18,25 +20,25 @@ export function fleetRoutes() {
   });
 
   // PATCH /api/vehicles/:id/visibility — update org_visibility and/or available_for_ops
-  routes.patch("/:id/visibility", async (c) => {
-    const id = parseInt(c.req.param("id"), 10);
-    if (isNaN(id)) return c.json({ error: "Invalid fleet entry ID" }, 400);
-
+  routes.patch("/:id/visibility",
+    validate("param", IntIdParam),
+    validate("json", z.object({
+      org_visibility: OrgVisibility.optional(),
+      available_for_ops: z.boolean().optional(),
+    }).refine((d) => d.org_visibility !== undefined || d.available_for_ops !== undefined, {
+      message: "No fields to update",
+    })),
+    async (c) => {
+    const { id } = c.req.valid("param");
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
-    const body = await c.req
-      .json<{ org_visibility?: string; available_for_ops?: boolean }>()
-      .catch((): { org_visibility?: string; available_for_ops?: boolean } => ({}));
+    const body = c.req.valid("json");
 
-    const VALID_VISIBILITY = new Set(["public", "org", "officers", "private"]);
     const updates: string[] = [];
     const values: unknown[] = [];
 
     if (body.org_visibility !== undefined) {
-      if (!VALID_VISIBILITY.has(body.org_visibility)) {
-        return c.json({ error: "Invalid org_visibility value" }, 400);
-      }
       updates.push("org_visibility = ?");
       values.push(body.org_visibility);
     }
@@ -45,8 +47,6 @@ export function fleetRoutes() {
       updates.push("available_for_ops = ?");
       values.push(body.available_for_ops ? 1 : 0);
     }
-
-    if (updates.length === 0) return c.json({ error: "No fields to update" }, 400);
 
     values.push(userID, id);
 

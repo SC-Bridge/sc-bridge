@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type Env, type HonoEnv } from "../lib/types";
 import { sendEmail } from "../lib/email";
 import { escapeHtml } from "../lib/utils";
@@ -6,6 +7,7 @@ import { hashPassword } from "../lib/password";
 import { logUserChange } from "../lib/change-history";
 import { fetchRsiProfile } from "../lib/rsi";
 import { checkGravatar } from "../lib/gravatar";
+import { validate } from "../lib/validation";
 
 /** Returns the list of social OAuth provider IDs that have CLIENT_ID configured */
 function getConfiguredProviders(env: Env): string[] {
@@ -46,17 +48,15 @@ export function accountRoutes() {
   });
 
   // POST /api/account/unlink-provider — remove a linked OAuth provider
-  routes.post("/unlink-provider", async (c) => {
+  routes.post("/unlink-provider",
+    validate("json", z.object({
+      providerId: z.string().min(1, "providerId is required").max(100),
+    })),
+    async (c) => {
     const user = getAuthUser(c);
     const db = c.env.DB;
 
-    const body = await c.req
-      .json<{ providerId?: string }>()
-      .catch(() => ({ providerId: undefined }));
-
-    if (!body.providerId) {
-      return c.json({ error: "providerId is required" }, 400);
-    }
+    const body = c.req.valid("json");
 
     if (body.providerId === "credential") {
       return c.json(
@@ -105,23 +105,15 @@ export function accountRoutes() {
   });
 
   // POST /api/account/set-password — OAuth-only users: set initial password
-  routes.post("/set-password", async (c) => {
+  routes.post("/set-password",
+    validate("json", z.object({
+      newPassword: z.string().min(8, "Password must be at least 8 characters").max(128, "Password is too long"),
+    })),
+    async (c) => {
     const user = getAuthUser(c);
     const db = c.env.DB;
 
-    const body = await c.req
-      .json<{ newPassword?: string }>()
-      .catch(() => ({ newPassword: undefined }));
-
-    if (!body.newPassword || body.newPassword.length < 8) {
-      return c.json(
-        { error: "Password must be at least 8 characters" },
-        400,
-      );
-    }
-    if (body.newPassword.length > 128) {
-      return c.json({ error: "Password is too long" }, 400);
-    }
+    const body = c.req.valid("json");
 
     // Check if user already has a credential (password) account
     const existing = await db
@@ -215,15 +207,15 @@ export function accountRoutes() {
 
   // POST /api/account/rsi-sync — fetch + cache RSI citizen profile
   // Rate-limited: one sync per 10 minutes per user.
-  routes.post("/rsi-sync", async (c) => {
+  routes.post("/rsi-sync",
+    validate("json", z.object({
+      handle: z.string().min(1, "handle is required").max(64).trim(),
+    })),
+    async (c) => {
     const user = getAuthUser(c);
     const db = c.env.DB;
 
-    const body = await c.req.json<{ handle?: string }>().catch(() => ({ handle: undefined }));
-    if (!body.handle?.trim()) {
-      return c.json({ error: "handle is required" }, 400);
-    }
-    const handle = body.handle.trim();
+    const { handle } = c.req.valid("json");
 
     // Rate-limit: reject if last sync was < 10 minutes ago
     const existing = await db

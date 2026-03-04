@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import type { HonoEnv } from "../lib/types";
 import { uploadToCFImages } from "../lib/cfImages";
 import { getVehiclesNeedingCFUpload, setVehicleCFImagesID } from "../db/queries";
 import { concurrentMap } from "../lib/utils";
+import { validate } from "../lib/validation";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -17,7 +19,12 @@ export function adminRoutes() {
    * Idempotent — skips vehicles that already have a cf_images_id.
    * Returns { processed, succeeded, failed, errors: [{ slug, error }] }
    */
-  routes.post("/images/bulk-upload", async (c) => {
+  routes.post("/images/bulk-upload",
+    validate("query", z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).default(0),
+    })),
+    async (c) => {
     const token = c.env.CLOUDFLARE_IMAGES_TOKEN;
     const accountHash = c.env.CF_ACCOUNT_HASH;
     const accountId = c.env.CF_ACCOUNT_ID;
@@ -29,8 +36,7 @@ export function adminRoutes() {
       );
     }
 
-    const limit = Math.min(parseInt(c.req.query("limit") ?? "50", 10), 100);
-    const offset = parseInt(c.req.query("offset") ?? "0", 10);
+    const { limit, offset } = c.req.valid("query");
 
     const vehicles = await getVehiclesNeedingCFUpload(c.env.DB, limit, offset);
 
@@ -69,7 +75,12 @@ export function adminRoutes() {
    * Useful for ships with broken/missing images (e.g. Valkyrie Liberator Edition).
    * Returns { slug, cf_images_id, image_url }
    */
-  routes.post("/images/upload", async (c) => {
+  routes.post("/images/upload",
+    validate("json", z.object({
+      slug: z.string().min(1, "slug is required").max(100),
+      imageUrl: z.string().url("imageUrl must be a valid URL"),
+    })),
+    async (c) => {
     const token = c.env.CLOUDFLARE_IMAGES_TOKEN;
     const accountHash = c.env.CF_ACCOUNT_HASH;
     const accountId = c.env.CF_ACCOUNT_ID;
@@ -81,16 +92,7 @@ export function adminRoutes() {
       );
     }
 
-    const body = await c.req.json<{ slug?: string; imageUrl?: string }>();
-    const { slug, imageUrl } = body;
-
-    if (!slug || !imageUrl) {
-      return c.json({ error: "slug and imageUrl are required" }, 400);
-    }
-
-    if (!imageUrl.startsWith("http")) {
-      return c.json({ error: "imageUrl must be an absolute URL" }, 400);
-    }
+    const { slug, imageUrl } = c.req.valid("json");
 
     const vehicleRow = await c.env.DB
       .prepare("SELECT id FROM vehicles WHERE slug = ?")

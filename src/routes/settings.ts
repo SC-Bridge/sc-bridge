@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
 import { logUserChange } from "../lib/change-history";
+import { validate, LLMProvider } from "../lib/validation";
 
 /**
  * /api/settings/* — User settings and LLM configuration
@@ -61,15 +63,17 @@ export function settingsRoutes() {
   });
 
   // PUT /api/settings/llm-config
-  routes.put("/llm-config", async (c) => {
+  routes.put("/llm-config",
+    validate("json", z.object({
+      provider: LLMProvider.optional(),
+      api_key: z.string().max(500).optional(),
+      model: z.string().max(100).optional(),
+    })),
+    async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
-    const body = await c.req.json<{
-      provider?: string;
-      api_key?: string;
-      model?: string;
-    }>();
+    const body = c.req.valid("json");
 
     // Clear operation
     if (!body.provider && !body.api_key && !body.model) {
@@ -83,9 +87,7 @@ export function settingsRoutes() {
       return c.json({ message: "LLM configuration cleared" });
     }
 
-    // Validate provider
-    const validProviders = ["anthropic", "openai", "google"];
-    if (!body.provider || !validProviders.includes(body.provider)) {
+    if (!body.provider) {
       return c.json({ error: "Invalid provider" }, 400);
     }
 
@@ -142,24 +144,16 @@ export function settingsRoutes() {
   });
 
   // PUT /api/settings/preferences
-  routes.put("/preferences", async (c) => {
+  routes.put("/preferences",
+    validate("json", z.object({
+      timezone: z.string().max(200).optional(),
+      fontPreference: z.string().max(200).optional(),
+    }).strict()),
+    async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
-    const body = await c.req.json<Record<string, string>>();
-
-    // Validate against allowlist of known preference keys
-    const VALID_PREFS = new Set(["timezone", "fontPreference"]);
-    const MAX_VALUE_LENGTH = 200;
-
-    for (const [key, value] of Object.entries(body)) {
-      if (!VALID_PREFS.has(key)) {
-        return c.json({ error: `Unknown preference: ${key}` }, 400);
-      }
-      if (typeof value !== "string" || value.length > MAX_VALUE_LENGTH) {
-        return c.json({ error: `Invalid value for ${key}` }, 400);
-      }
-    }
+    const body = c.req.valid("json");
 
     // Load existing prefs for old-value comparison
     const existingRows = await db

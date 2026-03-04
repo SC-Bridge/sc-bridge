@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv, type UserFleetEntry, type Vehicle, type FleetAnalysis } from "../lib/types";
 import { decrypt } from "../lib/crypto";
 import { logEvent } from "../lib/logger";
 import { ANALYSIS_PROMPT } from "../lib/analysis-prompt";
+import { validate, IntIdParam, LLMProvider } from "../lib/validation";
 
 /**
  * /api/analysis/* — Fleet analysis, LLM analysis
@@ -54,16 +56,18 @@ export function analysisRoutes() {
   });
 
   // POST /api/llm/test-connection
-  routes.post("/llm/test-connection", async (c) => {
+  routes.post("/llm/test-connection",
+    validate("json", z.object({
+      provider: LLMProvider.default("anthropic"),
+      api_key: z.string().max(500).optional(),
+    })),
+    async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
-    const body = await c.req.json<{ provider?: string; api_key?: string }>().catch((): { provider?: string; api_key?: string } => ({}));
+    const body = c.req.valid("json");
 
-    const provider = body.provider?.trim() || "anthropic";
-    if (!PROVIDER_MODELS[provider]) {
-      return c.json({ error: `Unsupported provider: ${provider}` }, 400);
-    }
+    const provider = body.provider;
 
     // Use provided API key (first-time setup) or fall back to stored key
     let apiKey = body.api_key?.trim() || null;
@@ -104,7 +108,11 @@ export function analysisRoutes() {
   });
 
   // POST /api/llm/generate-analysis
-  routes.post("/llm/generate-analysis", async (c) => {
+  routes.post("/llm/generate-analysis",
+    validate("json", z.object({
+      model: z.string().max(100).optional(),
+    })),
+    async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
@@ -128,9 +136,7 @@ export function analysisRoutes() {
     }
 
     // Allow model override from request body
-    const body = await c.req
-      .json<{ model?: string }>()
-      .catch(() => ({ model: undefined }));
+    const body = c.req.valid("json");
     const provider = config.provider || "anthropic";
     const defaultModel = c.env.LLM_DEFAULT_MODEL || DEFAULT_MODELS[provider] || "claude-sonnet-4-6";
     const model = body.model || config.model || defaultModel;
@@ -267,12 +273,8 @@ export function analysisRoutes() {
   });
 
   // DELETE /api/llm/analysis/:id
-  routes.delete("/llm/analysis/:id", async (c) => {
-    const id = parseInt(c.req.param("id"), 10);
-    if (isNaN(id)) {
-      return c.json({ error: "Invalid analysis ID" }, 400);
-    }
-
+  routes.delete("/llm/analysis/:id", validate("param", IntIdParam), async (c) => {
+    const { id } = c.req.valid("param");
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
