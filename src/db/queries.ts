@@ -666,7 +666,10 @@ export interface CollectionEntry {
 
 export async function getGameVersions(db: D1Database): Promise<{ code: string; channel: string; is_default: number; released_at: string }[]> {
   const result = await db
-    .prepare("SELECT code, channel, is_default, released_at FROM game_versions ORDER BY released_at DESC")
+    .prepare(`SELECT gv.code, gv.channel, gv.is_default, gv.released_at
+      FROM game_versions gv
+      WHERE EXISTS (SELECT 1 FROM loot_map lm WHERE lm.game_version_id = gv.id)
+      ORDER BY gv.released_at DESC`)
     .all<{ code: string; channel: string; is_default: number; released_at: string }>();
   return result.results;
 }
