@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { RefreshCw, Palette, Globe, Play, AlertCircle, Ticket, Copy, Check } from 'lucide-react'
-import { useSyncStatus, triggerPaintSync, triggerRSISync, triggerFullSync } from '../hooks/useAPI'
+import { RefreshCw, Palette, Globe, Play, AlertCircle, Ticket, Copy, Check, Database } from 'lucide-react'
+import { useSyncStatus, triggerPaintSync, triggerRSISync, triggerFullSync, setPreferences } from '../hooks/useAPI'
 import useTimezone from '../hooks/useTimezone'
+import useGameVersion from '../hooks/useGameVersion'
+import { formatVersionLabel } from '../lib/gameVersion'
 import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -124,6 +126,148 @@ function InvitePanel() {
   )
 }
 
+function DataVersionsPanel() {
+  const { versions, defaultVersion, activeCode, isPreview, setPreviewPatch } = useGameVersion()
+  const [selectedDefault, setSelectedDefault] = useState('')
+  const [selectedPreview, setSelectedPreview] = useState('')
+  const [saving, setSaving] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (defaultVersion) setSelectedDefault(defaultVersion.code)
+  }, [defaultVersion])
+
+  useEffect(() => {
+    if (isPreview) setSelectedPreview(activeCode)
+  }, [isPreview, activeCode])
+
+  const handleSetDefault = async () => {
+    if (!selectedDefault) return
+    setSaving('default')
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/versions/default', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ code: selectedDefault }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to set default version')
+      }
+      window.location.reload()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const handleSetPreview = async () => {
+    if (!selectedPreview) return
+    setSaving('preview')
+    setError(null)
+    try {
+      await setPreviewPatch(selectedPreview)
+    } catch (err) {
+      setError(err.message)
+      setSaving(null)
+    }
+  }
+
+  const handleClearPreview = async () => {
+    setSaving('clear')
+    setError(null)
+    try {
+      await setPreviewPatch(null)
+    } catch (err) {
+      setError(err.message)
+      setSaving(null)
+    }
+  }
+
+  if (versions.length === 0) return null
+
+  return (
+    <PanelSection title="Data Versions" icon={Database}>
+      <div className="p-4 space-y-4">
+        {error && (
+          <div className="flex items-center gap-2 p-2 bg-sc-danger/10 border border-sc-danger/30 rounded text-sc-danger text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Public default */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Public Game Version</label>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedDefault}
+              onChange={(e) => setSelectedDefault(e.target.value)}
+              className="flex-1 px-3 py-2 bg-sc-darker border border-sc-border rounded text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+            >
+              {versions.map((v) => (
+                <option key={v.code} value={v.code}>
+                  {formatVersionLabel(v.code)}{v.is_default ? ' (current)' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSetDefault}
+              disabled={saving || selectedDefault === defaultVersion?.code}
+              className="btn-primary text-sm px-3 py-2 disabled:opacity-50"
+            >
+              {saving === 'default' ? 'Saving...' : 'Set Default'}
+            </button>
+          </div>
+        </div>
+
+        {/* Admin preview */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Admin Preview Version</label>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedPreview}
+              onChange={(e) => setSelectedPreview(e.target.value)}
+              className="flex-1 px-3 py-2 bg-sc-darker border border-sc-border rounded text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+            >
+              <option value="">None (use public default)</option>
+              {versions.map((v) => (
+                <option key={v.code} value={v.code}>
+                  {formatVersionLabel(v.code)}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSetPreview}
+              disabled={saving || !selectedPreview}
+              className="btn-primary text-sm px-3 py-2 disabled:opacity-50"
+            >
+              {saving === 'preview' ? 'Saving...' : 'Preview'}
+            </button>
+            {isPreview && (
+              <button
+                onClick={handleClearPreview}
+                disabled={saving}
+                className="px-3 py-2 text-sm border border-sc-border rounded text-gray-400 hover:text-white hover:border-sc-accent/40 transition-colors disabled:opacity-50"
+              >
+                {saving === 'clear' ? 'Clearing...' : 'Clear'}
+              </button>
+            )}
+          </div>
+          {isPreview && (
+            <p className="text-[10px] text-amber-400">
+              Preview active — you are viewing {formatVersionLabel(activeCode)} data instead of the public default.
+            </p>
+          )}
+        </div>
+      </div>
+    </PanelSection>
+  )
+}
+
 export default function Admin() {
   const { timezone } = useTimezone()
   const { data: syncHistory, loading, error, refetch } = useSyncStatus()
@@ -181,6 +325,9 @@ export default function Admin() {
           <span>{triggerError}</span>
         </div>
       )}
+
+      {/* Data Versions */}
+      <DataVersionsPanel />
 
       {/* Invite Links */}
       <InvitePanel />

@@ -1036,8 +1036,11 @@ interface LootLocationSummaryResult {
   npcs: LocationSummary[];
 }
 
-const LOOT_BASE_WHERE = `
-  lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)
+function lootBaseWhere(patchCode?: string): string {
+  const versionFilter = patchCode
+    ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = '${patchCode}')`
+    : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
+  return `${versionFilter}
   AND lm.name NOT IN ('<= PLACEHOLDER =>')
   AND lm.name NOT LIKE 'EntityClassDefinition.%'
   AND lm.type IS NOT NULL AND lm.type != ''
@@ -1047,6 +1050,7 @@ const LOOT_BASE_WHERE = `
     'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
     'Currency','MobiGlas'
   )`;
+}
 
 
 function parseJsonArray(val: string | null): unknown[] {
@@ -1059,11 +1063,11 @@ function parseJsonArray(val: string | null): unknown[] {
  * Returns location keys + item counts + rarity distributions — no item arrays.
  * Paginated D1 reads but tiny response (~20KB).
  */
-export async function getLootLocationSummary(db: D1Database): Promise<LootLocationSummaryResult> {
+export async function getLootLocationSummary(db: D1Database, patchCode?: string): Promise<LootLocationSummaryResult> {
   const PAGE_SIZE = 500;
   const sql = `SELECT lm.uuid, lm.rarity, lm.containers_json, lm.shops_json, lm.npcs_json
     FROM loot_map lm
-    WHERE ${LOOT_BASE_WHERE}
+    WHERE ${lootBaseWhere(patchCode)}
       AND (
         (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
         OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
@@ -1157,6 +1161,7 @@ export async function getLootLocationDetail(
   db: D1Database,
   locType: "container" | "shop" | "npc",
   slug: string,
+  patchCode?: string,
 ): Promise<LocationDetailResult> {
   const jsonCol =
     locType === "container" ? "containers_json"
@@ -1171,7 +1176,7 @@ export async function getLootLocationDetail(
       lm.${jsonCol} as target_json,
       lm.category
     FROM loot_map lm
-    WHERE ${LOOT_BASE_WHERE}
+    WHERE ${lootBaseWhere(patchCode)}
       AND lm.${jsonCol} IS NOT NULL
       AND lm.${jsonCol} NOT IN ('null','[]','')
       AND lm.${jsonCol} LIKE ? ESCAPE '\\'

@@ -148,6 +148,7 @@ export function settingsRoutes() {
     validate("json", z.object({
       timezone: z.string().max(200).optional(),
       fontPreference: z.string().max(200).optional(),
+      adminPreviewPatch: z.string().max(100).nullable().optional(),
     }).strict()),
     async (c) => {
     const db = c.env.DB;
@@ -165,15 +166,23 @@ export function settingsRoutes() {
       existingPrefs[row.key] = row.value;
     }
 
-    const stmt = db.prepare(
+    const upsertStmt = db.prepare(
       `INSERT INTO user_settings (user_id, key, value)
        VALUES (?, ?, ?)
        ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
     );
-
-    const batch = Object.entries(body).map(([key, value]) =>
-      stmt.bind(userID, key, value),
+    const deleteStmt = db.prepare(
+      `DELETE FROM user_settings WHERE user_id = ? AND key = ?`,
     );
+
+    const batch: D1PreparedStatement[] = [];
+    for (const [key, value] of Object.entries(body)) {
+      if (value === null) {
+        batch.push(deleteStmt.bind(userID, key));
+      } else {
+        batch.push(upsertStmt.bind(userID, key, value));
+      }
+    }
 
     if (batch.length > 0) {
       await db.batch(batch);
@@ -183,11 +192,11 @@ export function settingsRoutes() {
     const ipAddress = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for");
     for (const [key, value] of Object.entries(body)) {
       const oldValue = existingPrefs[key];
-      if (oldValue !== value) {
+      if (oldValue !== (value ?? undefined)) {
         await logUserChange(db, userID, "settings_changed", {
           fieldName: key,
           oldValue: oldValue ?? undefined,
-          newValue: value,
+          newValue: value === null ? "[cleared]" : value,
           ipAddress,
         });
       }

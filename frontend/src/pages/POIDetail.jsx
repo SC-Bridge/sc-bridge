@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { MapPin, ArrowLeft } from 'lucide-react'
 import { useLootLocationDetail } from '../hooks/useAPI'
+import useGameVersion from '../hooks/useGameVersion'
 import { friendlyLocation, friendlyFaction, getLocationGroup } from '../lib/lootLocations'
 import { friendlyShopName } from '../lib/shopNames'
 import PageHeader from '../components/PageHeader'
@@ -37,7 +38,8 @@ export default function POIDetail() {
   const apiType = type === 'shop' ? 'shop' : type === 'npc' ? 'npc' : 'container'
   const decodedSlug = slug ? decodeURIComponent(slug) : ''
 
-  const { data, loading, error, refetch } = useLootLocationDetail(apiType, decodedSlug)
+  const { activeCode } = useGameVersion()
+  const { data, loading, error, refetch } = useLootLocationDetail(apiType, decodedSlug, activeCode)
   const items = data?.items || []
 
   // Resolve display names

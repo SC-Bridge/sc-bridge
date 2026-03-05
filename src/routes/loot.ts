@@ -165,7 +165,8 @@ export function lootRoutes() {
 
   // GET /api/loot/locations — lightweight summary for POI directory (public)
   app.get("/locations", async (c) => {
-    const data = await getLootLocationSummary(c.env.DB);
+    const patch = c.req.query("patch");
+    const data = await getLootLocationSummary(c.env.DB, patch);
     c.header("Cache-Control", "public, max-age=300");
     return c.json(data);
   });
@@ -177,7 +178,8 @@ export function lootRoutes() {
       return c.json({ error: "Invalid location type" }, 400);
     }
     const slug = decodeURIComponent(c.req.param("slug"));
-    const data = await getLootLocationDetail(c.env.DB, type, slug);
+    const patch = c.req.query("patch");
+    const data = await getLootLocationDetail(c.env.DB, type, slug, patch);
     c.header("Cache-Control", "public, max-age=300");
     return c.json(data);
   });

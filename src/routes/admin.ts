@@ -129,6 +129,37 @@ export function adminRoutes() {
   });
 
   /**
+   * PUT /api/admin/versions/default
+   *
+   * Sets which game version is the public default.
+   * Body: { code: string }
+   */
+  routes.put("/versions/default",
+    validate("json", z.object({
+      code: z.string().min(1, "code is required").max(100),
+    })),
+    async (c) => {
+    const { code } = c.req.valid("json");
+
+    // Verify version exists
+    const version = await c.env.DB
+      .prepare("SELECT id, code, channel FROM game_versions WHERE code = ?")
+      .bind(code)
+      .first<{ id: number; code: string; channel: string }>();
+
+    if (!version) {
+      return c.json({ error: `Game version not found: ${code}` }, 404);
+    }
+
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE game_versions SET is_default = 0 WHERE is_default = 1"),
+      c.env.DB.prepare("UPDATE game_versions SET is_default = 1 WHERE code = ?").bind(code),
+    ]);
+
+    return c.json({ code: version.code, channel: version.channel, is_default: 1 });
+  });
+
+  /**
    * POST /api/admin/invites
    *
    * Generates a single-use invite token and returns the signup URL.

@@ -1,5 +1,6 @@
 import { X, ShoppingCart, Package, Swords, Skull, FileText, Plus, Bookmark, BookmarkPlus } from 'lucide-react'
 import { useLootItem } from '../../hooks/useAPI'
+import useGameVersion from '../../hooks/useGameVersion'
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS } from '../../lib/lootDisplay'
 import LoadingState from '../../components/LoadingState'
 import LocationSection from './LocationSection'
@@ -74,7 +75,8 @@ const RESISTANCE_STATS = new Set([
 ])
 
 export default function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
-  const { data: item, loading } = useLootItem(uuid)
+  const { activeCode } = useGameVersion()
+  const { data: item, loading } = useLootItem(uuid, activeCode)
 
   if (!uuid) return null
 

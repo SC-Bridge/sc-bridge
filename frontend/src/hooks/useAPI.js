@@ -162,20 +162,26 @@ export async function updateShipVisibility(fleetEntryId, updates) {
 }
 
 // Loot / Item Finder
-export function useLoot() {
-  return useAPI('/loot')
+// These hooks accept an optional patchCode to query a specific game version.
+// When patchCode changes, the path changes, triggering a re-fetch.
+export function useLoot(patchCode) {
+  const suffix = patchCode ? `?patch=${encodeURIComponent(patchCode)}` : ''
+  return useAPI(`/loot${suffix}`)
 }
 
-export function useLootItem(uuid) {
-  return useAPI(uuid ? `/loot/${uuid}` : null, { skip: !uuid })
+export function useLootItem(uuid, patchCode) {
+  const suffix = patchCode ? `?patch=${encodeURIComponent(patchCode)}` : ''
+  return useAPI(uuid ? `/loot/${uuid}${suffix}` : null, { skip: !uuid })
 }
 
-export function useLootLocations() {
-  return useAPI('/loot/locations')
+export function useLootLocations(patchCode) {
+  const suffix = patchCode ? `?patch=${encodeURIComponent(patchCode)}` : ''
+  return useAPI(`/loot/locations${suffix}`)
 }
 
-export function useLootLocationDetail(type, slug) {
-  const path = type && slug ? `/loot/locations/${type}/${encodeURIComponent(slug)}` : null
+export function useLootLocationDetail(type, slug, patchCode) {
+  const suffix = patchCode ? `?patch=${encodeURIComponent(patchCode)}` : ''
+  const path = type && slug ? `/loot/locations/${type}/${encodeURIComponent(slug)}${suffix}` : null
   return useAPI(path, { skip: !type || !slug })
 }
 

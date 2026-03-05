@@ -40,7 +40,7 @@ data, and item stats. Deployed as a Cloudflare Worker with a D1 database and Rea
 - `analysis.ts` — Fleet gap analysis, redundancy detection
 - `account.ts` — Account management, email verification, 2FA
 - `orgs.ts` — Organisation management and visibility
-- `admin.ts` — Admin-only operations (CF Images bulk upload, invites)
+- `admin.ts` — Admin-only operations (CF Images bulk upload, invites, version management)
 - `debug.ts` — `/api/debug/imports` — vehicle linkage, fleet counts
 - `migrate.ts` — On-demand migration trigger
 - `loot.ts` — Loot database, collection, wishlist, POI endpoints
@@ -84,6 +84,7 @@ React SPA. 25 page components including: `Dashboard`, `FleetTable`, `ShipDB`, `S
 | DataCore (scbridge/tools) | Component stats, FPS gear, loot map, paint metadata | One-time extract scripts |
 
 ## Key Design Decisions
+- **Game version management**: `lootBaseWhere(patchCode?)` replaces the old `LOOT_BASE_WHERE` constant. All loot endpoints accept `?patch=` query param. `GameVersionProvider` context provides `activeCode` to all loot hooks. Admins can set `adminPreviewPatch` in user settings to preview unreleased data (amber badge in sidebar). Public default version is managed via `PUT /api/admin/versions/default`.
 - **Clean slate import**: HangarXplor import does DELETE all user_fleet + INSERT. No merging.
 - **No UNIQUE on user_fleet**: users can own multiples of the same ship (two PTVs, etc.).
 - **RSI sync**: ship image sync is guarded by CF Images check (no-op for all ships). Paint image sync has no CF Images guard — fix before uploading paint CF Images.

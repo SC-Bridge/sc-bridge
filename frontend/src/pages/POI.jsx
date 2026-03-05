@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MapPin, Package, ShoppingCart, Swords } from 'lucide-react'
 import { useLootLocations } from '../hooks/useAPI'
+import useGameVersion from '../hooks/useGameVersion'
 import { friendlyLocation, friendlyFaction, getLocationGroup } from '../lib/lootLocations'
 import { friendlyShopName } from '../lib/shopNames'
 import PageHeader from '../components/PageHeader'
@@ -65,7 +66,8 @@ const SECTIONS = [
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function POI() {
-  const { data, loading, error, refetch } = useLootLocations()
+  const { activeCode } = useGameVersion()
+  const { data, loading, error, refetch } = useLootLocations(activeCode)
   const [search, setSearch] = useState('')
   const [activeSection, setActiveSection] = useState('containers')
   const [activeGroup, setActiveGroup] = useState('all')

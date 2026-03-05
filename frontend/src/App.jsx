@@ -7,6 +7,9 @@ import RequireAuth from './components/RequireAuth'
 import useFontPreference from './hooks/useFontPreference'
 import { authClient, useSession, signOut } from './lib/auth-client'
 import { TimezoneProvider } from './hooks/useTimezone'
+import { GameVersionProvider } from './hooks/useGameVersion'
+import { formatVersionLabel } from './lib/gameVersion'
+import useGameVersion from './hooks/useGameVersion'
 
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
@@ -82,6 +85,22 @@ function getNavItems(role, isLoggedIn) {
   return items
 }
 
+function VersionBadge() {
+  const { activeCode, isPreview, loading } = useGameVersion()
+  if (loading || !activeCode) return null
+  const label = formatVersionLabel(activeCode)
+  if (!label) return null
+  return (
+    <p className={`text-[10px] font-mono mt-1 tracking-wider ${
+      isPreview
+        ? 'text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded px-1.5 py-0.5 inline-block'
+        : 'text-gray-600'
+    }`}>
+      {isPreview ? `PREVIEW: ${label}` : label}
+    </p>
+  )
+}
+
 function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -103,6 +122,7 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
           SC BRIDGE
         </h1>
         <p className="text-xs font-mono text-gray-500 mt-1 tracking-widest">STAR CITIZEN COMPANION</p>
+        <VersionBadge />
       </div>
       <div className="flex flex-col gap-0.5 p-2 flex-1" role="list">
         {navItems.map((item) => {
@@ -268,6 +288,7 @@ export default function App() {
 
   return (
     <TimezoneProvider>
+    <GameVersionProvider>
     <Routes>
       {/* Public auth routes — no sidebar */}
       <Route path="/login" element={<Login />} />
@@ -377,6 +398,7 @@ export default function App() {
         }
       />
     </Routes>
+    </GameVersionProvider>
     </TimezoneProvider>
   )
 }

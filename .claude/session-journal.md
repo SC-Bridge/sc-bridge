@@ -8,14 +8,15 @@ All tools/scripts/extractors which are proprietary are stored in a private repo 
 
 ## Current Focus
 
-H04 complete — deployed to production. Loader script refactored for D1 size limits.
+Game version display + admin version management feature.
 
 ## Recent Changes
 
-- **H04: Deployed** — Migration 0048 applied, rarity data loaded to D1 (4,730 rows updated). All loot items now have rarity.
-- **H04: Loader refactor** — Rewrote `load_to_d1.py` as two-pass (metadata UPSERT + JSON blob UPDATE). Size-aware batching stays under D1's ~1MB SQLITE_MAX_SQL_LENGTH. 11 meta + 484 json batches.
-- **H04: Rarity fallback rules** — `build_loot_map.py` `determine_rarity()` now auto-assigns: junk→N/A, NPC-only FPS gear→Uncommon, rest→Common. Zero empty rarity.
-- **H01-H03** — Test suite (66 tests), Zod validation, LootDB decomposition (all committed).
+- **Version display**: Sidebar shows formatted version badge ("Alpha 4.6.0 LIVE") under "STAR CITIZEN COMPANION"
+- **Admin version controls**: DataVersionsPanel on Admin page — set public default version + admin preview version
+- **Version-aware loot**: `LOOT_BASE_WHERE` → `lootBaseWhere(patchCode?)` function; all loot endpoints support `?patch=`
+- **Admin preview**: `adminPreviewPatch` in user settings; amber badge when preview active; all loot hooks pass `activeCode`
+- **New files**: `frontend/src/lib/gameVersion.js` (formatVersionLabel), `frontend/src/hooks/useGameVersion.jsx` (GameVersionProvider)
 
 ## Key Decisions
 
@@ -79,6 +80,8 @@ Last applied: **0048_loot_denormalize.sql**
 | `auec_prices/`            | `price_auec`                                       | Raw `Data.p4k` via scdatatools (python3.10)  |
 | `acquisition_types/`      | `acquisition_type`                                 | Contract + CZ JSONs                          |
 | `loot_map/`               | `loot_map` table                                   | `Resolved/loot_map.json`                     |
+| `missiles/`               | Missile projectiles → `ship_missiles`              | DataCore missiles dir                        |
+| `patch_pipeline.sh`       | Full pipeline orchestrator                         | Reads `build_manifest.id`, runs all stages   |
 | `lib/datacore.py`         | Shared helpers                                     | —                                            |
 | `ship_components_core/`   | Power/cooler/shield/QD + class extraction          | DataCore ship component dirs                 |
 | `ship_weapons/`           | Ship guns                                          | DataCore weapon dirs                         |
@@ -120,7 +123,8 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 ## What's Next
 
 - **JSON blob loading** — 484 json batch files generated but not yet loaded to D1. Run pass 2 when ready.
-- **HUGE audit items** (H05-H06) — validate before implementing
+- **4.7 patch day** — Run `./patch_pipeline.sh "/mnt/e/SC Bridge/Data p4k/4.7.0-live.NNNNNNN"` (full pipeline ~90 min)
+- **HUGE audit item** (H06) — validate before implementing
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
 - **CF Images for paints** (#31) — larger pipeline work
@@ -156,4 +160,8 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-05 11:28:12
+
+
+---
+**Session compacted at:** 2026-03-05 14:50:33
 
