@@ -347,24 +347,24 @@ def main():
 
     # Optionally register the new game version
     if args.register_version:
-        # Extract patch components from version code like "4.6.0-live.11377160"
-        parts = version.split(".")
-        if len(parts) >= 3:
-            major = parts[0]
-            minor = parts[1]
-            patch_num = parts[2].split("-")[0]
-            channel = "LIVE" if "live" in version.lower() else "PTU"
-            label = f"Alpha {major}.{minor}.{patch_num} {channel}"
-        else:
-            label = version
+        # Detect channel from version code like "4.6.0-live.11377160"
+        match = __import__("re").match(r"^\d+\.\d+\.\d+-([a-z-]+)\.", version)
+        channel = match.group(1).upper() if match else "LIVE"
+        # Normalize techpreview → TECH-PREVIEW
+        if channel == "TECHPREVIEW":
+            channel = "TECH-PREVIEW"
+
+        # game_versions schema: uuid, code, channel, is_default, released_at
+        import uuid as uuid_mod
+        gv_uuid = str(uuid_mod.uuid4())
 
         meta_stmts.append(
-            f"INSERT INTO game_versions (code, label, channel, is_default) "
-            f"VALUES ('{escape(version)}', '{escape(label)}', "
-            f"'{escape(channel if 'channel' in dir() else 'LIVE')}', 0) "
+            f"INSERT INTO game_versions (uuid, code, channel, is_default) "
+            f"VALUES ('{gv_uuid}', '{escape(version)}', "
+            f"'{escape(channel)}', 0) "
             f"ON CONFLICT (code) DO NOTHING;"
         )
-        print(f"  Will register version: {version} ({label})")
+        print(f"  Will register version: {version} (channel={channel})")
 
     # Added items — full INSERT
     for item_uuid in sorted(added.keys()):
