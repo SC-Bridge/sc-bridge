@@ -265,7 +265,7 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
       `SELECT p.id, p.uuid, p.name, p.slug, p.class_name,
         p.description, p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
         p.created_at, p.updated_at
-      FROM paints p ORDER BY p.name`,
+      FROM paints p WHERE p.is_base_variant = 0 ORDER BY p.name`,
     )
     .all();
 
@@ -306,7 +306,7 @@ export async function getPaintsForVehicle(db: D1Database, vehicleSlug: string): 
         p.description, p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
         p.created_at, p.updated_at
       FROM paints p
-      WHERE p.id IN (
+      WHERE p.is_base_variant = 0 AND p.id IN (
         SELECT pv.paint_id FROM paint_vehicles pv
         JOIN vehicles v ON v.id = pv.vehicle_id
         WHERE v.slug = ?
@@ -351,7 +351,7 @@ export async function getPaintsForVehicle(db: D1Database, vehicleSlug: string): 
 }
 
 export async function getPaintCount(db: D1Database): Promise<number> {
-  const row = await db.prepare("SELECT COUNT(*) as count FROM paints").first<{ count: number }>();
+  const row = await db.prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0").first<{ count: number }>();
   return row?.count ?? 0;
 }
 
@@ -380,7 +380,7 @@ export async function getAllPaintNameClasses(
   const result = await db
     .prepare(
       `SELECT name, class_name, image_url, (image_url IS NOT NULL AND image_url != '') as has_image
-      FROM paints ORDER BY name`,
+      FROM paints WHERE is_base_variant = 0 ORDER BY name`,
     )
     .all();
   return result.results as Array<{ name: string; class_name: string; has_image: boolean; image_url: string | null }>;
@@ -396,7 +396,7 @@ export async function getPaintsByVehicleSlug(
       FROM paints p
       JOIN paint_vehicles pv ON pv.paint_id = p.id
       JOIN vehicles v ON v.id = pv.vehicle_id
-      WHERE v.slug = ?
+      WHERE p.is_base_variant = 0 AND v.slug = ?
       ORDER BY p.name`,
     )
     .bind(vehicleSlug)
@@ -410,6 +410,8 @@ export async function getVehicleSlugsWithPaints(db: D1Database): Promise<string[
       `SELECT DISTINCT v.slug
       FROM paint_vehicles pv
       JOIN vehicles v ON v.id = pv.vehicle_id
+      JOIN paints p ON p.id = pv.paint_id
+      WHERE p.is_base_variant = 0
       ORDER BY v.slug`,
     )
     .all();
