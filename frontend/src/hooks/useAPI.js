@@ -94,6 +94,14 @@ export async function triggerFullSync() {
   return postJSON('/sync/all')
 }
 
+export async function triggerFleetyardsSync() {
+  return postJSON('/admin/sync/fleetyards-paints')
+}
+
+export async function triggerHangarPaintSync(paints) {
+  return postJSON('/admin/sync/hangar-paints', { paints })
+}
+
 export async function importHangarXplor(jsonData) {
   return postJSON('/import/hangarxplor', jsonData)
 }

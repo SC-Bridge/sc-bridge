@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { RefreshCw, Palette, Globe, Play, AlertCircle, Ticket, Copy, Check, Database } from 'lucide-react'
-import { useSyncStatus, triggerPaintSync, triggerRSISync, triggerFullSync, setPreferences } from '../hooks/useAPI'
+import { RefreshCw, Palette, Globe, Play, AlertCircle, Ticket, Copy, Check, Database, Image } from 'lucide-react'
+import { useSyncStatus, triggerPaintSync, triggerRSISync, triggerFullSync, triggerFleetyardsSync, triggerHangarPaintSync, setPreferences } from '../hooks/useAPI'
 import useTimezone from '../hooks/useTimezone'
 import useGameVersion from '../hooks/useGameVersion'
-import { formatVersionLabel } from '../lib/gameVersion'
+import { formatVersionLabel, formatVersionFull } from '../lib/gameVersion'
 import { formatDate } from '../lib/dates'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -126,6 +126,183 @@ function InvitePanel() {
   )
 }
 
+function FleetyardsSyncPanel() {
+  const [running, setRunning] = useState(false)
+  const [progress, setProgress] = useState(null)
+  const [error, setError] = useState(null)
+
+  const handleSync = async () => {
+    setRunning(true)
+    setError(null)
+    setProgress({ totalUploaded: 0, skipped: 0, remaining: '...', failed: [] })
+
+    let totalUploaded = 0
+    let totalSkipped = 0
+    let allFailed = []
+    let iterations = 0
+    let consecutiveErrors = 0
+
+    while (true) {
+      iterations++
+      try {
+        const result = await triggerFleetyardsSync()
+        consecutiveErrors = 0
+        totalUploaded += result.uploaded
+        totalSkipped = result.skippedExisting
+        allFailed = [...allFailed, ...result.failed]
+
+        setProgress({
+          totalUploaded,
+          skipped: totalSkipped,
+          remaining: result.remaining,
+          failed: allFailed,
+          iteration: iterations,
+        })
+
+        if (result.remaining === 0 || result.uploaded === 0) break
+        if (iterations > 50) break
+      } catch (err) {
+        consecutiveErrors++
+        setProgress((prev) => ({ ...prev, iteration: iterations, lastError: err.message }))
+        if (consecutiveErrors >= 3) {
+          setError(`Stopped after ${consecutiveErrors} consecutive errors: ${err.message}`)
+          break
+        }
+        // Brief pause before retry
+        await new Promise((r) => setTimeout(r, 2000))
+      }
+    }
+
+    setRunning(false)
+  }
+
+  return (
+    <PanelSection title="Fleetyards Paint Sync" icon={Image}>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSync}
+            disabled={running}
+            className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50"
+          >
+            <Image className="w-3.5 h-3.5" />
+            {running ? 'Syncing...' : 'Sync Paint Images'}
+          </button>
+          <span className="text-xs text-gray-500">
+            Fetches from Fleetyards API → uploads to CF Images (loops automatically)
+          </span>
+        </div>
+
+        {progress && (
+          <div className="text-xs font-mono space-y-1 p-3 bg-sc-darker border border-sc-border rounded">
+            <div className="flex items-center gap-2">
+              {running && <RefreshCw className="w-3 h-3 text-sc-accent animate-spin" />}
+              <span className={running ? 'text-sc-accent' : 'text-sc-success'}>
+                {running ? `Batch ${progress.iteration}...` : 'Complete'}
+              </span>
+            </div>
+            <div className="text-gray-400">
+              Uploaded: <span className="text-white">{progress.totalUploaded}</span>
+              {' · '}Already had: <span className="text-white">{progress.skipped}</span>
+              {' · '}Remaining: <span className="text-white">{progress.remaining}</span>
+            </div>
+            {progress.failed.length > 0 && (
+              <div className="text-sc-danger mt-1">
+                {progress.failed.length} failed: {progress.failed.slice(0, 3).join(', ')}
+                {progress.failed.length > 3 && ` +${progress.failed.length - 3} more`}
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-xs text-sc-danger">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
+    </PanelSection>
+  )
+}
+
+// THROWAWAY — delete after use. 5 remaining PNG-only paints from RSI hangar.
+const HANGAR_PAINTS = [{"class_name":"Paint_Avenger_Luminalia_2952_Green_Red","mediaId":"w9c4om0bvajj0"},{"class_name":"Paint_Avenger_Luminalia_2952_White_Blue","mediaId":"1qqwjjxz25c3h"},{"class_name":"Paint_Nomad_Luminalia_2952_Green_Red","mediaId":"u3h9nl284k6qw"},{"class_name":"Paint_Starfighter_Red_White_Pink_Crusader","mediaId":"j10ststnouqb0"},{"class_name":"Paint_Starfighter_White_Blue_Blue_microTech","mediaId":"cw9xjggz6h0i0"}]
+
+function HangarPaintSyncPanel() {
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+
+  const BATCH_SIZE = 10
+
+  const handleSync = async () => {
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    let totalUploaded = 0
+    const allFailed = []
+    try {
+      for (let i = 0; i < HANGAR_PAINTS.length; i += BATCH_SIZE) {
+        const batch = HANGAR_PAINTS.slice(i, i + BATCH_SIZE)
+        const res = await triggerHangarPaintSync(batch)
+        totalUploaded += res.uploaded || 0
+        if (res.failed?.length) allFailed.push(...res.failed)
+        setResult({ uploaded: totalUploaded, failed: allFailed, batch: Math.floor(i / BATCH_SIZE) + 1, totalBatches: Math.ceil(HANGAR_PAINTS.length / BATCH_SIZE) })
+      }
+      setResult({ uploaded: totalUploaded, failed: allFailed, done: true })
+    } catch (err) {
+      setResult({ uploaded: totalUploaded, failed: allFailed })
+      setError(err.message)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <PanelSection title="Hangar Paint Sync" icon={Image}>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSync}
+            disabled={running}
+            className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50"
+          >
+            <Image className="w-3.5 h-3.5" />
+            {running ? `Uploading batch ${result?.batch || 1}/${Math.ceil(HANGAR_PAINTS.length / BATCH_SIZE)}...` : `Upload ${HANGAR_PAINTS.length} Paints`}
+          </button>
+          <span className="text-xs text-gray-500">
+            RSI hangar media IDs → CF Images (source quality, one-shot)
+          </span>
+        </div>
+
+        {result && (
+          <div className="text-xs font-mono space-y-1 p-3 bg-sc-darker border border-sc-border rounded">
+            <div className="text-sc-success">{result.done ? 'Complete' : `Batch ${result.batch}/${result.totalBatches}...`}</div>
+            <div className="text-gray-400">
+              Uploaded: <span className="text-white">{result.uploaded}</span>
+              {' · '}Failed: <span className={result.failed?.length ? 'text-sc-danger' : 'text-white'}>{result.failed?.length || 0}</span>
+            </div>
+            {result.failed?.length > 0 && (
+              <div className="text-sc-danger mt-1">
+                {result.failed.slice(0, 5).join(', ')}
+                {result.failed.length > 5 && ` +${result.failed.length - 5} more`}
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-xs text-sc-danger">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
+    </PanelSection>
+  )
+}
+
 function DataVersionsPanel() {
   const { versions, defaultVersion, activeCode, isPreview, setPreviewPatch } = useGameVersion()
   const [selectedDefault, setSelectedDefault] = useState('')
@@ -210,7 +387,7 @@ function DataVersionsPanel() {
             >
               {versions.map((v) => (
                 <option key={v.code} value={v.code}>
-                  {formatVersionLabel(v.code)}{v.is_default ? ' (current)' : ''}
+                  {formatVersionFull(v.code, v.channel)}{v.is_default ? ' (current)' : ''}
                 </option>
               ))}
             </select>
@@ -236,7 +413,7 @@ function DataVersionsPanel() {
               <option value="">None (use public default)</option>
               {versions.map((v) => (
                 <option key={v.code} value={v.code}>
-                  {formatVersionLabel(v.code)}
+                  {formatVersionFull(v.code, v.channel)}
                 </option>
               ))}
             </select>
@@ -259,7 +436,7 @@ function DataVersionsPanel() {
           </div>
           {isPreview && (
             <p className="text-[10px] text-amber-400">
-              Preview active — you are viewing {formatVersionLabel(activeCode)} data instead of the public default.
+              Preview active — you are viewing {formatVersionFull(activeCode)} data instead of the public default.
             </p>
           )}
         </div>
@@ -331,6 +508,11 @@ export default function Admin() {
 
       {/* Invite Links */}
       <InvitePanel />
+
+      {/* Paint Sync panels (throwaway — delete after use) */}
+      <FleetyardsSyncPanel />
+      <HangarPaintSyncPanel />
+
 
       {/* Manual Sync Triggers */}
       <PanelSection title="Sync Triggers" icon={RefreshCw}>

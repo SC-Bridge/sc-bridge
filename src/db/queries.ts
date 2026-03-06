@@ -376,14 +376,14 @@ export async function updatePaintImages(
 
 export async function getAllPaintNameClasses(
   db: D1Database,
-): Promise<Array<{ name: string; class_name: string; has_image: boolean }>> {
+): Promise<Array<{ name: string; class_name: string; has_image: boolean; image_url: string | null }>> {
   const result = await db
     .prepare(
-      `SELECT name, class_name, (image_url IS NOT NULL AND image_url != '') as has_image
+      `SELECT name, class_name, image_url, (image_url IS NOT NULL AND image_url != '') as has_image
       FROM paints ORDER BY name`,
     )
     .all();
-  return result.results as Array<{ name: string; class_name: string; has_image: boolean }>;
+  return result.results as Array<{ name: string; class_name: string; has_image: boolean; image_url: string | null }>;
 }
 
 export async function getPaintsByVehicleSlug(
@@ -668,16 +668,44 @@ export async function getGameVersions(db: D1Database): Promise<{ code: string; c
   const result = await db
     .prepare(`SELECT gv.code, gv.channel, gv.is_default, gv.released_at
       FROM game_versions gv
-      WHERE EXISTS (SELECT 1 FROM loot_map lm WHERE lm.game_version_id = gv.id)
+      WHERE gv.id <= (SELECT MAX(gv2.id) FROM game_versions gv2
+        WHERE EXISTS (SELECT 1 FROM loot_map lm WHERE lm.game_version_id = gv2.id))
       ORDER BY gv.released_at DESC`)
     .all<{ code: string; channel: string; is_default: number; released_at: string }>();
   return result.results;
 }
 
+/**
+ * Generates SQL fragments for "latest as of" version resolution.
+ *
+ * Instead of requiring every item to have a row for the target version,
+ * this resolves the most recent row per uuid at or before the target version.
+ * Items unchanged since an earlier patch are still returned.
+ *
+ * Returns { join, where, bind } where:
+ *   - join: INNER JOIN clause to append after FROM loot_map lm
+ *   - where: version part of WHERE (always 'lm.removed = 0')
+ *   - bind: whether a patchCode bind parameter is needed
+ */
+function latestAsOf(patchCode?: string): { join: string; where: string; bind: boolean } {
+  const versionCap = patchCode
+    ? `(SELECT id FROM game_versions WHERE code = ?)`
+    : `(SELECT id FROM game_versions WHERE is_default = 1)`;
+  return {
+    join: `INNER JOIN (
+      SELECT uuid, MAX(game_version_id) as latest_gv
+      FROM loot_map
+      WHERE game_version_id <= ${versionCap}
+        AND removed = 0
+      GROUP BY uuid
+    ) _lv ON lm.uuid = _lv.uuid AND lm.game_version_id = _lv.latest_gv`,
+    where: `lm.removed = 0`,
+    bind: !!patchCode,
+  };
+}
+
 export async function getLootItems(db: D1Database, patchCode?: string): Promise<LootItem[]> {
-  const versionFilter = patchCode
-    ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
-    : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
+  const lv = latestAsOf(patchCode);
   const sql = `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         lm.category, lm.manufacturer_name,
         CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
@@ -686,7 +714,8 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
         CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
         CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
       FROM loot_map lm
-      WHERE ${versionFilter}
+      ${lv.join}
+      WHERE ${lv.where}
         AND lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
         AND lm.type IS NOT NULL AND lm.type != ''
@@ -697,18 +726,17 @@ export async function getLootItems(db: D1Database, patchCode?: string): Promise<
           'Currency','MobiGlas'
         )
       ORDER BY lm.name ASC`;
-  const result = await (patchCode ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
+  const result = await (lv.bind ? db.prepare(sql).bind(patchCode) : db.prepare(sql)).all();
   return result.results as unknown as LootItem[];
 }
 
 export async function getLootByUuid(db: D1Database, uuid: string, patchCode?: string): Promise<Record<string, unknown> | null> {
-  const versionFilter = patchCode
-    ? `AND lm.game_version_id = (SELECT id FROM game_versions WHERE code = ?)`
-    : `AND lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
+  const lv = latestAsOf(patchCode);
   const sql = `SELECT lm.*
       FROM loot_map lm
-      WHERE lm.uuid = ? ${versionFilter}`;
-  const row = await (patchCode ? db.prepare(sql).bind(uuid, patchCode) : db.prepare(sql).bind(uuid)).first();
+      ${lv.join}
+      WHERE lm.uuid = ? AND ${lv.where}`;
+  const row = await (lv.bind ? db.prepare(sql).bind(patchCode, uuid) : db.prepare(sql).bind(uuid)).first();
   if (!row) return null;
 
   // Fetch linked item details based on which FK is set
@@ -1039,11 +1067,8 @@ interface LootLocationSummaryResult {
   npcs: LocationSummary[];
 }
 
-function lootBaseWhere(patchCode?: string): string {
-  const versionFilter = patchCode
-    ? `lm.game_version_id = (SELECT id FROM game_versions WHERE code = '${patchCode}')`
-    : `lm.game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)`;
-  return `${versionFilter}
+/** Shared loot exclusion filters (non-version, applied in WHERE). */
+const LOOT_EXCLUSION_FILTER = `lm.removed = 0
   AND lm.name NOT IN ('<= PLACEHOLDER =>')
   AND lm.name NOT LIKE 'EntityClassDefinition.%'
   AND lm.type IS NOT NULL AND lm.type != ''
@@ -1053,6 +1078,26 @@ function lootBaseWhere(patchCode?: string): string {
     'Char_Head_Eyes','Char_Body','Char_Head_Eyelash',
     'Currency','MobiGlas'
   )`;
+
+/**
+ * Returns { join, where } for "latest as of" queries used by location endpoints.
+ * patchCode is interpolated directly (not parameterized) because these queries
+ * already have their own bind parameters for pagination/LIKE.
+ */
+function lootBaseQuery(patchCode?: string): { join: string; where: string } {
+  const versionCap = patchCode
+    ? `(SELECT id FROM game_versions WHERE code = '${patchCode}')`
+    : `(SELECT id FROM game_versions WHERE is_default = 1)`;
+  return {
+    join: `INNER JOIN (
+      SELECT uuid, MAX(game_version_id) as latest_gv
+      FROM loot_map
+      WHERE game_version_id <= ${versionCap}
+        AND removed = 0
+      GROUP BY uuid
+    ) _lv ON lm.uuid = _lv.uuid AND lm.game_version_id = _lv.latest_gv`,
+    where: LOOT_EXCLUSION_FILTER,
+  };
 }
 
 
@@ -1068,9 +1113,11 @@ function parseJsonArray(val: string | null): unknown[] {
  */
 export async function getLootLocationSummary(db: D1Database, patchCode?: string): Promise<LootLocationSummaryResult> {
   const PAGE_SIZE = 500;
+  const lq = lootBaseQuery(patchCode);
   const sql = `SELECT lm.uuid, lm.rarity, lm.containers_json, lm.shops_json, lm.npcs_json
     FROM loot_map lm
-    WHERE ${lootBaseWhere(patchCode)}
+    ${lq.join}
+    WHERE ${lq.where}
       AND (
         (lm.containers_json IS NOT NULL AND lm.containers_json NOT IN ('null','[]',''))
         OR (lm.shops_json IS NOT NULL AND lm.shops_json NOT IN ('null','[]',''))
@@ -1174,12 +1221,14 @@ export async function getLootLocationDetail(
   // LIKE pre-filter: dramatically reduces rows. False positives are filtered in JS.
   const likePattern = `%${slug.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`;
 
+  const lq = lootBaseQuery(patchCode);
   const sql = `SELECT
       lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
       lm.${jsonCol} as target_json,
       lm.category
     FROM loot_map lm
-    WHERE ${lootBaseWhere(patchCode)}
+    ${lq.join}
+    WHERE ${lq.where}
       AND lm.${jsonCol} IS NOT NULL
       AND lm.${jsonCol} NOT IN ('null','[]','')
       AND lm.${jsonCol} LIKE ? ESCAPE '\\'

@@ -8,15 +8,16 @@ All tools/scripts/extractors which are proprietary are stored in a private repo 
 
 ## Current Focus
 
-Game version display + admin version management feature.
+Delta patch versioning — only insert changed items per game version instead of duplicating all ~5,300 rows.
 
 ## Recent Changes
 
-- **Version display**: Sidebar shows formatted version badge ("Alpha 4.6.0 LIVE") under "STAR CITIZEN COMPANION"
-- **Admin version controls**: DataVersionsPanel on Admin page — set public default version + admin preview version
-- **Version-aware loot**: `LOOT_BASE_WHERE` → `lootBaseWhere(patchCode?)` function; all loot endpoints support `?patch=`
-- **Admin preview**: `adminPreviewPatch` in user settings; amber badge when preview active; all loot hooks pass `activeCode`
-- **New files**: `frontend/src/lib/gameVersion.js` (formatVersionLabel), `frontend/src/hooks/useGameVersion.jsx` (GameVersionProvider)
+- **Delta versioning design**: `docs/design/delta-patch-versioning.md` — full 5-phase design
+- **DataCore diff tool**: `scbridge/tools/scripts/datacore_diff.py` — parallel file hashing + semantic diff across 55K files
+- **Version delta tool**: `scbridge/tools/scripts/version_delta.py` — compares two loot_map.json files, produces delta with only changed items
+- **Delta D1 loader**: `scbridge/tools/scripts/load_delta_to_d1.py` — reads delta_loot_map.json, generates batched SQL for only changed/added/removed items
+- **Migration 0049**: `removed` column + `idx_loot_map_uuid_gv` index for "latest as of" queries
+- **Query rewrite**: `latestAsOf()` helper in queries.ts — all 4 loot query functions use MAX(game_version_id) GROUP BY uuid pattern instead of exact version match
 
 ## Key Decisions
 
@@ -39,7 +40,7 @@ Game version display + admin version management feature.
 
 ## Applied Migrations (D1)
 
-Last applied: **0048_loot_denormalize.sql**
+Last applied: **0048_loot_denormalize.sql** (0049 written but not yet applied)
 
 | #    | Migration               | What                                                              |
 | ---- | ----------------------- | ----------------------------------------------------------------- |
@@ -101,6 +102,9 @@ Last applied: **0048_loot_denormalize.sql**
 | `ship_ports/`             | Ship ports + default loadout → vehicle_ports       | DataCore spaceships + groundvehicles JSONs   |
 | `ship_performance/`       | Flight stats (boost, angular vel, fuel, thrusters) | DataCore controller/fueltank/spaceship JSONs |
 | `ship_thrusters/`         | Thruster stats_json UPDATE (UPDATEs existing rows) | DataCore ships/thrusters dir                 |
+| `datacore_diff.py`        | File-level diff between two extracted versions     | Parallel hashing + hash cache                |
+| `version_delta.py`        | Loot map item-level delta between versions         | Two resolved loot_map.json files             |
+| `load_delta_to_d1.py`     | Delta D1 loader (only changed items)               | delta_loot_map.json → batched SQL            |
 
 **scdatatools ZIP64 bug:** Fixed in `/home/gavin/.local/lib/python3.10/site-packages/scdatatools/p4k.py:308-313`. Use `python3.10` (NOT python3.14).
 
@@ -122,9 +126,10 @@ WHERE EXISTS (SELECT 1 FROM x WHERE uuid = loot_map.uuid)
 
 ## What's Next
 
-- **JSON blob loading** — 484 json batch files generated but not yet loaded to D1. Run pass 2 when ready.
+- **Apply migration 0049** — `npx wrangler d1 migrations apply sc-companion --remote` then deploy
+- **Test delta loader on real data** — load 11377160 delta (9 items) into D1 to validate "latest as of" queries work end-to-end
+- **Integrate delta into patch_pipeline.sh** — add version_delta.py + load_delta_to_d1.py as pipeline stages
 - **4.7 patch day** — Run `./patch_pipeline.sh "/mnt/e/SC Bridge/Data p4k/4.7.0-live.NNNNNNN"` (full pipeline ~90 min)
-- **HUGE audit item** (H06) — validate before implementing
 - **Paint browser** (#10) — backend done, frontend only
 - **Org Settings** (#30) — backend + frontend
 - **CF Images for paints** (#31) — larger pipeline work
@@ -164,4 +169,48 @@ extract.py ON CONFLICT now updates `port_type` so re-runs will fix existing rows
 
 ---
 **Session compacted at:** 2026-03-05 14:50:33
+
+
+---
+**Session compacted at:** 2026-03-05 21:50:58
+
+
+---
+**Session compacted at:** 2026-03-05 21:51:24
+
+
+---
+**Session compacted at:** 2026-03-05 21:54:46
+
+
+---
+**Session compacted at:** 2026-03-06 09:39:02
+
+
+---
+**Session compacted at:** 2026-03-06 14:12:53
+
+
+---
+**Session compacted at:** 2026-03-06 14:35:15
+
+
+---
+**Session compacted at:** 2026-03-06 15:23:59
+
+
+---
+**Session compacted at:** 2026-03-06 16:21:02
+
+
+---
+**Session compacted at:** 2026-03-06 16:27:54
+
+
+---
+**Session compacted at:** 2026-03-06 17:12:18
+
+
+---
+**Session compacted at:** 2026-03-06 17:26:45
 
