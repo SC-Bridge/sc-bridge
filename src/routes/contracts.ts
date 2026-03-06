@@ -12,9 +12,10 @@ export function contractRoutes<E extends HonoEnv>() {
     const db = c.env.DB
     const giver = c.req.query("giver")
 
-    let query = `SELECT c.*, v.slug AS reward_vehicle_slug
+    let query = `SELECT c.*, v.slug AS reward_vehicle_slug, fw.uuid AS reward_item_uuid
       FROM contracts c
       LEFT JOIN vehicles v ON v.name = c.reward_text
+      LEFT JOIN fps_weapons fw ON fw.name = c.reward_text
       WHERE c.is_active = 1`
     const params: string[] = []
 

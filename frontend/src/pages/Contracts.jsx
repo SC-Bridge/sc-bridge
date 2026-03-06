@@ -86,7 +86,14 @@ function ContractCard({ contract }) {
           {contract.reward_vehicle_slug ? (
             <Link
               to={`/ships/${contract.reward_vehicle_slug}`}
-              className={`text-xs font-mono text-sc-accent2 hover:text-sc-accent transition-colors underline underline-offset-2 decoration-sc-accent2/30 hover:decoration-sc-accent/60`}
+              className="text-xs font-mono text-sc-accent2 hover:text-sc-accent transition-colors underline underline-offset-2 decoration-sc-accent2/30 hover:decoration-sc-accent/60"
+            >
+              {contract.reward_text}
+            </Link>
+          ) : contract.reward_item_uuid ? (
+            <Link
+              to={`/loot/${contract.reward_item_uuid}`}
+              className="text-xs font-mono text-sc-accent2 hover:text-sc-accent transition-colors underline underline-offset-2 decoration-sc-accent2/30 hover:decoration-sc-accent/60"
             >
               {contract.reward_text}
             </Link>
