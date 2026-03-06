@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { FileText, ChevronDown, ChevronUp, Package } from 'lucide-react'
 import { useContracts } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -36,10 +36,19 @@ function cleanDesc(text) {
   return text.replace(/<[^>]+>/g, '').trim()
 }
 
+function parseRequirements(contract) {
+  if (!contract.requirements_json) return null
+  try {
+    const reqs = JSON.parse(contract.requirements_json)
+    return reqs.length > 0 ? reqs : null
+  } catch { return null }
+}
+
 function ContractCard({ contract }) {
   const [expanded, setExpanded] = useState(false)
   const desc = cleanDesc(contract.description)
   const isLong = desc.length > 200
+  const requirements = parseRequirements(contract)
 
   return (
     <div className="panel p-4 space-y-3">
@@ -76,6 +85,31 @@ function ContractCard({ contract }) {
           <span className={`text-xs font-mono ${contract.reward_currency === 'aUEC' ? 'text-sc-melt' : contract.reward_currency === 'MG Scrip' ? 'text-blue-300' : 'text-sc-accent2'}`}>
             {contract.reward_text}
           </span>
+        </div>
+      )}
+
+      {/* Requirements */}
+      {requirements && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Package className="w-3 h-3 text-gray-500" />
+            <span className="text-[10px] font-display uppercase tracking-wider text-gray-500">Requirements</span>
+          </div>
+          <ul className="space-y-0.5 pl-1">
+            {requirements.map((req, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs font-mono text-gray-300">
+                <span className="text-sc-accent2 min-w-[2ch] text-right">{req.quantity}x</span>
+                <span>{req.item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {contract.requirements_json === 'random' && (
+        <div className="flex items-center gap-1.5">
+          <Package className="w-3 h-3 text-gray-500" />
+          <span className="text-[10px] font-display uppercase tracking-wider text-gray-500">Requirements</span>
+          <span className="text-xs font-mono text-gray-400 italic">Randomized each time</span>
         </div>
       )}
 
@@ -124,7 +158,8 @@ export default function Contracts() {
         (c) =>
           c.title.toLowerCase().includes(q) ||
           c.category.toLowerCase().includes(q) ||
-          (c.description && cleanDesc(c.description).toLowerCase().includes(q))
+          (c.description && cleanDesc(c.description).toLowerCase().includes(q)) ||
+          (c.requirements_json && c.requirements_json.toLowerCase().includes(q))
       )
     }
 
