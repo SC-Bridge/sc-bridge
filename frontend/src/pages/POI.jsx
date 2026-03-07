@@ -64,13 +64,33 @@ const SECTIONS = [
   { key: 'npcs',       label: 'NPC Factions',   icon: Swords },
 ]
 
+function PaginatedGrid({ entries, linkPrefix }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {entries.map(entry => (
+        <LocationCard
+          key={entry.rawKey}
+          rawKey={entry.rawKey}
+          friendlyName={entry.friendlyName}
+          itemCount={entry.itemCount}
+          rarities={entry.rarities}
+          linkPrefix={linkPrefix}
+        />
+      ))}
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
+const PAGE_SIZE = 30
+
 export default function POI() {
   const { activeCode } = useGameVersion()
   const { data, loading, error, refetch } = useLootLocations(activeCode)
   const [search, setSearch] = useState('')
   const [activeSection, setActiveSection] = useState('containers')
   const [activeGroup, setActiveGroup] = useState('all')
+  const [page, setPage] = useState(1)
 
   // Containers: grouped by location group
   const containerEntries = useMemo(() => {
@@ -163,10 +183,14 @@ export default function POI() {
     })
   }, [filteredContainers, activeGroup])
 
-  const totalLocations =
-    (activeSection === 'containers' ? containerEntries.length : 0) +
-    (activeSection === 'shops' ? shopEntries.length : 0) +
-    (activeSection === 'npcs' ? npcEntries.length : 0)
+  // Reset page when filters change
+  React.useEffect(() => { setPage(1) }, [activeSection, activeGroup, search])
+
+  const currentList = activeSection === 'containers' ? filteredContainers
+    : activeSection === 'shops' ? filteredShops
+    : filteredNpcs
+  const totalPages = Math.ceil(currentList.length / PAGE_SIZE)
+  const pagedList = currentList.slice(0, page * PAGE_SIZE)
 
   if (loading) return <LoadingState message="Loading locations..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -251,7 +275,7 @@ export default function POI() {
               {groupedContainers.map(([groupKey, entries]) => (
                 <div key={groupKey}>
                   <h3 className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-3 pl-1">
-                    {LOCATION_GROUP_CONFIG[groupKey]?.label ?? groupKey}
+                    {LOCATION_GROUP_CONFIG[groupKey]?.label ?? groupKey} ({entries.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {entries.map(entry => (
@@ -269,51 +293,30 @@ export default function POI() {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredContainers.map(entry => (
-                <LocationCard
-                  key={entry.rawKey}
-                  rawKey={entry.rawKey}
-                  friendlyName={entry.friendlyName}
-                  itemCount={entry.itemCount}
-                  rarities={entry.rarities}
-                  linkPrefix="/poi/"
-                />
-              ))}
-            </div>
+            <PaginatedGrid entries={pagedList} linkPrefix="/poi/" />
           )}
         </>
       )}
 
       {/* ── Shops section ── */}
       {activeSection === 'shops' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredShops.map(entry => (
-            <LocationCard
-              key={entry.rawKey}
-              rawKey={entry.rawKey}
-              friendlyName={entry.friendlyName}
-              itemCount={entry.itemCount}
-              rarities={entry.rarities}
-              linkPrefix="/poi/shop/"
-            />
-          ))}
-        </div>
+        <PaginatedGrid entries={pagedList} linkPrefix="/poi/shop/" />
       )}
 
       {/* ── NPCs section ── */}
       {activeSection === 'npcs' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredNpcs.map(entry => (
-            <LocationCard
-              key={entry.rawKey}
-              rawKey={entry.rawKey}
-              friendlyName={entry.friendlyName}
-              itemCount={entry.itemCount}
-              rarities={entry.rarities}
-              linkPrefix="/poi/npc/"
-            />
-          ))}
+        <PaginatedGrid entries={pagedList} linkPrefix="/poi/npc/" />
+      )}
+
+      {/* Load more */}
+      {(activeSection !== 'containers' || activeGroup !== 'all' || search.trim()) && page < totalPages && (
+        <div className="text-center pt-2">
+          <button
+            onClick={() => setPage(p => p + 1)}
+            className="btn-secondary text-xs px-6"
+          >
+            Show more ({currentList.length - pagedList.length} remaining)
+          </button>
         </div>
       )}
     </div>

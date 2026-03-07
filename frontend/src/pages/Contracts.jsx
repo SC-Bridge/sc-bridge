@@ -190,6 +190,8 @@ export default function Contracts() {
   )
   const [search, setSearch] = useState('')
   const [highlightId, setHighlightId] = useState(highlightParam ? Number(highlightParam) : null)
+  const [showAll, setShowAll] = useState(false)
+  const INITIAL_COUNT = 30
 
   // Clear highlight after a few seconds
   useEffect(() => {
@@ -220,6 +222,12 @@ export default function Contracts() {
 
     return items
   }, [contracts, giverTab, search])
+
+  // Reset pagination when filters change
+  useEffect(() => { setShowAll(false) }, [giverTab, search])
+
+  const visible = showAll ? filtered : filtered.slice(0, INITIAL_COUNT)
+  const hasMore = !showAll && filtered.length > INITIAL_COUNT
 
   if (loading) return <LoadingState message="Loading contracts..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -261,10 +269,18 @@ export default function Contracts() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {filtered.map((contract) => (
+        {visible.map((contract) => (
           <ContractCard key={contract.id} contract={contract} highlighted={contract.id === highlightId} />
         ))}
       </div>
+
+      {hasMore && (
+        <div className="text-center pt-2">
+          <button onClick={() => setShowAll(true)} className="btn-secondary text-xs px-6">
+            Show all ({filtered.length - INITIAL_COUNT} more)
+          </button>
+        </div>
+      )}
 
       {filtered.length === 0 && !loading && (
         <div className="text-center py-12 text-gray-500 font-mono text-sm">

@@ -43,7 +43,7 @@ export default function Dashboard() {
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-sc-accent/10 border border-sc-accent/30 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-sc-accent animate-pulse shrink-0" />
-            <span className="text-xs font-mono text-sc-accent tracking-wider">Coming Soon — Registration opening shortly</span>
+            <span className="text-xs font-mono text-sc-accent tracking-wider">Registration is by invitation only</span>
           </div>
         </div>
 
@@ -62,23 +62,51 @@ export default function Dashboard() {
   const ltiPercent = totalVehicles > 0 ? Math.round(((overview.lti_count || 0) / totalVehicles) * 100) : 0
   const readyPercent = totalVehicles > 0 ? Math.round(((overview.flight_ready || 0) / totalVehicles) * 100) : 0
 
-  // Empty fleet — show onboarding
+  // Empty fleet — show onboarding + useful reference info
   if (totalVehicles === 0) {
     return (
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader
           title="FLEET OVERVIEW"
-          subtitle={`${status?.ships || 0} ships in database`}
+          subtitle={`${status?.ships || 0} ships in reference database`}
         />
         <div className="panel p-12 text-center">
           <Rocket className="w-16 h-16 mx-auto mb-4 text-sc-accent/60" />
           <h2 className="font-display font-bold text-2xl text-white mb-2">Welcome, Commander</h2>
           <p className="text-gray-400 text-base mb-6 max-w-md mx-auto">
-            Your fleet is empty. Import your hangar from HangarXplor to get started with fleet tracking, insurance monitoring, and gap analysis.
+            Import your hangar from HangarXplor to unlock fleet tracking, insurance monitoring, and AI-powered gap analysis.
           </p>
           <Link to="/import" className="btn-primary inline-flex items-center gap-2">
             <Rocket className="w-4 h-4" /> Import Your Fleet
           </Link>
+        </div>
+
+        {/* Getting started checklist */}
+        <div className="panel p-6">
+          <h3 className="font-display text-sm font-semibold text-white mb-4 uppercase tracking-wider">Getting Started</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Link to="/import" className="flex items-start gap-3 p-4 rounded bg-sc-darker/50 border border-sc-border hover:border-sc-accent/30 transition-colors group">
+              <span className="w-7 h-7 rounded-full bg-sc-accent/10 text-sc-accent flex items-center justify-center shrink-0 text-xs font-bold group-hover:bg-sc-accent/20 transition-colors">1</span>
+              <div>
+                <p className="text-sm font-medium text-gray-200">Import Your Hangar</p>
+                <p className="text-xs text-gray-500 mt-0.5">Use the HangarXplor extension to export your RSI hangar, then upload the JSON here.</p>
+              </div>
+            </Link>
+            <Link to="/ships" className="flex items-start gap-3 p-4 rounded bg-sc-darker/50 border border-sc-border hover:border-sc-accent/30 transition-colors group">
+              <span className="w-7 h-7 rounded-full bg-sc-accent/10 text-sc-accent flex items-center justify-center shrink-0 text-xs font-bold group-hover:bg-sc-accent/20 transition-colors">2</span>
+              <div>
+                <p className="text-sm font-medium text-gray-200">Browse Ship Database</p>
+                <p className="text-xs text-gray-500 mt-0.5">{status?.ships || 0} ships with specs, components, loadouts, and paint variants.</p>
+              </div>
+            </Link>
+            <Link to="/loot" className="flex items-start gap-3 p-4 rounded bg-sc-darker/50 border border-sc-border hover:border-sc-accent/30 transition-colors group">
+              <span className="w-7 h-7 rounded-full bg-sc-accent/10 text-sc-accent flex items-center justify-center shrink-0 text-xs font-bold group-hover:bg-sc-accent/20 transition-colors">3</span>
+              <div>
+                <p className="text-sm font-medium text-gray-200">Find Loot & Gear</p>
+                <p className="text-xs text-gray-500 mt-0.5">Search FPS weapons, armor, and gear with loot locations and shop availability.</p>
+              </div>
+            </Link>
+          </div>
         </div>
       </div>
     )
@@ -88,7 +116,7 @@ export default function Dashboard() {
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="FLEET OVERVIEW"
-        subtitle={`${status?.ships || 0} ships in database · ${status?.vehicles || 0} in fleet`}
+        subtitle={`${status?.vehicles || 0} ships in fleet · ${status?.ships || 0} in reference database`}
       />
 
       <FleetOverviewGrid overview={overview} totalVehicles={totalVehicles} ltiPercent={ltiPercent} readyPercent={readyPercent} />

@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -262,6 +262,56 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   )
 }
 
+function CollapsedSidebar({ onExpand }) {
+  const location = useLocation()
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+  const userRole = session?.user?.role || 'user'
+  const navItems = getNavItems(userRole, isLoggedIn)
+
+  return (
+    <>
+      <div className="p-3 border-b border-sc-border flex justify-center">
+        <img src="/logo.png" alt="SC Bridge" className="w-6 h-6" />
+      </div>
+      <div className="flex flex-col gap-1 p-1.5 flex-1" role="list">
+        {navItems.map((item) => {
+          const { to, icon: Icon, label, submenu } = item
+          const isActive = submenu
+            ? location.pathname.startsWith(to)
+            : to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
+          return (
+            <NavLink
+              key={to}
+              to={submenu ? submenu[0].to : to}
+              end={to === '/'}
+              role="listitem"
+              title={label}
+              className={`flex items-center justify-center p-2 rounded transition-all duration-150 ${
+                isActive
+                  ? 'bg-sc-accent/10 text-sc-accent border border-sc-accent/20'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+            </NavLink>
+          )
+        })}
+      </div>
+      <div className="p-1.5 border-t border-sc-border flex justify-center">
+        <button
+          onClick={onExpand}
+          className="p-2 rounded text-gray-500 hover:text-white hover:bg-white/5 transition-colors"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </>
+  )
+}
+
 function ImpersonationBanner() {
   const { data: sessionData } = useSession()
   const isImpersonating = !!sessionData?.session?.impersonatedBy
@@ -289,6 +339,17 @@ export default function App() {
   useFontPreference()
   const [expandedMenu, setExpandedMenu] = useState('/analysis')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === '1' } catch { return false }
+  })
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('sidebar-collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
 
   return (
     <TimezoneProvider>
@@ -315,12 +376,26 @@ export default function App() {
             </a>
 
             {/* Desktop sidebar */}
-            <nav className="hidden md:flex w-56 bg-sc-darker/80 border-r border-sc-border flex-col shrink-0 sticky top-0 h-screen" aria-label="Main">
-              <SidebarContent
-                expandedMenu={expandedMenu}
-                setExpandedMenu={setExpandedMenu}
-                onNavClick={() => {}}
-              />
+            <nav className={`hidden md:flex ${sidebarCollapsed ? 'w-14' : 'w-56'} bg-sc-darker/80 border-r border-sc-border flex-col shrink-0 sticky top-0 h-screen transition-all duration-200`} aria-label="Main">
+              {sidebarCollapsed ? (
+                <CollapsedSidebar onExpand={toggleSidebar} />
+              ) : (
+                <>
+                  <SidebarContent
+                    expandedMenu={expandedMenu}
+                    setExpandedMenu={setExpandedMenu}
+                    onNavClick={() => {}}
+                  />
+                  <button
+                    onClick={toggleSidebar}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-sc-panel border border-sc-border text-gray-500 hover:text-white hover:border-sc-accent transition-colors flex items-center justify-center z-10"
+                    title="Collapse sidebar"
+                    aria-label="Collapse sidebar"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
             </nav>
 
             {/* Mobile hamburger */}

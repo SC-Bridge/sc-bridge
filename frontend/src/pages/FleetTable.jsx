@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useFleet, useUserOrgs, updateShipVisibility } from '../hooks/useAPI'
-import { ArrowUpDown, SearchX } from 'lucide-react'
+import { ArrowUpDown, SearchX, Rocket, Upload } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -122,7 +122,7 @@ export default function FleetTable() {
     <div className="space-y-4 animate-fade-in-up">
       <PageHeader
         title="MY FLEET"
-        actions={<span className="text-xs font-mono text-gray-500">{sorted.length} vehicles</span>}
+        actions={<span className="text-xs font-mono text-gray-500">{sorted.length} ships</span>}
       />
 
       <div className="flex gap-3 items-center">
@@ -176,13 +176,24 @@ export default function FleetTable() {
                 {sorted.length === 0 ? (
                   <tr>
                     <td colSpan={inOrgs ? 7 : 5} className="py-12">
-                      <div className="flex flex-col items-center gap-3 text-center">
-                        <SearchX className="w-10 h-10 text-gray-500" />
-                        <p className="text-gray-500 text-sm">No ships match your filters</p>
-                        <button onClick={clearFilters} className="btn-secondary text-xs">
-                          Clear Filters
-                        </button>
-                      </div>
+                      {fleet && fleet.length === 0 ? (
+                        <div className="flex flex-col items-center gap-3 text-center">
+                          <Rocket className="w-10 h-10 text-gray-500" />
+                          <p className="text-gray-400 text-sm">Your fleet is empty</p>
+                          <p className="text-gray-500 text-xs max-w-sm">Import your hangar from HangarXplor to start tracking your ships, insurance, and pledges.</p>
+                          <a href="/import" className="btn-primary text-xs inline-flex items-center gap-1.5">
+                            <Upload className="w-3.5 h-3.5" /> Import Fleet
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 text-center">
+                          <SearchX className="w-10 h-10 text-gray-500" />
+                          <p className="text-gray-500 text-sm">No ships match your filters</p>
+                          <button onClick={clearFilters} className="btn-secondary text-xs">
+                            Clear Filters
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ) : (

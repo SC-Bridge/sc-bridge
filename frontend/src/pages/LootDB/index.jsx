@@ -64,6 +64,7 @@ export default function LootDB() {
   const [rarities, setRarities] = useState(new Set())
   const [sources, setSources] = useState(new Set())
   const [viewMode, setViewMode] = useState('grid')
+  const [sortBy, setSortBy] = useState('name')
   const [detailUuid, setDetailUuid] = useState(routeUuid || null)
 
   // Auto-open detail panel when arriving via /loot/:uuid route
@@ -198,8 +199,18 @@ export default function LootDB() {
       )
     }
 
+    // Sort
+    const rarityRank = { Legendary: 0, Epic: 1, Rare: 2, Uncommon: 3, Common: 4, 'N/A': 5 }
+    if (sortBy === 'rarity') {
+      items.sort((a, b) => (rarityRank[a.rarity] ?? 5) - (rarityRank[b.rarity] ?? 5) || a.name.localeCompare(b.name))
+    } else if (sortBy === 'category') {
+      items.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name))
+    } else {
+      items.sort((a, b) => a.name.localeCompare(b.name))
+    }
+
     return items
-  }, [allItems, category, brand, setName, rarities, sources, search])
+  }, [allItems, category, brand, setName, rarities, sources, search, sortBy])
 
   const pageSize = viewMode === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST
   const totalPages = Math.ceil(filtered.length / pageSize)
@@ -494,6 +505,15 @@ export default function LootDB() {
                 placeholder="Search items..."
                 className="flex-1 min-w-48"
               />
+              <select
+                value={sortBy}
+                onChange={(e) => { setSortBy(e.target.value); setPage(1) }}
+                className="text-xs bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-gray-300 focus:outline-none focus:border-sc-accent font-display tracking-wide"
+              >
+                <option value="name">Name A-Z</option>
+                <option value="rarity">Rarity</option>
+                <option value="category">Category</option>
+              </select>
               <div className="flex items-center gap-1 border border-sc-border rounded p-0.5">
                 <button
                   onClick={() => setViewMode('grid')}
@@ -572,7 +592,7 @@ export default function LootDB() {
 
             {/* Grid or list */}
             {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3">
                 {paged.map((item) => (
                   <ItemCard
                     key={item.id}

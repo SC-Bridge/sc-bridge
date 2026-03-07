@@ -680,7 +680,30 @@ export default function Account() {
         }
       />
 
+      {/* Section jump links */}
+      <nav className="sticky top-0 z-10 bg-sc-dark/90 backdrop-blur-sm -mx-6 px-6 py-2 border-b border-sc-border flex flex-wrap gap-1.5">
+        {[
+          { id: 'profile', label: 'Profile' },
+          { id: 'rsi', label: 'RSI Profile' },
+          { id: 'linked', label: 'Linked Accounts' },
+          { id: 'password', label: 'Password' },
+          { id: '2fa', label: '2FA' },
+          { id: 'passkeys', label: 'Passkeys' },
+          { id: 'sessions', label: 'Sessions' },
+          { id: 'data', label: 'Data & Privacy' },
+        ].map(({ id, label }) => (
+          <a
+            key={id}
+            href={`#section-${id}`}
+            className="px-2.5 py-1 rounded text-[10px] font-display uppercase tracking-wide text-gray-400 hover:text-sc-accent hover:bg-sc-accent/10 border border-sc-border hover:border-sc-accent/30 transition-colors"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       {/* Profile */}
+      <div id="section-profile" className="scroll-mt-16">
       <PanelSection title="Profile" icon={User}>
         <form onSubmit={handleUpdateProfile} className="p-5 space-y-4 max-w-md">
           {error && (
@@ -901,8 +924,10 @@ export default function Account() {
           </button>
         </form>
       </PanelSection>
+      </div>
 
       {/* RSI Citizen Profile */}
+      <div id="section-rsi" className="scroll-mt-16">
       <PanelSection title="Star Citizen Profile" icon={Star}>
         <div className="p-5 space-y-4 max-w-md">
           {rsiError && (
@@ -1004,8 +1029,10 @@ export default function Account() {
           )}
         </div>
       </PanelSection>
+      </div>
 
       {/* Linked Accounts */}
+      <div id="section-linked" className="scroll-mt-16">
       <PanelSection title="Linked Accounts" icon={Link2}>
         <div className="p-5 space-y-4 max-w-md">
           {linkError && (
@@ -1117,8 +1144,10 @@ export default function Account() {
           })()}
         </div>
       </PanelSection>
+      </div>
 
       {/* Password — Set or Change depending on account type */}
+      <div id="section-password" className="scroll-mt-16">
       <PanelSection title={hasPassword ? "Change Password" : "Set Password"} icon={Lock}>
         {hasPassword === false ? (
           /* OAuth-only user — no password yet */
@@ -1254,8 +1283,10 @@ export default function Account() {
           </form>
         )}
       </PanelSection>
+      </div>
 
       {/* Two-Factor Authentication */}
+      <div id="section-2fa" className="scroll-mt-16">
       <PanelSection title="Two-Factor Authentication" icon={Key}>
         <div className="p-5 max-w-md">
           {twoFAError && (
@@ -1433,8 +1464,10 @@ export default function Account() {
           )}
         </div>
       </PanelSection>
+      </div>
 
       {/* Passkeys */}
+      <div id="section-passkeys" className="scroll-mt-16">
       <PanelSection title="Passkeys" icon={Fingerprint}>
         <div className="p-5">
           {passkeyError && (
@@ -1565,8 +1598,10 @@ export default function Account() {
           )}
         </div>
       </PanelSection>
+      </div>
 
       {/* Active Sessions */}
+      <div id="section-sessions" className="scroll-mt-16">
       <PanelSection title="Active Sessions" icon={Monitor}>
         <div className="p-5">
           {sessionsLoading ? (
@@ -1620,8 +1655,10 @@ export default function Account() {
           )}
         </div>
       </PanelSection>
+      </div>
 
       {/* Data & Privacy */}
+      <div id="section-data" className="scroll-mt-16">
       <PanelSection title="Data & Privacy" icon={Download}>
         <div className="p-5 space-y-6">
           {dataError && (
@@ -1714,6 +1751,7 @@ export default function Account() {
           </div>
         </div>
       </PanelSection>
+      </div>
     </div>
   )
 }
