@@ -1,6 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -38,6 +38,7 @@ const Contracts = lazy(() => import('./pages/Contracts'))
 const LootDB = lazy(() => import('./pages/LootDB'))
 const POI = lazy(() => import('./pages/POI'))
 const POIDetail = lazy(() => import('./pages/POIDetail'))
+const PaintBrowser = lazy(() => import('./pages/PaintBrowser'))
 const ArmorSetDetail = lazy(() => import('./pages/ArmorSetDetail'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
@@ -62,6 +63,7 @@ const authNavItems = [
     ],
   },
   { to: '/ships', icon: Database, label: 'Ship DB' },
+  { to: '/paints', icon: Palette, label: 'Paints' },
   { to: '/import', icon: Upload, label: 'Import' },
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
@@ -373,6 +375,7 @@ export default function App() {
                       {/* Protected routes */}
                       <Route path="/ships" element={<RequireAuth><ShipDB /></RequireAuth>} />
                       <Route path="/ships/:slug" element={<RequireAuth><ShipDetail /></RequireAuth>} />
+                      <Route path="/paints" element={<RequireAuth><PaintBrowser /></RequireAuth>} />
                       <Route path="/loot" element={<RequireAuth><LootDB /></RequireAuth>} />
                       <Route path="/loot/sets/:setSlug" element={<RequireAuth><ArmorSetDetail /></RequireAuth>} />
                       <Route path="/loot/:uuid" element={<RequireAuth><LootDB /></RequireAuth>} />
