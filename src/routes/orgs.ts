@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HonoEnv, UserFleetEntry, Vehicle } from "../lib/types";
 import { validate } from "../lib/validation";
 import { analyzeFleet } from "./analysis";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 /**
  * /api/orgs/* — Organisation endpoints
@@ -280,6 +281,7 @@ export function orgRoutes() {
         `SELECT v.id, v.slug, v.name, v.focus, v.size_label, v.classification,
           ps.key as production_status
         FROM vehicles v
+        ${VEHICLE_VERSION_JOIN}
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
         ORDER BY v.name`,
       )

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 /**
  * /api/debug/* — Debug endpoints
@@ -12,7 +13,7 @@ export function debugRoutes() {
     const db = c.env.DB;
 
     const vehicleCount = await db
-      .prepare("SELECT COUNT(*) as count FROM vehicles")
+      .prepare(`SELECT COUNT(*) as count FROM vehicles v ${VEHICLE_VERSION_JOIN}`)
       .first<{ count: number }>();
 
     // Show fleet counts for all users (admin view)

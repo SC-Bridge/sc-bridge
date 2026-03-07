@@ -5,6 +5,7 @@ import { loadInsuranceTypes } from "../db/queries";
 import { logEvent } from "../lib/logger";
 import { logUserChange } from "../lib/change-history";
 import { validate, HangarXplorImportSchema } from "../lib/validation";
+import { VEHICLE_VERSION_CAP } from "../lib/constants";
 
 /**
  * /api/import/* — HangarXplor import
@@ -106,7 +107,7 @@ export function importRoutes() {
           .prepare(
             `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
               pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at)
-            VALUES (?, (SELECT id FROM vehicles WHERE slug = ? AND game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)), ?, ?, ?,
+            VALUES (?, (SELECT id FROM vehicles WHERE slug = ? AND ${VEHICLE_VERSION_CAP} ORDER BY game_version_id DESC LIMIT 1), ?, ?, ?,
               ?, ?, ?, ?, ?, datetime('now'))`,
           )
           .bind(
@@ -186,7 +187,13 @@ interface VehicleMap {
 
 async function preloadVehicleMap(db: D1Database): Promise<VehicleMap> {
   const result = await db
-    .prepare("SELECT id, slug, name FROM vehicles WHERE game_version_id = (SELECT id FROM game_versions WHERE is_default = 1)")
+    .prepare(`SELECT v.id, v.slug, v.name FROM vehicles v
+      INNER JOIN (
+        SELECT slug, MAX(game_version_id) as latest_gv
+        FROM vehicles
+        WHERE ${VEHICLE_VERSION_CAP}
+        GROUP BY slug
+      ) _vv ON v.slug = _vv.slug AND v.game_version_id = _vv.latest_gv`)
     .all();
 
   const slugToID = new Map<string, number>();

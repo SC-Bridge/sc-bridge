@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import type { HonoEnv } from "../lib/types"
 import { ARMOR_SET_REWARD_MAP } from "../lib/loot-sets"
+import { VEHICLE_VERSION_JOIN } from "../lib/constants"
 
 /**
  * /api/contracts — Named NPC contract reference data (public, no auth required)
@@ -15,7 +16,10 @@ export function contractRoutes<E extends HonoEnv>() {
 
     let query = `SELECT c.*, v.slug AS reward_vehicle_slug, fw.uuid AS reward_item_uuid
       FROM contracts c
-      LEFT JOIN vehicles v ON v.name = c.reward_text
+      LEFT JOIN (
+        SELECT v.* FROM vehicles v
+        ${VEHICLE_VERSION_JOIN}
+      ) v ON v.name = c.reward_text
       LEFT JOIN fps_weapons fw ON fw.name = c.reward_text
       WHERE c.is_active = 1`
     const params: string[] = []

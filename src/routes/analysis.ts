@@ -5,6 +5,7 @@ import { decrypt } from "../lib/crypto";
 import { logEvent } from "../lib/logger";
 import { ANALYSIS_PROMPT } from "../lib/analysis-prompt";
 import { validate, IntIdParam, LLMProvider } from "../lib/validation";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 /**
  * /api/analysis/* — Fleet analysis, LLM analysis
@@ -44,6 +45,7 @@ export function analysisRoutes() {
         `SELECT v.id, v.slug, v.name, v.focus, v.size_label, v.classification,
           ps.key as production_status
         FROM vehicles v
+        ${VEHICLE_VERSION_JOIN}
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
         ORDER BY v.name`,
       )

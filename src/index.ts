@@ -20,6 +20,7 @@ import { lootRoutes } from "./routes/loot";
 import { patchRoutes } from "./routes/patches";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
+import { VEHICLE_VERSION_JOIN } from "./lib/constants";
 
 const app = new Hono<HonoEnv>();
 
@@ -254,7 +255,7 @@ app.get("/api/status", async (c) => {
   const user = c.get("user");
 
   const vehicleCount = await db
-    .prepare("SELECT COUNT(*) as count FROM vehicles")
+    .prepare(`SELECT COUNT(*) as count FROM vehicles v ${VEHICLE_VERSION_JOIN}`)
     .first<{ count: number }>();
   const paintCount = await db
     .prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0")

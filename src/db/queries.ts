@@ -14,6 +14,7 @@ import type {
   AIAnalysis,
 } from "../lib/types";
 import { extractSetName, makeSetSlug } from "../lib/loot-sets";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 // --- Nullable helpers (mirror Go's nullableStr/nullableFloat/nullableInt) ---
 
@@ -37,6 +38,7 @@ export async function getAllVehicles(db: D1Database): Promise<Vehicle[]> {
         m.name as manufacturer_name, m.code as manufacturer_code,
         ps.key as production_status
       FROM vehicles v
+      ${VEHICLE_VERSION_JOIN}
       LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
       ORDER BY v.name`,
@@ -57,6 +59,7 @@ export async function getVehicleBySlug(db: D1Database, slug: string): Promise<Ve
         m.name as manufacturer_name, m.code as manufacturer_code,
         ps.key as production_status
       FROM vehicles v
+      ${VEHICLE_VERSION_JOIN}
       LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
       WHERE v.slug = ?`,
@@ -67,13 +70,13 @@ export async function getVehicleBySlug(db: D1Database, slug: string): Promise<Ve
 }
 
 export async function getVehicleCount(db: D1Database): Promise<number> {
-  const row = await db.prepare("SELECT COUNT(*) as count FROM vehicles").first<{ count: number }>();
+  const row = await db.prepare(`SELECT COUNT(*) as count FROM vehicles v ${VEHICLE_VERSION_JOIN}`).first<{ count: number }>();
   return row?.count ?? 0;
 }
 
 export async function getVehicleIDBySlug(db: D1Database, slug: string): Promise<number | null> {
   const row = await db
-    .prepare("SELECT id FROM vehicles WHERE slug = ? LIMIT 1")
+    .prepare(`SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE v.slug = ? LIMIT 1`)
     .bind(slug)
     .first<{ id: number }>();
   return row?.id ?? null;
@@ -82,7 +85,7 @@ export async function getVehicleIDBySlug(db: D1Database, slug: string): Promise<
 export async function getAllVehicleNameSlugs(
   db: D1Database,
 ): Promise<Array<{ name: string; slug: string }>> {
-  const result = await db.prepare("SELECT name, slug FROM vehicles ORDER BY name").all();
+  const result = await db.prepare(`SELECT v.name, v.slug FROM vehicles v ${VEHICLE_VERSION_JOIN} ORDER BY v.name`).all();
   return result.results as Array<{ name: string; slug: string }>;
 }
 
@@ -127,7 +130,7 @@ export async function findVehicleIDsBySlugLike(
   pattern: string,
 ): Promise<number[]> {
   const result = await db
-    .prepare("SELECT id FROM vehicles WHERE slug LIKE ?")
+    .prepare(`SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE v.slug LIKE ?`)
     .bind(pattern)
     .all();
   return result.results.map((r) => (r as { id: number }).id);
@@ -138,7 +141,7 @@ export async function findVehicleIDsBySlugPrefix(
   prefix: string,
 ): Promise<number[]> {
   const result = await db
-    .prepare("SELECT id FROM vehicles WHERE slug LIKE ?")
+    .prepare(`SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE v.slug LIKE ?`)
     .bind(prefix + "%")
     .all();
   return result.results.map((r) => (r as { id: number }).id);
@@ -149,7 +152,7 @@ export async function findVehicleIDsByNameContains(
   term: string,
 ): Promise<number[]> {
   const result = await db
-    .prepare("SELECT id FROM vehicles WHERE LOWER(name) LIKE ?")
+    .prepare(`SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE LOWER(v.name) LIKE ?`)
     .bind("%" + term.toLowerCase() + "%")
     .all();
   return result.results.map((r) => (r as { id: number }).id);
@@ -171,7 +174,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
     .prepare(
       `WITH ship_ports AS (
         SELECT * FROM vehicle_ports
-        WHERE vehicle_id = (SELECT id FROM vehicles WHERE slug = ?)
+        WHERE vehicle_id = (SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE v.slug = ?)
       ),
       child_components AS (
         SELECT

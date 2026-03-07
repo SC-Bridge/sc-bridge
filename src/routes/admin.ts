@@ -5,6 +5,7 @@ import { uploadToCFImages } from "../lib/cfImages";
 import { getVehiclesNeedingCFUpload, setVehicleCFImagesID } from "../db/queries";
 import { concurrentMap } from "../lib/utils";
 import { validate } from "../lib/validation";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -95,7 +96,7 @@ export function adminRoutes() {
     const { slug, imageUrl } = c.req.valid("json");
 
     const vehicleRow = await c.env.DB
-      .prepare("SELECT id FROM vehicles WHERE slug = ?")
+      .prepare(`SELECT v.id FROM vehicles v ${VEHICLE_VERSION_JOIN} WHERE v.slug = ?`)
       .bind(slug)
       .first<{ id: number }>();
 

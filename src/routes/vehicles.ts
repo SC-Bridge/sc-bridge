@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../lib/types";
+import { VEHICLE_VERSION_JOIN } from "../lib/constants";
 
 /**
  * /api/ships/* — Ship reference database (all vehicles in the game)
@@ -21,6 +22,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
           m.name as manufacturer_name, m.code as manufacturer_code,
           ps.key as production_status
         FROM vehicles v
+        ${VEHICLE_VERSION_JOIN}
         LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
         WHERE v.is_paint_variant = 0
@@ -49,6 +51,7 @@ export function vehicleRoutes<E extends { Bindings: Env }>() {
           m.name as manufacturer_name, m.code as manufacturer_code,
           ps.key as production_status
         FROM vehicles v
+        ${VEHICLE_VERSION_JOIN}
         LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
         WHERE v.slug = ? AND v.is_paint_variant = 0`,
