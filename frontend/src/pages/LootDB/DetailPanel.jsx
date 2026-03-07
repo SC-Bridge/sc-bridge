@@ -55,6 +55,12 @@ const STAT_LABELS = {
   second_zoom_scale:     'Alt Zoom',
   damage_multiplier:     'Damage Modifier',
   sound_radius_multiplier:'Sound Radius',
+  // Utilities / consumables
+  consumable_volume:     'Volume (microSCU)',
+  consumable_doses:      'Doses',
+  blast_radius:          'Blast Radius',
+  pressure:              'Pressure',
+  device_type:           'Device Type',
 }
 
 /** Display order for known stats fields. Unknown fields sort alphabetically after. */
@@ -64,6 +70,7 @@ const STAT_ORDER = [
   'physical_resistance', 'energy_resistance', 'distortion_resistance',
   'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
   'atmosphere_capacity', 'ir_emission', 'em_emission',
+  'consumable_volume', 'consumable_doses', 'blast_radius', 'pressure', 'device_type',
 ]
 
 /** Keys where the stored value is a multiplier (1.0 = base); display as % of base. */
@@ -232,6 +239,8 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, onS
                         display = `${v}x`
                       } else if (k === 'atmosphere_capacity' && typeof v === 'number') {
                         display = v > 0 ? 'Yes' : 'No'
+                      } else if (k === 'blast_radius' && typeof v === 'number') {
+                        display = `${v}m`
                       } else {
                         display = String(v)
                       }
