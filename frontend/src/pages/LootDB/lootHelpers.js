@@ -14,14 +14,21 @@ export function extractSetName(itemName, manufacturerName) {
   if (manufacturerName && s.startsWith(manufacturerName)) {
     s = s.slice(manufacturerName.length).trim()
   }
+  // Try suffix at end first (base pieces: "Geist Armor Arms" → "Geist Armor")
   for (const suffix of PIECE_SUFFIXES) {
     if (s.endsWith(' ' + suffix)) {
       s = s.slice(0, -(suffix.length + 1)).trim()
-      break
+      return s || null
     }
-    if (s === suffix) {
-      s = ''
-      break
+    if (s === suffix) return null
+  }
+  // Try suffix in middle (variant pieces: "Geist Armor Helmet Snow Camo" → "Geist Armor Snow Camo")
+  for (const suffix of PIECE_SUFFIXES) {
+    const marker = ' ' + suffix + ' '
+    const idx = s.indexOf(marker)
+    if (idx !== -1) {
+      s = (s.slice(0, idx) + ' ' + s.slice(idx + marker.length)).trim()
+      return s || null
     }
   }
   return s || null
@@ -59,6 +66,12 @@ export function resolveLocationEntry(entry, type) {
     probability: entry.perContainer ?? entry.probability ?? null,
     rawKey,
   }
+}
+
+// ── JSON parsing ─────────────────────────────────────────────────────────────
+export function parseJson(str) {
+  if (!str || str === 'null' || str === '[]') return []
+  try { return JSON.parse(str) || [] } catch { return [] }
 }
 
 // ── Shopping list aggregation ─────────────────────────────────────────────────

@@ -97,6 +97,13 @@ function ContractCard({ contract }) {
             >
               {contract.reward_text}
             </Link>
+          ) : contract.reward_set_slug ? (
+            <Link
+              to={`/loot/sets/${contract.reward_set_slug}`}
+              className="text-xs font-mono text-sc-accent2 hover:text-sc-accent transition-colors underline underline-offset-2 decoration-sc-accent2/30 hover:decoration-sc-accent/60"
+            >
+              {contract.reward_text}
+            </Link>
           ) : (
             <span className={`text-xs font-mono ${contract.reward_currency === 'aUEC' ? 'text-sc-melt' : contract.reward_currency === 'MG Scrip' ? 'text-blue-300' : 'text-sc-accent2'}`}>
               {contract.reward_text}

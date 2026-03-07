@@ -50,3 +50,18 @@ export const CATEGORY_ORDER = [
   'weapon', 'armour', 'helmet', 'clothing', 'attachment',
   'consumable', 'harvestable', 'prop', 'utility', 'ship_component', 'missile', 'unknown',
 ]
+
+// ── Resistance stats ─────────────────────────────────────────────────────────
+export const RESISTANCE_KEYS = [
+  'physical_resistance', 'energy_resistance', 'distortion_resistance',
+  'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
+]
+
+export const RESISTANCE_LABELS = {
+  physical_resistance: 'Physical',
+  energy_resistance: 'Energy',
+  distortion_resistance: 'Distortion',
+  thermal_resistance: 'Thermal',
+  biochemical_resistance: 'Biochemical',
+  stun_resistance: 'Stun',
+}

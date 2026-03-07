@@ -37,6 +37,7 @@ const Contracts = lazy(() => import('./pages/Contracts'))
 const LootDB = lazy(() => import('./pages/LootDB'))
 const POI = lazy(() => import('./pages/POI'))
 const POIDetail = lazy(() => import('./pages/POIDetail'))
+const ArmorSetDetail = lazy(() => import('./pages/ArmorSetDetail'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
 const publicNavItems = [
@@ -372,6 +373,7 @@ export default function App() {
                       <Route path="/ships" element={<RequireAuth><ShipDB /></RequireAuth>} />
                       <Route path="/ships/:slug" element={<RequireAuth><ShipDetail /></RequireAuth>} />
                       <Route path="/loot" element={<RequireAuth><LootDB /></RequireAuth>} />
+                      <Route path="/loot/sets/:setSlug" element={<RequireAuth><ArmorSetDetail /></RequireAuth>} />
                       <Route path="/loot/:uuid" element={<RequireAuth><LootDB /></RequireAuth>} />
                       <Route path="/poi" element={<RequireAuth><POI /></RequireAuth>} />
                       <Route path="/poi/:slug" element={<RequireAuth><POIDetail /></RequireAuth>} />

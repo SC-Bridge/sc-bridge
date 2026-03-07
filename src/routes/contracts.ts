@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import type { HonoEnv } from "../lib/types"
+import { ARMOR_SET_REWARD_MAP } from "../lib/loot-sets"
 
 /**
  * /api/contracts — Named NPC contract reference data (public, no auth required)
@@ -27,6 +28,15 @@ export function contractRoutes<E extends HonoEnv>() {
     query += " ORDER BY c.giver_slug, CASE c.giver_slug WHEN 'wikelo' THEN CASE c.category WHEN 'Standard' THEN 0 WHEN 'Favours' THEN 1 WHEN 'Small Items' THEN 2 WHEN 'Vehicle Delivery' THEN 3 ELSE 4 END ELSE 0 END, c.sequence_num, c.id"
 
     const { results } = await db.prepare(query).bind(...params).all()
+
+    // Attach armor set slugs for rewards that match known sets
+    for (const row of results as Record<string, unknown>[]) {
+      if (!row.reward_vehicle_slug && !row.reward_item_uuid && row.reward_text) {
+        const setSlug = ARMOR_SET_REWARD_MAP[row.reward_text as string]
+        if (setSlug) row.reward_set_slug = setSlug
+      }
+    }
+
     return c.json(results)
   })
 

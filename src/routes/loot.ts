@@ -14,6 +14,8 @@ import {
   addToLootWishlist,
   setLootWishlistQuantity,
   removeFromLootWishlist,
+  getLootSets,
+  getLootSetBySlug,
 } from "../db/queries";
 import { validate } from "../lib/validation";
 
@@ -182,6 +184,24 @@ export function lootRoutes() {
     const data = await getLootLocationDetail(c.env.DB, type, slug, patch);
     c.header("Cache-Control", "public, max-age=300");
     return c.json(data);
+  });
+
+  // GET /api/loot/sets — list all armor sets (public)
+  app.get("/sets", async (c) => {
+    const patch = c.req.query("patch");
+    const sets = await getLootSets(c.env.DB, patch);
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(sets);
+  });
+
+  // GET /api/loot/sets/:setSlug — full set detail with pieces, stats, locations (public)
+  app.get("/sets/:setSlug", async (c) => {
+    const setSlug = c.req.param("setSlug");
+    const patch = c.req.query("patch");
+    const set = await getLootSetBySlug(c.env.DB, setSlug, patch);
+    if (!set) return c.json({ error: "Set not found" }, 404);
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(set);
   });
 
   // GET /api/loot/:uuid — full detail + location JSON (public)

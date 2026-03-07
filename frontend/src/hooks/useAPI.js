@@ -217,6 +217,11 @@ export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {
   return apiFetch(isCurrentlyWishlisted ? 'DELETE' : 'POST', `/loot/wishlist/${uuid}`)
 }
 
+export function useLootSet(setSlug, patchCode) {
+  const suffix = patchCode ? `?patch=${encodeURIComponent(patchCode)}` : ''
+  return useAPI(setSlug ? `/loot/sets/${setSlug}${suffix}` : null, { skip: !setSlug })
+}
+
 export async function deleteAIAnalysis(id) {
   return apiFetch('DELETE', `/llm/analysis/${id}`)
 }

@@ -13,6 +13,7 @@ import type {
   UserLLMConfig,
   AIAnalysis,
 } from "../lib/types";
+import { extractSetName, makeSetSlug } from "../lib/loot-sets";
 
 // --- Nullable helpers (mirror Go's nullableStr/nullableFloat/nullableInt) ---
 
@@ -875,6 +876,166 @@ export async function removeFromLootWishlist(db: D1Database, userId: string, loo
     .prepare("DELETE FROM user_loot_wishlist WHERE user_id = ? AND loot_map_id = ?")
     .bind(userId, lootMapId)
     .run();
+}
+
+// ============================================================
+// Loot Armor Sets
+// ============================================================
+
+export interface LootSetSummary {
+  slug: string;
+  setName: string;
+  manufacturer: string | null;
+  pieceCount: number;
+}
+
+export interface LootSetDetail {
+  setName: string;
+  manufacturer: string | null;
+  pieces: Record<string, unknown>[];
+}
+
+export async function getLootSets(
+  db: D1Database,
+  patchCode?: string
+): Promise<LootSetSummary[]> {
+  const lv = latestAsOf(patchCode);
+  const sql = `SELECT lm.id, lm.uuid, lm.name, lm.category, lm.manufacturer_name
+    FROM loot_map lm
+    ${lv.join}
+    WHERE ${lv.where}
+      AND lm.category IN ('armour', 'helmet', 'undersuit')
+      AND lm.name NOT IN ('<= PLACEHOLDER =>')
+      AND lm.type IS NOT NULL AND lm.type != ''
+    ORDER BY lm.name ASC`;
+  const result = await (lv.bind
+    ? db.prepare(sql).bind(patchCode)
+    : db.prepare(sql)
+  ).all();
+
+  const groups = new Map<
+    string,
+    { setName: string; manufacturer: string | null; count: number }
+  >();
+  for (const row of result.results) {
+    const r = row as { name: string; manufacturer_name: string | null };
+    const sn = extractSetName(r.name, r.manufacturer_name);
+    if (!sn) continue;
+    const slug = makeSetSlug(sn);
+    const existing = groups.get(slug);
+    if (existing) {
+      existing.count++;
+      if (!existing.manufacturer && r.manufacturer_name)
+        existing.manufacturer = r.manufacturer_name;
+    } else {
+      groups.set(slug, {
+        setName: sn,
+        manufacturer: r.manufacturer_name,
+        count: 1,
+      });
+    }
+  }
+
+  return [...groups.entries()]
+    .map(([slug, g]) => ({
+      slug,
+      setName: g.setName,
+      manufacturer: g.manufacturer,
+      pieceCount: g.count,
+    }))
+    .sort((a, b) => a.setName.localeCompare(b.setName));
+}
+
+export async function getLootSetBySlug(
+  db: D1Database,
+  setSlug: string,
+  patchCode?: string
+): Promise<LootSetDetail | null> {
+  const lv = latestAsOf(patchCode);
+  const sql = `SELECT lm.*,
+      CASE WHEN lm.containers_json NOT IN ('null','[]','') AND lm.containers_json IS NOT NULL THEN 1 ELSE 0 END as has_containers,
+      CASE WHEN lm.shops_json     NOT IN ('null','[]','') AND lm.shops_json IS NOT NULL     THEN 1 ELSE 0 END as has_shops,
+      CASE WHEN lm.npcs_json      NOT IN ('null','[]','') AND lm.npcs_json IS NOT NULL      THEN 1 ELSE 0 END as has_npcs,
+      CASE WHEN lm.corpses_json   NOT IN ('null','[]','') AND lm.corpses_json IS NOT NULL   THEN 1 ELSE 0 END as has_corpses,
+      CASE WHEN lm.contracts_json NOT IN ('null','[]','') AND lm.contracts_json IS NOT NULL THEN 1 ELSE 0 END as has_contracts
+    FROM loot_map lm
+    ${lv.join}
+    WHERE ${lv.where}
+      AND lm.category IN ('armour', 'helmet', 'undersuit')
+      AND lm.name NOT IN ('<= PLACEHOLDER =>')
+      AND lm.type IS NOT NULL AND lm.type != ''
+    ORDER BY lm.name ASC`;
+  const result = await (lv.bind
+    ? db.prepare(sql).bind(patchCode)
+    : db.prepare(sql)
+  ).all();
+
+  // Filter to matching set pieces
+  const matchingItems: Record<string, unknown>[] = [];
+  let setName: string | null = null;
+  let manufacturer: string | null = null;
+  const armourIds: number[] = [];
+  const helmetIds: number[] = [];
+
+  for (const row of result.results) {
+    const item = row as Record<string, unknown>;
+    const sn = extractSetName(
+      item.name as string,
+      item.manufacturer_name as string | null
+    );
+    if (!sn) continue;
+    if (makeSetSlug(sn) !== setSlug) continue;
+
+    if (!setName) setName = sn;
+    if (!manufacturer && item.manufacturer_name)
+      manufacturer = item.manufacturer_name as string;
+
+    matchingItems.push(item);
+    if (item.fps_armour_id) armourIds.push(item.fps_armour_id as number);
+    if (item.fps_helmet_id) helmetIds.push(item.fps_helmet_id as number);
+  }
+
+  if (!setName || matchingItems.length === 0) return null;
+
+  // Batch-fetch linked item details (2 queries instead of N)
+  const detailMap = new Map<string, Record<string, unknown>>();
+
+  if (armourIds.length > 0) {
+    const placeholders = armourIds.map(() => "?").join(",");
+    const rows = await db
+      .prepare(
+        `SELECT id, name, sub_type as type, size, grade, description, stats_json FROM fps_armour WHERE id IN (${placeholders})`
+      )
+      .bind(...armourIds)
+      .all();
+    for (const r of rows.results) {
+      detailMap.set(`armour:${(r as Record<string, unknown>).id}`, r as Record<string, unknown>);
+    }
+  }
+
+  if (helmetIds.length > 0) {
+    const placeholders = helmetIds.map(() => "?").join(",");
+    const rows = await db
+      .prepare(
+        `SELECT id, name, sub_type as type, size, grade, description, stats_json FROM fps_helmets WHERE id IN (${placeholders})`
+      )
+      .bind(...helmetIds)
+      .all();
+    for (const r of rows.results) {
+      detailMap.set(`helmet:${(r as Record<string, unknown>).id}`, r as Record<string, unknown>);
+    }
+  }
+
+  const pieces = matchingItems.map((item) => {
+    let details: Record<string, unknown> | null = null;
+    if (item.fps_armour_id)
+      details = detailMap.get(`armour:${item.fps_armour_id}`) ?? null;
+    else if (item.fps_helmet_id)
+      details = detailMap.get(`helmet:${item.fps_helmet_id}`) ?? null;
+    return { ...item, item_details: details };
+  });
+
+  return { setName, manufacturer, pieces };
 }
 
 // ============================================================

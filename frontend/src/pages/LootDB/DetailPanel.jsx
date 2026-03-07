@@ -1,7 +1,7 @@
 import { X, ShoppingCart, Package, Swords, Skull, FileText, Plus, Bookmark, BookmarkPlus } from 'lucide-react'
 import { useLootItem } from '../../hooks/useAPI'
 import useGameVersion from '../../hooks/useGameVersion'
-import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS } from '../../lib/lootDisplay'
+import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, RESISTANCE_KEYS } from '../../lib/lootDisplay'
 import LoadingState from '../../components/LoadingState'
 import LocationSection from './LocationSection'
 
@@ -69,10 +69,7 @@ const STAT_ORDER = [
 /** Keys where the stored value is a multiplier (1.0 = base); display as % of base. */
 const MULTIPLIER_STATS = new Set(['damage_multiplier', 'sound_radius_multiplier'])
 /** Keys where the stored value is a damage resistance multiplier (lower = more resistant). */
-const RESISTANCE_STATS = new Set([
-  'physical_resistance', 'energy_resistance', 'distortion_resistance',
-  'thermal_resistance', 'biochemical_resistance', 'stun_resistance',
-])
+const RESISTANCE_STATS = new Set(RESISTANCE_KEYS)
 
 export default function DetailPanel({ uuid, manufacturerName, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
   const { activeCode } = useGameVersion()
