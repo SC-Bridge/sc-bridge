@@ -81,7 +81,7 @@ React SPA. 25 page components including: `Dashboard`, `FleetTable`, `ShipDB`, `S
 |--------|------|------|
 | RSI GraphQL API | Ship + paint images from public store API | Nightly (3:45 AM cron) |
 | HangarXplor JSON | User fleet: insurance, pledge cost/date | User-triggered import |
-| DataCore (scbridge/tools) | Component stats, FPS gear, loot map, paint metadata | One-time extract scripts |
+| DataCore (`/home/gavin/scbridge/tools/scripts`) | Component stats, FPS gear, loot map, paint metadata | One-time extract scripts |
 
 ## Key Design Decisions
 - **Game version management**: `lootBaseWhere(patchCode?)` replaces the old `LOOT_BASE_WHERE` constant. All loot endpoints accept `?patch=` query param. `GameVersionProvider` context provides `activeCode` to all loot hooks. Admins can set `adminPreviewPatch` in user settings to preview unreleased data (amber badge in sidebar). Public default version is managed via `PUT /api/admin/versions/default`.
