@@ -169,6 +169,10 @@ export async function updateShipVisibility(fleetEntryId, updates) {
   return patchJSON(`/vehicles/${fleetEntryId}/visibility`, updates)
 }
 
+export async function updateOrgSettings(slug, settings) {
+  return patchJSON(`/orgs/${slug}`, settings)
+}
+
 // Loot / Item Finder
 // These hooks accept an optional patchCode to query a specific game version.
 // When patchCode changes, the path changes, triggering a re-fetch.

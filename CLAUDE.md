@@ -147,7 +147,7 @@ have caused bugs before or are easy to get wrong.
 - Never skip numbers. Never rename an applied migration file.
 - **Never ALTER a PK or UNIQUE constraint in-place** — create new table, copy data, drop old.
 - Index naming: `idx_{table}_{column}` — e.g., `idx_loot_map_type`
-- Current last migration: **0052_crafted_reward_text.sql**
+- Current last migration: **0053_org_description.sql**
 
 ### Out-of-Band Columns
 Previously these columns were applied via `wrangler d1 execute` outside migration files.

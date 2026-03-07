@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ExternalLink, Users, Rocket, BarChart3, Building2, Globe, MessageSquare, Tv, Youtube } from 'lucide-react'
+import { ExternalLink, Users, Rocket, BarChart3, Building2, Globe, MessageSquare, Tv, Youtube, Settings } from 'lucide-react'
 import { useOrgProfile, useOrgFleet, useOrgMembers, useOrgAnalysis } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
@@ -189,9 +189,9 @@ export default function OrgProfile() {
   if (error) return <ErrorState message={error} onRetry={refetch} />
   if (!org) return null
 
-  // Caller's role is returned by the fleet endpoint — but we get it separately via the members check
-  // We use the session + the org data. callerRole is set by fleet endpoint.
   const isLoggedIn = !!session?.user
+  const callerRole = org.callerRole
+  const canManage = callerRole === 'owner' || callerRole === 'admin'
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -245,6 +245,10 @@ export default function OrgProfile() {
             )}
           </div>
 
+          {org.description && (
+            <p className="text-sm text-gray-400 leading-relaxed">{org.description}</p>
+          )}
+
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Users className="w-3.5 h-3.5" />
             {org.memberCount} members
@@ -252,6 +256,16 @@ export default function OrgProfile() {
             <span>Founded {new Date(org.createdAt).toLocaleDateString()}</span>
           </div>
         </div>
+
+        {canManage && (
+          <Link
+            to={`/orgs/${slug}/settings`}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors border border-sc-border rounded px-2.5 py-1.5 shrink-0"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Settings
+          </Link>
+        )}
       </div>
 
       {/* Tabs */}
@@ -273,7 +287,7 @@ export default function OrgProfile() {
           ))}
         </div>
 
-        {activeTab === 'fleet' && <OrgFleet slug={slug} callerRole={null} />}
+        {activeTab === 'fleet' && <OrgFleet slug={slug} callerRole={callerRole} />}
         {activeTab === 'members' && (
           isLoggedIn
             ? <OrgMembers slug={slug} />

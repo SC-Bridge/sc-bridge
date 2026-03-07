@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import type { HonoEnv, UserFleetEntry, Vehicle } from "../lib/types";
+import { validate } from "../lib/validation";
 import { analyzeFleet } from "./analysis";
 
 /**
@@ -39,12 +41,14 @@ export function orgRoutes() {
   routes.get("/:slug", async (c) => {
     const slug = c.req.param("slug");
     const db = c.env.DB;
+    const user = c.get("user");
 
     const org = await db
-      .prepare("SELECT id, name, slug, logo, rsiSid, rsiUrl, homepage, discord, twitch, youtube, createdAt FROM organization WHERE slug = ?")
+      .prepare("SELECT id, name, slug, logo, description, rsiSid, rsiUrl, homepage, discord, twitch, youtube, createdAt FROM organization WHERE slug = ?")
       .bind(slug)
       .first<{
         id: string; name: string; slug: string; logo: string | null;
+        description: string | null;
         rsiSid: string | null; rsiUrl: string | null; homepage: string | null;
         discord: string | null; twitch: string | null; youtube: string | null;
         createdAt: string;
@@ -57,10 +61,76 @@ export function orgRoutes() {
       .bind(org.id)
       .first<{ count: number }>();
 
+    let callerRole: string | null = null;
+    if (user) {
+      const membership = await db
+        .prepare("SELECT role FROM member WHERE organizationId = ? AND userId = ?")
+        .bind(org.id, user.id)
+        .first<{ role: string }>();
+      callerRole = membership?.role ?? null;
+    }
+
     return c.json({
       ...org,
       memberCount: memberCount?.count ?? 0,
+      callerRole,
     });
+  });
+
+  // PATCH /api/orgs/:slug — update org settings (owner/admin only)
+  routes.patch("/:slug",
+    validate("json", z.object({
+      description: z.string().max(500).nullable().optional(),
+      rsiSid: z.string().max(20).nullable().optional(),
+      rsiUrl: z.string().url().max(200).nullable().optional(),
+      homepage: z.string().url().max(200).nullable().optional(),
+      discord: z.string().url().max(200).nullable().optional(),
+      twitch: z.string().url().max(200).nullable().optional(),
+      youtube: z.string().url().max(200).nullable().optional(),
+    }).strict()),
+    async (c) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const slug = c.req.param("slug");
+    const db = c.env.DB;
+
+    const org = await db
+      .prepare("SELECT id FROM organization WHERE slug = ?")
+      .bind(slug)
+      .first<{ id: string }>();
+    if (!org) return c.json({ error: "Not found" }, 404);
+
+    const membership = await db
+      .prepare("SELECT role FROM member WHERE organizationId = ? AND userId = ?")
+      .bind(org.id, user.id)
+      .first<{ role: string }>();
+    if (!membership || (membership.role !== "owner" && membership.role !== "admin")) {
+      return c.json({ error: "Forbidden — owner or admin role required" }, 403);
+    }
+
+    const body = c.req.valid("json");
+    const updates: string[] = [];
+    const values: (string | null)[] = [];
+
+    for (const [key, val] of Object.entries(body)) {
+      if (val !== undefined) {
+        updates.push(`${key} = ?`);
+        values.push(val);
+      }
+    }
+
+    if (updates.length === 0) {
+      return c.json({ error: "No fields to update" }, 400);
+    }
+
+    values.push(org.id);
+    await db
+      .prepare(`UPDATE organization SET ${updates.join(", ")} WHERE id = ?`)
+      .bind(...values)
+      .run();
+
+    return c.json({ ok: true });
   });
 
   // GET /api/orgs/:slug/fleet — visibility-gated org fleet
