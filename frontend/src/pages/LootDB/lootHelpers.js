@@ -58,7 +58,12 @@ export function resolveLocationEntry(entry, type) {
       npcKey: true,
     }
   }
-  // containers, contracts, default
+  if (type === 'contracts') {
+    const guild = entry.guild || entry.contract || '?'
+    const contractRef = entry.contract || null
+    return { label: guild, detail: null, probability: null, contractKey: true, contractRef }
+  }
+  // containers, default
   const rawKey = entry.location || entry.locationTag || ''
   return {
     label: entry.location ? friendlyLocation(entry.location) : (entry.locationTag || entry.name || '?'),

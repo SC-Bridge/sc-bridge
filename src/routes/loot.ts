@@ -1,6 +1,7 @@
 import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
+import { SET_SLUG_REWARD_TEXTS } from "../lib/loot-sets";
 import {
   getLootItems,
   getLootByUuid,
@@ -200,8 +201,21 @@ export function lootRoutes() {
     const patch = c.req.query("patch");
     const set = await getLootSetBySlug(c.env.DB, setSlug, patch);
     if (!set) return c.json({ error: "Set not found" }, 404);
+
+    // Look up contracts that award this set
+    const rewardTexts = SET_SLUG_REWARD_TEXTS[setSlug];
+    let awardingContracts: { id: number; title: string; giver_slug: string }[] = [];
+    if (rewardTexts && rewardTexts.length > 0) {
+      const placeholders = rewardTexts.map(() => "?").join(",");
+      const result = await c.env.DB
+        .prepare(`SELECT id, title, giver_slug FROM contracts WHERE reward_text IN (${placeholders})`)
+        .bind(...rewardTexts)
+        .all<{ id: number; title: string; giver_slug: string }>();
+      awardingContracts = result.results ?? [];
+    }
+
     c.header("Cache-Control", "public, max-age=300");
-    return c.json(set);
+    return c.json({ ...set, awardingContracts });
   });
 
   // GET /api/loot/:uuid — full detail + location JSON (public)

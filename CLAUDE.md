@@ -82,6 +82,11 @@ React SPA. 25 page components including: `Dashboard`, `FleetTable`, `ShipDB`, `S
 | RSI GraphQL API | Ship + paint images from public store API | Nightly (3:45 AM cron) |
 | HangarXplor JSON | User fleet: insurance, pledge cost/date | User-triggered import |
 | DataCore (`/home/gavin/scbridge/tools/scripts`) | Component stats, FPS gear, loot map, paint metadata | One-time extract scripts |
+| Game data p4k (`/mnt/e/SC Bridge/Data p4k`) | Raw extracted game files (XML, JSON) per version | Manual p4k extraction |
+
+The game data p4k directory contains extracted Star Citizen game files organized by version
+(e.g. `4.0.2-live.9428532`). Use the latest version folder. This is the ground truth for what
+exists in-game — always check here before concluding an item doesn't exist.
 
 ## Key Design Decisions
 - **Game version management**: `lootBaseWhere(patchCode?)` replaces the old `LOOT_BASE_WHERE` constant. All loot endpoints accept `?patch=` query param. `GameVersionProvider` context provides `activeCode` to all loot hooks. Admins can set `adminPreviewPatch` in user settings to preview unreleased data (amber badge in sidebar). Public default version is managed via `PUT /api/admin/versions/default`.

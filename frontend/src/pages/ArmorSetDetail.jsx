@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Shield } from 'lucide-react'
+import { ArrowLeft, Shield, FileText } from 'lucide-react'
 import { useLootSet, useLootCollection, setLootCollectionQuantity } from '../hooks/useAPI'
 import useGameVersion from '../hooks/useGameVersion'
 import { useSession } from '../lib/auth-client'
@@ -132,28 +132,34 @@ function AggregateStats({ pieces }) {
   )
 }
 
-function CombinedLocations({ pieces }) {
-  const merged = {}
+function PieceLocations({ pieces }) {
+  // Group pieces by their source signature so identical-source pieces are shown together
+  const piecesBySource = []
   for (const piece of pieces) {
+    const sources = {}
     for (const { key, jsonKey } of SOURCE_DEFS) {
       const entries = parseJson(piece[jsonKey])
-      if (entries.length === 0) continue
-      if (!merged[key]) merged[key] = []
-      merged[key].push(...entries)
+      if (entries.length > 0) sources[key] = entries
     }
+    if (Object.keys(sources).length === 0) continue
+    piecesBySource.push({ piece, sources })
   }
 
-  const hasAny = Object.values(merged).some(arr => arr.length > 0)
-  if (!hasAny) return null
+  if (piecesBySource.length === 0) return null
 
   return (
-    <div className="bg-sc-dark/60 rounded-lg border border-sc-border p-4 space-y-4">
+    <div className="bg-sc-dark/60 rounded-lg border border-sc-border p-4 space-y-5">
       <p className="text-[10px] font-display uppercase tracking-wider text-gray-500">Where to Find</p>
-      {SOURCE_DEFS.map(({ key, label, icon }) => {
-        const data = merged[key]
-        if (!data || data.length === 0) return null
-        return <LocationSection key={key} label={label} icon={icon} data={data} type={key} />
-      })}
+      {piecesBySource.map(({ piece, sources }) => (
+        <div key={piece.uuid} className="space-y-3">
+          <p className="text-xs font-mono text-gray-300 border-b border-sc-border/30 pb-1">{piece.name}</p>
+          {SOURCE_DEFS.map(({ key, label, icon }) => {
+            const data = sources[key]
+            if (!data) return null
+            return <LocationSection key={key} label={label} icon={icon} data={data} type={key} />
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -183,7 +189,7 @@ export default function ArmorSetDetail() {
   if (error) return <ErrorState message={error} onRetry={refetch} />
   if (!set) return <ErrorState message="Set not found" />
 
-  const { setName, manufacturer, pieces } = set
+  const { setName, manufacturer, pieces, awardingContracts = [] } = set
 
   return (
     <div className="space-y-6">
@@ -202,11 +208,26 @@ export default function ArmorSetDetail() {
       />
 
       {/* Set info bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Shield className="w-5 h-5 text-sc-accent" />
         <span className="text-sm font-mono text-gray-300">
           {pieces.length} piece{pieces.length !== 1 ? 's' : ''}
         </span>
+        {awardingContracts.length > 0 && (
+          <>
+            <span className="text-gray-600">|</span>
+            <FileText className="w-4 h-4 text-gray-400" />
+            {awardingContracts.map((c) => (
+              <Link
+                key={c.id}
+                to={`/contracts?highlight=${c.id}`}
+                className="text-sm font-mono text-sc-accent2 hover:text-sc-accent transition-colors underline underline-offset-2 decoration-sc-accent2/30 hover:decoration-sc-accent/60"
+              >
+                {c.title}
+              </Link>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Aggregate stats */}
@@ -227,8 +248,8 @@ export default function ArmorSetDetail() {
         </div>
       </div>
 
-      {/* Combined locations */}
-      <CombinedLocations pieces={pieces} />
+      {/* Per-piece locations */}
+      <PieceLocations pieces={pieces} />
     </div>
   )
 }

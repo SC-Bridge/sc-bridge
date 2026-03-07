@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { FileText, ChevronDown, ChevronUp, Package } from 'lucide-react'
 import { useContracts } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
@@ -45,14 +45,31 @@ function parseRequirements(contract) {
   } catch { return null }
 }
 
-function ContractCard({ contract }) {
+// Map loot guild refs to giver tab keys
+const GUILD_TO_GIVER = {
+  thecollector: 'wikelo',
+  hockrowagency_facilitydelve: 'gfs',
+}
+
+function ContractCard({ contract, highlighted }) {
+  const cardRef = useRef(null)
   const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (highlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [highlighted])
   const desc = cleanDesc(contract.description)
   const isLong = desc.length > 200
   const requirements = parseRequirements(contract)
 
   return (
-    <div className="panel p-4 space-y-3">
+    <div
+      ref={cardRef}
+      id={`contract-${contract.id}`}
+      className={`panel p-4 space-y-3 transition-all duration-700 ${highlighted ? 'ring-2 ring-sc-accent/60 bg-sc-accent/5' : ''}`}
+    >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -165,8 +182,22 @@ function ContractCard({ contract }) {
 
 export default function Contracts() {
   const { data: contracts, loading, error, refetch } = useContracts()
-  const [giverTab, setGiverTab] = useState('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const guildParam = searchParams.get('guild')
+  const highlightParam = searchParams.get('highlight')
+  const [giverTab, setGiverTab] = useState(
+    guildParam ? (GUILD_TO_GIVER[guildParam] || 'all') : 'all'
+  )
   const [search, setSearch] = useState('')
+  const [highlightId, setHighlightId] = useState(highlightParam ? Number(highlightParam) : null)
+
+  // Clear highlight after a few seconds
+  useEffect(() => {
+    if (highlightId) {
+      const t = setTimeout(() => setHighlightId(null), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [highlightId])
 
   const filtered = useMemo(() => {
     if (!contracts) return []
@@ -231,7 +262,7 @@ export default function Contracts() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filtered.map((contract) => (
-          <ContractCard key={contract.id} contract={contract} />
+          <ContractCard key={contract.id} contract={contract} highlighted={contract.id === highlightId} />
         ))}
       </div>
 

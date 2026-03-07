@@ -80,4 +80,13 @@ export const ARMOR_SET_REWARD_MAP: Record<string, string> = {
   "Heavy Utility Suit": "novikov",
   "Battle Armor Set": "microid-battle-suit",
   "Vanduul-style Armor Set": "snarling-vanduul",
+  "Irradiated Armor Set": "antium",
+  "Molten Armor Set": "strata",
 };
+
+/** Reverse map: set slug → list of reward_text values that reference it */
+export const SET_SLUG_REWARD_TEXTS: Record<string, string[]> = {};
+for (const [text, slug] of Object.entries(ARMOR_SET_REWARD_MAP)) {
+  if (!SET_SLUG_REWARD_TEXTS[slug]) SET_SLUG_REWARD_TEXTS[slug] = [];
+  SET_SLUG_REWARD_TEXTS[slug].push(text);
+}
