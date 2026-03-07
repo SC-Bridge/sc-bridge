@@ -2,10 +2,9 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoEnv } from "../lib/types";
 import { uploadToCFImages } from "../lib/cfImages";
-import { getVehiclesNeedingCFUpload, setVehicleCFImagesID, buildUpdatePaintImagesStatement } from "../db/queries";
-import { concurrentMap, chunkArray } from "../lib/utils";
+import { getVehiclesNeedingCFUpload, setVehicleCFImagesID } from "../db/queries";
+import { concurrentMap } from "../lib/utils";
 import { validate } from "../lib/validation";
-import { syncFleetyardsPaintImages } from "../sync/fleetyards";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -186,124 +185,6 @@ export function adminRoutes() {
       .prepare("SELECT token, created_at, used_at FROM invite_tokens ORDER BY created_at DESC")
       .all<{ token: string; created_at: string; used_at: string | null }>();
     return c.json(rows.results ?? []);
-  });
-
-  /**
-   * POST /api/admin/sync/fleetyards-paints
-   *
-   * Fetches paint images from Fleetyards API, uploads to CF Images,
-   * and stores delivery URLs in DB. Only processes imageless paints.
-   * THROWAWAY — delete after use.
-   */
-  routes.post("/sync/fleetyards-paints",
-    validate("query", z.object({
-      limit: z.coerce.number().int().min(1).max(500).default(100),
-    })),
-    async (c) => {
-    const token = c.env.CLOUDFLARE_IMAGES_TOKEN;
-    const accountHash = c.env.CF_ACCOUNT_HASH;
-    const accountId = c.env.CF_ACCOUNT_ID;
-
-    if (!token || !accountHash || !accountId) {
-      return c.json(
-        { error: "CLOUDFLARE_IMAGES_TOKEN, CF_ACCOUNT_HASH, and CF_ACCOUNT_ID must be set" },
-        500,
-      );
-    }
-
-    const { limit } = c.req.valid("query");
-    const result = await syncFleetyardsPaintImages(c.env.DB, accountId, token, accountHash, limit);
-    return c.json(result);
-  });
-
-  /**
-   * POST /api/admin/sync/hangar-paints
-   *
-   * Uploads paint images from RSI media CDN to CF Images using media IDs
-   * scraped from the user's hangar page. Body: array of { class_name, mediaId }.
-   * Uses the "source" variant (3840px) for best quality.
-   * THROWAWAY — delete after use.
-   */
-  routes.post("/sync/hangar-paints",
-    validate("json", z.object({
-      paints: z.array(z.object({
-        class_name: z.string().min(1),
-        mediaId: z.string().min(1),
-      })).min(1).max(200),
-    })),
-    async (c) => {
-    const token = c.env.CLOUDFLARE_IMAGES_TOKEN;
-    const accountHash = c.env.CF_ACCOUNT_HASH;
-    const accountId = c.env.CF_ACCOUNT_ID;
-
-    if (!token || !accountHash || !accountId) {
-      return c.json(
-        { error: "CLOUDFLARE_IMAGES_TOKEN, CF_ACCOUNT_HASH, and CF_ACCOUNT_ID must be set" },
-        500,
-      );
-    }
-
-    const { paints } = c.req.valid("json");
-    console.log(`[hangar-paints] Starting batch of ${paints.length} paints`);
-    const failed: string[] = [];
-    const stmts: D1PreparedStatement[] = [];
-    let hitLimit = false;
-
-    for (const { class_name, mediaId } of paints) {
-      if (hitLimit) break;
-      try {
-        let cfId: string | undefined;
-        for (const ext of ["jpg", "png"]) {
-          const sourceUrl = `https://media.robertsspaceindustries.com/${mediaId}/source.${ext}`;
-          try {
-            cfId = await uploadToCFImages(accountId, token, sourceUrl, {
-              paint_class: class_name,
-              source: "rsi-hangar",
-            });
-            break;
-          } catch (e) {
-            if (ext === "png") throw e; // both failed
-          }
-        }
-        if (!cfId) throw new Error("No image found");
-
-        const base = `https://imagedelivery.net/${accountHash}/${cfId}`;
-        stmts.push(
-          buildUpdatePaintImagesStatement(
-            c.env.DB,
-            class_name,
-            `${base}/medium`,
-            `${base}/thumb`,
-            `${base}/medium`,
-            `${base}/large`,
-          ),
-        );
-      } catch (err) {
-        const msg = String(err);
-        if (msg.includes("Too many subrequests")) {
-          console.log(`[hangar-paints] Hit subrequest limit after ${stmts.length} uploads`);
-          hitLimit = true;
-        } else {
-          failed.push(`${class_name}: ${msg}`);
-          console.error(`[hangar-paints] CF upload failed for ${class_name}:`, err);
-        }
-      }
-    }
-
-    // Batch update DB
-    const uploaded = stmts.length;
-    console.log(`[hangar-paints] Updating DB with ${uploaded} statements`);
-    for (const chunk of chunkArray(stmts, 100)) {
-      await c.env.DB.batch(chunk);
-    }
-    console.log(`[hangar-paints] Done. uploaded=${uploaded} failed=${failed.length}`);
-
-    return c.json({
-      total: paints.length,
-      uploaded,
-      failed,
-      remaining: paints.length - uploaded - failed.length,
-    });
   });
 
   return routes;

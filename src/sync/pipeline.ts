@@ -1,10 +1,8 @@
 /**
  * Sync pipeline orchestration
  *
- * RSI API images (ships + paints) — live sync from RSI GraphQL.
- *
- * Paint metadata is populated via the local DataCore extraction script
- * in scbridge/tools/scripts/paints/ — not via live sync.
+ * RSI API images (ships only) — live sync from RSI GraphQL.
+ * Paint images are managed via manual upload — no automated sync.
  *
  * Workers are single-threaded per invocation, so no sync mutex needed.
  */

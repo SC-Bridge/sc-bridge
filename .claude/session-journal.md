@@ -1,23 +1,18 @@
 # Session Journal
 
 ## Current Focus
-Contracts page improvements — reward text fixes and hyperlinking
+Post-Epic 013 cleanup — committed final DetailPanel stats rendering
 
 ## Recent Changes
-- Migration 0051: Vehicle delivery reward text (39 contracts) + clothing/crafted fixes (3 contracts)
-- Migration 0052: Specific crafted item names for 11 contracts (weapons from localization, armor from descriptions)
-- `src/routes/contracts.ts`: JOIN to vehicles table for `reward_vehicle_slug`
-- `frontend/src/pages/Contracts.jsx`: Link import + vehicle reward hyperlinks to `/ships/:slug`
-- `CLAUDE.md`: Updated migration counter to 0052
+- `frontend/src/pages/LootDB/DetailPanel.jsx` — Added STAT_LABELS for utility/consumable/grenade stats (committed as aca302b)
+- Extraction scripts updated (outside repo): `fps_clothing/extract.py`, `fps_utilities/extract.py`
+- `run_pipeline.ps1` — Step 6 added for FPS item extraction (outside repo)
 
 ## Key Decisions
-- Vehicle reward names match exactly to vehicles.name in DB (all 39 have slugs)
-- Crafted weapon rewards use exact names from `item_Name*_collector*` in global.ini localization
-- Armor rewards use descriptive names (not in localization with collector tags — resolved at runtime via tags)
-- Intro/food contracts marked as "Clothing items (randomized)" since they use generic template
+- GitHub Issues is the project tracker — Plane is deprecated, do not reference it
+- Clothing stats only for items with `SCItemSuitArmorParams` (10 of 1803)
+- Attachment/armour stats gaps are by-design (cosmetic grips, ship armour)
 
 ## Important Context
-- Changes NOT yet committed — need `git add` + commit
-- Build passes successfully
-- Migrations 0051 and 0052 applied to remote DB
-- Note: migration numbering has a gap — 0051_paints_base_variant_flag.sql already existed from another session
+- FPS extraction pipeline step is built but untested on a real patch day
+- Open issues: #36 (armor set pages), #31 (CF Images pipeline), #30 (org settings), #10 (paint browser)

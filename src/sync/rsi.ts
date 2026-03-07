@@ -1,22 +1,20 @@
 /**
  * RSI GraphQL API sync — ported from internal/rsi/
  *
- * Fetches ship and paint images from the RSI public store GraphQL API.
+ * Fetches ship images from the RSI public store GraphQL API.
  * No authentication required — all browse queries are public.
+ * Paint images are managed via manual upload — no automated sync.
  *
  * Key features:
  * - Batched GraphQL requests (RSI expects JSON array)
  * - Rate limiting with 429 retry
  * - Ship variant inheritance (unmatched variants get base vehicle images)
- * - Paint name expansion (abbreviated RSI ship names → full DB names)
  * - Media ID extraction for CDN URL size variants
  */
 
 import {
   getAllVehicleNameSlugs,
-  getAllPaintNameClasses,
   buildUpdateVehicleImagesStatement,
-  buildUpdatePaintImagesStatement,
   insertSyncHistory,
   updateSyncHistory,
 } from "../db/queries";
@@ -70,12 +68,6 @@ interface ImageSet {
   small: string;
   medium: string;
   large: string;
-}
-
-export interface PaintInfo {
-  norm: string;
-  className: string;
-  hasImage: boolean;
 }
 
 // --- GraphQL Query ---
@@ -148,20 +140,6 @@ export const shipNameMap: Record<string, string> = {
   "san\u2019tok.y\u0101i": "san\u2019tok.y\u0101i",
   "carrack expedition w/c8x": "carrack expedition w/c8x",
   "carrack w/c8x": "carrack w/c8x",
-};
-
-// --- Paint ship aliases (abbreviated RSI ship name → full DB ship name) ---
-
-export const paintShipAliases: Record<string, string> = {
-  ares: "Ares Star Fighter",
-  hercules: "Hercules Starlifter",
-  mercury: "Mercury Star Runner",
-  f8c: "F8C Lightning",
-  "f7 hornet mk i": "Hornet",
-  "f7 hornet mk ii": "Hornet Mk II",
-  "f7a hornet mk ii": "Hornet",
-  "nova tank": "Nova",
-  "san\u0027tok.y\u0101i": "San'tok.yai",
 };
 
 // --- GraphQL client ---
@@ -290,82 +268,6 @@ function findBaseVehicleImages(
     const prefix = words.slice(0, length).join(" ");
     const img = rsiNameImages.get(prefix);
     if (img) return img;
-  }
-
-  return null;
-}
-
-// --- Paint name helpers ---
-
-const yearRegex = /\b\d{4}\b/g;
-
-export function normalizePaintName(name: string): string {
-  let n = name.toLowerCase().trim();
-  n = n.replace(/ paint$/, "");
-  n = n.replace(/ livery$/, "");
-  n = n.replace(/ skin$/, "");
-  // Normalize unicode diacritics and curly apostrophes
-  n = n
-    .replace(/\u0101/g, "a") // ā → a
-    .replace(/\u0113/g, "e") // ē → e
-    .replace(/\u012b/g, "i") // ī → i
-    .replace(/\u014d/g, "o") // ō → o
-    .replace(/\u016b/g, "u") // ū → u
-    .replace(/\u2019/g, "'") // ' → '
-    .replace(/\u2018/g, "'") // ' → '
-    .replace(/\u02bc/g, "'"); // ʼ → '
-  // Fix known misspellings
-  n = n.replace(/bushwacker/g, "bushwhacker");
-  return n;
-}
-
-function buildPaintFullName(itemName: string): string {
-  const parts = itemName.split(" - ");
-  if (parts.length < 2) return "";
-  const ship = parts[0].trim();
-  const paint = parts.slice(1).join(" - ").trim();
-  return ship + " " + paint;
-}
-
-function expandRSIPaintName(name: string): string {
-  const parts = name.split(" - ");
-  if (parts.length < 2) return name;
-
-  const ship = parts[0].trim();
-  const paint = parts.slice(1).join(" - ").trim();
-  const lower = ship.toLowerCase();
-
-  const expanded = paintShipAliases[lower];
-  if (expanded) {
-    return expanded + " - " + paint;
-  }
-
-  return name;
-}
-
-function stripYears(s: string): string {
-  const result = s.replace(yearRegex, "");
-  return result.split(/\s+/).filter(Boolean).join(" ");
-}
-
-export function findPaintMatch(
-  norm: string,
-  exactLookup: Map<string, PaintInfo>,
-  allDBPaints: PaintInfo[],
-): PaintInfo | null {
-  // 1. Exact match
-  const exact = exactLookup.get(norm);
-  if (exact) return exact;
-
-  // 2. Prefix: RSI name is prefix of DB name
-  for (const info of allDBPaints) {
-    if (info.norm.startsWith(norm)) return info;
-  }
-
-  // 3. Year-stripped match
-  const normNoYear = stripYears(norm);
-  for (const info of allDBPaints) {
-    if (stripYears(info.norm) === normNoYear) return info;
   }
 
   return null;
@@ -501,141 +403,12 @@ export async function syncShipImages(
   }
 }
 
-// --- Paint image sync ---
-
-export async function syncPaintImages(
-  db: D1Database,
-  baseURL: string,
-  rateLimitMs: number,
-): Promise<void> {
-  const syncID = await insertSyncHistory(db, SYNC_SOURCE.RSI_API, "paints", "running");
-
-  try {
-    console.log("[rsi] Paint image sync starting");
-
-    // Fetch all paints (paginated)
-    const allPaints: BrowseResource[] = [];
-    for (let page = 1; ; page++) {
-      const variables = {
-        query: {
-          page,
-          limit: PAGE_LIMIT,
-          skus: {
-            filtersFromTags: {
-              tagIdentifiers: ["weight", "desc"],
-              facetIdentifiers: ["paints"],
-            },
-            products: [268],
-          },
-          sort: { field: "weight", direction: "desc" },
-        },
-      };
-
-      const data = await queryGraphQL(baseURL, browseQuery, variables, rateLimitMs);
-      allPaints.push(...data.store.listing.resources);
-
-      console.log(
-        `[rsi] Paints page ${page}: ${data.store.listing.count} items, ${allPaints.length}/${data.store.listing.totalCount} total`,
-      );
-
-      if (data.store.listing.count === 0 || allPaints.length >= data.store.listing.totalCount) {
-        break;
-      }
-    }
-
-    console.log(`[rsi] Fetched ${allPaints.length} paints from RSI API`);
-
-    // Load DB paints for matching
-    const dbPaints = await getAllPaintNameClasses(db);
-    const exactLookup = new Map<string, PaintInfo>();
-    const allDBPaints: PaintInfo[] = [];
-    for (const p of dbPaints) {
-      const info: PaintInfo = {
-        norm: normalizePaintName(p.name),
-        className: p.class_name,
-        hasImage: p.has_image,
-      };
-      exactLookup.set(info.norm, info);
-      allDBPaints.push(info);
-    }
-
-    let matched = 0;
-    let skippedNoImage = 0;
-    let skippedNoMatch = 0;
-    let skippedPackage = 0;
-    const paintStmts: D1PreparedStatement[] = [];
-
-    for (const paint of allPaints) {
-      if (paint.isPackage) {
-        skippedPackage++;
-        continue;
-      }
-
-      const imageURL = paint.media?.thumbnail?.storeSmall;
-      if (!imageURL) {
-        skippedNoImage++;
-        continue;
-      }
-
-      let name = paint.name || paint.title;
-      if (!name) continue;
-
-      // Expand abbreviated ship names before matching
-      name = expandRSIPaintName(name);
-
-      // Convert "Ship - Paint Name" → "Ship Paint Name" for DB matching
-      let fullName = buildPaintFullName(name);
-      if (!fullName) fullName = name;
-
-      const norm = normalizePaintName(fullName);
-      const info = findPaintMatch(norm, exactLookup, allDBPaints);
-      if (!info) {
-        skippedNoMatch++;
-        continue;
-      }
-
-      const images = buildImageURLs(imageURL);
-      paintStmts.push(buildUpdatePaintImagesStatement(db, info.className, images.imageURL, images.small, images.medium, images.large));
-      matched++;
-    }
-
-    // Execute all paint image updates in batched chunks
-    for (const chunk of chunkArray(paintStmts, 500)) {
-      await db.batch(chunk);
-    }
-
-    await updateSyncHistory(db, syncID, "success", matched, "");
-    console.log(
-      `[rsi] Paint image sync complete: ${matched} matched, ${skippedNoImage} no image, ${skippedNoMatch} no match, ${skippedPackage} packages (${allPaints.length} RSI paints)`,
-    );
-    logEvent("sync_rsi_paints", {
-      fetched: allPaints.length,
-      matched,
-      no_image: skippedNoImage,
-      no_match: skippedNoMatch,
-    });
-  } catch (err) {
-    await updateSyncHistory(db, syncID, "error", 0, String(err));
-    throw err;
-  }
-}
-
-// --- Combined sync ---
+// --- Combined sync (ships only — paint images are manual upload) ---
 
 export async function syncAll(
   db: D1Database,
   baseURL: string,
   rateLimitMs: number,
 ): Promise<void> {
-  try {
-    await syncShipImages(db, baseURL, rateLimitMs);
-  } catch (err) {
-    console.error("[rsi] Ship image sync failed:", err);
-  }
-
-  try {
-    await syncPaintImages(db, baseURL, rateLimitMs);
-  } catch (err) {
-    console.error("[rsi] Paint image sync failed:", err);
-  }
+  await syncShipImages(db, baseURL, rateLimitMs);
 }

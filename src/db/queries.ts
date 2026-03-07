@@ -375,18 +375,6 @@ export async function updatePaintImages(
     .run();
 }
 
-export async function getAllPaintNameClasses(
-  db: D1Database,
-): Promise<Array<{ name: string; class_name: string; has_image: boolean; image_url: string | null }>> {
-  const result = await db
-    .prepare(
-      `SELECT name, class_name, image_url, (image_url IS NOT NULL AND image_url != '') as has_image
-      FROM paints WHERE is_base_variant = 0 ORDER BY name`,
-    )
-    .all();
-  return result.results as Array<{ name: string; class_name: string; has_image: boolean; image_url: string | null }>;
-}
-
 export async function getPaintsByVehicleSlug(
   db: D1Database,
   vehicleSlug: string,
@@ -1115,24 +1103,6 @@ export function buildUpdateVehicleImagesStatement(
       )
       .bind(imageURL, small, medium, large, slug),
   ];
-}
-
-export function buildUpdatePaintImagesStatement(
-  db: D1Database,
-  className: string,
-  imageURL: string,
-  small: string,
-  medium: string,
-  large: string,
-): D1PreparedStatement {
-  return db
-    .prepare(
-      `UPDATE paints SET
-        image_url = ?, image_url_small = ?, image_url_medium = ?, image_url_large = ?,
-        updated_at = datetime('now')
-      WHERE class_name = ?`,
-    )
-    .bind(imageURL, small, medium, large, className);
 }
 
 // ============================================================
