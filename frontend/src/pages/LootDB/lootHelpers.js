@@ -4,7 +4,7 @@ import { friendlyLocation, friendlyFaction } from '../../lib/lootLocations'
 
 // ── Set name extraction ───────────────────────────────────────────────────────
 export const PIECE_SUFFIXES = [
-  'Sniper Rifle', 'Assault Rifle', 'Helmet', 'Chestplate', 'Backplate', 'Arms', 'Legs',
+  'Sniper Rifle', 'Assault Rifle', 'Helmet', 'Chestplate', 'Backplate', 'Core', 'Arms', 'Legs',
   'Undersuit', 'Backpack', 'Hat', 'Jacket', 'Pants', 'Rifle', 'Pistol', 'SMG', 'Shotgun',
   'LMG', 'Launcher', 'Blade', 'Knife', 'Carbine', 'Suit', 'Gloves', 'Boots', 'Vest',
 ]

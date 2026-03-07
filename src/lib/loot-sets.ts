@@ -12,6 +12,7 @@ export const PIECE_SUFFIXES = [
   "Helmet",
   "Chestplate",
   "Backplate",
+  "Core",
   "Arms",
   "Legs",
   "Undersuit",
