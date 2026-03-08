@@ -32,16 +32,16 @@ function PieceCard({ piece, collectionQty, onSetQty }) {
             {piece.name}
           </Link>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className={`text-[9px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
+            <span className={`text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
               {catLabel}
             </span>
             {piece.sub_type && (
-              <span className="text-[9px] font-mono text-gray-400 bg-gray-800/60 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-mono text-gray-400 bg-gray-800/60 px-1.5 py-0.5 rounded">
                 {piece.sub_type}
               </span>
             )}
             {piece.rarity && rs && (
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
                 {piece.rarity}
               </span>
             )}
@@ -121,7 +121,7 @@ function AggregateStats({ pieces }) {
           return (
             <div key={k} className="text-center">
               <p className="text-lg font-mono text-white">{Math.round(t.sum)}%</p>
-              <p className="text-[9px] font-display uppercase tracking-wider text-gray-500">
+              <p className="text-[10px] font-display uppercase tracking-wider text-gray-500">
                 {RESISTANCE_LABELS[k]}
               </p>
             </div>

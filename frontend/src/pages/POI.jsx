@@ -33,7 +33,7 @@ function RaritySummary({ rarities }) {
   return (
     <div className="flex items-center gap-1.5">
       {present.slice(0, 3).map(r => (
-        <span key={r} className={`text-[9px] font-mono ${RARITY_STYLES[r]?.dot || 'text-gray-500'}`}>
+        <span key={r} className={`text-[10px] font-mono ${RARITY_STYLES[r]?.dot || 'text-gray-500'}`}>
           {rarities[r]} {r}
         </span>
       ))}

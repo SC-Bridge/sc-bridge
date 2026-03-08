@@ -188,29 +188,29 @@ export default function POIDetail() {
                   to={`/loot/${item.uuid}`}
                   className="flex items-center gap-3 px-3 py-2.5 border-b border-sc-border hover:bg-white/3 transition-colors"
                 >
-                  <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${
+                  <span className={`text-[10px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${
                     CATEGORY_BADGE_STYLES[item.category] || CATEGORY_BADGE_STYLES.unknown
                   }`}>
                     {CATEGORY_LABELS[item.category] || item.category}
                   </span>
                   <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
                   {item.sub_type && (
-                    <span className="text-[9px] font-mono text-gray-500 shrink-0">{item.sub_type}</span>
+                    <span className="text-[10px] font-mono text-gray-500 shrink-0">{item.sub_type}</span>
                   )}
                   {item.rarity && (
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
                       (RARITY_STYLES[item.rarity] || RARITY_STYLES.Common).badge
                     }`}>
                       {item.rarity}
                     </span>
                   )}
                   {item.perContainer != null && (
-                    <span className="text-[9px] font-mono text-gray-600 shrink-0">
+                    <span className="text-[10px] font-mono text-gray-600 shrink-0">
                       {(item.perContainer * 100).toFixed(1)}%
                     </span>
                   )}
                   {item.buyPrice != null && (
-                    <span className="text-[9px] font-mono text-gray-500 shrink-0">
+                    <span className="text-[10px] font-mono text-gray-500 shrink-0">
                       {Math.round(item.buyPrice).toLocaleString()} aUEC
                     </span>
                   )}

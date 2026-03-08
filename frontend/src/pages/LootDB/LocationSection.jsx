@@ -28,10 +28,10 @@ function LocationRow({ row, linkTo }) {
       {labelContent}
       <div className="flex items-center gap-1.5 shrink-0">
         {row.detail && (
-          <span className="text-[9px] font-mono text-gray-500">{row.detail}</span>
+          <span className="text-[10px] font-mono text-gray-500">{row.detail}</span>
         )}
         {row.probability != null && (
-          <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
+          <span className="text-[10px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
         )}
       </div>
     </div>
@@ -87,7 +87,7 @@ export default function LocationSection({ label, icon: Icon, data, type }) {
         <div className="space-y-3">
           {sortedGroups.map(([groupKey, groupRows]) => (
             <div key={groupKey}>
-              <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
+              <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
                 {LOCATION_GROUP_CONFIG[groupKey]?.label ?? groupKey}
               </p>
               <div className="space-y-1">
@@ -128,11 +128,11 @@ export default function LocationSection({ label, icon: Icon, data, type }) {
             return (
             <div key={factionName}>
               {rawFactionKey ? (
-                <Link to={`/poi/npc/${encodeURIComponent(rawFactionKey)}`} className="text-[9px] font-display uppercase tracking-wider text-sc-accent hover:text-sc-accent/80 mb-1 pl-2 block transition-colors">
+                <Link to={`/poi/npc/${encodeURIComponent(rawFactionKey)}`} className="text-[10px] font-display uppercase tracking-wider text-sc-accent hover:text-sc-accent/80 mb-1 pl-2 block transition-colors">
                   {factionName}
                 </Link>
               ) : (
-                <p className="text-[9px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
+                <p className="text-[10px] font-display uppercase tracking-wider text-gray-500 mb-1 pl-2">
                   {factionName}
                 </p>
               )}
@@ -141,7 +141,7 @@ export default function LocationSection({ label, icon: Icon, data, type }) {
                   <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border">
                     <span className="text-xs font-mono text-gray-300">{row.detail || '—'}</span>
                     {row.probability != null && (
-                      <span className="text-[9px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
+                      <span className="text-[10px] font-mono text-gray-600">{(row.probability * 100).toFixed(1)}%</span>
                     )}
                   </div>
                 ))}

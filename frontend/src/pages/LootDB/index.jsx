@@ -312,7 +312,7 @@ export default function LootDB() {
           >
             Collection
             {collectionCount > 0 && (
-              <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${
+              <span className={`text-[10px] font-mono px-1 py-0.5 rounded ${
                 activeTab === 'collection' ? 'bg-sc-accent/20 text-sc-accent' : 'bg-gray-700 text-gray-400'
               }`}>
                 {collectionCount}
@@ -330,7 +330,7 @@ export default function LootDB() {
             <Bookmark className="w-3 h-3" />
             Wishlist
             {wishlistCount > 0 && (
-              <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${
+              <span className={`text-[10px] font-mono px-1 py-0.5 rounded ${
                 activeTab === 'wishlist' ? 'bg-amber-400/20 text-amber-400' : 'bg-gray-700 text-gray-400'
               }`}>
                 {wishlistCount}
@@ -406,7 +406,7 @@ export default function LootDB() {
                           }`}
                         >
                           <span className="font-display tracking-wide truncate">{sn}</span>
-                          <span className="font-mono text-[9px] text-gray-600 shrink-0">{count}</span>
+                          <span className="font-mono text-[10px] text-gray-600 shrink-0">{count}</span>
                         </button>
                       ))}
                     </div>
@@ -620,12 +620,12 @@ export default function LootDB() {
                       className="flex items-center gap-3 px-3 py-2 hover:bg-white/3 cursor-pointer transition-colors"
                       onClick={() => setDetailUuid(item.uuid)}
                     >
-                      <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded w-20 text-center shrink-0 ${catStyle}`}>
+                      <span className={`text-[10px] font-display uppercase px-1.5 py-0.5 rounded w-20 text-center shrink-0 ${catStyle}`}>
                         {catLabel}
                       </span>
                       <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
                       {item.rarity && rs && (
-                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
                           {item.rarity}
                         </span>
                       )}
@@ -729,7 +729,7 @@ export default function LootDB() {
                           collCategory === cat ? 'border-sc-accent/60' : 'hover:border-sc-border/80'
                         }`}
                       >
-                        <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded ${catStyle}`}>
+                        <span className={`text-[10px] font-display uppercase px-1.5 py-0.5 rounded ${catStyle}`}>
                           {CATEGORY_LABELS[cat]}
                         </span>
                         <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
@@ -782,12 +782,12 @@ export default function LootDB() {
                         className="flex items-center gap-3 px-3 py-2.5 border-b border-sc-border last:border-0 hover:bg-white/3 cursor-pointer transition-colors"
                         onClick={() => setDetailUuid(item.uuid)}
                       >
-                        <span className={`text-[9px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${catStyle}`}>
+                        <span className={`text-[10px] font-display uppercase px-1.5 py-0.5 rounded shrink-0 w-20 text-center ${catStyle}`}>
                           {catLabel}
                         </span>
                         <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
                         {item.rarity && rs && (
-                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
                             {item.rarity}
                           </span>
                         )}

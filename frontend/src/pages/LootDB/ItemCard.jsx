@@ -15,7 +15,7 @@ export default function ItemCard({ item, collectionQty, onSetCollectionQty, wish
     >
       {/* Top row: category badge + wishlist icon + rarity badge */}
       <div className="flex items-center gap-1">
-        <span className={`text-[9px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
+        <span className={`text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
           {catLabel}
         </span>
         <div className="flex-1" />
@@ -31,7 +31,7 @@ export default function ItemCard({ item, collectionQty, onSetCollectionQty, wish
           </button>
         )}
         {item.rarity && (
-          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
             {item.rarity}
           </span>
         )}

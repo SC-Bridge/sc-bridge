@@ -36,7 +36,7 @@ export default function RsiOrgChip({ slug, name, isMain = false, scBridge = fals
         </span>
       )}
       {isMain && (
-        <span className="text-[9px] uppercase tracking-widest text-sc-accent/70 ml-0.5">
+        <span className="text-[10px] uppercase tracking-widest text-sc-accent/70 ml-0.5">
           main
         </span>
       )}

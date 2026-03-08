@@ -134,16 +134,16 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, onS
                 <p className="text-[10px] font-mono text-gray-500">{manufacturerName}</p>
               )}
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className={`text-[9px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
+                <span className={`text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
                   {catLabel}
                 </span>
                 {item.rarity && rs && (
-                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
                     {item.rarity}
                   </span>
                 )}
                 {item.sub_type && (
-                  <span className="text-[9px] font-mono text-gray-400 bg-gray-800/60 px-1.5 py-0.5 rounded">
+                  <span className="text-[10px] font-mono text-gray-400 bg-gray-800/60 px-1.5 py-0.5 rounded">
                     {item.sub_type}
                   </span>
                 )}
