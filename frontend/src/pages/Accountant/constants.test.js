@@ -1,0 +1,47 @@
+import { describe, it, expect } from 'vitest';
+import {
+  ACCOUNTANT_TIERS,
+  ACCOUNTANT_MODULES,
+  TIER_RANK,
+  isModuleAvailable,
+} from './constants';
+
+describe('accountant constants', () => {
+  it('exports exactly three tiers in rank order', () => {
+    expect(ACCOUNTANT_TIERS).toEqual(['easy', 'advanced', 'industrial']);
+  });
+
+  it('lists four modules (no corp module in M0)', () => {
+    expect(ACCOUNTANT_MODULES.map((m) => m.id)).toEqual([
+      'core-financials',
+      'finance',
+      'reports',
+      'orders',
+    ]);
+  });
+
+  it('TIER_RANK orders tiers monotonically', () => {
+    expect(TIER_RANK.easy).toBeLessThan(TIER_RANK.advanced);
+    expect(TIER_RANK.advanced).toBeLessThan(TIER_RANK.industrial);
+  });
+
+  describe('isModuleAvailable', () => {
+    it('easy tier unlocks only core-financials', () => {
+      expect(isModuleAvailable('easy', 'easy')).toBe(true);
+      expect(isModuleAvailable('advanced', 'easy')).toBe(false);
+      expect(isModuleAvailable('industrial', 'easy')).toBe(false);
+    });
+
+    it('advanced tier unlocks core-financials and orders, not industrial-only modules', () => {
+      expect(isModuleAvailable('easy', 'advanced')).toBe(true);
+      expect(isModuleAvailable('advanced', 'advanced')).toBe(true);
+      expect(isModuleAvailable('industrial', 'advanced')).toBe(false);
+    });
+
+    it('industrial tier unlocks everything', () => {
+      expect(isModuleAvailable('easy', 'industrial')).toBe(true);
+      expect(isModuleAvailable('advanced', 'industrial')).toBe(true);
+      expect(isModuleAvailable('industrial', 'industrial')).toBe(true);
+    });
+  });
+});

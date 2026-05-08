@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -72,6 +72,7 @@ const Components = lazy(() => import('./pages/Components'))
 const FpsLoadout = lazy(() => import('./pages/FpsLoadout'))
 const About = lazy(() => import('./pages/About'))
 const NotFound = lazy(() => import('./pages/NotFound'))
+const AccountantSettings = lazy(() => import('./pages/Accountant'))
 
 // Game Data and Reference are public — visible to all users
 const gameDataGroup = {
@@ -157,6 +158,7 @@ const authNavItems = [
   },
   referenceGroup,
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
+  { to: '/accountant/settings', icon: Wallet, label: 'Accountant' },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
 ]
 
@@ -195,7 +197,7 @@ function filterNav(items, isLoggedIn, features, role) {
     .filter(Boolean)
 }
 
-function getNavItems(role, isLoggedIn, features) {
+export function getNavItems(role, isLoggedIn, features) {
   if (!isLoggedIn) return filterNav([...publicNavItems], false, features, role)
   const items = filterNav([...authNavItems], true, features, role)
   if (role === 'admin' || role === 'super_admin') {
@@ -755,6 +757,8 @@ export default function App() {
                       <Route path="/sync-import" element={<RequireAuth><Import /></RequireAuth>} />
                       <Route path="/localization" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><LocalizationBuilder /></Suspense></RequireAuth>} />
                       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+                      <Route path="/accountant" element={<Navigate to="/accountant/settings" replace />} />
+                      <Route path="/accountant/settings" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSettings /></Suspense></RequireAuth>} />
                       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><Admin /></RequireRole></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><UserManagement /></RequireRole></RequireAuth>} />
