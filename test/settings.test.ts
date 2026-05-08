@@ -252,4 +252,130 @@ describe("Settings — /api/settings/preferences", () => {
       expect(publicRes.status).toBe(404);
     });
   });
+
+  describe("accountantTier", () => {
+    it("accepts 'easy' and persists value in user_settings", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "easy" }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB
+        .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantTier'")
+        .bind(userId)
+        .first<{ value: string }>();
+      expect(row?.value).toBe("easy");
+    });
+
+    it("accepts 'advanced' and persists value in user_settings", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "advanced" }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB
+        .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantTier'")
+        .bind(userId)
+        .first<{ value: string }>();
+      expect(row?.value).toBe("advanced");
+    });
+
+    it("accepts 'industrial' and persists value in user_settings", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "industrial" }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB
+        .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantTier'")
+        .bind(userId)
+        .first<{ value: string }>();
+      expect(row?.value).toBe("industrial");
+    });
+
+    it("rejects 'banana' (not in enum) with 400 and no DB write", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "banana" }),
+      });
+      expect(res.status).toBe(400);
+
+      const row = await env.DB
+        .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantTier'")
+        .bind(userId)
+        .first<{ value: string }>();
+      expect(row).toBeNull();
+    });
+
+    it("rejects numeric values (wrong type) with 400", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: 1 }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("GET preferences returns accountantTier after PUT", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "industrial" }),
+      });
+
+      const getRes = await SELF.fetch("http://localhost/api/settings/preferences", { headers });
+      const body = (await getRes.json()) as Record<string, string>;
+      expect(body.accountantTier).toBe("industrial");
+    });
+
+    it("GET preferences omits accountantTier when not set", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      const getRes = await SELF.fetch("http://localhost/api/settings/preferences", { headers });
+      const body = (await getRes.json()) as Record<string, string>;
+      expect(body.accountantTier).toBeUndefined();
+    });
+
+    it("after PUT, user_change_history contains a row with field_name='accountantTier' and correct new_value", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ accountantTier: "advanced" }),
+      });
+
+      const row = await env.DB
+        .prepare(
+          "SELECT field_name, new_value FROM user_change_history WHERE user_id = ? AND field_name = 'accountantTier' ORDER BY id DESC LIMIT 1"
+        )
+        .bind(userId)
+        .first<{ field_name: string; new_value: string }>();
+      expect(row?.field_name).toBe("accountantTier");
+      expect(row?.new_value).toBe("advanced");
+    });
+  });
 });

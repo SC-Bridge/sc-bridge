@@ -185,6 +185,7 @@ export function settingsRoutes() {
       // account for logged-in users (anonymous users keep theirs in
       // localStorage). Capped to keep the KV value sane.
       miningLoadouts: z.string().max(20000).nullable().optional(),
+      accountantTier: z.enum(['easy', 'advanced', 'industrial']).optional(),
     }).strict()),
     async (c) => {
     const db = c.env.DB;
