@@ -41,9 +41,11 @@ export async function cachedJson<T>(
     cacheKey = `${channel.toLowerCase()}:${cacheKey}`;
   }
 
-  // Skip cache in test environment — KV persists across test files and caches
-  // stale empty results before data is seeded
-  if (c.env.ENVIRONMENT === "test") {
+  // Skip cache when the KV binding isn't available (e.g. local `vite dev`
+  // without SC_BRIDGE_CACHE bound) OR in the test environment (KV persists
+  // across test files and caches stale empty results before data is seeded).
+  // A read-through cache should degrade to direct DB reads, not crash.
+  if (!kv || c.env.ENVIRONMENT === "test") {
     const data = await dataFn();
     if (data === null || data === undefined) {
       return c.json({ error: "Not found" }, 404);

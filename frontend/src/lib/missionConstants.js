@@ -86,6 +86,11 @@ export const FACTION_LOGOS = {
   // MissionDetail.jsx had these by display name (merged above)
   "Dead Saints": "https://imagedelivery.net/_nHFky6xiv-JbnhLN5CCrQ/faction-logo-headhunters/thumb",
   "Hockrow Agency": "https://imagedelivery.net/_nHFky6xiv-JbnhLN5CCrQ/faction-logo-intersec/thumb",
+  // Planetary bounty departments → their planet's corp logo. (microTech already
+  // resolves via the first-word fallback; Crusader/Hurston need explicit keys
+  // because the map only has "Crusader Industries" / "Hurston Dynamics".)
+  "Crusader Bounty Department": "https://imagedelivery.net/_nHFky6xiv-JbnhLN5CCrQ/996a1753-fbaf-4f89-b8a8-7170deb19200/thumb",
+  "Hurston Bounty Department": "https://imagedelivery.net/_nHFky6xiv-JbnhLN5CCrQ/27339355-f4d7-410f-ae7f-8c9a50e1e800/thumb",
 }
 
 const _logoLookup = Object.fromEntries(
@@ -245,7 +250,12 @@ export const SCOPE_SLUG_NAMES = {
   exploration: 'Exploration',
   emergency: 'Emergency',
   affinity: 'Affinity',
+  handyman_citizensforpyro: 'Handyman (Citizens for Pyro)',
 }
+
+// Internal/engine-only rep scopes that should never surface as a browsable
+// reputation track in the UI.
+const REP_SCOPE_EXCLUDE = new Set(['npc_reliability'])
 
 /** Humanize a faction slug: known lookup, then camelCase split, then fallback word split */
 export function humanizeFactionSlug(slug) {
@@ -275,8 +285,12 @@ export function humanizeScopeSlug(slug) {
 /** Humanize a standing slug: known patterns, then fallback split + title-case */
 export function humanizeStandingSlug(slug) {
   if (!slug) return ''
-  // Handle affinity patterns: "affinity_enemy_-005" → "Not Hostile"
-  const affinityMatch = slug.match(/^affinity_(enemy|friend|neutral|ally)_?(-?\d*)$/i)
+  // Handle affinity patterns: "affinity_enemy_-005" → "Not Hostile".
+  // 4.8 prefixes these with "reputationstanding_" (e.g.
+  // "reputationstanding_affinity_enemy_-005"), so match on a segment boundary
+  // (start OR underscore) rather than the string start — otherwise the prefix
+  // breaks the match and the slug falls through to the raw "-005" fallback.
+  const affinityMatch = slug.match(/(?:^|_)affinity_(enemy|friend|neutral|ally)_?(-?\d*)$/i)
   if (affinityMatch) {
     const type = affinityMatch[1].toLowerCase()
     if (type === 'enemy') return 'Not Hostile'
@@ -357,6 +371,36 @@ export function formatRepRequirement(r) {
   return { label: null, standing, cmp, faction, scope: showScope ? scope : null }
 }
 
+/**
+ * Derive the set of reputation SCOPE slugs a mission affects, for the Career
+ * Reputation browse view + the `?rep=` scope filter.
+ *
+ * 4.8 moved scope out of `rep_summary` (now a bare success magnitude like "XS")
+ * into the structured `rep_changes` rows and the legacy `rep_fail`/`rep_abandon`
+ * strings ("affinity: -XXXXS, security: -M"). Prefer the structured rows; fall
+ * back to parsing the legacy strings. Internal engine scopes (npc_reliability)
+ * are excluded so they never appear as a browsable track.
+ *
+ * @param {Array<{scope_slug:string}>|null} changes structured rep_changes rows
+ * @param {string|null} repFail legacy "scope: -SIZE, ..." fail string
+ * @param {string|null} repAbandon legacy abandon string
+ * @returns {string[]} unique, lowercased scope slugs (excludes internal scopes)
+ */
+export function deriveRepScopeSlugs(changes, repFail, repAbandon) {
+  const slugs = new Set()
+  if (changes && changes.length) {
+    for (const c of changes) if (c.scope_slug) slugs.add(c.scope_slug.toLowerCase())
+  } else {
+    const re = /([a-zA-Z_]+)\s*:\s*[+\-]\s*[a-zA-Z]+/g
+    for (const s of [repFail, repAbandon]) {
+      if (!s) continue
+      let m
+      while ((m = re.exec(s)) !== null) slugs.add(m[1].toLowerCase())
+    }
+  }
+  return [...slugs].filter(s => s && !REP_SCOPE_EXCLUDE.has(s))
+}
+
 // ── Description cleanup ────────────────────────────────────────────────────
 
 /**
@@ -367,7 +411,12 @@ export function formatRepRequirement(r) {
 export function cleanMissionDescription(text) {
   if (!text) return ''
   let clean = text
-    // Strip HTML-like tags (EM4, etc.) but keep their inner text
+    // PART K: convert template-var tags to readable bracket tokens BEFORE the
+    // generic tag strip below. Otherwise <var name="Location"/> gets stripped
+    // entirely, leaving grammar gaps ("entrenched themselves at . To keep").
+    // "[Location]" reads as an obvious fill-in-the-blank.
+    .replace(/<var name="([^"]+)"\s*\/>/g, '[$1]')
+    // Strip remaining HTML-like tags (EM4, etc.) but keep their inner text
     .replace(/<[^>]+>/g, '')
     // Runtime templates — CIG binds these at mission-pickup time
     // (`~serviceBeacon(InitiatorName)`, `~mission(Contractor|Key)`, etc.).
@@ -505,6 +554,20 @@ export function humanizeMissionStem(raw) {
   return parts.length ? parts.join(' · ') : raw
 }
 
+// Sentence-case a title that CIG shipped in all-lowercase ("get the goods" →
+// "Get the goods"). Leaves already-capitalised titles ("Advanced Tracker
+// License Certification", "Destroy Deadly Contraband") untouched, and skips
+// strings carrying template tags (<var.../>) or template placeholders so we
+// don't mangle them. Sentence case (first letter only) per Gavin's request,
+// not title case.
+export function sentenceCaseTitle(s) {
+  if (!s || typeof s !== 'string') return s
+  // Already has an uppercase letter, or contains a template tag/placeholder → leave as-is
+  if (/[A-Z]/.test(s) || s.includes('<var') || s.includes('{')) return s
+  // Capitalise the first alphabetic character, keep the rest verbatim
+  return s.replace(/^(\s*)([a-z])/, (_, ws, ch) => ws + ch.toUpperCase())
+}
+
 // Known compound-word prefixes CIG concatenates without underscores. Split
 // them before title-casing so stems like "haulcargo_rounddelivery" →
 // "Haul Cargo · Round Delivery" instead of the raw "Rounddelivery".
@@ -551,10 +614,25 @@ const KNOWN_GIVER_CORPS = [
   ['covalexshipping', 'Covalex Shipping'],
   ['redwindlinehaul', 'Red Wind Linehaul'],
   ['unifieddistributionmanagement', 'Unified Distribution Management'],
+  ['lingfamilyhauling', 'Ling Family Hauling'],
   ['bountyhuntersguild', "Bounty Hunters Guild"],
+  ['bountyhunterguild', "Bounty Hunters Guild"],
   ['citizensforprosperity', 'Citizens for Prosperity'],
   ['hurstondynamics', 'Hurston Dynamics'],
   ['crusaderindustries', 'Crusader Industries'],
+  // Planetary bounty departments (concatenated, no word boundaries)
+  ['microtechbountydepartment', 'microTech Bounty Department'],
+  ['crusaderbountydepartment', 'Crusader Bounty Department'],
+  ['hurstonbountydepartment', 'Hurston Bounty Department'],
+  ['blacjacbountydepartment', 'BlacJac Bounty Department'],
+  ['northrock_bounty', 'NorthRock Bounty'],
+  // Named individual givers (can't be word-split without knowing the name)
+  ['mileseckhart', 'Miles Eckhart'],
+  ['teciapacheco', 'Tecia Pacheco'],
+  ['clovusdarneely', 'Clovus Darneely'],
+  ['constantinehurston', 'Constantine Hurston'],
+  ['wallaceklim', 'Wallace Klim'],
+  ['reccobattaglia', 'Recco Battaglia'],
   ['microtech', 'microTech'],
   ['bitzeros', 'Bit Zeros'],
   ['hiredmuscle', 'Hired Muscle'],
@@ -589,6 +667,36 @@ export function humanizeMissionGiverSlug(raw) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// CIG's fixed reputation size ladder → absolute rep points. Mirrors the
+// reputation_reward_tiers table (each step ~doubles). Used to render the
+// player-meaningful number ("affinity −50") instead of the opaque size code
+// ("affinity −XXXXS"). The reputation_reward_tiers table isn't always loaded
+// client-side, and success-reward rep is stored only as a size on missions,
+// so this map gives a single source of truth for size → amount everywhere.
+export const REP_SIZE_AMOUNT = {
+  XXXXS: 50,
+  XXXS: 100,
+  XXS: 250,
+  XS: 500,
+  S: 1000,
+  M: 2000,
+  L: 4000,
+  XL: 8000,
+  XXL: 16000,
+  XXXL: 32000,
+}
+
+// Resolve a size code (+ optional direction sign) to a signed rep amount string.
+// formatRepSize('XXXXS', 'negative') → '−50' ; formatRepSize('M', 'positive') → '+2000'.
+// Returns the bare size code when it isn't in the ladder (defensive).
+export function formatRepSize(sizeCode, direction = 'positive') {
+  if (!sizeCode) return null
+  const amt = REP_SIZE_AMOUNT[String(sizeCode).toUpperCase()]
+  if (amt == null) return sizeCode
+  const sign = direction === 'negative' ? '−' : '+'
+  return `${sign}${amt.toLocaleString()}`
 }
 
 /** Format raw rep_reward strings like "+50bountyhuntersguild" or "+250citizensforprosperity,-100xenothreat" */

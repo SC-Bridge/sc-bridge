@@ -36,7 +36,7 @@ describe('RepCostBadges', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders structured changes grouped by event', () => {
+  it('renders structured changes grouped by event with resolved numbers + humanised scopes', () => {
     const changes = [
       { scope_slug: 'security', event: 'fail', size_code: 'M', direction: 'negative', rep_amount: -50 },
       { scope_slug: 'affinity', event: 'fail', size_code: 'S', direction: 'negative', rep_amount: -25 },
@@ -45,30 +45,30 @@ describe('RepCostBadges', () => {
     render(<RepCostBadges changes={changes} />)
     expect(screen.getByText('fail:')).toBeInTheDocument()
     expect(screen.getByText('abandon:')).toBeInTheDocument()
-    // Three scope chips total
-    expect(screen.getByText(/security −M/)).toBeInTheDocument()
-    expect(screen.getByText(/affinity −S/)).toBeInTheDocument()
-    expect(screen.getByText(/security −S/)).toBeInTheDocument()
+    // Numeric rep_amount with humanised scope + U+2212 minus
+    expect(screen.getByText(/Security −50/)).toBeInTheDocument()
+    expect(screen.getByText(/Affinity −25/)).toBeInTheDocument()
+    expect(screen.getByText(/Security −10/)).toBeInTheDocument()
   })
 
-  it('shows rep_amount in the tooltip when present', () => {
+  it('shows rep_amount + size code in the tooltip', () => {
     const changes = [
       { scope_slug: 'security', event: 'fail', size_code: 'M', direction: 'negative', rep_amount: -50 },
     ]
     render(<RepCostBadges changes={changes} />)
-    expect(screen.getByTitle(/-50 rep/)).toBeInTheDocument()
+    expect(screen.getByTitle(/−50 rep/)).toBeInTheDocument()
   })
 
-  it('omits the rep number from tooltip when null', () => {
+  it('falls back to the CIG size ladder when rep_amount is null', () => {
+    // XXS → 250 via the fixed ladder
     const changes = [
-      { scope_slug: 'security', event: 'fail', size_code: 'XXXL', direction: 'negative', rep_amount: null },
+      { scope_slug: 'security', event: 'fail', size_code: 'XXS', direction: 'negative', rep_amount: null },
     ]
     render(<RepCostBadges changes={changes} />)
-    const badge = screen.getByTitle(/security: −XXXL/)
-    expect(badge.getAttribute('title')).not.toMatch(/rep/)
+    expect(screen.getByText(/Security −250/)).toBeInTheDocument()
   })
 
-  it('falls back to parsing legacy summary strings when changes is empty', () => {
+  it('falls back to parsing legacy summary strings when changes is empty (resolved via ladder)', () => {
     render(
       <RepCostBadges
         changes={[]}
@@ -78,9 +78,10 @@ describe('RepCostBadges', () => {
     )
     expect(screen.getByText('fail:')).toBeInTheDocument()
     expect(screen.getByText('abandon:')).toBeInTheDocument()
-    expect(screen.getByText(/security −M/)).toBeInTheDocument()
-    expect(screen.getByText(/security −S/)).toBeInTheDocument()
-    expect(screen.getByText(/affinity −XXS/)).toBeInTheDocument()
+    // M→2000, S→1000, XXS→250 via the ladder (legacy strings have no rep_amount)
+    expect(screen.getByText(/Security −2,000/)).toBeInTheDocument()
+    expect(screen.getByText(/Security −1,000/)).toBeInTheDocument()
+    expect(screen.getByText(/Affinity −250/)).toBeInTheDocument()
   })
 
   it('prefers structured changes over legacy strings when both present', () => {
@@ -92,7 +93,7 @@ describe('RepCostBadges', () => {
         repFailSummary="should: -BE_IGNORED"
       />
     )
-    expect(screen.getByText(/security −L/)).toBeInTheDocument()
+    expect(screen.getByText(/Security −100/)).toBeInTheDocument()
     expect(screen.queryByText(/should/)).toBeNull()
   })
 
@@ -101,7 +102,7 @@ describe('RepCostBadges', () => {
       { scope_slug: 'security', event: 'success', size_code: 'XS', direction: 'positive', rep_amount: 10 },
     ]
     render(<RepCostBadges changes={changes} />)
-    const badge = screen.getByTitle(/security: \+XS/)
+    const badge = screen.getByTitle(/Security: \+10 rep/)
     expect(badge.className).toMatch(/emerald/)
   })
 })

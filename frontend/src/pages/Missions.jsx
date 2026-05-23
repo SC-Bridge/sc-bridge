@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Package, Users, Crosshair, Shield, Coins, AlertTriangle, FileText, Star, MapPin, FlaskConical, Building2, Clock, Lock, Ban, Trophy, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { ChevronDown, ChevronUp, Package, Users, Crosshair, Shield, Coins, AlertTriangle, FileText, Star, MapPin, FlaskConical, Building2, Clock, Lock, Ban, Trophy, TrendingUp, TrendingDown, Minus, Gem, Wrench, Search, Radio, Layers, List } from 'lucide-react'
 import { useContracts, useAPI, useMissionGivers } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import SearchInput from '../components/SearchInput'
 import StatCard from '../components/StatCard'
-import { FACTION_LOGOS, getFactionLogo, GUILD_LABELS, cleanMissionDescription, humanizeFactionSlug, humanizeScopeSlug, humanizeStandingSlug, humanizeComparison, formatRepReward, formatRepRequirement, humanizeMissionStem, humanizeMissionGiverSlug } from '../lib/missionConstants'
+import { FACTION_LOGOS, getFactionLogo, GUILD_LABELS, cleanMissionDescription, humanizeFactionSlug, humanizeScopeSlug, humanizeStandingSlug, humanizeComparison, formatRepRequirement, formatRepSize, humanizeMissionStem, humanizeMissionGiverSlug, sentenceCaseTitle, deriveRepScopeSlugs } from '../lib/missionConstants'
 import { MissionTitle } from '../components/MissionTitle'
+import { RepCostBadges } from '../components/RepCostBadges'
 
 function Pill({ active, onClick, children }) {
   return (
@@ -56,6 +57,48 @@ const CATEGORY_LABELS = {
   unknown: 'Other',
 }
 
+// Case-insensitive label lookup + title-case fallback. Raw CIG category values
+// that aren't in CATEGORY_LABELS, or differ only by case (e.g. "appointment",
+// "investigation", "salvage"), would otherwise leak into the dropdown as raw
+// lowercase chips. This normalises them and merges case-variant duplicates.
+const CATEGORY_LABELS_LC = Object.fromEntries(
+  Object.entries(CATEGORY_LABELS).map(([k, v]) => [k.toLowerCase(), v]),
+)
+function categoryLabel(raw) {
+  if (!raw) return raw
+  return CATEGORY_LABELS_LC[String(raw).toLowerCase()]
+    || String(raw).replace(/[_.]/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// Per-category leading icon + colour — gives each row a visual anchor (echoing
+// the faction-card logos) and shares the colour vocabulary of the Factions view.
+const CATEGORY_ICONS = {
+  Delivery: { Icon: Package, color: 'text-sky-400' },
+  Hauling: { Icon: Package, color: 'text-sky-400' },
+  Cargo: { Icon: Package, color: 'text-sky-400' },
+  Collection: { Icon: Package, color: 'text-teal-400' },
+  Mercenary: { Icon: Crosshair, color: 'text-red-400' },
+  Bounty: { Icon: Crosshair, color: 'text-amber-400' },
+  'Bounty Hunter': { Icon: Crosshair, color: 'text-amber-400' },
+  'Combat Gauntlet': { Icon: Shield, color: 'text-red-400' },
+  'Navy Patrol': { Icon: Shield, color: 'text-sky-400' },
+  'Service Beacon': { Icon: Radio, color: 'text-blue-400' },
+  Mining: { Icon: Gem, color: 'text-orange-400' },
+  Salvage: { Icon: Wrench, color: 'text-zinc-400' },
+  Maintenance: { Icon: Wrench, color: 'text-zinc-400' },
+  Investigation: { Icon: Search, color: 'text-purple-400' },
+  'Search & Rescue': { Icon: Search, color: 'text-emerald-400' },
+  Priority: { Icon: Star, color: 'text-amber-400' },
+  Favours: { Icon: Users, color: 'text-pink-400' },
+  Appointment: { Icon: Clock, color: 'text-gray-400' },
+  Job: { Icon: FileText, color: 'text-gray-400' },
+}
+function CategoryIcon({ category, className = 'w-4 h-4' }) {
+  const entry = CATEGORY_ICONS[category] || { Icon: FileText, color: 'text-gray-500' }
+  const Icon = entry.Icon
+  return <Icon className={`${className} ${entry.color} shrink-0`} aria-hidden="true" />
+}
+
 function deriveSystem(locationRef, locality) {
   const val = (locationRef || locality || '').toLowerCase()
   if (val.includes('stanton') || val.startsWith('stanton')) return 'Stanton'
@@ -89,32 +132,8 @@ function parseRequirements(json) {
 
 // ── Expanded section (3-zone layout) ───────────────────────────────────────
 
-function RepRewardCell({ raw }) {
-  if (!raw) return null
-  const parts = formatRepReward(raw)
-  if (!parts) return null
-  return (
-    <div className="space-y-0.5">
-      {parts.map((p, i) => {
-        const isPositive = p.amount.startsWith('+')
-        const isNegative = p.amount.startsWith('-')
-        return (
-          <div key={i} className="flex items-center gap-1.5">
-            {isPositive ? <TrendingUp className="w-3 h-3 text-emerald-400 shrink-0" /> :
-             isNegative ? <TrendingDown className="w-3 h-3 text-red-400 shrink-0" /> :
-             <Minus className="w-3 h-3 text-gray-500 shrink-0" />}
-            <span className={`text-[11px] font-mono ${isPositive ? 'text-emerald-400' : isNegative ? 'text-red-400' : 'text-gray-400'}`}>
-              {p.amount}
-            </span>
-            <span className="text-[11px] font-mono text-gray-500">{p.faction}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
-function ExpandedSection({ entry, prerequisites, repRequirements }) {
+function ExpandedSection({ entry, prerequisites, repRequirements, repChanges }) {
   const [descExpanded, setDescExpanded] = useState(false)
   const [prereqsExpanded, setPrereqsExpanded] = useState(false)
 
@@ -136,6 +155,8 @@ function ExpandedSection({ entry, prerequisites, repRequirements }) {
   const hasPrereqs = prereqs?.length > 0
   const hasRepReqs = repReqs?.length > 0
   const hasRepRewards = entry.rep_summary || entry.rep_fail || entry.rep_abandon
+  // PART K K11: structured rep changes per (scope, event) from mission_rep_changes.
+  const repChangeRows = (entry.source !== 'contract' && mId != null) ? repChanges?.[mId] : null
   const hasCrimeWarnings = entry.fail_if_criminal === 1 || entry.wanted_level_min > 0
   const hasRequirementsSection = hasPrereqs || hasRepReqs || hasRepRewards || hasCrimeWarnings || requirements || entry.source !== 'contract'
 
@@ -154,16 +175,29 @@ function ExpandedSection({ entry, prerequisites, repRequirements }) {
     <div className="px-4 pb-4 space-y-0">
       {/* ── Zone 1: Mission Intel Bar ────────────────────────── */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5 border-b border-white/[0.04]">
-        {/* Left group: source, category, system */}
+        {/* Left group: source, category, system — giver + category cross-link
+            to the filtered list view (Track A). */}
         <div className="flex flex-wrap items-center gap-1.5">
           {entry.giver_display && (
-            <span className="text-[11px] font-mono text-gray-400">{entry.giver_display}</span>
+            <Link
+              to={`/missions?giver=${encodeURIComponent(entry.giver_display)}`}
+              className="text-[11px] font-mono text-sc-accent hover:text-sc-accent2 transition-colors"
+              title={`Show all missions from ${entry.giver_display}`}
+            >
+              {entry.giver_display}
+            </Link>
           )}
           {entry.giver_display && entry.category_display && (
             <span className="text-gray-700 select-none">/</span>
           )}
           {entry.category_display && (
-            <span className="text-[11px] font-mono text-gray-500">{entry.category_display}</span>
+            <Link
+              to={`/missions?cat=${encodeURIComponent(entry.category_display)}`}
+              className="text-[11px] font-mono text-gray-500 hover:text-gray-300 transition-colors"
+              title={`Show all ${entry.category_display} missions`}
+            >
+              {entry.category_display}
+            </Link>
           )}
           {system && (
             <span className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border ${SYSTEM_BADGE_STYLES[system] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
@@ -375,23 +409,41 @@ function ExpandedSection({ entry, prerequisites, repRequirements }) {
                 <TrendingUp className="w-3.5 h-3.5 text-gray-500" />
                 <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Reputation Rewards</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Unified numeric rep display. Success comes from the single
+                  reputation_reward_size (resolved to a number via the CIG size
+                  ladder); fail/abandon come from RepCostBadges, which resolves
+                  mission_rep_changes.rep_amount (or the ladder as fallback).
+                  Replaced the old RepRewardCell grid, which rendered raw size
+                  codes like "XXXXS" — meaningless to a player. */}
+              <div className="flex flex-col gap-1">
                 {entry.rep_summary && (
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400/60 block mb-1">Success</span>
-                    <RepRewardCell raw={entry.rep_summary} />
+                  <div className="flex gap-1 items-center flex-wrap">
+                    <span className="text-[9px] text-emerald-400/60 uppercase tracking-wider">success:</span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                          title={`Success reputation reward (${entry.rep_summary})`}>
+                      {formatRepSize(entry.rep_summary, 'positive')} rep
+                    </span>
                   </div>
                 )}
-                {entry.rep_fail && (
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-red-400/60 block mb-1">Fail</span>
-                    <RepRewardCell raw={entry.rep_fail} />
-                  </div>
-                )}
-                {entry.rep_abandon && (
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-red-400/60 block mb-1">Abandon</span>
-                    <RepRewardCell raw={entry.rep_abandon} />
+                <RepCostBadges
+                  changes={repChangeRows}
+                  repFailSummary={entry.rep_fail}
+                  repAbandonSummary={entry.rep_abandon}
+                />
+                {/* Track A: rep scopes cross-link to the filtered list. */}
+                {entry.rep_scopes?.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[9px] text-gray-500 uppercase tracking-wider">browse:</span>
+                    {entry.rep_scopes.map(slug => (
+                      <Link
+                        key={slug}
+                        to={`/missions?rep=${encodeURIComponent(slug)}`}
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded border bg-sc-accent/[0.07] text-sc-accent border-sc-accent/20 hover:bg-sc-accent/15 transition-colors"
+                        title={`Browse all ${humanizeScopeSlug(slug)} reputation missions`}
+                      >
+                        {humanizeScopeSlug(slug)}
+                      </Link>
+                    ))}
                   </div>
                 )}
               </div>
@@ -410,39 +462,93 @@ function ExpandedSection({ entry, prerequisites, repRequirements }) {
 
 // ── Unified row ─────────────────────────────────────────────────────────────
 
-function EntryRow({ entry, repFocus, isHighlighted, highlightRef, prerequisites, repRequirements }) {
+// Small ascending/descending caret shown next to the active sort column header.
+function SortCaret({ dir }) {
+  return <span className="ml-1 text-sc-accent">{dir === 'asc' ? '▲' : '▼'}</span>
+}
+
+function EntryRow({ entry, repFocus, isHighlighted, highlightRef, prerequisites, repRequirements, repChanges, hideGiver }) {
   const [expanded, setExpanded] = useState(isHighlighted)
   const source = SOURCE_BADGE[entry.source] || SOURCE_BADGE.dynamic
   const reward = entry.reward_amount || 0
 
-  // Extract focused rep amount if filtering by rep
-  let focusedRep = null
-  if (repFocus && entry.rep_summary) {
-    const match = entry.rep_summary.split(', ').find(p => p.startsWith(repFocus + ':'))
-    if (match) focusedRep = match.split(':')[1]?.trim()
+  // Rep Required column value. Two sources: numeric tier (min_reputation, used
+  // by the Covalex-style ladders) AND the faction-standing gate (rep_requirements,
+  // e.g. "Outsider or higher with Vaughn"). Most bounty/mercenary missions have
+  // NULL min_reputation but a real standing gate — the expanded view shows it,
+  // so the column must too. Prefer the numeric rank when present, else the
+  // compact standing ("Outsider+"), else Open/—.
+  const repReqList = (entry.source !== 'contract' && entry.mission_id != null) ? repRequirements?.[entry.mission_id] : null
+  let repReqCell = null  // { text, title, tone }
+  if (entry.min_reputation != null && entry.min_reputation > 0) {
+    repReqCell = { text: `Rank ${entry.min_reputation}`, title: `Requires reputation Rank ${entry.min_reputation}`, tone: 'amber' }
+  } else if (repReqList && repReqList.length) {
+    // Take the first requirement with a humanisable standing.
+    for (const r of repReqList) {
+      const fmt = formatRepRequirement(r)
+      if (!fmt) continue
+      const standing = fmt.label ? fmt.label.split(' with ')[0] : fmt.standing
+      if (!standing) continue
+      const plus = (r.comparison === 'GreaterThanOrEqualTo' || r.comparison === 'GreaterThan') ? '+' : ''
+      const faction = fmt.faction || (fmt.label ? fmt.label.split(' with ')[1] : '')
+      repReqCell = { text: `${standing}${plus}`, title: `${standing}${plus ? ' or higher' : ''} with ${faction || 'faction'}`, tone: 'amber' }
+      break
+    }
+  } else if (entry.min_reputation === 0) {
+    repReqCell = { text: 'Open', title: 'Open to all — no reputation gate', tone: 'gray' }
+  }
+
+  // Rep-focus column: when filtering by a scope, show this mission's effect on
+  // that scope (the fail/abandon cost). repFocus is a scope slug (e.g. "affinity").
+  // 4.8 moved per-scope amounts out of rep_summary into the structured
+  // rep_changes rows, so resolve from there.
+  let focusedRep = null  // { text, positive }
+  if (repFocus && entry.mission_id != null) {
+    const rows = (repChanges?.[entry.mission_id] || []).filter(r => r.scope_slug === repFocus)
+    const row = rows.find(r => r.event === 'fail') || rows[0]
+    if (row) {
+      const text = typeof row.rep_amount === 'number'
+        ? `${row.rep_amount < 0 ? '−' : '+'}${Math.abs(row.rep_amount).toLocaleString()}`
+        : formatRepSize(row.size_code, row.direction)
+      focusedRep = { text, positive: row.direction === 'positive' }
+    }
   }
 
   return (
     <div ref={highlightRef} className={`border-b border-sc-border/30 last:border-0 ${isHighlighted ? 'bg-sc-accent/[0.06] ring-1 ring-sc-accent/20 rounded' : ''}`}>
-      <button onClick={() => setExpanded(!expanded)} className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors">
-        <div className="flex-1 min-w-0">
-          <span className="text-sm text-gray-200"><MissionTitle title={entry.title} /></span>
+      <button onClick={() => setExpanded(!expanded)} className={`w-full text-left ${hideGiver ? 'pl-11 pr-4' : 'px-4'} py-3 flex items-center gap-3 hover:bg-white/[0.025] transition-colors`}>
+        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+          <CategoryIcon category={entry.category_display} />
+          <span className="text-sm text-gray-200 truncate" title={entry.category_display || ''}><MissionTitle title={entry.title} /></span>
           {entry.variantCount > 1 && (
-            <span className="text-[10px] text-sc-accent ml-2 font-mono tabular-nums" title={`${entry.variantCount} variants across locations — CIG emits one mission per planet/moon`}>
+            <span className="text-[10px] text-sc-accent font-mono tabular-nums shrink-0" title={`${entry.variantCount} variants across locations — CIG emits one mission per planet/moon`}>
               × {entry.variantCount}
             </span>
           )}
-          {entry.giver_display && (
-            <span className="text-[10px] text-gray-500 ml-2 font-mono hidden sm:inline">{entry.giver_display}</span>
-          )}
         </div>
+        {/* Giver column (hidden in grouped mode — the group header carries it) */}
+        {!hideGiver && (
+          <span className="w-56 text-xs font-mono text-gray-400 truncate shrink-0 hidden md:block" title={entry.giver_display || ''}>
+            {entry.giver_display || <span className="text-gray-700">—</span>}
+          </span>
+        )}
+        {/* Rep Required column */}
+        <span className="w-24 text-center text-xs font-mono shrink-0 hidden sm:block truncate">
+          {repReqCell ? (
+            <span className={repReqCell.tone === 'amber' ? 'text-amber-300/80' : 'text-gray-500'} title={repReqCell.title}>
+              {repReqCell.text}
+            </span>
+          ) : (
+            <span className="text-gray-700">—</span>
+          )}
+        </span>
         <span className={`w-[4.5rem] text-center text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${source.style}`}>
           {source.label}
         </span>
         {repFocus ? (
-          <span className="w-28 text-right text-xs font-mono shrink-0">
+          <span className="w-48 text-right text-xs font-mono shrink-0">
             {focusedRep ? (
-              <span className={focusedRep.includes('+') ? 'text-emerald-400' : 'text-red-400'}>{focusedRep} rep</span>
+              <span className={focusedRep.positive ? 'text-emerald-400' : 'text-red-400'}>{focusedRep.text} rep</span>
             ) : <span className="text-gray-700">—</span>}
           </span>
         ) : (
@@ -481,8 +587,48 @@ function EntryRow({ entry, repFocus, isHighlighted, highlightRef, prerequisites,
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
         </span>
       </button>
-      {expanded && <ExpandedSection entry={entry} prerequisites={prerequisites} repRequirements={repRequirements} />}
+      {expanded && (
+        <div className={`animate-fade-in-up ${hideGiver ? 'pl-7' : ''}`}>
+          <ExpandedSection entry={entry} prerequisites={prerequisites} repRequirements={repRequirements} repChanges={repChanges} />
+        </div>
+      )}
     </div>
+  )
+}
+
+// ── Grouped-view giver header ───────────────────────────────────────────────
+
+function GroupHeader({ group, collapsed, onToggle }) {
+  const logo = group.giver ? getFactionLogo(group.giver) : null
+  // No logo asset → show an initials monogram (e.g. "Unified Distribution
+  // Management" → "UDM") rather than a generic icon. Tidier + distinct per giver.
+  const initials = group.giver
+    ? group.giver.split(/[\s()]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 3).toUpperCase()
+    : null
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-3 px-4 py-2.5 bg-white/[0.035] hover:bg-white/[0.06] border-b border-sc-border/50 transition-colors"
+    >
+      {logo ? (
+        <img src={logo} alt="" className="w-7 h-7 rounded object-contain shrink-0" />
+      ) : (
+        <div className="w-7 h-7 rounded bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0">
+          {initials
+            ? <span className="text-[10px] font-display font-bold text-gray-400">{initials}</span>
+            : <Building2 className="w-3.5 h-3.5 text-gray-500" />}
+        </div>
+      )}
+      <span className="text-sm font-semibold text-gray-200 flex-1 text-left truncate">
+        {group.giver || 'Unaffiliated'}
+      </span>
+      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sc-accent/10 text-sc-accent border border-sc-accent/20 shrink-0">
+        {group.entries.length}
+      </span>
+      {collapsed
+        ? <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+        : <ChevronUp className="w-4 h-4 text-gray-500 shrink-0" />}
+    </button>
   )
 }
 
@@ -557,6 +703,12 @@ export default function Missions() {
   const highlightId = searchParams.get('highlight') || ''
   const guildFilter = searchParams.get('guild') || ''
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+  // Sort: column key + direction. Default name ascending.
+  const sortBy = searchParams.get('sort') || 'name'
+  const sortDir = searchParams.get('dir') || (sortBy === 'name' ? 'asc' : 'desc')
+  // Group the All view by giver (default), echoing the Factions card gallery.
+  // ?group=0 falls back to the flat, paginated, globally-sortable table.
+  const grouped = searchParams.get('group') !== '0'
   const PAGE_SIZE = 50
 
   const setParam = useCallback((key, val, replace = false) => {
@@ -584,6 +736,16 @@ export default function Missions() {
     }, { replace })
   }, [setSearchParams])
 
+  // Sort column click: toggle direction if already active, else switch column
+  // with a sensible default direction (name asc, everything else desc).
+  const toggleSort = useCallback((col) => {
+    if (sortBy === col) {
+      setParams({ sort: col, dir: sortDir === 'asc' ? 'desc' : 'asc' })
+    } else {
+      setParams({ sort: col, dir: col === 'name' ? 'asc' : 'desc' })
+    }
+  }, [sortBy, sortDir, setParams])
+
   // Normalize contracts + missions into one list
   const rawEntries = useMemo(() => {
     const entries = []
@@ -601,7 +763,7 @@ export default function Missions() {
         description: c.description,
         source: 'contract',
         category: c.category,
-        category_display: CATEGORY_LABELS[c.category] || c.category,
+        category_display: categoryLabel(c.category),
         giver_display: { wikelo: 'Wikelo', gfs: "Gilly's Flight School", ruto: 'Ruto' }[c.giver_slug] || c.giver_slug,
         giver_slug: c.giver_slug || null,
         reward_amount: c.reward_amount || 0,
@@ -615,6 +777,7 @@ export default function Missions() {
         notes: c.notes,
         type_slug: null,
         rep_summary: null,
+        rep_scopes: [],
       })
     }
 
@@ -628,16 +791,21 @@ export default function Missions() {
         // templates so some titles are stem-encoded. Humanise so the list
         // reads as "Data Heist · Very Hard · Stanton 1" instead of raw
         // `dataheist_unlawful_vh_stanton1`.
-        title: humanizeMissionStem(m.title),
+        title: sentenceCaseTitle(humanizeMissionStem(m.title)),
         description: m.description,
         source: m.availability || 'dynamic',
         category: m.category,
-        category_display: CATEGORY_LABELS[m.category] || m.category,
+        category_display: categoryLabel(m.category),
         giver_display: humanizeMissionGiverSlug(m.giver_name),
         giver_slug: m.giver_slug || null,
+        min_reputation: (m.min_reputation ?? null),
         reward_amount: m.reward_amount || 0,
         is_dynamic_reward: m.is_dynamic_reward ?? 0,
-        reward_text: (m.reward_currency && m.reward_currency !== 'UEC' && (m.reward_amount || 0) > 0)
+        // reward_text is for NON-cash rewards only (items, Merits, MG Scrip).
+        // aUEC/UEC are the default currency and render as a plain amount via the
+        // reward_amount path — NOT as "{n}x aUEC" (the 'x' quantity form is for
+        // item stacks). CIG stores cash as 'aUEC', so check against both spellings.
+        reward_text: (m.reward_currency && !['UEC', 'aUEC'].includes(m.reward_currency) && (m.reward_amount || 0) > 0)
           ? `${m.reward_amount}x ${m.reward_currency}`
           : null,
         reward_currency: m.reward_currency || 'aUEC',
@@ -666,6 +834,10 @@ export default function Missions() {
         locality: m.locality ?? null,
         rep_fail: m.rep_fail ?? null,
         rep_abandon: m.rep_abandon ?? null,
+        // Reputation scope slugs this mission affects (Affinity, Security, …),
+        // for the Career Reputation browse view + ?rep= filter. 4.8 moved scope
+        // out of rep_summary into rep_changes / rep_fail / rep_abandon.
+        rep_scopes: deriveRepScopeSlugs(missionData?.rep_changes?.[m.id], m.rep_fail, m.rep_abandon),
         is_template: m.is_template === 1,
       })
     }
@@ -677,7 +849,20 @@ export default function Missions() {
   // like {Creature}, {Location}, {ReputationRank}) are CIG mission-instance
   // templates — the game engine fills the tokens per generated instance, so
   // rendering them statically is noise. Hide by default; expose an opt-in toggle.
-  const [showTemplates, setShowTemplates] = useState(false)
+  // URL-persisted (?templates=1) so the toggle survives reload + deep-links,
+  // like every other filter/sort/view control on this page.
+  const showTemplates = searchParams.get('templates') === '1'
+
+  // Collapsed giver groups (grouped view). Default: all expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const toggleGroup = useCallback((key) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const filteredEntries = useMemo(
     () => showTemplates ? rawEntries : rawEntries.filter(e => !e.is_template),
     [rawEntries, showTemplates],
@@ -693,11 +878,19 @@ export default function Missions() {
   const allEntries = useMemo(() => {
     const groups = new Map()
     for (const e of filteredEntries) {
-      const key = `${e.title || ''}|${e.giver_display || ''}|${e.reward_amount || 0}|${e.category || ''}`
+      // Group key intentionally EXCLUDES giver. CIG ships N records per logical
+      // mission tier (e.g. "get the goods" at minrep=3): one carries the giver
+      // ("ruto"), the rest have giver=null. Keying on giver split them into
+      // "Ruto ×1" + "(none) ×3". Drop giver from the key and adopt the best
+      // non-null giver across the group so they collapse to one "×4 · Ruto" row.
+      const key = `${e.title || ''}|${e.reward_amount || 0}|${e.category || ''}|${e.min_reputation ?? ''}`
       const existing = groups.get(key)
       if (existing) {
         existing.variantCount++
         existing.variants.push({ id: e.id, location_ref: e.location_ref, slug: e.slug || e.id })
+        // Adopt a giver if this row has one and the group representative didn't.
+        if (!existing.giver_display && e.giver_display) existing.giver_display = e.giver_display
+        if (!existing.giver_slug && e.giver_slug) existing.giver_slug = e.giver_slug
       } else {
         groups.set(key, { ...e, variantCount: 1, variants: [{ id: e.id, location_ref: e.location_ref, slug: e.slug || e.id }] })
       }
@@ -716,7 +909,7 @@ export default function Missions() {
   const displayCategories = useMemo(() => {
     const grouped = {}
     for (const [raw, count] of categories) {
-      const label = CATEGORY_LABELS[raw] || raw
+      const label = categoryLabel(raw)
       if (!grouped[label]) grouped[label] = { label, rawValues: [], count: 0 }
       grouped[label].rawValues.push(raw)
       grouped[label].count += count
@@ -741,7 +934,7 @@ export default function Missions() {
     }
     if (typeFilter) items = items.filter(e => e.type_slug === typeFilter || e.type_slug === ('missiontype-' + typeFilter.replace('missiontype-', '')))
     if (giverFilter) items = items.filter(e => e.giver_display === giverFilter)
-    if (repFilter) items = items.filter(e => e.rep_summary && e.rep_summary.includes(repFilter + ':'))
+    if (repFilter) items = items.filter(e => e.rep_scopes && e.rep_scopes.includes(repFilter))
     if (guildFilter) {
       const gf = guildFilter.toLowerCase()
       items = items.filter(e =>
@@ -758,10 +951,51 @@ export default function Missions() {
         (e.giver_display && e.giver_display.toLowerCase().includes(q))
       )
     }
-    // Sort: reward descending
-    items.sort((a, b) => (b.reward_amount || 0) - (a.reward_amount || 0))
-    return items
-  }, [allEntries, displayCategories, sourceFilter, categoryFilter, typeFilter, giverFilter, repFilter, guildFilter, search])
+    // Sort by the selected column + direction. Copy first so we don't mutate
+    // the memoised allEntries array in place.
+    const dir = sortDir === 'asc' ? 1 : -1
+    const sorted = [...items]
+    sorted.sort((a, b) => {
+      let cmp
+      switch (sortBy) {
+        case 'giver':
+          cmp = (a.giver_display || '~').localeCompare(b.giver_display || '~')
+          break
+        case 'rep':
+          // nulls sort last regardless of direction
+          cmp = (a.min_reputation ?? 999) - (b.min_reputation ?? 999)
+          break
+        case 'reward':
+          cmp = (a.reward_amount || 0) - (b.reward_amount || 0)
+          break
+        case 'name':
+        default:
+          cmp = (a.title || '').localeCompare(b.title || '')
+          break
+      }
+      // Stable tiebreak on title so equal-key rows keep a deterministic order.
+      if (cmp === 0 && sortBy !== 'name') cmp = (a.title || '').localeCompare(b.title || '')
+      return cmp * dir
+    })
+    return sorted
+  }, [allEntries, displayCategories, sourceFilter, categoryFilter, typeFilter, giverFilter, repFilter, guildFilter, search, sortBy, sortDir])
+
+  // Grouped view: bucket the filtered+sorted list by giver. Group order = entry
+  // count desc (biggest first), then name; the "Unaffiliated" bucket (no giver)
+  // sorts last. Within-group order is preserved from `filtered` (already sorted).
+  const groupedEntries = useMemo(() => {
+    const groups = new Map()
+    for (const e of filtered) {
+      const key = e.giver_display || ' other'
+      if (!groups.has(key)) groups.set(key, { key, giver: e.giver_display || null, entries: [] })
+      groups.get(key).entries.push(e)
+    }
+    return [...groups.values()].sort((a, b) => {
+      if (!a.giver && b.giver) return 1
+      if (a.giver && !b.giver) return -1
+      return b.entries.length - a.entries.length || (a.giver || '').localeCompare(b.giver || '')
+    })
+  }, [filtered])
 
   const sourceCounts = useMemo(() => {
     const counts = { contract: 0, mission_board: 0, service_beacon: 0, dynamic: 0 }
@@ -769,22 +1003,19 @@ export default function Missions() {
     return counts
   }, [allEntries])
 
-  // Rep scopes — extract from rep_summary strings
+  // Career Reputation tracks: aggregate by real rep SCOPE (Affinity, Security,
+  // Assassination, …) from each entry's rep_scopes. Pre-4.8 this parsed
+  // rep_summary "scope: amount" pairs; 4.8 made rep_summary a bare magnitude, so
+  // scope now comes from rep_changes / rep_fail / rep_abandon (deriveRepScopeSlugs).
   const repScopes = useMemo(() => {
     const scopes = {}
     for (const e of allEntries) {
-      if (!e.rep_summary) continue
-      for (const part of e.rep_summary.split(', ')) {
-        const [scope, amtStr] = part.split(':').map(s => s.trim())
-        if (!scope) continue
-        if (!scopes[scope]) scopes[scope] = { name: scope, missions: [], totalPositive: 0, totalNegative: 0 }
-        const amt = parseInt(amtStr) || 0
-        if (amt > 0) scopes[scope].totalPositive += amt
-        else scopes[scope].totalNegative += amt
-        scopes[scope].missions.push(e)
+      for (const slug of (e.rep_scopes || [])) {
+        if (!scopes[slug]) scopes[slug] = { slug, name: humanizeScopeSlug(slug), missions: 0 }
+        scopes[slug].missions++
       }
     }
-    return Object.values(scopes).sort((a, b) => b.missions.length - a.missions.length)
+    return Object.values(scopes).sort((a, b) => b.missions - a.missions || a.name.localeCompare(b.name))
   }, [allEntries])
 
   const hasActiveFilter = sourceFilter || categoryFilter || typeFilter || giverFilter || repFilter || guildFilter
@@ -847,10 +1078,23 @@ export default function Missions() {
       {view === 'all' && (
         <div className="flex flex-wrap gap-3 items-start">
           <SearchInput value={search} onChange={v => setParam('q', v, true)} placeholder="Search..." className="max-w-sm flex-1" />
+          <button
+            type="button"
+            onClick={() => setParam('group', grouped ? '0' : '')}
+            className={`rounded-lg px-3 py-2 text-xs font-mono border transition-colors inline-flex items-center gap-1.5 ${
+              grouped
+                ? 'bg-sc-accent/10 border-sc-accent/40 text-sc-accent'
+                : 'bg-sc-darker border-sc-border text-gray-400 hover:text-gray-300'
+            }`}
+            title={grouped ? 'Grouped by giver — switch to a flat, globally-sortable list' : 'Flat list — switch to grouping by giver'}
+          >
+            {grouped ? <Layers className="w-3.5 h-3.5" /> : <List className="w-3.5 h-3.5" />}
+            {grouped ? 'Grouped' : 'Flat'}
+          </button>
           {templateCount > 0 && (
             <button
               type="button"
-              onClick={() => setShowTemplates(v => !v)}
+              onClick={() => setParam('templates', showTemplates ? '' : '1')}
               className={`rounded-lg px-3 py-2 text-xs font-mono border transition-colors ${
                 showTemplates
                   ? 'bg-sc-accent/10 border-sc-accent/40 text-sc-accent'
@@ -911,7 +1155,7 @@ export default function Missions() {
           )}
           {repFilter && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <Star className="w-3 h-3" /> {repFilter}
+              <Star className="w-3 h-3" /> {humanizeScopeSlug(repFilter)}
               <button onClick={() => setParam('rep', '')} className="hover:text-white ml-1">&times;</button>
             </span>
           )}
@@ -1003,6 +1247,35 @@ export default function Missions() {
         const safePage = Math.min(page, totalPages)
         const pageSlice = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
+        // Shared sortable column header. Giver column is omitted when grouped —
+        // the group header carries the giver. Sort still applies (within groups).
+        const columnHeader = (
+          <div className="px-4 py-2 flex items-center gap-3 border-b border-sc-border/50 bg-white/[0.02] text-[10px] font-mono uppercase tracking-wider text-gray-500 select-none">
+            <button onClick={() => toggleSort('name')} className="flex-1 min-w-0 text-left hover:text-gray-300 transition-colors">
+              Mission{sortBy === 'name' && <SortCaret dir={sortDir} />}
+            </button>
+            {!grouped && (
+              <button onClick={() => toggleSort('giver')} className="w-56 text-left shrink-0 hidden md:block hover:text-gray-300 transition-colors">
+                Giver{sortBy === 'giver' && <SortCaret dir={sortDir} />}
+              </button>
+            )}
+            <button onClick={() => toggleSort('rep')} className="w-24 text-center shrink-0 hidden sm:block hover:text-gray-300 transition-colors">
+              Rep Req{sortBy === 'rep' && <SortCaret dir={sortDir} />}
+            </button>
+            <span className="w-[4.5rem] text-center shrink-0">Source</span>
+            <button onClick={() => toggleSort('reward')} className="w-48 text-right shrink-0 hover:text-gray-300 transition-colors">
+              Reward{sortBy === 'reward' && <SortCaret dir={sortDir} />}
+            </button>
+            <span className="w-16 shrink-0" />
+            <span className="w-5 shrink-0" />
+          </div>
+        )
+
+        const rowProps = (e) => {
+          const isMatch = highlightId && (e.contract_id === Number(highlightId) || e.id === `c-${highlightId}`)
+          return { entry: e, repFocus: repFilter || null, isHighlighted: !!isMatch, highlightRef: isMatch ? highlightRef : undefined, prerequisites: missionData?.prerequisites, repRequirements: missionData?.rep_requirements, repChanges: missionData?.rep_changes }
+        }
+
         return (
           <>
             <p className="text-xs font-mono text-gray-600">{filtered.length} results</p>
@@ -1011,13 +1284,24 @@ export default function Missions() {
                 <Crosshair className="w-10 h-10 mx-auto mb-3 text-gray-700" />
                 <p className="text-gray-500 text-sm">No missions or contracts match your filters.</p>
               </div>
+            ) : grouped ? (
+              <div className="panel overflow-hidden">
+                {columnHeader}
+                {groupedEntries.map(g => {
+                  const isCollapsed = collapsedGroups.has(g.key)
+                  return (
+                    <div key={g.key}>
+                      <GroupHeader group={g} collapsed={isCollapsed} onToggle={() => toggleGroup(g.key)} />
+                      {!isCollapsed && g.entries.map(e => <EntryRow key={e.id} {...rowProps(e)} hideGiver />)}
+                    </div>
+                  )
+                })}
+              </div>
             ) : (
               <>
                 <div className="panel overflow-hidden">
-                  {pageSlice.map(e => {
-                    const isMatch = highlightId && (e.contract_id === Number(highlightId) || e.id === `c-${highlightId}`)
-                    return <EntryRow key={e.id} entry={e} repFocus={repFilter || null} isHighlighted={!!isMatch} highlightRef={isMatch ? highlightRef : undefined} prerequisites={missionData?.prerequisites} repRequirements={missionData?.rep_requirements} />
-                  })}
+                  {columnHeader}
+                  {pageSlice.map(e => <EntryRow key={e.id} {...rowProps(e)} />)}
                 </div>
                 {totalPages > 1 && (
                   <div className="flex items-center justify-center gap-4 text-xs font-mono">
@@ -1115,8 +1399,8 @@ export default function Missions() {
                   const initials = scope.name.split(/[\s()]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 3).toUpperCase()
                   return (
                     <button
-                      key={scope.name}
-                      onClick={() => setParams({ view: 'all', rep: scope.name, cat: '', type: '', giver: '', source: '' })}
+                      key={scope.slug}
+                      onClick={() => setParams({ view: 'all', rep: scope.slug, cat: '', type: '', giver: '', source: '' })}
                       className="panel overflow-hidden text-left w-full hover:border-sc-accent/30 transition-colors group flex"
                     >
                       <div className="flex-1 p-4">
@@ -1125,7 +1409,7 @@ export default function Missions() {
                           <h3 className="font-display font-semibold text-white text-sm group-hover:text-sc-accent transition-colors">{scope.name}</h3>
                         </div>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sc-accent/10 text-sc-accent border border-sc-accent/20">
-                          {scope.missions.length} missions
+                          {scope.missions} missions
                         </span>
                       </div>
                       <div className="w-24 shrink-0 flex items-center justify-center p-2">

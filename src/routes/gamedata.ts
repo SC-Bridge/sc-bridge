@@ -831,6 +831,7 @@ return cachedJson(c, `gd:missions`, async () => {
              m.subcategory as availability,
              m.location_hint as type_slug,
              m.reputation_reward_size as rep_summary,
+             m.min_reputation,
              m.rep_fail_summary as rep_fail,
              m.rep_abandon_summary as rep_abandon,
              m.time_limit_minutes, m.max_players, m.can_share, m.once_only,
@@ -842,15 +843,20 @@ return cachedJson(c, `gd:missions`, async () => {
              END as reward_max,
              m.has_standing_bonus,
              m.location_ref, m.locality,
-             -- Mark mission as template when the title/description still contains
-             -- unresolved runtime placeholder tokens (e.g. {Creature}, {Location},
-             -- {ReputationRank}, {CargoGradeToken}, {title}). These are filled in
-             -- by the game engine when generating specific mission instances, so
-             -- we can't render them meaningfully in the list. 1215 of 1978 (~61%)
-             -- missions are templates; the frontend can filter them.
+             -- Mark mission as template when its TITLE contains unresolved runtime
+             -- placeholder tokens — CIG fills these per generated instance, so the
+             -- title is not meaningfully renderable in a flat list. Two on-disk
+             -- forms: legacy curly-brace (Creature in braces) AND the PART K K4
+             -- tagged form (var name= tags). Match BOTH.
+             --
+             -- Title only, NOT description: a mission with a concrete title
+             -- (e.g. "Eradicate All Nests") but a templated description body is
+             -- still a real, listable mission — its title renders fine. Checking
+             -- the description over-flagged ~600 such missions as templates after
+             -- K4 widened description tagging.
              CASE
                WHEN (COALESCE(m.title, m.name) LIKE '%{%}%')
-                 OR (m.description LIKE '%{%}%')
+                 OR (COALESCE(m.title, m.name) LIKE '%<var name=%')
                THEN 1 ELSE 0
              END as is_template
            FROM ${t("missions")} m

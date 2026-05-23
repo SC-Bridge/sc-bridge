@@ -13,6 +13,7 @@
  * not a blank cell.
  */
 import React from 'react'
+import { formatRepSize, humanizeScopeSlug } from '../lib/missionConstants'
 
 const SIGN = { positive: '+', negative: '−' }
 const DIR_CLS = {
@@ -44,14 +45,23 @@ export function parseLegacyRepSummary(summary, event) {
 function Badge({ change }) {
   const sign = SIGN[change.direction] || '?'
   const cls = DIR_CLS[change.direction] || 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30'
-  const titleParts = [`${change.scope_slug}: ${sign}${change.size_code}`]
-  if (typeof change.rep_amount === 'number') titleParts.push(`${change.rep_amount} rep`)
+  // Prefer the resolved numeric rep amount (e.g. -50); fall back to the fixed
+  // CIG size ladder if rep_amount wasn't resolved at extract time; last resort
+  // the raw size code. Players want the number, not "XXXXS".
+  let value
+  if (typeof change.rep_amount === 'number') {
+    // Use the − (U+2212) minus glyph to match formatRepSize output.
+    value = `${change.rep_amount < 0 ? '−' : '+'}${Math.abs(change.rep_amount).toLocaleString()}`
+  } else {
+    value = formatRepSize(change.size_code, change.direction) || `${sign}${change.size_code}`
+  }
+  const human = humanizeScopeSlug(change.scope_slug) || change.scope_slug
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-mono whitespace-nowrap ${cls}`}
-      title={titleParts.join(' — ')}
+      title={`${human}: ${value} rep (${sign}${change.size_code})`}
     >
-      {change.scope_slug} {sign}{change.size_code}
+      {human} {value}
     </span>
   )
 }
