@@ -1,42 +1,51 @@
 /**
- * Test setup: creates Better Auth tables then applies D1 migrations.
+ * Test setup: applies the consolidated baseline schema to a fresh D1 database.
  *
- * Better Auth tables (user, session, account, verification, organization, member,
- * invitation) are managed by Better Auth's own migration system, not D1 migration
- * files. But D1 migration 0004 runs ALTER TABLE user ADD COLUMN status, so the
- * user table must exist before D1 migrations are applied.
+ * The baseline (test/test-schema.sql, exposed as the TEST_SCHEMA binding) is a
+ * single snapshot of Better Auth tables + ALL D1 migrations + seed rows. We
+ * apply it instead of replaying ~248 migration files per suite, which was the
+ * root cause of the vitest-pool-workers flake: each beforeAll re-ran every
+ * migration, and that storage churn raced the isolated-storage abort/refetch
+ * under WSL, timing out a random subset of workers each run.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * REGENERATE THE BASELINE AFTER ADDING/CHANGING A MIGRATION:
+ *     npm run test:schema:gen
+ * vitest.config.ts fails fast if the snapshot's migration count drifts from
+ * src/db/migrations/, so a stale baseline can't slip through.
+ * ─────────────────────────────────────────────────────────────────────────
  */
-import { env, applyD1Migrations } from "cloudflare:test";
+import { env } from "cloudflare:test";
 
-// Better Auth core tables — minimal schema needed for auth to work.
-// Column names use camelCase matching Better Auth's SQLite convention.
-// Each statement on one line — D1 exec() in miniflare splits on newlines.
-const BETTER_AUTH_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS "user" (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, role TEXT DEFAULT 'user', banned INTEGER DEFAULT 0, banReason TEXT, banExpires TEXT)`,
-  `CREATE TABLE IF NOT EXISTS "session" (id TEXT PRIMARY KEY NOT NULL, expiresAt TEXT NOT NULL, token TEXT NOT NULL UNIQUE, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES "user"(id), impersonatedBy TEXT, activeOrganizationId TEXT)`,
-  `CREATE TABLE IF NOT EXISTS "account" (id TEXT PRIMARY KEY NOT NULL, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt TEXT, refreshTokenExpiresAt TEXT, scope TEXT, password TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS "verification" (id TEXT PRIMARY KEY NOT NULL, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt TEXT NOT NULL, createdAt TEXT, updatedAt TEXT)`,
-  `CREATE TABLE IF NOT EXISTS "organization" (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, logo TEXT, createdAt TEXT NOT NULL, metadata TEXT)`,
-  `CREATE TABLE IF NOT EXISTS "member" (id TEXT PRIMARY KEY NOT NULL, organizationId TEXT NOT NULL REFERENCES "organization"(id), userId TEXT NOT NULL REFERENCES "user"(id), role TEXT NOT NULL DEFAULT 'member', createdAt TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS "invitation" (id TEXT PRIMARY KEY NOT NULL, organizationId TEXT NOT NULL REFERENCES "organization"(id), email TEXT NOT NULL, role TEXT, status TEXT NOT NULL DEFAULT 'pending', expiresAt TEXT NOT NULL, inviterId TEXT NOT NULL REFERENCES "user"(id))`,
-];
+// Split the baseline into individual statements. .dump terminates every
+// statement with ";\n" (internal lines of a multi-line CREATE end with ","),
+// so splitting on a semicolon-at-end-of-line is reliable for DDL + the simple
+// lookup-row INSERTs in the seed. Header "--" comment lines are dropped first.
+function splitStatements(sql: string): string[] {
+  return sql
+    .split("\n")
+    .filter((line) => !line.startsWith("--"))
+    .join("\n")
+    .split(/;\s*\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
 
 /**
- * Apply Better Auth tables + D1 migrations to a fresh D1 database.
- * Call this in beforeAll() of each test file.
+ * Apply the baseline schema to a fresh D1 database. Call in beforeAll().
  */
 export async function setupTestDatabase(db: D1Database): Promise<void> {
-  await db.batch(BETTER_AUTH_STATEMENTS.map((sql) => db.prepare(sql)));
-  await applyD1Migrations(db, env.TEST_MIGRATIONS);
-
-  // Seed a default game version — required by all versioned tables (game_version_id NOT NULL)
-  await db
-    .prepare(
-      `INSERT OR IGNORE INTO game_versions (uuid, code, channel, is_default, released_at)
-       VALUES ('test-0000-0000-0000-000000000001', '4.0.0-test', 'LIVE', 1, '2026-01-01')`
-    )
-    .run();
-
+  // The baseline is already FK-clean (generated with FK on so cascades fired;
+  // orphan image seed excluded), so no PRAGMA is needed — and miniflare ignores
+  // PRAGMA foreign_keys anyway. One atomic batch, fewest storage round-trips.
+  const statements = splitStatements(env.TEST_SCHEMA as string);
+  // Apply as ONE atomic batch. Fewer storage round-trips = a smaller window for
+  // the vitest-pool-workers isolated-storage "Network connection lost" race
+  // under WSL, and atomic apply means a hit rolls the whole setup back cleanly
+  // so retry:2 re-runs from scratch (chunked applies could leave a half-built
+  // DB → "no such table" cascades). The baseline is FK-clean + ordered
+  // tables→indexes→data, so a single batch is safe.
+  await db.batch(statements.map((sql) => db.prepare(sql)));
 }
 
 /** Game version ID for test fixtures. Always 1 in a fresh test DB. */

@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --max-workers=1 --no-isolate",
     "test:watch": "vitest --max-workers=1 --no-isolate",
+    "test:schema:gen": "bash test/generate-test-schema.sh",
     "test:e2e:local": "/home/gavin/scbridge/tools/scripts/test_e2e_local.sh",
     "prepare": "husky"
   },
