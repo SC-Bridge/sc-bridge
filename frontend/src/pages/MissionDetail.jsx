@@ -2,6 +2,7 @@ import React from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, FileText, MapPin, FlaskConical, Shield, Users, Building2, Info, Briefcase, Scale, Swords, HeartHandshake } from 'lucide-react'
 import { useMissionDetail } from '../hooks/useAPI'
+import { useGoBack } from '../hooks/useGoBack'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import { FACTION_LOGOS, GUILD_LABELS, RANKS, SYSTEM_COLORS, DIFF_COLORS, DIFF_BAR_COLORS, DIFF_BAR_GLOW, DIFF_LABELS, TYPE_COLORS, TYPE_LABELS } from '../lib/missionConstants'
@@ -60,6 +61,9 @@ function RepProgressionBar({ tiers }) {
 export default function MissionDetail() {
   const { key } = useParams()
   const { data, loading, error, refetch } = useMissionDetail(key)
+  // Return the user to wherever they came from (crafting detail, missions list,
+  // …); only fall back to the factions list on a direct landing.
+  const goBack = useGoBack('/missions?view=factions')
 
   if (loading) return <LoadingState fullScreen message="Loading mission..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -68,7 +72,7 @@ export default function MissionDetail() {
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <FileText className="w-12 h-12 mx-auto mb-4 text-gray-600" />
         <h2 className="text-lg font-semibold text-gray-300 mb-2">Mission Not Found</h2>
-        <Link to="/missions?view=factions" className="text-sm text-sc-accent hover:text-sc-accent/80 transition-colors">&larr; Back to Missions</Link>
+        <button onClick={goBack} className="text-sm text-sc-accent hover:text-sc-accent/80 transition-colors">&larr; Back</button>
       </div>
     )
   }
@@ -87,9 +91,9 @@ export default function MissionDetail() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-      <Link to="/missions?view=factions" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-sc-accent transition-colors">
-        <ArrowLeft className="w-4 h-4" /> Missions
-      </Link>
+      <button onClick={goBack} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-sc-accent transition-colors">
+        <ArrowLeft className="w-4 h-4" /> Back
+      </button>
 
       {/* ── Header — logo prominent on left, info on right ── */}
       <div className="relative bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-2xl p-6 overflow-hidden">

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
+import { useGoBack } from '../hooks/useGoBack'
 import { ArrowLeft, MapPin, FlaskConical, Shield, Users, Building2, ChevronRight, Coins, FileText, Info, Briefcase, Scale, Swords, HeartHandshake, Lock, ChevronDown, Trophy, Package } from 'lucide-react'
 import { useFactionDetail } from '../hooks/useAPI'
 import LoadingState from '../components/LoadingState'
@@ -471,6 +472,9 @@ export default function FactionDetail() {
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
   const { data, loading, error, refetch } = useFactionDetail(slug)
+  // Back to wherever the user came from; fall back to the factions list only
+  // on a direct landing.
+  const goBack = useGoBack('/missions?view=factions')
 
   // Selected mission from URL query string — deep-linkable
   const missionParam = searchParams.get('mission') || ''
@@ -566,7 +570,7 @@ export default function FactionDetail() {
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <Shield className="w-12 h-12 mx-auto mb-4 text-gray-600" />
         <h2 className="text-lg font-semibold text-gray-300 mb-2">Faction Not Found</h2>
-        <Link to="/missions?view=factions" className="text-sm text-sc-accent hover:text-sc-accent/80 transition-colors">&larr; Back to Factions</Link>
+        <button onClick={goBack} className="text-sm text-sc-accent hover:text-sc-accent/80 transition-colors">&larr; Back</button>
       </div>
     )
   }
@@ -577,9 +581,9 @@ export default function FactionDetail() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-      <Link to="/missions?view=factions" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-sc-accent transition-colors">
-        <ArrowLeft className="w-4 h-4" /> Factions
-      </Link>
+      <button onClick={goBack} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-sc-accent transition-colors">
+        <ArrowLeft className="w-4 h-4" /> Back
+      </button>
 
       {/* Header */}
       <div className="relative bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-2xl p-6 overflow-hidden">
