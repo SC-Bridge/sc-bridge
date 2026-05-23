@@ -51,6 +51,7 @@ export default function BlueprintListView({
   onToggleWishlist = () => {},
   onQualitySim = () => {},
   onCompare = () => {},
+  onOpen = () => {},
   maxHeight = 'calc(100vh - 280px)',
 }) {
   const sort = useSortState('craft', 'desc')
@@ -93,6 +94,7 @@ export default function BlueprintListView({
           onToggleWishlist={onToggleWishlist}
           onQualitySim={onQualitySim}
           onCompare={onCompare}
+          onOpen={onOpen}
         />
       ))}
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FlaskConical, Search, X } from 'lucide-react'
 import { useCrafting, useUserBlueprints, setBlueprintState } from '../../../hooks/useAPI'
 import LoadingState from '../../../components/LoadingState'
@@ -54,11 +54,42 @@ export default function CraftingV2() {
   const { data, loading, error, refetch } = useCrafting()
   const userBp = useUserBlueprints()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // URL-state helper — mirrors the convention used across the app (Missions,
+  // Loot). Puts search/tab/state in the query string so the view is
+  // bookmarkable + shareable. `replace` avoids spamming history while typing.
+  const setParam = useCallback((key, val, replace = false) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) next.set(key, val)
+      else next.delete(key)
+      return next
+    }, { replace })
+  }, [setSearchParams])
 
   const [view, setView] = useState(readStoredView)
-  const [activeType, setActiveType] = useState(readStoredType)
-  const [search, setSearch] = useState('')
-  const [stateFilter, setStateFilter] = useState('all') // 'all' | 'owned' | 'wishlist' | 'sim'
+
+  // activeType: ?type= wins, else last-used (localStorage), else default.
+  // Persisted to localStorage on change so a no-param visit restores your tab.
+  const activeType = useMemo(() => {
+    const t = searchParams.get('type')
+    if (CATEGORY_KEYS.has(t)) return t
+    if (LEGACY_TYPE_TO_CATEGORY[t]) return LEGACY_TYPE_TO_CATEGORY[t]
+    return readStoredType()
+  }, [searchParams])
+  const setActiveType = useCallback((t) => setParam('type', t), [setParam])
+
+  // Search → ?q= (replace:true so each keystroke doesn't push a history entry).
+  const search = searchParams.get('q') || ''
+  const setSearch = useCallback((v) => setParam('q', v, true), [setParam])
+
+  // State filter → ?state= ('all' is the default and stays out of the URL).
+  const stateFilter = useMemo(() => {
+    const s = searchParams.get('state')
+    return ['owned', 'wishlist', 'sim'].includes(s) ? s : 'all'
+  }, [searchParams])
+  const setStateFilter = useCallback((s) => setParam('state', s === 'all' ? '' : s), [setParam])
   // Per-tab sub-filter selections — keyed by axis.key from SUB_FILTERS.
   // Each axis has its own selected value ('all' or a stringified bucket).
   // Reset when switching tabs.
@@ -191,6 +222,9 @@ export default function CraftingV2() {
   }, [categoryBlueprints, stateFilter, ownedSet, wishlistSet, simSet, subFilters, axes, normSearch])
 
   const handleQualitySim = (bp) => navigate(`/crafting/${bp.id}?tab=quality`)
+  // Open the blueprint detail (default 'materials' tab) — shows "How to Obtain"
+  // / acquisition sources. Restores the click-through that used to work.
+  const handleOpenDetail = (bp) => navigate(`/crafting/${bp.id}`)
 
   const toggleState = useCallback(async (bp, field) => {
     const uuid = bp.uuid
@@ -358,6 +392,7 @@ export default function CraftingV2() {
               onToggleWishlist={handleToggleWishlist}
               onQualitySim={handleQualitySim}
               onCompare={compare.toggle}
+              onOpen={handleOpenDetail}
             />
           ))}
         </div>
@@ -373,6 +408,7 @@ export default function CraftingV2() {
           onToggleWishlist={handleToggleWishlist}
           onQualitySim={handleQualitySim}
           onCompare={compare.toggle}
+          onOpen={handleOpenDetail}
         />
       )}
 

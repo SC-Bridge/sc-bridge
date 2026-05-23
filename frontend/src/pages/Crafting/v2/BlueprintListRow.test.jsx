@@ -59,6 +59,23 @@ describe('BlueprintListRow', () => {
     expect(onCompare).toHaveBeenCalledWith(BP)
   })
 
+  it('invokes onOpen when the row body is clicked', async () => {
+    const onOpen = vi.fn()
+    render(<BlueprintListRow blueprint={BP} onOpen={onOpen} />)
+    // Click the name cell (part of the row body, not an action button).
+    await userEvent.click(screen.getByText('Behring P8-AR Battle Rifle'))
+    expect(onOpen).toHaveBeenCalledWith(BP)
+  })
+
+  it('does NOT invoke onOpen when an action button is clicked', async () => {
+    const onOpen = vi.fn()
+    const onCompare = vi.fn()
+    render(<BlueprintListRow blueprint={BP} onOpen={onOpen} onCompare={onCompare} />)
+    await userEvent.click(screen.getByRole('button', { name: /compare/i }))
+    expect(onCompare).toHaveBeenCalledOnce()
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
   it('shows selected data-attribute when isInCompare is true', () => {
     render(<BlueprintListRow blueprint={BP} isInCompare={true} />)
     const row = screen.getByRole('row')

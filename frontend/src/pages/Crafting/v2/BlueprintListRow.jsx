@@ -37,6 +37,7 @@ export default function BlueprintListRow({
   onToggleWishlist = () => {},
   onQualitySim = () => {},
   onCompare = () => {},
+  onOpen = () => {},
 }) {
   const stats = resolveStats(blueprint)
   const name = blueprint.base_stats?.item_name || blueprint.name
@@ -50,6 +51,7 @@ export default function BlueprintListRow({
   return (
     <div
       role="row"
+      onClick={() => onOpen(blueprint)}
       data-selected={isInCompare ? 'true' : 'false'}
       data-owned={isOwned ? 'true' : 'false'}
       data-wishlist={isWishlist ? 'true' : 'false'}

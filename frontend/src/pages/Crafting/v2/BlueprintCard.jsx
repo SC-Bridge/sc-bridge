@@ -31,6 +31,7 @@ export default function BlueprintCard({
   onToggleWishlist = () => {},
   onQualitySim = () => {},
   onCompare = () => {},
+  onOpen = () => {},
 }) {
   const stats = resolveStats(blueprint)
   const name = blueprint.base_stats?.item_name || blueprint.name
@@ -93,8 +94,15 @@ export default function BlueprintCard({
           </span>
         </div>
 
-        <h3 className="text-[0.9375rem] font-semibold text-[var(--text-primary)] leading-[1.3] tracking-[-0.01em]">
-          {name}
+        <h3 className="text-[0.9375rem] font-semibold leading-[1.3] tracking-[-0.01em]">
+          <button
+            type="button"
+            onClick={() => onOpen(blueprint)}
+            aria-label={`View ${name} details`}
+            className="text-left text-[var(--text-primary)] hover:text-[var(--sc-accent)] transition-colors duration-150"
+          >
+            {name}
+          </button>
         </h3>
 
         <div className="grid grid-cols-3 gap-[6px] py-[10px] border-t border-b border-[var(--separator-subtle)]">

@@ -112,6 +112,13 @@ describe('BlueprintCard', () => {
     expect(onCompare).toHaveBeenCalledWith(WEAPON_BP)
   })
 
+  it('invokes onOpen when the blueprint name is clicked', async () => {
+    const onOpen = vi.fn()
+    render(<BlueprintCard blueprint={WEAPON_BP} onOpen={onOpen} />)
+    await userEvent.click(screen.getByRole('button', { name: /view .* details/i }))
+    expect(onOpen).toHaveBeenCalledWith(WEAPON_BP)
+  })
+
   it('marks the card as selected when isInCompare is true', () => {
     render(<BlueprintCard blueprint={WEAPON_BP} isInCompare={true} />)
     const article = screen.getByRole('article')

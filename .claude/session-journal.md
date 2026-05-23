@@ -1,7 +1,39 @@
 # Session Journal
 
-## Current Focus (2026-05-19 Tuesday morning NZST)
-**PART K extractor track + first UI component SHIPPED. 8 of 12 PART K tasks done. Remaining: K8 data load (heavy), K11 RepCostBadges, K12 RewardSummary, K13 backend route.**
+## Current Focus (2026-05-23 NZST)
+**Crafting gaps fixed (Gavin: click Monde Arms Daimyo → nothing; /crafting search not bookmarkable). Both FIXED + verified live, 256 frontend tests pass. Uncommitted on feat/ptu-shadow-tables alongside the Missions deep-review batch. Nothing committed/staged.**
+
+### 2026-05-23 — Crafting v2 click-through + URL state
+- **Regression #1 (click→detail):** BlueprintListRow had `cursor-pointer` + `stopPropagation()` on every action button but NO row `onClick` (vestigial — row-click was removed); grid card title was plain text. Fix: added `onOpen` prop → `navigate('/crafting/:id')` (BlueprintDetail's default 'materials' tab shows "How to Obtain"/acquisition). Wired card title (now a button, aria "View X details") + row onClick + threaded through BlueprintListView + index.jsx `handleOpenDetail`. +3 vitest (row click, button-no-propagate, card click).
+- **Regression #2 (search not bookmarkable):** index.jsx had `search`/`activeType`/`stateFilter` as pure useState. Lifted to useSearchParams: `?q=` (replace:true), `?type=` (localStorage default fallback + persist), `?state=` ('all' omitted). `/crafting?type=fps_armour&q=daimyo` now restores tab + search.
+- Verified live: search→?q=, deep-link restore, card click→/crafting/474→"How to Obtain". Loaded 32 upsert_crafting_blueprints_*.sql into local scbridge-test (1560 BPs) for the check.
+- NOTE: crafting blueprint has NO loot uuid (output_item_uuid/loot_uuid/item_uuid all null); `acquisition` = where to get the BLUEPRINT (contracts). The "where to get it" is the blueprint detail, not /loot/:uuid — crafting never linked to /loot/ (git -S confirms).
+
+## Current Focus (2026-05-22 NZST) — superseded
+**Missions deep-review: Track D (D1-D6) + Track A cross-links + Track C cohesion redesign all DONE, verified live, 253 frontend tests pass. Memory: `project_2026_05_21_missions_track_d_sweep.md`. Uncommitted: missionConstants.js (+test), Missions.jsx, plus prior pass's gamedata.ts/cache.ts/RepCostBadges. Nothing committed/staged — awaiting Gavin's review + push choice.**
+
+### 2026-05-22 — Track C: All-view ↔ Factions-view cohesion (Gavin: "visually disconnected")
+- Diagnosis (from screenshots): All-view table was cold/anchorless/sparse vs warm anchored Factions cards.
+- Polish: leading colored category icon per row (CATEGORY_ICONS map) + tighter title cell + card hover. Both modes.
+- Group-by-giver (default): collapsible faction-logo GroupHeaders + count, sorted by size, sort-within-group, giver column hidden in grouped mode. `?group=0` = flat paginated globally-sortable table (preserved untouched). Group toggle button (Layers/List) in filter bar.
+- GOTCHA: lucide-react@0.460 has NO `Pickaxe`/`Drill` export — page crashed at runtime (unit tests didn't catch; Missions.jsx isn't render-tested). Used `Gem` for Mining. Always browser-verify frontend icon imports.
+- Verified: grouped + flat modes, collapse, search/filter compose with grouping, 0 console errors.
+
+### 2026-05-21 — D4/D5/D6 + Track A (Gavin: "D4->D6 then track A")
+- D4 giver word-split: extended KNOWN_GIVER_CORPS (21 givers) +6 tests → "microTech Bounty Department" etc.
+- D5 category leaks: `categoryLabel()` case-insensitive + title-case fallback → no lowercase chips.
+- D6 template toggle → `?templates=1` URL param (survives reload).
+- Track A: expanded-view cross-links (giver→?giver=, category→?cat=, rep scopes "browse:" chips→?rep=) + `animate-fade-in-up` on expand. Verified hrefs live.
+
+### 2026-05-21 — D1/D2 Career Reputation rebuild (Gavin: "rebuild")
+- New helper `deriveRepScopeSlugs` (missionConstants.js) + `rep_scopes` on each entry. `repScopes` aggregates real scopes → Affinity/Security/Courier/Bounty/Hired Muscle/Assassination/Emergency. `?rep=affinity` now 241 results (was 0 dead-end). repFocus column shows scope's rep cost inline ("−100 rep"); tag humanized. +5 tests.
+
+### 2026-05-21 — Track D sweep + D3 fix
+- Loaded 88 contracts into local D1 (`wrangler d1 execute scbridge-test --local`, NO --env → hash 9ba2b04b, the DB vite reads). Page now representative.
+- Swept all 3 views via Playwright browser_evaluate. **Works:** sorts/filters/search/pagination/templates-toggle/expanded-rows (K11 rep badges excellent)/factions+faction-rep cards/deep-link restore.
+- **D1+D2 (broken, deferred):** `rep_summary` is now a bare size code (806×"XS", 0 colons) — `repScopes` parser (Missions.jsx:846) mislabels Career Reputation cards "XS/XXXXS/…"; clicking → ?rep=XS → 0 results. Scope moved to rep_changes/rep_fail/rep_abandon. Needs design call.
+- **D3 (FIXED):** `humanizeStandingSlug` (`missionConstants.js:279`) affinity regex `^affinity_` missed 4.8's `reputationstanding_` prefix → 52 rows showed "-005+". Changed `^affinity_` → `(?:^|_)affinity_`. TDD: +5 tests RED→GREEN, full suite 242 pass, verified live ("Not Hostile+").
+- **Cosmetic open:** D4 giver word-split, D5 category lowercase leaks, D6 template toggle not URL-persisted. Track A cross-links still unbuilt.
 
 ### 2026-05-19 — PART K extractor track complete (8 tasks)
 
