@@ -15,7 +15,8 @@ import {
   generateItemLabels,
   generateContrabandWarnings,
   generateMaterialShortNames,
-  generateContractBlueprintOverrides,
+  generateContractOverrides,
+  type ContractRow,
   humanizeComponentType,
   missileSeekerCode,
   parseIniOverrides,
@@ -135,6 +136,7 @@ export function localizationRoutes() {
         enhanceContrabandWarnings: z.boolean().optional(),
         enhanceMaterialNames: z.boolean().optional(),
         enhanceBlueprintPools: z.boolean().optional(),
+        enhanceContractRep: z.boolean().optional(),
       }),
     ),
     async (c) => {
@@ -159,8 +161,9 @@ export function localizationRoutes() {
             labels_consumables, labels_ship_missiles, label_format,
             category_formats_json, enabled_packs_json,
             enhance_contraband_warnings, enhance_material_names, enhance_blueprint_pools,
+            enhance_contract_rep,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(user_id) DO UPDATE SET
             asop_enabled = excluded.asop_enabled,
             labels_vehicle_components = excluded.labels_vehicle_components,
@@ -177,6 +180,7 @@ export function localizationRoutes() {
             enhance_contraband_warnings = excluded.enhance_contraband_warnings,
             enhance_material_names = excluded.enhance_material_names,
             enhance_blueprint_pools = excluded.enhance_blueprint_pools,
+            enhance_contract_rep = excluded.enhance_contract_rep,
             updated_at = excluded.updated_at`,
         )
         .bind(
@@ -196,6 +200,7 @@ export function localizationRoutes() {
           body.enhanceContrabandWarnings ? 1 : 0,
           body.enhanceMaterialNames ? 1 : 0,
           body.enhanceBlueprintPools ? 1 : 0,
+          body.enhanceContractRep ? 1 : 0,
         )
         .run();
 
@@ -678,56 +683,88 @@ async function buildOverrides(
     overrides.push(...generateMaterialShortNames(allMaterialRows, validKeys));
   }
 
-  // Blueprint pools: append reward lists + reputation line to contract
-  // descriptions, and tag titles with [N Rep] [BP].
-  //
-  // Names resolve across FPS gear AND ship components. The blueprint tag is
-  // mixed-case (BP_CRAFT_Mining_Laser_THCN_Helix_S0) while class_names are
-  // stored lowercase, so we lower() the tag side only — this keeps the join
-  // index-friendly (bare column) and recovers the ~40% of pool entries
-  // (mining lasers, salvage modifiers, radars, …) that previously fell
-  // through to the raw, de-camelCased tag name. Multiple reward pools on one
-  // contract stay separated as Pool 1 / Pool 2 instead of being collapsed.
-  if (config.enhanceBlueprintPools) {
-    const bpRows = await db
-      .prepare(
-        `SELECT cgc.title_loc_key, cgc.desc_loc_key, cgc.rep_reward,
-                cgbp.crafting_blueprint_reward_pool_id AS pool_key,
-                COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name,
-                CASE WHEN fw.name IS NULL AND fa.name IS NULL AND fh.name IS NULL
-                          AND fam.name IS NULL AND vc.name IS NOT NULL
-                     THEN vc.type END AS component_type
-         FROM ${t("contract_generator_blueprint_pools")} cgbp
-         JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
-         JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
-         JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
-         LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fw.is_deleted = 0
-         LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fa.is_deleted = 0
-         LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fh.is_deleted = 0
-         LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fam.is_deleted = 0
-         LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND vc.is_deleted = 0
-         WHERE cgc.is_deleted = 0
-         AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
-      )
-      .all<{
-        title_loc_key: string | null;
-        desc_loc_key: string | null;
-        rep_reward: number | null;
-        pool_key: number;
-        blueprint_name: string;
-        component_type: string | null;
-      }>();
+  // Contract enhancements: reputation labels and/or blueprint pools. Both are
+  // independent toggles, fed as one row set into generateContractOverrides so
+  // they never double-write a shared title/description key.
+  if (config.enhanceBlueprintPools || config.enhanceContractRep) {
+    const contractRows: ContractRow[] = [];
 
-    overrides.push(
-      ...generateContractBlueprintOverrides(
-        bpRows.results.map((r) => ({
+    // Blueprint pools: append reward lists to descriptions + [BP] to titles.
+    // Names resolve across FPS gear AND ship components. The blueprint tag is
+    // mixed-case (BP_CRAFT_Mining_Laser_THCN_Helix_S0) while class_names are
+    // stored lowercase, so we lower() the tag side only — this keeps the join
+    // index-friendly (bare column) and recovers the ~40% of pool entries
+    // (mining lasers, salvage modifiers, radars, …) that previously fell
+    // through to the raw, de-camelCased tag name. Pools stay separated.
+    if (config.enhanceBlueprintPools) {
+      const bpRows = await db
+        .prepare(
+          `SELECT cgc.title_loc_key, cgc.desc_loc_key, cgc.rep_reward,
+                  cgbp.crafting_blueprint_reward_pool_id AS pool_key,
+                  COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name,
+                  CASE WHEN fw.name IS NULL AND fa.name IS NULL AND fh.name IS NULL
+                            AND fam.name IS NULL AND vc.name IS NOT NULL
+                       THEN vc.type END AS component_type
+           FROM ${t("contract_generator_blueprint_pools")} cgbp
+           JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
+           JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
+           JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
+           LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fw.is_deleted = 0
+           LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fa.is_deleted = 0
+           LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fh.is_deleted = 0
+           LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fam.is_deleted = 0
+           LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND vc.is_deleted = 0
+           WHERE cgc.is_deleted = 0
+           AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
+        )
+        .all<{
+          title_loc_key: string | null;
+          desc_loc_key: string | null;
+          rep_reward: number | null;
+          pool_key: number;
+          blueprint_name: string;
+          component_type: string | null;
+        }>();
+
+      for (const r of bpRows.results) {
+        contractRows.push({
           titleLocKey: r.title_loc_key || "",
           descLocKey: r.desc_loc_key || "",
           repReward: r.rep_reward,
           poolKey: String(r.pool_key),
           blueprintName: r.blueprint_name,
           componentType: humanizeComponentType(r.component_type),
-        })),
+        });
+      }
+    }
+
+    // Reputation labels on ALL rep-awarding contracts (rep-only rows; the Set
+    // in the renderer dedupes against rep already contributed by BP rows).
+    if (config.enhanceContractRep) {
+      const repRows = await db
+        .prepare(
+          `SELECT title_loc_key, desc_loc_key, rep_reward
+           FROM ${t("contract_generator_contracts")}
+           WHERE is_deleted = 0 AND rep_reward IS NOT NULL
+           AND (title_loc_key != '' OR desc_loc_key != '')`,
+        )
+        .all<{ title_loc_key: string | null; desc_loc_key: string | null; rep_reward: number | null }>();
+
+      for (const r of repRows.results) {
+        contractRows.push({
+          titleLocKey: r.title_loc_key || "",
+          descLocKey: r.desc_loc_key || "",
+          repReward: r.rep_reward,
+          poolKey: null,
+          blueprintName: null,
+        });
+      }
+    }
+
+    overrides.push(
+      ...generateContractOverrides(
+        contractRows,
+        { includeRep: config.enhanceContractRep, includeBlueprints: config.enhanceBlueprintPools },
         validKeys,
       ),
     );

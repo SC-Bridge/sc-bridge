@@ -331,34 +331,43 @@ export function missileSeekerCode(signal: string | null): string | null {
   return SEEKER_CODES[signal] ?? null;
 }
 
-/** One (contract × pool × blueprint-name) row feeding blueprint overrides. */
-export interface ContractBpRow {
+/** One (contract × pool × blueprint-name) row feeding contract overrides. */
+export interface ContractRow {
   titleLocKey: string;
   descLocKey: string;
   repReward: number | null;
-  /** Distinct pool identity (e.g. reward-pool id/key) for Pool 1/Pool 2 split. */
-  poolKey: string;
-  blueprintName: string;
+  /** Distinct pool identity for Pool 1/Pool 2 split; null on rep-only rows. */
+  poolKey?: string | null;
+  blueprintName?: string | null;
   /** Humanized component type for ship components; null for FPS gear. */
   componentType?: string | null;
 }
 
+/** Which contract enhancements to render. */
+export interface ContractOverrideOpts {
+  /** Reputation line in description + [N Rep] in title, for any rep contract. */
+  includeRep: boolean;
+  /** Blueprint pool list in description + [BP] in title, for BP contracts. */
+  includeBlueprints: boolean;
+}
+
 /**
- * Build contract blueprint overrides from flat rows.
- *
- * For each distinct description key it appends a reputation line and the
- * blueprint list — keeping multiple reward pools separated as Pool 1 / Pool 2
- * rather than collapsing them. For each distinct title key it appends a
- * `[N Rep] [BP]` tag so blueprint-awarding contracts are spottable in the
- * contract list.
+ * Build contract overrides from flat rows. Reputation and blueprint pools are
+ * independent concerns (each toggled in `opts`) so they never double-write the
+ * same key:
+ *   - includeRep: a reputation line in the description (a "(by difficulty)"
+ *     range when one description spans rep tiers) and an [N Rep] title tag.
+ *   - includeBlueprints: the pool list in the description (multiple reward
+ *     pools kept separated as Pool 1 / Pool 2) and a [BP] title tag.
  *
  * Both override values start with BP_APPEND_SENTINEL; the /download endpoint
- * appends them to the untouched base value. When `validKeys` is supplied,
- * only keys present in the base global.ini are emitted (case-insensitive,
- * also trying the `,P` variant marker), preventing phantom keys.
+ * appends them to the untouched base value. When `validKeys` is supplied, only
+ * keys present in the base global.ini are emitted (case-insensitive, also
+ * trying the `,P` variant marker), preventing phantom keys.
  */
-export function generateContractBlueprintOverrides(
-  rows: ContractBpRow[],
+export function generateContractOverrides(
+  rows: ContractRow[],
+  opts: ContractOverrideOpts,
   validKeys?: Map<string, string>,
 ): LabelOverride[] {
   const resolve = (key: string): string | undefined => {
@@ -372,10 +381,15 @@ export function generateContractBlueprintOverrides(
     pools: Map<string, string[]>;
     reps: Set<number>;
   }
+  interface TitleGroup {
+    reps: Set<number>;
+    hasBlueprint: boolean;
+  }
   const descGroups = new Map<string, DescGroup>();
-  const titleReps = new Map<string, number | null>();
+  const titleGroups = new Map<string, TitleGroup>();
 
   for (const r of rows) {
+    const hasBp = !!(r.poolKey && r.blueprintName);
     if (r.descLocKey) {
       let g = descGroups.get(r.descLocKey);
       if (!g) {
@@ -383,60 +397,73 @@ export function generateContractBlueprintOverrides(
         descGroups.set(r.descLocKey, g);
       }
       if (r.repReward != null) g.reps.add(r.repReward);
-      let names = g.pools.get(r.poolKey);
-      if (!names) {
-        names = [];
-        g.pools.set(r.poolKey, names);
-      }
-      // Ship components carry a (Type) suffix; FPS gear stays bare.
-      const display = r.componentType
-        ? `${r.blueprintName} (${r.componentType})`
-        : r.blueprintName;
-      if (r.blueprintName && !names.includes(display)) {
-        names.push(display);
+      if (hasBp) {
+        let names = g.pools.get(r.poolKey!);
+        if (!names) {
+          names = [];
+          g.pools.set(r.poolKey!, names);
+        }
+        // Ship components carry a (Type) suffix; FPS gear stays bare.
+        const display = r.componentType
+          ? `${r.blueprintName} (${r.componentType})`
+          : r.blueprintName!;
+        if (!names.includes(display)) names.push(display);
       }
     }
     if (r.titleLocKey) {
-      const prior = titleReps.get(r.titleLocKey);
-      if (prior == null && r.repReward != null) {
-        titleReps.set(r.titleLocKey, r.repReward);
-      } else if (!titleReps.has(r.titleLocKey)) {
-        titleReps.set(r.titleLocKey, null);
+      let tg = titleGroups.get(r.titleLocKey);
+      if (!tg) {
+        tg = { reps: new Set(), hasBlueprint: false };
+        titleGroups.set(r.titleLocKey, tg);
       }
+      if (r.repReward != null) tg.reps.add(r.repReward);
+      if (hasBp) tg.hasBlueprint = true;
     }
   }
 
   const overrides: LabelOverride[] = [];
 
   for (const [descKey, g] of descGroups) {
+    const sections: string[] = [];
+    if (opts.includeRep && g.reps.size > 0) {
+      const reps = [...g.reps].sort((a, b) => a - b);
+      sections.push(
+        reps.length === 1
+          ? `<EM4>Reputation Awarded:</EM4> ${reps[0]}`
+          : `<EM4>Reputation Awarded (by difficulty):</EM4> ${reps.join(" / ")}`,
+      );
+    }
+    if (opts.includeBlueprints && g.pools.size > 0) {
+      const poolKeys = [...g.pools.keys()].sort();
+      if (poolKeys.length === 1) {
+        sections.push(
+          `<EM4>Potential Blueprints</EM4>\\n${g.pools.get(poolKeys[0])!.map((n) => `- ${n}`).join("\\n")}`,
+        );
+      } else {
+        let block = `<EM4>Multiple Blueprint Pools</EM4>`;
+        poolKeys.forEach((pk, i) => {
+          block += `\\n<EM4>Pool ${i + 1}</EM4>\\n${g.pools.get(pk)!.map((n) => `- ${n}`).join("\\n")}`;
+        });
+        sections.push(block);
+      }
+    }
+    if (sections.length === 0) continue;
     const matched = resolve(descKey);
     if (!matched) continue;
-    const poolKeys = [...g.pools.keys()].sort();
-    let body = "";
-    const reps = [...g.reps].sort((a, b) => a - b);
-    if (reps.length === 1) {
-      body += `<EM4>Reputation Awarded:</EM4> ${reps[0]}\\n\\n`;
-    } else if (reps.length > 1) {
-      body += `<EM4>Reputation Awarded (by difficulty):</EM4> ${reps.join(" / ")}\\n\\n`;
-    }
-    if (poolKeys.length === 1) {
-      const names = g.pools.get(poolKeys[0])!;
-      body += `<EM4>Potential Blueprints</EM4>\\n${names.map((n) => `- ${n}`).join("\\n")}`;
-    } else {
-      body += `<EM4>Multiple Blueprint Pools</EM4>`;
-      poolKeys.forEach((pk, i) => {
-        const names = g.pools.get(pk)!;
-        body += `\\n<EM4>Pool ${i + 1}</EM4>\\n${names.map((n) => `- ${n}`).join("\\n")}`;
-      });
-    }
-    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL}\\n\\n${body}` });
+    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL}\\n\\n${sections.join("\\n\\n")}` });
   }
 
-  for (const [titleKey, rep] of titleReps) {
+  for (const [titleKey, tg] of titleGroups) {
+    const parts: string[] = [];
+    if (opts.includeRep && tg.reps.size > 0) {
+      const reps = [...tg.reps].sort((a, b) => a - b);
+      parts.push(`[${reps.join("/")} Rep]`);
+    }
+    if (opts.includeBlueprints && tg.hasBlueprint) parts.push("[BP]");
+    if (parts.length === 0) continue;
     const matched = resolve(titleKey);
     if (!matched) continue;
-    const tag = rep != null ? `[${rep} Rep] [BP]` : `[BP]`;
-    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL} <EM4>${tag}</EM4>` });
+    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL} <EM4>${parts.join(" ")}</EM4>` });
   }
 
   return overrides;
@@ -588,6 +615,7 @@ export interface LocalizationConfig {
   enhanceContrabandWarnings: boolean;
   enhanceMaterialNames: boolean;
   enhanceBlueprintPools: boolean;
+  enhanceContractRep: boolean;
 }
 
 export const DEFAULT_CONFIG: LocalizationConfig = {
@@ -606,6 +634,7 @@ export const DEFAULT_CONFIG: LocalizationConfig = {
   enhanceContrabandWarnings: false,
   enhanceMaterialNames: false,
   enhanceBlueprintPools: false,
+  enhanceContractRep: false,
 };
 
 export function configFromRow(row: Record<string, unknown>): LocalizationConfig {
@@ -643,6 +672,7 @@ export function configFromRow(row: Record<string, unknown>): LocalizationConfig 
     enhanceContrabandWarnings: !!row.enhance_contraband_warnings,
     enhanceMaterialNames: !!row.enhance_material_names,
     enhanceBlueprintPools: !!row.enhance_blueprint_pools,
+    enhanceContractRep: !!row.enhance_contract_rep,
   };
 }
 

@@ -215,7 +215,7 @@ export default function LocalizationBuilder() {
 
   // ── Stats ─────────────────────────────────────────────────────────
   const enabledLabelCount = LABEL_CATEGORIES.filter(c => config[c.key]).length
-  const enabledEnhancementCount = [config.enhanceContrabandWarnings, config.enhanceMaterialNames, config.enhanceBlueprintPools].filter(Boolean).length
+  const enabledEnhancementCount = [config.enhanceContrabandWarnings, config.enhanceMaterialNames, config.enhanceBlueprintPools, config.enhanceContractRep].filter(Boolean).length
   const hasAnyEnabled = config.asopEnabled || enabledLabelCount > 0 || enabledEnhancementCount > 0
 
   if (configLoading) {
@@ -268,7 +268,7 @@ export default function LocalizationBuilder() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={Rocket} label="ASOP Ships" value={config.asopEnabled ? orderedShips.length : 'Off'} color={config.asopEnabled ? 'text-sc-accent' : 'text-gray-500'} />
         <StatCard icon={Tags} label="Label Categories" value={`${enabledLabelCount} / ${LABEL_CATEGORIES.length}`} color={enabledLabelCount > 0 ? 'text-sc-accent' : 'text-gray-500'} />
-        <StatCard icon={Sparkles} label="Enhancements" value={`${enabledEnhancementCount} / 3`} color={enabledEnhancementCount > 0 ? 'text-purple-400' : 'text-gray-500'} />
+        <StatCard icon={Sparkles} label="Enhancements" value={`${enabledEnhancementCount} / 4`} color={enabledEnhancementCount > 0 ? 'text-purple-400' : 'text-gray-500'} />
         <StatCard icon={Download} label="Ready" value={hasAnyEnabled ? 'Yes' : 'No features enabled'} color={hasAnyEnabled ? 'text-emerald-400' : 'text-gray-500'} />
       </div>
 

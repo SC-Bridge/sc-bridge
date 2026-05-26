@@ -1,5 +1,5 @@
 import React from 'react'
-import { FlaskConical, AlertTriangle, Gem } from 'lucide-react'
+import { FlaskConical, AlertTriangle, Gem, Award } from 'lucide-react'
 
 function Toggle({ checked, onChange }) {
   return (
@@ -47,6 +47,17 @@ const ENHANCEMENTS = [
     borderColor: 'border-purple-500/30',
     example: 'Your Best Shot [10 Rep] [BP] — Potential Blueprints: R97 Shotgun, Monde Arms',
     count: '320+ contracts',
+  },
+  {
+    configKey: 'enhanceContractRep',
+    label: 'Contract Reputation',
+    desc: 'Show the reputation award amount on every rep-granting contract — [N Rep] in the title and a Reputation Awarded line in the description. Ranges shown when a contract spans difficulty tiers.',
+    icon: Award,
+    iconColor: 'text-amber-400',
+    bgColor: 'bg-amber-500/10',
+    borderColor: 'border-amber-500/30',
+    example: 'Need Resource for Research [100 Rep]',
+    count: '400+ contracts',
   },
 ]
 
