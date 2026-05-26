@@ -40,13 +40,13 @@ const ENHANCEMENTS = [
   {
     configKey: 'enhanceBlueprintPools',
     label: 'Blueprint Pools',
-    desc: 'Append potential blueprint rewards to contract descriptions so you can see what each contract might drop before accepting.',
+    desc: 'Tag blueprint-awarding contracts with [BP] + reputation in the title, and append the potential blueprint rewards (kept separated by pool) to the description so you can see what each contract might drop before accepting.',
     icon: FlaskConical,
     iconColor: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30',
-    example: '...contract text... Potential Blueprints: R97 Shotgun, Monde Arms Camo',
-    count: '450+ contracts',
+    example: 'Your Best Shot [10 Rep] [BP] — Potential Blueprints: R97 Shotgun, Monde Arms',
+    count: '320+ contracts',
   },
 ]
 

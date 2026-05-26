@@ -278,41 +278,108 @@ export function generateMaterialShortNames(
 }
 
 /**
- * Generate blueprint pool text for contract descriptions.
- * Returns overrides that append blueprint lists to description strings.
+ * Sentinel prefix on an override value telling the /download endpoint to
+ * APPEND the remainder to the base global.ini value, rather than replace it.
+ * Used for contract title/description enhancements where we can't read the
+ * base string at override-generation time.
  */
-export function generateBlueprintPoolOverrides(
-  contracts: Array<{
-    debugName: string;
-    blueprintNames: string[];
-  }>,
-  baseContent: Map<string, string>,
+export const BP_APPEND_SENTINEL = "\0BP_APPEND\0";
+
+/** One (contract × pool × blueprint-name) row feeding blueprint overrides. */
+export interface ContractBpRow {
+  titleLocKey: string;
+  descLocKey: string;
+  repReward: number | null;
+  /** Distinct pool identity (e.g. reward-pool id/key) for Pool 1/Pool 2 split. */
+  poolKey: string;
+  blueprintName: string;
+}
+
+/**
+ * Build contract blueprint overrides from flat rows.
+ *
+ * For each distinct description key it appends a reputation line and the
+ * blueprint list — keeping multiple reward pools separated as Pool 1 / Pool 2
+ * rather than collapsing them. For each distinct title key it appends a
+ * `[N Rep] [BP]` tag so blueprint-awarding contracts are spottable in the
+ * contract list.
+ *
+ * Both override values start with BP_APPEND_SENTINEL; the /download endpoint
+ * appends them to the untouched base value. When `validKeys` is supplied,
+ * only keys present in the base global.ini are emitted (case-insensitive,
+ * also trying the `,P` variant marker), preventing phantom keys.
+ */
+export function generateContractBlueprintOverrides(
+  rows: ContractBpRow[],
+  validKeys?: Map<string, string>,
 ): LabelOverride[] {
+  const resolve = (key: string): string | undefined => {
+    if (!key) return undefined;
+    if (!validKeys) return key;
+    const lower = key.toLowerCase();
+    return validKeys.get(lower) ?? validKeys.get(`${lower},p`);
+  };
+
+  interface DescGroup {
+    pools: Map<string, string[]>;
+    rep: number | null;
+  }
+  const descGroups = new Map<string, DescGroup>();
+  const titleReps = new Map<string, number | null>();
+
+  for (const r of rows) {
+    if (r.descLocKey) {
+      let g = descGroups.get(r.descLocKey);
+      if (!g) {
+        g = { pools: new Map(), rep: null };
+        descGroups.set(r.descLocKey, g);
+      }
+      if (g.rep === null && r.repReward != null) g.rep = r.repReward;
+      let names = g.pools.get(r.poolKey);
+      if (!names) {
+        names = [];
+        g.pools.set(r.poolKey, names);
+      }
+      if (r.blueprintName && !names.includes(r.blueprintName)) {
+        names.push(r.blueprintName);
+      }
+    }
+    if (r.titleLocKey) {
+      const prior = titleReps.get(r.titleLocKey);
+      if (prior == null && r.repReward != null) {
+        titleReps.set(r.titleLocKey, r.repReward);
+      } else if (!titleReps.has(r.titleLocKey)) {
+        titleReps.set(r.titleLocKey, null);
+      }
+    }
+  }
+
   const overrides: LabelOverride[] = [];
 
-  for (const contract of contracts) {
-    if (contract.blueprintNames.length === 0) continue;
-
-    // Try common description key patterns
-    const descKeys = [
-      `${contract.debugName}_desc`,
-      `${contract.debugName}_Desc`,
-    ];
-
-    for (const key of descKeys) {
-      const existing = baseContent.get(key);
-      if (existing === undefined) continue;
-
-      const bpList = contract.blueprintNames.map((n) => `- ${n}`).join("\\n");
-      const appended = `${existing}\\n\\n<EM4>Potential Blueprints</EM4>\\n${bpList}`;
-
-      overrides.push({
-        key,
-        value: appended,
-        original: existing,
+  for (const [descKey, g] of descGroups) {
+    const matched = resolve(descKey);
+    if (!matched) continue;
+    const poolKeys = [...g.pools.keys()].sort();
+    let body = "";
+    if (g.rep != null) body += `<EM4>Reputation Awarded:</EM4> ${g.rep}\\n\\n`;
+    if (poolKeys.length === 1) {
+      const names = g.pools.get(poolKeys[0])!;
+      body += `<EM4>Potential Blueprints</EM4>\\n${names.map((n) => `- ${n}`).join("\\n")}`;
+    } else {
+      body += `<EM4>Multiple Blueprint Pools</EM4>`;
+      poolKeys.forEach((pk, i) => {
+        const names = g.pools.get(pk)!;
+        body += `\\n<EM4>Pool ${i + 1}</EM4>\\n${names.map((n) => `- ${n}`).join("\\n")}`;
       });
-      break; // Only match first key variant
     }
+    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL}\\n\\n${body}` });
+  }
+
+  for (const [titleKey, rep] of titleReps) {
+    const matched = resolve(titleKey);
+    if (!matched) continue;
+    const tag = rep != null ? `[${rep} Rep] [BP]` : `[BP]`;
+    overrides.push({ key: matched, value: `${BP_APPEND_SENTINEL} <EM4>${tag}</EM4>` });
   }
 
   return overrides;

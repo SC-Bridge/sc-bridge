@@ -15,6 +15,7 @@ import {
   generateItemLabels,
   generateContrabandWarnings,
   generateMaterialShortNames,
+  generateContractBlueprintOverrides,
   parseIniOverrides,
   resolveCategoryFormat,
 } from "../lib/localization";
@@ -671,55 +672,54 @@ async function buildOverrides(
     overrides.push(...generateMaterialShortNames(allMaterialRows, validKeys));
   }
 
-  // Blueprint pools: append blueprint reward lists to contract descriptions
+  // Blueprint pools: append reward lists + reputation line to contract
+  // descriptions, and tag titles with [N Rep] [BP].
+  //
+  // Names resolve across FPS gear AND ship components. The blueprint tag is
+  // mixed-case (BP_CRAFT_Mining_Laser_THCN_Helix_S0) while class_names are
+  // stored lowercase, so we lower() the tag side only — this keeps the join
+  // index-friendly (bare column) and recovers the ~40% of pool entries
+  // (mining lasers, salvage modifiers, radars, …) that previously fell
+  // through to the raw, de-camelCased tag name. Multiple reward pools on one
+  // contract stay separated as Pool 1 / Pool 2 instead of being collapsed.
   if (config.enhanceBlueprintPools) {
-    // Query: for each unique desc_loc_key with blueprints, get the blueprint names
     const bpRows = await db
       .prepare(
-        `SELECT DISTINCT cgc.desc_loc_key,
-                COALESCE(fw.name, fa.name, fh.name, fam.name, cb.name) as blueprint_name
+        `SELECT cgc.title_loc_key, cgc.desc_loc_key, cgc.rep_reward,
+                cgbp.crafting_blueprint_reward_pool_id AS pool_key,
+                COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name
          FROM ${t("contract_generator_blueprint_pools")} cgbp
          JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
          JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
          JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
-         LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fw.is_deleted = 0
-         LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fa.is_deleted = 0
-         LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fh.is_deleted = 0
-         LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fam.is_deleted = 0
+         LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fw.is_deleted = 0
+         LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fa.is_deleted = 0
+         LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fh.is_deleted = 0
+         LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fam.is_deleted = 0
+         LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND vc.is_deleted = 0
          WHERE cgc.is_deleted = 0
          AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
       )
-      .all<{ desc_loc_key: string; blueprint_name: string }>();
+      .all<{
+        title_loc_key: string | null;
+        desc_loc_key: string | null;
+        rep_reward: number | null;
+        pool_key: number;
+        blueprint_name: string;
+      }>();
 
-    // Group blueprints by desc_loc_key
-    const descKeyBps = new Map<string, string[]>();
-    for (const row of bpRows.results) {
-      const existing = descKeyBps.get(row.desc_loc_key) || [];
-      if (!existing.includes(row.blueprint_name)) {
-        existing.push(row.blueprint_name);
-      }
-      descKeyBps.set(row.desc_loc_key, existing);
-    }
-
-    // Generate overrides: append blueprint list to description
-    // The key may have a ,P suffix in global.ini (variant marker)
-    for (const [descKey, bpNames] of descKeyBps) {
-      // Try both exact key and ,P variant
-      const candidates = [descKey, `${descKey},P`];
-      const matchedKey = candidates
-        .map((k) => (validKeys ? validKeys.get(k.toLowerCase()) : k))
-        .find(Boolean);
-      if (!matchedKey) continue;
-
-      const bpList = bpNames.map((n) => `- ${n}`).join("\\n");
-      // We can't read the original value from the base file here,
-      // so we use a sentinel that the download endpoint will handle:
-      // prefix with \0BP_APPEND\0 to signal "append to existing value"
-      overrides.push({
-        key: matchedKey,
-        value: `\0BP_APPEND\0\\n\\n<EM4>Potential Blueprints</EM4>\\n${bpList}`,
-      });
-    }
+    overrides.push(
+      ...generateContractBlueprintOverrides(
+        bpRows.results.map((r) => ({
+          titleLocKey: r.title_loc_key || "",
+          descLocKey: r.desc_loc_key || "",
+          repReward: r.rep_reward,
+          poolKey: String(r.pool_key),
+          blueprintName: r.blueprint_name,
+        })),
+        validKeys,
+      ),
+    );
   }
 
   return overrides;
