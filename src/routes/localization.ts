@@ -16,6 +16,8 @@ import {
   generateContrabandWarnings,
   generateMaterialShortNames,
   generateContractBlueprintOverrides,
+  humanizeComponentType,
+  missileSeekerCode,
   parseIniOverrides,
   resolveCategoryFormat,
 } from "../lib/localization";
@@ -126,7 +128,7 @@ export function localizationRoutes() {
         labelsShipMissiles: z.boolean().optional(),
         labelFormat: z.enum(["suffix", "prefix"]).optional(),
         categoryFormats: z.record(z.string(), z.object({
-          fields: z.array(z.enum(["manufacturer", "size", "grade", "subType"])),
+          fields: z.array(z.enum(["manufacturer", "size", "grade", "subType", "seeker"])),
           format: z.enum(["suffix", "prefix"]),
         })).optional(),
         enabledPacks: z.array(z.string().max(100)).max(50).optional(),
@@ -591,11 +593,13 @@ async function buildOverrides(
     const gradeCol = cat.hasGrade ? "t.grade" : "NULL as grade";
     const tablesWithoutSize = ["consumables", "fps_utilities"];
     const sizeCol = tablesWithoutSize.includes(cat.table) ? "NULL as size" : "t.size";
+    // Only ship_missiles carries a seeker (tracking_signal); others select NULL.
+    const seekerCol = cat.table === "ship_missiles" ? "t.tracking_signal" : "NULL as tracking_signal";
 
     const rows = await db
       .prepare(
         `SELECT t.class_name, t.name, m.code as manufacturer_code,
-                ${sizeCol}, ${gradeCol}, t.sub_type
+                ${sizeCol}, ${gradeCol}, t.sub_type, ${seekerCol}
          FROM ${cat.table} t
          LEFT JOIN manufacturers m ON m.id = t.manufacturer_id
          WHERE t.is_deleted = 0
@@ -608,6 +612,7 @@ async function buildOverrides(
         size: number | null;
         grade: string | null;
         sub_type: string | null;
+        tracking_signal: string | null;
       }>();
 
     const itemRows: ItemRow[] = rows.results.map((r) => ({
@@ -617,6 +622,7 @@ async function buildOverrides(
       size: r.size,
       grade: r.grade,
       subType: r.sub_type,
+      seeker: missileSeekerCode(r.tracking_signal),
     }));
 
     const catFormat = resolveCategoryFormat(config, cat.table);
@@ -687,7 +693,10 @@ async function buildOverrides(
       .prepare(
         `SELECT cgc.title_loc_key, cgc.desc_loc_key, cgc.rep_reward,
                 cgbp.crafting_blueprint_reward_pool_id AS pool_key,
-                COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name
+                COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name,
+                CASE WHEN fw.name IS NULL AND fa.name IS NULL AND fh.name IS NULL
+                          AND fam.name IS NULL AND vc.name IS NOT NULL
+                     THEN vc.type END AS component_type
          FROM ${t("contract_generator_blueprint_pools")} cgbp
          JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
          JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
@@ -706,6 +715,7 @@ async function buildOverrides(
         rep_reward: number | null;
         pool_key: number;
         blueprint_name: string;
+        component_type: string | null;
       }>();
 
     overrides.push(
@@ -716,6 +726,7 @@ async function buildOverrides(
           repReward: r.rep_reward,
           poolKey: String(r.pool_key),
           blueprintName: r.blueprint_name,
+          componentType: humanizeComponentType(r.component_type),
         })),
         validKeys,
       ),

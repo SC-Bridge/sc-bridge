@@ -20,7 +20,7 @@ export const CATEGORY_FIELDS = {
   fps_attachments: ['manufacturer', 'subType'],
   fps_utilities: ['manufacturer', 'subType'],
   consumables: ['manufacturer', 'subType'],
-  ship_missiles: ['manufacturer', 'size', 'subType'],
+  ship_missiles: ['seeker', 'manufacturer', 'size', 'subType'],
 }
 
 export const FIELD_LABELS = {
@@ -28,6 +28,7 @@ export const FIELD_LABELS = {
   size: 'Size',
   grade: 'Grade',
   subType: 'Type',
+  seeker: 'Seeker',
 }
 
 export const EXAMPLE_DATA = {
@@ -38,7 +39,7 @@ export const EXAMPLE_DATA = {
   fps_attachments: { name: '4x Scope', manufacturer: 'KBAR', size: null, grade: null, subType: 'Sight' },
   fps_utilities: { name: 'ParaMed', manufacturer: 'CRUS', size: null, grade: null, subType: 'Medical' },
   consumables: { name: "Big Benny's", manufacturer: null, size: null, grade: null, subType: 'Food' },
-  ship_missiles: { name: 'Dominator II', manufacturer: 'THRT', size: 3, grade: null, subType: 'CS' },
+  ship_missiles: { name: 'Dominator II', manufacturer: 'THRT', size: 3, grade: null, subType: null, seeker: 'EM' },
 }
 
 export function buildPreviewLabel(dbKey, fields, format) {
@@ -50,6 +51,7 @@ export function buildPreviewLabel(dbKey, fields, format) {
     if (field === 'size' && data.size != null) parts.push(`S${data.size}`)
     if (field === 'grade' && data.grade) parts.push(`Gr.${data.grade}`)
     if (field === 'subType' && data.subType) parts.push(data.subType)
+    if (field === 'seeker' && data.seeker) parts.push(data.seeker)
   }
   const tag = parts.join(' | ')
   if (!tag) return data.name

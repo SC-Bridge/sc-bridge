@@ -34,12 +34,14 @@ export interface ItemRow {
   size: number | null;
   grade: string | null;
   subType: string | null;
+  /** Short missile seeker code (EM/IR/CS); only set for ship_missiles. */
+  seeker?: string | null;
 }
 
 export type LabelFormat = "suffix" | "prefix";
 
 /** A field that can appear in a label tag */
-export type LabelField = "manufacturer" | "size" | "grade" | "subType";
+export type LabelField = "manufacturer" | "size" | "grade" | "subType" | "seeker";
 
 /** Per-category format configuration */
 export interface CategoryFormat {
@@ -65,7 +67,7 @@ export const CATEGORY_AVAILABLE_FIELDS: Record<string, LabelField[]> = {
   fps_attachments: ["manufacturer", "subType"],
   fps_utilities: ["manufacturer", "subType"],
   consumables: ["manufacturer", "subType"],
-  ship_missiles: ["manufacturer", "size", "subType"],
+  ship_missiles: ["seeker", "manufacturer", "size", "subType"],
 };
 
 /** Human-readable field labels */
@@ -74,6 +76,7 @@ export const FIELD_LABELS: Record<LabelField, string> = {
   size: "Size",
   grade: "Grade",
   subType: "Type",
+  seeker: "Seeker",
 };
 
 /** Default format for a category: all available fields, suffix format */
@@ -154,6 +157,9 @@ function buildDetailTag(
         break;
       case "subType":
         if (row.subType) parts.push(row.subType);
+        break;
+      case "seeker":
+        if (row.seeker) parts.push(row.seeker);
         break;
     }
   }
@@ -285,6 +291,46 @@ export function generateMaterialShortNames(
  */
 export const BP_APPEND_SENTINEL = "\0BP_APPEND\0";
 
+/**
+ * PascalCase vehicle_components.type → readable noun for a blueprint's
+ * "(Type)" annotation. Unmapped values fall back to a CamelCase split.
+ */
+const COMPONENT_TYPE_LABELS: Record<string, string> = {
+  WeaponGun: "Weapon",
+  WeaponMining: "Mining Laser",
+  SalvageModifier: "Salvage Module",
+  QuantumDrive: "Quantum Drive",
+  PowerPlant: "Power Plant",
+  QuantumInterdictionGenerator: "QED",
+  Radar: "Radar",
+  Cooler: "Cooler",
+  Shield: "Shield",
+  EMP: "EMP",
+};
+
+/** Humanize a vehicle_components.type value for display, or null if empty. */
+export function humanizeComponentType(type: string | null): string | null {
+  if (!type) return null;
+  if (COMPONENT_TYPE_LABELS[type]) return COMPONENT_TYPE_LABELS[type];
+  return type
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .trim();
+}
+
+/** Missile tracking_signal → short seeker tag (Electromagnetic → EM). */
+const SEEKER_CODES: Record<string, string> = {
+  Electromagnetic: "EM",
+  Infrared: "IR",
+  CrossSection: "CS",
+};
+
+/** Map a missile tracking_signal to its short seeker code, or null. */
+export function missileSeekerCode(signal: string | null): string | null {
+  if (!signal) return null;
+  return SEEKER_CODES[signal] ?? null;
+}
+
 /** One (contract × pool × blueprint-name) row feeding blueprint overrides. */
 export interface ContractBpRow {
   titleLocKey: string;
@@ -293,6 +339,8 @@ export interface ContractBpRow {
   /** Distinct pool identity (e.g. reward-pool id/key) for Pool 1/Pool 2 split. */
   poolKey: string;
   blueprintName: string;
+  /** Humanized component type for ship components; null for FPS gear. */
+  componentType?: string | null;
 }
 
 /**
@@ -322,7 +370,7 @@ export function generateContractBlueprintOverrides(
 
   interface DescGroup {
     pools: Map<string, string[]>;
-    rep: number | null;
+    reps: Set<number>;
   }
   const descGroups = new Map<string, DescGroup>();
   const titleReps = new Map<string, number | null>();
@@ -331,17 +379,21 @@ export function generateContractBlueprintOverrides(
     if (r.descLocKey) {
       let g = descGroups.get(r.descLocKey);
       if (!g) {
-        g = { pools: new Map(), rep: null };
+        g = { pools: new Map(), reps: new Set() };
         descGroups.set(r.descLocKey, g);
       }
-      if (g.rep === null && r.repReward != null) g.rep = r.repReward;
+      if (r.repReward != null) g.reps.add(r.repReward);
       let names = g.pools.get(r.poolKey);
       if (!names) {
         names = [];
         g.pools.set(r.poolKey, names);
       }
-      if (r.blueprintName && !names.includes(r.blueprintName)) {
-        names.push(r.blueprintName);
+      // Ship components carry a (Type) suffix; FPS gear stays bare.
+      const display = r.componentType
+        ? `${r.blueprintName} (${r.componentType})`
+        : r.blueprintName;
+      if (r.blueprintName && !names.includes(display)) {
+        names.push(display);
       }
     }
     if (r.titleLocKey) {
@@ -361,7 +413,12 @@ export function generateContractBlueprintOverrides(
     if (!matched) continue;
     const poolKeys = [...g.pools.keys()].sort();
     let body = "";
-    if (g.rep != null) body += `<EM4>Reputation Awarded:</EM4> ${g.rep}\\n\\n`;
+    const reps = [...g.reps].sort((a, b) => a - b);
+    if (reps.length === 1) {
+      body += `<EM4>Reputation Awarded:</EM4> ${reps[0]}\\n\\n`;
+    } else if (reps.length > 1) {
+      body += `<EM4>Reputation Awarded (by difficulty):</EM4> ${reps.join(" / ")}\\n\\n`;
+    }
     if (poolKeys.length === 1) {
       const names = g.pools.get(poolKeys[0])!;
       body += `<EM4>Potential Blueprints</EM4>\\n${names.map((n) => `- ${n}`).join("\\n")}`;

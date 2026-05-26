@@ -25,6 +25,7 @@ function row(over: Partial<ContractBpRow>): ContractBpRow {
     repReward: null,
     poolKey: "poolA",
     blueprintName: "R97 Shotgun",
+    componentType: null,
     ...over,
   };
 }
@@ -90,6 +91,28 @@ describe("generateContractBlueprintOverrides", () => {
     const title = out.find((o) => o.key === "Gen_title")!;
     expect(title.value).toContain("[BP]");
     expect(title.value).not.toContain("Rep]");
+  });
+
+  it("annotates ship-component blueprint names with their (Type)", () => {
+    const out = generateContractBlueprintOverrides([
+      row({ blueprintName: "Cinch Scraper Module", componentType: "Salvage Module" }),
+      row({ blueprintName: "R97 Shotgun", componentType: null }),
+    ]);
+    const desc = out.find((o) => o.key === "Gen_desc")!;
+    expect(desc.value).toContain("- Cinch Scraper Module (Salvage Module)");
+    // FPS gear (no componentType) stays bare
+    expect(desc.value).toContain("- R97 Shotgun");
+    expect(desc.value).not.toContain("R97 Shotgun (");
+  });
+
+  it("shows a rep range '(by difficulty)' when one description is shared across rep tiers", () => {
+    const out = generateContractBlueprintOverrides([
+      row({ descLocKey: "Shared_desc", repReward: 200 }),
+      row({ descLocKey: "Shared_desc", repReward: 100 }),
+    ]);
+    const desc = out.find((o) => o.key === "Shared_desc")!;
+    expect(desc.value).toContain("<EM4>Reputation Awarded (by difficulty):</EM4> 100 / 200");
+    expect(desc.value).not.toContain("<EM4>Reputation Awarded:</EM4>");
   });
 
   it("dedupes repeated blueprint names within a pool", () => {
