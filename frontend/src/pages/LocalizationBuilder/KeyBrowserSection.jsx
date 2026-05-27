@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Loader, ChevronLeft, ChevronRight, Copy, Check, AlertCircle, Pencil, Save, RotateCcw, X, Upload } from 'lucide-react'
+import { Search, Loader, ChevronLeft, ChevronRight, Copy, Check, AlertCircle, Pencil, Save, RotateCcw, X, Upload, Trash2 } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 const PAGE = 50
 
@@ -21,6 +22,8 @@ export default function KeyBrowserSection() {
   const [savingKey, setSavingKey] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState(null)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(q); setOffset(0) }, 300)
@@ -119,8 +122,26 @@ export default function KeyBrowserSection() {
     }
   }
 
+  const clearAll = async () => {
+    setConfirmingClear(false)
+    setClearing(true)
+    setImportMsg(null)
+    try {
+      const res = await fetch('/api/localization/overrides', { method: 'DELETE', credentials: 'same-origin' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || 'Clear failed')
+      setImportMsg({ type: 'success', text: `Cleared ${body.cleared} customisation${body.cleared === 1 ? '' : 's'}` })
+      setReloadToken((t) => t + 1)
+    } catch (err) {
+      setImportMsg({ type: 'error', text: err.message })
+    } finally {
+      setClearing(false)
+    }
+  }
+
   const total = data?.total ?? 0
   const items = data?.items ?? []
+  const userOverrideTotal = data?.userOverrideTotal ?? 0
   const from = total === 0 ? 0 : offset + 1
   const to = Math.min(offset + PAGE, total)
 
@@ -133,11 +154,22 @@ export default function KeyBrowserSection() {
             Search the game's localization keys{data?.version ? ` (${data.version})` : ''} and edit any single value. Your edits override everything and flow into your download.
           </p>
         </div>
-        <label className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] text-xs text-gray-300 hover:border-sc-accent/40 hover:text-sc-accent cursor-pointer" title="Import an edited global.ini — changed lines become your overrides">
-          {importing ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-          Import .ini
-          <input type="file" accept=".ini,.txt" onChange={onImport} disabled={importing} className="hidden" />
-        </label>
+        <div className="shrink-0 flex items-center gap-2">
+          <button
+            onClick={() => setConfirmingClear(true)}
+            disabled={clearing || userOverrideTotal === 0}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] text-xs text-gray-400 hover:border-red-500/40 hover:text-red-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Remove all your per-key customisations"
+          >
+            {clearing ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Clear all{userOverrideTotal > 0 ? ` (${userOverrideTotal})` : ''}
+          </button>
+          <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] text-xs text-gray-300 hover:border-sc-accent/40 hover:text-sc-accent cursor-pointer" title="Import an edited global.ini — changed lines become your overrides">
+            {importing ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            Import .ini
+            <input type="file" accept=".ini,.txt" onChange={onImport} disabled={importing} className="hidden" />
+          </label>
+        </div>
       </div>
       {importMsg && (
         <div className={`px-5 py-2 text-xs ${importMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>{importMsg.text}</div>
@@ -253,6 +285,16 @@ export default function KeyBrowserSection() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingClear}
+        onConfirm={clearAll}
+        onCancel={() => setConfirmingClear(false)}
+        title="Clear all customisations"
+        message={`Remove all ${userOverrideTotal} of your per-key customisations? Your community packs and other settings are unaffected. This can't be undone.`}
+        confirmLabel="Clear all"
+        variant="danger"
+      />
     </div>
   )
 }

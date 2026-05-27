@@ -411,6 +411,7 @@ export function localizationRoutes() {
         offset: offset ?? 0,
         limit: limit ?? 50,
         items,
+        userOverrideTotal: userOv.size,
       });
     },
   );
@@ -453,6 +454,17 @@ export function localizationRoutes() {
       return c.json({ ok: true });
     },
   );
+
+  // ── DELETE /overrides — clear ALL of the user's ad-hoc overrides ──────
+  routes.delete("/overrides", async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const res = await db
+      .prepare("DELETE FROM user_localization_overrides WHERE user_id = ?")
+      .bind(userId)
+      .run();
+    return c.json({ ok: true, cleared: res.meta.changes ?? 0 });
+  });
 
   // ── POST /import — import a custom global.ini as personal overrides ────
   //

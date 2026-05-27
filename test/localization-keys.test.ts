@@ -148,6 +148,33 @@ describe("GET /api/localization/keys", () => {
     expect(res.status).toBe(401);
   });
 
+  it("DELETE /overrides clears all of the user's customisations", async () => {
+    const h = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+    await SELF.fetch("http://localhost/api/localization/override", {
+      method: "PUT", headers: h, body: JSON.stringify({ key: "ui_ButtonConfirm", value: "A" }),
+    });
+    await SELF.fetch("http://localhost/api/localization/override", {
+      method: "PUT", headers: h, body: JSON.stringify({ key: "vehicle_NameAEGS_Gladius", value: "B" }),
+    });
+
+    const before = (await (await SELF.fetch("http://localhost/api/localization/keys", {
+      headers: await authHeaders(sessionToken),
+    })).json()) as { userOverrideTotal: number };
+    expect(before.userOverrideTotal).toBe(2);
+
+    const del = await SELF.fetch("http://localhost/api/localization/overrides", {
+      method: "DELETE",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+    });
+    expect(del.status).toBe(200);
+    expect((await del.json() as { cleared: number }).cleared).toBe(2);
+
+    const after = (await (await SELF.fetch("http://localhost/api/localization/keys", {
+      headers: await authHeaders(sessionToken),
+    })).json()) as { userOverrideTotal: number };
+    expect(after.userOverrideTotal).toBe(0);
+  });
+
   it("returns per-pack values for cross-pack compare", async () => {
     await env.DB.prepare(
       `INSERT INTO localization_overlay_packs (name, label, version_code, key_count, is_active, sort_order)
