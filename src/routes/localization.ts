@@ -368,9 +368,24 @@ export function localizationRoutes() {
         }
       }
 
+      // The user's own ad-hoc overrides ("My Customizations"), shown per row.
+      const userOvRows = await db
+        .prepare("SELECT loc_key, value FROM user_localization_overrides WHERE user_id = ?")
+        .bind(userId)
+        .all<{ loc_key: string; value: string }>();
+      const userOv = new Map(userOvRows.results.map((r) => [r.loc_key.toLowerCase(), r.value]));
+
       const items = result.items.map((it) => {
-        const ov = overrideMap.get(it.key.toLowerCase());
-        return ov !== undefined ? { ...it, override: ov } : it;
+        const lk = it.key.toLowerCase();
+        const out: { key: string; value: string; override?: string; userOverride?: string } = {
+          key: it.key,
+          value: it.value,
+        };
+        const ov = overrideMap.get(lk);
+        if (ov !== undefined) out.override = ov;
+        const uo = userOv.get(lk);
+        if (uo !== undefined) out.userOverride = uo;
+        return out;
       });
 
       return c.json({
@@ -380,6 +395,45 @@ export function localizationRoutes() {
         limit: limit ?? 50,
         items,
       });
+    },
+  );
+
+  // ── PUT /override — save an ad-hoc single-key override ────────────────
+  routes.put(
+    "/override",
+    validate("json", z.object({
+      key: z.string().min(1).max(300),
+      value: z.string().max(5000),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { key, value } = c.req.valid("json");
+      await db
+        .prepare(
+          `INSERT INTO user_localization_overrides (user_id, loc_key, value, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, loc_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        )
+        .bind(userId, key, value)
+        .run();
+      return c.json({ ok: true });
+    },
+  );
+
+  // ── DELETE /override — reset a single-key override ────────────────────
+  routes.delete(
+    "/override",
+    validate("query", z.object({ key: z.string().min(1).max(300) })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { key } = c.req.valid("query");
+      await db
+        .prepare("DELETE FROM user_localization_overrides WHERE user_id = ? AND loc_key = ?")
+        .bind(userId, key)
+        .run();
+      return c.json({ ok: true });
     },
   );
 
@@ -844,6 +898,18 @@ async function buildOverrides(
         validKeys,
       ),
     );
+  }
+
+  // Per-user ad-hoc key overrides ("My Customizations"). Pushed LAST so they
+  // win over community packs and generated labels — these are full-value
+  // replacements the user typed in the Key Browser.
+  const userOverrides = await db
+    .prepare("SELECT loc_key, value FROM user_localization_overrides WHERE user_id = ?")
+    .bind(userId)
+    .all<{ loc_key: string; value: string }>();
+  for (const o of userOverrides.results) {
+    const key = validKeys ? validKeys.get(o.loc_key.toLowerCase()) ?? o.loc_key : o.loc_key;
+    overrides.push({ key, value: o.value });
   }
 
   return overrides;

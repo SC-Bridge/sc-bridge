@@ -109,4 +109,42 @@ describe("GET /api/localization/keys", () => {
       value: "Aegis Gladius",
     });
   });
+
+  it("PUT /override is reflected as userOverride in /keys, then DELETE clears it", async () => {
+    // Save an ad-hoc override
+    const put = await SELF.fetch("http://localhost/api/localization/override", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "vehicle_NameAEGS_Gladius", value: "Gladius (mine)" }),
+    });
+    expect(put.status).toBe(200);
+
+    const after = await SELF.fetch("http://localhost/api/localization/keys?q=gladius", {
+      headers: await authHeaders(sessionToken),
+    });
+    const body = (await after.json()) as { items: { key: string; userOverride?: string }[] };
+    expect(body.items[0].userOverride).toBe("Gladius (mine)");
+
+    // Reset it
+    const del = await SELF.fetch(
+      "http://localhost/api/localization/override?key=vehicle_NameAEGS_Gladius",
+      { method: "DELETE", headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" } },
+    );
+    expect(del.status).toBe(200);
+
+    const cleared = await SELF.fetch("http://localhost/api/localization/keys?q=gladius", {
+      headers: await authHeaders(sessionToken),
+    });
+    const body2 = (await cleared.json()) as { items: { userOverride?: string }[] };
+    expect(body2.items[0].userOverride).toBeUndefined();
+  });
+
+  it("PUT /override requires authentication", async () => {
+    const res = await SELF.fetch("http://localhost/api/localization/override", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "k", value: "v" }),
+    });
+    expect(res.status).toBe(401);
+  });
 });

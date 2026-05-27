@@ -630,6 +630,8 @@ export function accountRoutes() {
       // Localization builder (migration 0127)
       db.prepare("DELETE FROM user_localization_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_localization_ship_order WHERE user_id = ?").bind(user.id),
+      // Localization ad-hoc key overrides (migration 0244)
+      db.prepare("DELETE FROM user_localization_overrides WHERE user_id = ?").bind(user.id),
       // Companion app — game event data is not PII, kept for analytics
       db.prepare("DELETE FROM companion_status WHERE user_id = ?").bind(user.id),
       // Character backup (migration 0214) — metadata; R2 blobs deleted above
