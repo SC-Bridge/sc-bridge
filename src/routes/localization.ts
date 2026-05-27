@@ -21,6 +21,7 @@ import {
   missileSeekerCode,
   parseIniOverrides,
   resolveCategoryFormat,
+  searchGlobalIniKeys,
 } from "../lib/localization";
 
 /**
@@ -306,6 +307,81 @@ export function localizationRoutes() {
       })),
     });
   });
+
+  // ── GET /keys — Key Browser: paginated search over the base global.ini ─
+  //
+  // Searches the default version's base global.ini (key OR value substring)
+  // and returns one page of {key, value}. When the user has community packs
+  // enabled, the effective pack override value for a matched key is attached
+  // as `override` so they can see what their build would actually ship.
+
+  routes.get(
+    "/keys",
+    validate(
+      "query",
+      z.object({
+        q: z.string().max(200).optional(),
+        offset: z.coerce.number().int().min(0).max(5_000_000).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      }),
+    ),
+    async (c) => {
+      const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
+      const userId = getAuthUser(c).id;
+      const { q, offset, limit } = c.req.valid("query");
+
+      const ver = await db
+        .prepare("SELECT code FROM game_versions WHERE is_default = 1 LIMIT 1")
+        .first<{ code: string }>();
+      if (!ver) return c.json({ error: "No default game version configured" }, 500);
+
+      const base = await kv.get(`localization:global-ini:${ver.code}`);
+      if (base === null) {
+        return c.json({ error: "Base localization file not available for this version" }, 404);
+      }
+
+      const result = searchGlobalIniKeys(base, { q, offset, limit });
+
+      // Overlay active pack override values for the returned page of keys.
+      const configRow = await db
+        .prepare("SELECT enabled_packs_json FROM user_localization_configs WHERE user_id = ?")
+        .bind(userId)
+        .first();
+      const config = configRow ? configFromRow(configRow) : DEFAULT_CONFIG;
+
+      const overrideMap = new Map<string, string>();
+      if (config.enabledPacks.length > 0) {
+        const packRows = await db
+          .prepare(
+            `SELECT name FROM localization_overlay_packs
+             WHERE is_active = 1 AND name IN (${config.enabledPacks.map(() => "?").join(",")})
+             ORDER BY sort_order`,
+          )
+          .bind(...config.enabledPacks)
+          .all<{ name: string }>();
+        for (const pack of packRows.results) {
+          const content = await kv.get(`localization:pack:${pack.name}:${ver.code}`, "text");
+          if (content) {
+            for (const [k, v] of parseIniOverrides(content)) overrideMap.set(k.toLowerCase(), v);
+          }
+        }
+      }
+
+      const items = result.items.map((it) => {
+        const ov = overrideMap.get(it.key.toLowerCase());
+        return ov !== undefined ? { ...it, override: ov } : it;
+      });
+
+      return c.json({
+        version: ver.code,
+        total: result.total,
+        offset: offset ?? 0,
+        limit: limit ?? 50,
+        items,
+      });
+    },
+  );
 
   // ── GET /preview — preview override key/value pairs ───────────────
 

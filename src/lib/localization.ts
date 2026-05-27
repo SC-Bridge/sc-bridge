@@ -588,6 +588,45 @@ export function diffGlobalIni(oldContent: string, newContent: string): GlobalIni
 }
 
 // ---------------------------------------------------------------------------
+// Key browser search
+// ---------------------------------------------------------------------------
+
+export interface KeySearchResult {
+  total: number;
+  items: { key: string; value: string }[];
+}
+
+/**
+ * Search a global.ini blob for the Localization Builder's Key Browser.
+ *
+ * Matches `q` (case-insensitive) against the key name OR the value, returns
+ * the total number of matches plus one page (`offset`/`limit`) of rows.
+ * Comments and blank lines are skipped; `limit` is clamped to [1, 200].
+ */
+export function searchGlobalIniKeys(
+  content: string,
+  opts: { q?: string; offset?: number; limit?: number },
+): KeySearchResult {
+  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+  const q = (opts.q ?? "").trim().toLowerCase();
+
+  const map = parseIniMap(content);
+  const items: { key: string; value: string }[] = [];
+  let total = 0;
+  for (const [key, value] of map) {
+    if (q && !key.toLowerCase().includes(q) && !value.toLowerCase().includes(q)) {
+      continue;
+    }
+    if (total >= offset && items.length < limit) {
+      items.push({ key, value });
+    }
+    total++;
+  }
+  return { total, items };
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle } from 'lucide-react'
+import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle, Search } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import StatCard from '../../components/StatCard'
 import {
@@ -16,6 +16,7 @@ import FleetOrderSection from './FleetOrderSection'
 import ItemLabelsSection from './ItemLabelsSection'
 import EnhancementsSection from './EnhancementsSection'
 import PreviewDownloadSection from './PreviewDownloadSection'
+import KeyBrowserSection from './KeyBrowserSection'
 import WhatsChangedBanner from './WhatsChangedBanner'
 
 // ── Pill nav ────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ const SECTIONS = [
   { key: 'fleet', label: 'Fleet Order', icon: Rocket },
   { key: 'labels', label: 'Item Labels', icon: Tags },
   { key: 'enhancements', label: 'Enhancements', icon: Sparkles },
+  { key: 'keys', label: 'Key Browser', icon: Search },
   { key: 'preview', label: 'Preview & Download', icon: Eye },
 ]
 
@@ -325,6 +327,8 @@ export default function LocalizationBuilder() {
           onUpdateConfig={updateConfig}
         />
       )}
+
+      {section === 'keys' && <KeyBrowserSection />}
 
       {section === 'preview' && (
         <PreviewDownloadSection
