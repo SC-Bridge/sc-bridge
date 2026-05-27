@@ -147,4 +147,23 @@ describe("GET /api/localization/keys", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("POST /import ingests only the changed keys from an uploaded global.ini", async () => {
+    // Base (seeded in beforeAll): vehicle_NameAEGS_Gladius=Aegis Gladius, ui_ButtonConfirm=Confirm
+    const uploaded = ["vehicle_NameAEGS_Gladius=Aegis Gladius", "ui_ButtonConfirm=Yes please"].join("\n");
+    const res = await SELF.fetch("http://localhost/api/localization/import", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "text/plain" },
+      body: uploaded,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { imported: number };
+    expect(body.imported).toBe(1); // only ui_ButtonConfirm differs from base
+
+    const kb = await SELF.fetch("http://localhost/api/localization/keys?q=ButtonConfirm", {
+      headers: await authHeaders(sessionToken),
+    });
+    const data = (await kb.json()) as { items: { key: string; userOverride?: string }[] };
+    expect(data.items.find((i) => i.key === "ui_ButtonConfirm")?.userOverride).toBe("Yes please");
+  });
 });

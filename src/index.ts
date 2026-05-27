@@ -129,11 +129,15 @@ app.use("/api/*", async (c, next) => {
 // for that route only; everything else stays tight.
 const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5MB default
 const MAX_BODY_BYTES_HANGAR_SYNC = 20 * 1024 * 1024; // 20MB for /api/import/hangar-sync
+// A full global.ini (~10MB) is uploaded to /api/localization/import.
+const MAX_BODY_BYTES_LOCALIZATION_IMPORT = 15 * 1024 * 1024;
+const HIGH_BODY_LIMITS: Record<string, number> = {
+  "/api/import/hangar-sync": MAX_BODY_BYTES_HANGAR_SYNC,
+  "/api/localization/import": MAX_BODY_BYTES_LOCALIZATION_IMPORT,
+};
 app.use("/api/*", async (c, next) => {
   const contentLength = c.req.header("Content-Length");
-  const limit = c.req.path === "/api/import/hangar-sync"
-    ? MAX_BODY_BYTES_HANGAR_SYNC
-    : MAX_BODY_BYTES;
+  const limit = HIGH_BODY_LIMITS[c.req.path] ?? MAX_BODY_BYTES;
   if (contentLength && parseInt(contentLength, 10) > limit) {
     return c.json({ error: "Request body too large" }, 413);
   }

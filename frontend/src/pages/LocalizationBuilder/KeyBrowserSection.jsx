@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Loader, ChevronLeft, ChevronRight, Copy, Check, AlertCircle, Pencil, Save, RotateCcw, X } from 'lucide-react'
+import { Search, Loader, ChevronLeft, ChevronRight, Copy, Check, AlertCircle, Pencil, Save, RotateCcw, X, Upload } from 'lucide-react'
 
 const PAGE = 50
 
@@ -19,6 +19,8 @@ export default function KeyBrowserSection() {
   const [editingKey, setEditingKey] = useState(null)
   const [draft, setDraft] = useState('')
   const [savingKey, setSavingKey] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState(null)
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(q); setOffset(0) }, 300)
@@ -92,6 +94,31 @@ export default function KeyBrowserSection() {
     }
   }
 
+  const onImport = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    setImporting(true)
+    setImportMsg(null)
+    try {
+      const text = await file.text()
+      const res = await fetch('/api/localization/import', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'text/plain' },
+        body: text,
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || 'Import failed')
+      setImportMsg({ type: 'success', text: body.imported > 0 ? `Imported ${body.imported} customisation${body.imported === 1 ? '' : 's'}` : 'No changes vs the base file' })
+      setReloadToken((t) => t + 1)
+    } catch (err) {
+      setImportMsg({ type: 'error', text: err.message })
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const total = data?.total ?? 0
   const items = data?.items ?? []
   const from = total === 0 ? 0 : offset + 1
@@ -99,12 +126,22 @@ export default function KeyBrowserSection() {
 
   return (
     <div className="panel">
-      <div className="px-5 py-4 border-b border-sc-border">
-        <h3 className="font-display font-semibold text-sm text-white">Key Browser</h3>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Search the game's localization keys{data?.version ? ` (${data.version})` : ''} and edit any single value. Your edits override everything and flow into your download.
-        </p>
+      <div className="px-5 py-4 border-b border-sc-border flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display font-semibold text-sm text-white">Key Browser</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Search the game's localization keys{data?.version ? ` (${data.version})` : ''} and edit any single value. Your edits override everything and flow into your download.
+          </p>
+        </div>
+        <label className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/[0.08] text-xs text-gray-300 hover:border-sc-accent/40 hover:text-sc-accent cursor-pointer" title="Import an edited global.ini — changed lines become your overrides">
+          {importing ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+          Import .ini
+          <input type="file" accept=".ini,.txt" onChange={onImport} disabled={importing} className="hidden" />
+        </label>
       </div>
+      {importMsg && (
+        <div className={`px-5 py-2 text-xs ${importMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>{importMsg.text}</div>
+      )}
 
       <div className="p-4 space-y-4">
         <div className="relative">

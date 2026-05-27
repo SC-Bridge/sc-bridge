@@ -437,6 +437,63 @@ export function localizationRoutes() {
     },
   );
 
+  // ── POST /import — import a custom global.ini as personal overrides ────
+  //
+  // Diffs the uploaded file against the base global.ini and imports only the
+  // CHANGED keys (the user's actual customizations) into
+  // user_localization_overrides. Added keys (not in base) are ignored — they
+  // wouldn't match anything on merge. Large diffs are rejected (use a pack).
+  routes.post("/import", async (c) => {
+    const db = c.env.DB;
+    const kv = c.env.LOCALIZATION_KV;
+    const userId = getAuthUser(c).id;
+
+    const uploaded = await c.req.text();
+    if (!uploaded || uploaded.length < 5) {
+      return c.json({ error: "Empty or too-small file" }, 400);
+    }
+
+    const ver = await db
+      .prepare("SELECT code FROM game_versions WHERE is_default = 1 LIMIT 1")
+      .first<{ code: string }>();
+    if (!ver) return c.json({ error: "No default game version configured" }, 500);
+    const base = await kv.get(`localization:global-ini:${ver.code}`);
+    if (base === null) {
+      return c.json({ error: "Base localization file not available for this version" }, 404);
+    }
+
+    const diff = diffGlobalIni(base, uploaded);
+    const IMPORT_MAX = 2000;
+    if (diff.changed.length > IMPORT_MAX) {
+      return c.json(
+        { error: `Too many changes (${diff.changed.length}). For large sets, publish a community pack instead.` },
+        413,
+      );
+    }
+    if (diff.changed.length === 0) {
+      return c.json({ ok: true, imported: 0, message: "No changes vs the base file." });
+    }
+
+    // Upsert in chunks to stay within D1 batch limits.
+    const rows = diff.changed;
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100);
+      await db.batch(
+        chunk.map((ch) =>
+          db
+            .prepare(
+              `INSERT INTO user_localization_overrides (user_id, loc_key, value, updated_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(user_id, loc_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            )
+            .bind(userId, ch.key, ch.newValue),
+        ),
+      );
+    }
+
+    return c.json({ ok: true, imported: rows.length });
+  });
+
   // ── POST /pack-request — user requests a community pack by link ───────
   //
   // Records the request (operational, no user_id stored — see migration 0245)
@@ -878,6 +935,9 @@ async function buildOverrides(
     // index-friendly (bare column) and recovers the ~40% of pool entries
     // (mining lasers, salvage modifiers, radars, …) that previously fell
     // through to the raw, de-camelCased tag name. Pools stay separated.
+    // Nested REPLACE strips BP_CRAFT_ OR a leading BP_ — 1563/1564 tags use
+    // BP_CRAFT_, but one (BP_HRST_LaserScatterGun_S2) uses BP_<MFR>_; stripping
+    // just BP_ leaves the mfr-prefixed class_name (hrst_laserscattergun_s2).
     if (config.enhanceBlueprintPools) {
       const bpRows = await db
         .prepare(
@@ -891,11 +951,11 @@ async function buildOverrides(
            JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
            JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
            JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
-           LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fw.is_deleted = 0
-           LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fa.is_deleted = 0
-           LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fh.is_deleted = 0
-           LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND fam.is_deleted = 0
-           LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(cb.tag, 'BP_CRAFT_', '')) AND vc.is_deleted = 0
+           LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fw.is_deleted = 0
+           LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fa.is_deleted = 0
+           LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fh.is_deleted = 0
+           LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fam.is_deleted = 0
+           LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND vc.is_deleted = 0
            WHERE cgc.is_deleted = 0
            AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
         )
