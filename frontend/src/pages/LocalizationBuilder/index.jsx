@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle, Search } from 'lucide-react'
+import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle, Search, Package } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import StatCard from '../../components/StatCard'
 import {
@@ -17,6 +17,7 @@ import ItemLabelsSection from './ItemLabelsSection'
 import EnhancementsSection from './EnhancementsSection'
 import PreviewDownloadSection from './PreviewDownloadSection'
 import KeyBrowserSection from './KeyBrowserSection'
+import CommunityPacksTab from './CommunityPacksTab'
 import WhatsChangedBanner from './WhatsChangedBanner'
 
 // ── Pill nav ────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const SECTIONS = [
   { key: 'fleet', label: 'Fleet Order', icon: Rocket },
   { key: 'labels', label: 'Item Labels', icon: Tags },
   { key: 'enhancements', label: 'Enhancements', icon: Sparkles },
+  { key: 'packs', label: 'Community Packs', icon: Package },
   { key: 'keys', label: 'Key Browser', icon: Search },
   { key: 'preview', label: 'Preview & Download', icon: Eye },
 ]
@@ -61,6 +63,7 @@ export default function LocalizationBuilder() {
   const [notification, setNotification] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [shipSearch, setShipSearch] = useState('')
+  const [overlayPacks, setOverlayPacks] = useState([])
 
   const section = searchParams.get('section') || 'fleet'
   const config = localConfig || serverConfig || {}
@@ -87,6 +90,16 @@ export default function LocalizationBuilder() {
     }
   }, [shipOrder, orderLoading])
 
+  // ── Load active community overlay packs ───────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/localization/overlay-packs', { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : { packs: [] })
+      .then(d => { if (!cancelled) setOverlayPacks(d.packs || []) })
+      .catch(() => { /* non-fatal — section shows the empty state */ })
+    return () => { cancelled = true }
+  }, [])
+
   // ── Notification ──────────────────────────────────────────────────
   const showNotification = useCallback((msg, variant = 'info') => {
     setNotification({ msg, variant })
@@ -97,6 +110,15 @@ export default function LocalizationBuilder() {
   const updateConfig = (patch) => {
     setLocalConfig(prev => ({ ...(prev || serverConfig || {}), ...patch }))
     setDirty(true)
+  }
+
+  // Toggle a community pack on/off (persisted with the rest of config on Save).
+  const togglePack = (name) => {
+    const current = config.enabledPacks || []
+    const next = current.includes(name)
+      ? current.filter(n => n !== name)
+      : [...current, name]
+    updateConfig({ enabledPacks: next })
   }
 
   const getCatFormat = (dbKey) => {
@@ -325,6 +347,14 @@ export default function LocalizationBuilder() {
         <EnhancementsSection
           config={config}
           onUpdateConfig={updateConfig}
+        />
+      )}
+
+      {section === 'packs' && (
+        <CommunityPacksTab
+          packs={overlayPacks}
+          enabledPacks={config.enabledPacks || []}
+          onTogglePack={togglePack}
         />
       )}
 

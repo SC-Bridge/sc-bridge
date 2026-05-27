@@ -437,6 +437,46 @@ export function localizationRoutes() {
     },
   );
 
+  // ── POST /pack-request — user requests a community pack by link ───────
+  //
+  // Records the request (operational, no user_id stored — see migration 0245)
+  // and best-effort notifies Discord via an incoming webhook if configured.
+  routes.post(
+    "/pack-request",
+    validate("json", z.object({
+      url: z.string().url().max(1000),
+      note: z.string().max(1000).optional(),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const user = getAuthUser(c);
+      const { url, note } = c.req.valid("json");
+
+      await db
+        .prepare("INSERT INTO pack_requests (url, note) VALUES (?, ?)")
+        .bind(url, note ?? null)
+        .run();
+
+      // Best-effort Discord notification — never fails the request.
+      const hook = c.env.DISCORD_PACK_REQUEST_WEBHOOK;
+      if (hook) {
+        try {
+          await fetch(hook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: `📦 **Localization pack request**\nFrom: ${user.name || user.id}\nLink: ${url}${note ? `\nNote: ${note}` : ""}`,
+            }),
+          });
+        } catch {
+          /* notification is best-effort; the request is already recorded */
+        }
+      }
+
+      return c.json({ ok: true });
+    },
+  );
+
   // ── GET /preview — preview override key/value pairs ───────────────
 
   routes.get("/preview", async (c) => {

@@ -642,6 +642,15 @@ export function adminRoutes() {
     },
   );
 
+  /** GET /api/admin/localization/pack-requests — review user pack requests */
+  routes.get("/localization/pack-requests", async (c) => {
+    const db = c.env.DB;
+    const rows = await db
+      .prepare("SELECT * FROM pack_requests ORDER BY created_at DESC LIMIT 200")
+      .all();
+    return c.json({ requests: rows.results });
+  });
+
   /** DELETE /api/admin/localization/overlay-pack/:name — remove pack + KV content */
   routes.delete(
     "/localization/overlay-pack/:name",
