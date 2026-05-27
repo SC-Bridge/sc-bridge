@@ -41,10 +41,9 @@ export interface Env {
   GITHUB_OAUTH_CLIENT_SECRET?: string;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
-  // Discord incoming-webhook URL for "Request a Pack" notifications (optional).
+  // Discord incoming-webhook URL — shared by "Request a Pack" + localization
+  // auto-ingest notifications (different messages, same channel; optional).
   DISCORD_PACK_REQUEST_WEBHOOK?: string;
-  // Discord incoming-webhook URL for localization auto-ingest ops alerts (optional).
-  DISCORD_LOCALIZATION_WEBHOOK?: string;
   TWITCH_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET?: string;
 }

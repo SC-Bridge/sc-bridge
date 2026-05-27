@@ -33,7 +33,9 @@ export interface IngestRunResult {
 }
 
 async function notify(env: Env, content: string): Promise<void> {
-  const hook = env.DISCORD_LOCALIZATION_WEBHOOK;
+  // Reuse the single Discord webhook (shared with pack requests) — different
+  // message, same channel.
+  const hook = env.DISCORD_PACK_REQUEST_WEBHOOK;
   if (!hook) return;
   try {
     await fetch(hook, {
