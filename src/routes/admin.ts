@@ -624,6 +624,43 @@ export function adminRoutes() {
     return c.json({ packs: rows.results });
   });
 
+  /** PATCH /api/admin/localization/overlay-pack/:name — toggle active state */
+  routes.patch(
+    "/localization/overlay-pack/:name",
+    validate("param", z.object({ name: z.string().regex(/^[a-z0-9-]+$/) })),
+    validate("json", z.object({ is_active: z.boolean() })),
+    async (c) => {
+      const db = c.env.DB;
+      const { name } = c.req.valid("param");
+      const { is_active } = c.req.valid("json");
+      const res = await db
+        .prepare("UPDATE localization_overlay_packs SET is_active = ?, updated_at = datetime('now') WHERE name = ?")
+        .bind(is_active ? 1 : 0, name)
+        .run();
+      if (!res.meta.changes) return c.json({ error: "Pack not found" }, 404);
+      return c.json({ ok: true });
+    },
+  );
+
+  /** DELETE /api/admin/localization/overlay-pack/:name — remove pack + KV content */
+  routes.delete(
+    "/localization/overlay-pack/:name",
+    validate("param", z.object({ name: z.string().regex(/^[a-z0-9-]+$/) })),
+    async (c) => {
+      const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
+      const { name } = c.req.valid("param");
+      const row = await db
+        .prepare("SELECT version_code FROM localization_overlay_packs WHERE name = ?")
+        .bind(name)
+        .first<{ version_code: string }>();
+      if (!row) return c.json({ error: "Pack not found" }, 404);
+      await kv.delete(`localization:pack:${name}:${row.version_code}`);
+      await db.prepare("DELETE FROM localization_overlay_packs WHERE name = ?").bind(name).run();
+      return c.json({ ok: true });
+    },
+  );
+
   // ── Rating audit (super_admin) ──────────────────────────────────────
 
   // GET /api/admin/ratings/user/:userId — all ratings for a user (not anonymized)
