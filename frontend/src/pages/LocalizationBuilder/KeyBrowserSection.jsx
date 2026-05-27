@@ -233,11 +233,11 @@ export default function KeyBrowserSection() {
                 ) : (
                   <>
                     <div className="text-xs text-gray-300 mt-0.5 break-words">{it.value}</div>
-                    {it.override !== undefined && (
-                      <div className="text-xs text-amber-400/90 mt-0.5 break-words">
-                        <span className="text-[10px] uppercase tracking-wide text-amber-500/70 mr-1">pack</span>{it.override}
+                    {(it.packs || []).map((p) => (
+                      <div key={p.name} className="text-xs text-amber-400/90 mt-0.5 break-words">
+                        <span className="text-[10px] uppercase tracking-wide text-amber-500/70 mr-1" title={p.name}>{p.label}</span>{p.value}
                       </div>
-                    )}
+                    ))}
                     {it.userOverride !== undefined && (
                       <div className="text-xs text-sc-accent mt-0.5 break-words">
                         <span className="text-[10px] uppercase tracking-wide text-sc-accent/70 mr-1">yours</span>{it.userOverride}

@@ -343,29 +343,30 @@ export function localizationRoutes() {
 
       const result = searchGlobalIniKeys(base, { q, offset, limit });
 
-      // Overlay active pack override values for the returned page of keys.
       const configRow = await db
         .prepare("SELECT enabled_packs_json FROM user_localization_configs WHERE user_id = ?")
         .bind(userId)
         .first();
       const config = configRow ? configFromRow(configRow) : DEFAULT_CONFIG;
 
+      // Load ALL active packs once, keeping each pack's values SEPARATE (for
+      // cross-pack compare). The effective override is then computed from the
+      // user's enabled subset, by sort_order (last wins).
+      const activePacks = await db
+        .prepare("SELECT name, label FROM localization_overlay_packs WHERE is_active = 1 ORDER BY sort_order")
+        .all<{ name: string; label: string }>();
+      const packMaps: { name: string; label: string; map: Map<string, string> }[] = [];
+      for (const p of activePacks.results) {
+        const content = await kv.get(`localization:pack:${p.name}:${ver.code}`, "text");
+        const map = new Map<string, string>();
+        if (content) for (const [k, v] of parseIniOverrides(content)) map.set(k.toLowerCase(), v);
+        packMaps.push({ name: p.name, label: p.label, map });
+      }
+
+      const enabled = new Set(config.enabledPacks);
       const overrideMap = new Map<string, string>();
-      if (config.enabledPacks.length > 0) {
-        const packRows = await db
-          .prepare(
-            `SELECT name FROM localization_overlay_packs
-             WHERE is_active = 1 AND name IN (${config.enabledPacks.map(() => "?").join(",")})
-             ORDER BY sort_order`,
-          )
-          .bind(...config.enabledPacks)
-          .all<{ name: string }>();
-        for (const pack of packRows.results) {
-          const content = await kv.get(`localization:pack:${pack.name}:${ver.code}`, "text");
-          if (content) {
-            for (const [k, v] of parseIniOverrides(content)) overrideMap.set(k.toLowerCase(), v);
-          }
-        }
+      for (const pm of packMaps) {
+        if (enabled.has(pm.name)) for (const [k, v] of pm.map) overrideMap.set(k, v);
       }
 
       // The user's own ad-hoc overrides ("My Customizations"), shown per row.
@@ -377,14 +378,22 @@ export function localizationRoutes() {
 
       const items = result.items.map((it) => {
         const lk = it.key.toLowerCase();
-        const out: { key: string; value: string; override?: string; userOverride?: string } = {
-          key: it.key,
-          value: it.value,
-        };
+        const out: {
+          key: string;
+          value: string;
+          override?: string;
+          userOverride?: string;
+          packs?: { name: string; label: string; value: string }[];
+        } = { key: it.key, value: it.value };
         const ov = overrideMap.get(lk);
         if (ov !== undefined) out.override = ov;
         const uo = userOv.get(lk);
         if (uo !== undefined) out.userOverride = uo;
+        // Per-pack values for this key (cross-pack compare).
+        const packs = packMaps
+          .filter((pm) => pm.map.has(lk))
+          .map((pm) => ({ name: pm.name, label: pm.label, value: pm.map.get(lk)! }));
+        if (packs.length > 0) out.packs = packs;
         return out;
       });
 

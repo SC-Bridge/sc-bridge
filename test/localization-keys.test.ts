@@ -148,6 +148,24 @@ describe("GET /api/localization/keys", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns per-pack values for cross-pack compare", async () => {
+    await env.DB.prepare(
+      `INSERT INTO localization_overlay_packs (name, label, version_code, key_count, is_active, sort_order)
+       VALUES ('compare-pack', 'Compare Pack', '4.8.0-live', 1, 1, 5)`,
+    ).run();
+    await (env as unknown as { LOCALIZATION_KV: KVNamespace }).LOCALIZATION_KV.put(
+      "localization:pack:compare-pack:4.8.0-live",
+      "ui_ButtonConfirm=Affirmative",
+    );
+
+    const res = await SELF.fetch("http://localhost/api/localization/keys?q=ButtonConfirm", {
+      headers: await authHeaders(sessionToken),
+    });
+    const data = (await res.json()) as { items: { key: string; packs?: { name: string; label: string; value: string }[] }[] };
+    const item = data.items.find((i) => i.key === "ui_ButtonConfirm");
+    expect(item?.packs).toEqual([{ name: "compare-pack", label: "Compare Pack", value: "Affirmative" }]);
+  });
+
   it("POST /import ingests only the changed keys from an uploaded global.ini", async () => {
     // Base (seeded in beforeAll): vehicle_NameAEGS_Gladius=Aegis Gladius, ui_ButtonConfirm=Confirm
     const uploaded = ["vehicle_NameAEGS_Gladius=Aegis Gladius", "ui_ButtonConfirm=Yes please"].join("\n");
