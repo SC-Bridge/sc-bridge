@@ -449,8 +449,20 @@ export function localizationRoutes() {
     })),
     async (c) => {
       const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
       const user = getAuthUser(c);
       const { url, note } = c.req.valid("json");
+
+      // Per-user hourly cap (defense-in-depth against spam to the table +
+      // Discord webhook). Transient KV counter with a 1-hour TTL — not user
+      // content, so it's outside the GDPR cascade.
+      const PACK_REQUEST_HOURLY_LIMIT = 10;
+      const rlKey = `ratelimit:packreq:${user.id}`;
+      const count = parseInt((await kv.get(rlKey)) || "0", 10);
+      if (count >= PACK_REQUEST_HOURLY_LIMIT) {
+        return c.json({ error: "Too many pack requests — try again later." }, 429);
+      }
+      await kv.put(rlKey, String(count + 1), { expirationTtl: 3600 });
 
       await db
         .prepare("INSERT INTO pack_requests (url, note) VALUES (?, ?)")

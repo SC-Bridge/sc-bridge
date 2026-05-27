@@ -53,4 +53,21 @@ describe("POST /api/localization/pack-request", () => {
     expect(row!.note).toBe("blueprint pools");
     expect(row!.status).toBe("new");
   });
+
+  it("rate-limits a user after the hourly cap (429)", async () => {
+    const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+    const submit = (n: number) =>
+      SELF.fetch("http://localhost/api/localization/pack-request", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ url: `https://example.com/p${n}` }),
+      });
+    // First 10 succeed; the 11th is blocked.
+    for (let i = 0; i < 10; i++) {
+      const ok = await submit(i);
+      expect(ok.status).toBe(200);
+    }
+    const blocked = await submit(99);
+    expect(blocked.status).toBe(429);
+  });
 });

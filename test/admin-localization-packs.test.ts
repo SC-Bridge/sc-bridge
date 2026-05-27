@@ -73,6 +73,24 @@ describe("Admin localization overlay packs", () => {
     expect(body.packs.find((p) => p.name === "test-pack")!.is_active).toBe(0);
   });
 
+  it("edits pack metadata (label/description/sort_order) without re-upload", async () => {
+    const res = await SELF.fetch("http://localhost/api/admin/localization/overlay-pack/test-pack", {
+      method: "PATCH",
+      headers: { ...(await authHeaders(adminToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "Renamed Pack", description: "edited", sort_order: 7 }),
+    });
+    expect(res.status).toBe(200);
+
+    const list = await SELF.fetch("http://localhost/api/admin/localization/overlay-packs", {
+      headers: await authHeaders(adminToken),
+    });
+    const body = (await list.json()) as { packs: { name: string; label: string; description: string; sort_order: number }[] };
+    const pack = body.packs.find((p) => p.name === "test-pack")!;
+    expect(pack.label).toBe("Renamed Pack");
+    expect(pack.description).toBe("edited");
+    expect(pack.sort_order).toBe(7);
+  });
+
   it("returns 404 toggling an unknown pack", async () => {
     const res = await SELF.fetch("http://localhost/api/admin/localization/overlay-pack/does-not-exist", {
       method: "PATCH",

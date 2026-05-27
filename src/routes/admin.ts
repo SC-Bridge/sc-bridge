@@ -624,18 +624,33 @@ export function adminRoutes() {
     return c.json({ packs: rows.results });
   });
 
-  /** PATCH /api/admin/localization/overlay-pack/:name — toggle active state */
+  /** PATCH /api/admin/localization/overlay-pack/:name — edit active state and/or metadata */
   routes.patch(
     "/localization/overlay-pack/:name",
     validate("param", z.object({ name: z.string().regex(/^[a-z0-9-]+$/) })),
-    validate("json", z.object({ is_active: z.boolean() })),
+    validate("json", z.object({
+      is_active: z.boolean().optional(),
+      label: z.string().min(1).max(200).optional(),
+      description: z.string().max(500).nullable().optional(),
+      sort_order: z.coerce.number().int().optional(),
+    })),
     async (c) => {
       const db = c.env.DB;
       const { name } = c.req.valid("param");
-      const { is_active } = c.req.valid("json");
+      const body = c.req.valid("json");
+
+      const sets: string[] = [];
+      const values: unknown[] = [];
+      if (body.is_active !== undefined) { sets.push("is_active = ?"); values.push(body.is_active ? 1 : 0); }
+      if (body.label !== undefined) { sets.push("label = ?"); values.push(body.label); }
+      if (body.description !== undefined) { sets.push("description = ?"); values.push(body.description); }
+      if (body.sort_order !== undefined) { sets.push("sort_order = ?"); values.push(body.sort_order); }
+      if (sets.length === 0) return c.json({ error: "No fields to update" }, 400);
+      sets.push("updated_at = datetime('now')");
+
       const res = await db
-        .prepare("UPDATE localization_overlay_packs SET is_active = ?, updated_at = datetime('now') WHERE name = ?")
-        .bind(is_active ? 1 : 0, name)
+        .prepare(`UPDATE localization_overlay_packs SET ${sets.join(", ")} WHERE name = ?`)
+        .bind(...values, name)
         .run();
       if (!res.meta.changes) return c.json({ error: "Pack not found" }, 404);
       return c.json({ ok: true });

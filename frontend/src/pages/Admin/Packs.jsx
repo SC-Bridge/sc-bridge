@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Upload, Trash2, Power, Loader, FileText } from 'lucide-react'
+import { Upload, Trash2, Power, Loader, FileText, Pencil, Save, X } from 'lucide-react'
 import PanelSection from '../../components/PanelSection'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
@@ -13,6 +13,8 @@ export default function AdminPacks() {
   const [busyName, setBusyName] = useState(null)
   const [message, setMessage] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [editName, setEditName] = useState(null)
+  const [editForm, setEditForm] = useState({ label: '', description: '', sort_order: 0 })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -77,6 +79,35 @@ export default function AdminPacks() {
         body: JSON.stringify({ is_active: !pack.is_active }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Toggle failed')
+      load()
+    } catch (e) {
+      flash('error', e.message)
+    } finally {
+      setBusyName(null)
+    }
+  }
+
+  const startEdit = (p) => {
+    setEditName(p.name)
+    setEditForm({ label: p.label || '', description: p.description || '', sort_order: p.sort_order ?? 0 })
+  }
+
+  const saveMeta = async () => {
+    const name = editName
+    setBusyName(name)
+    try {
+      const res = await fetch(`/api/admin/localization/overlay-pack/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: editForm.label,
+          description: editForm.description || null,
+          sort_order: Number(editForm.sort_order) || 0,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed')
+      setEditName(null)
       load()
     } catch (e) {
       flash('error', e.message)
@@ -154,24 +185,54 @@ export default function AdminPacks() {
           ) : (
             <div className="divide-y divide-sc-border">
               {packs.map((p) => (
-                <div key={p.name} className="flex items-center gap-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-200">{p.label}</span>
-                      <code className="text-[10px] font-mono text-gray-500">{p.name}</code>
-                      {!p.is_active && <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-gray-700/50 text-gray-400">inactive</span>}
+                <div key={p.name} className="py-2">
+                  {editName === p.name ? (
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 space-y-1.5">
+                        <input value={editForm.label} onChange={(e) => setEditForm((f) => ({ ...f, label: e.target.value }))}
+                          placeholder="label"
+                          className="w-full px-2 py-1 bg-sc-darker border border-sc-accent/30 rounded text-sm text-gray-200 focus:outline-none focus:border-sc-accent/60" />
+                        <input value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                          placeholder="description"
+                          className="w-full px-2 py-1 bg-sc-darker border border-sc-border rounded text-xs text-gray-300 focus:outline-none focus:border-sc-accent/40" />
+                        <input type="number" value={editForm.sort_order} onChange={(e) => setEditForm((f) => ({ ...f, sort_order: e.target.value }))}
+                          placeholder="sort order"
+                          className="w-28 px-2 py-1 bg-sc-darker border border-sc-border rounded text-xs text-gray-300 focus:outline-none focus:border-sc-accent/40" />
+                      </div>
+                      <button onClick={saveMeta} disabled={busyName === p.name}
+                        className="p-1.5 rounded bg-sc-accent/15 text-sc-accent border border-sc-accent/30 cursor-pointer disabled:opacity-40" title="Save">
+                        {busyName === p.name ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => setEditName(null)} disabled={busyName === p.name}
+                        className="p-1.5 rounded border border-white/[0.08] text-gray-400 cursor-pointer disabled:opacity-40" title="Cancel">
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
-                    <div className="text-[11px] text-gray-500">{p.version_code} · {p.key_count} keys</div>
-                  </div>
-                  <button onClick={() => toggle(p)} disabled={busyName === p.name}
-                    className={`p-1.5 rounded border cursor-pointer disabled:opacity-40 ${p.is_active ? 'border-sc-accent/30 text-sc-accent' : 'border-white/[0.08] text-gray-500'}`}
-                    title={p.is_active ? 'Deactivate' : 'Activate'}>
-                    {busyName === p.name ? <Loader className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-                  </button>
-                  <button onClick={() => setDeleteTarget(p)} disabled={busyName === p.name}
-                    className="p-1.5 rounded border border-white/[0.08] text-gray-500 hover:text-sc-danger cursor-pointer disabled:opacity-40" title="Delete">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-200">{p.label}</span>
+                          <code className="text-[10px] font-mono text-gray-500">{p.name}</code>
+                          {!p.is_active && <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-gray-700/50 text-gray-400">inactive</span>}
+                        </div>
+                        <div className="text-[11px] text-gray-500">{p.version_code} · {p.key_count} keys · sort {p.sort_order ?? 0}</div>
+                      </div>
+                      <button onClick={() => startEdit(p)} disabled={busyName === p.name}
+                        className="p-1.5 rounded border border-white/[0.08] text-gray-500 hover:text-sc-accent cursor-pointer disabled:opacity-40" title="Edit metadata">
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => toggle(p)} disabled={busyName === p.name}
+                        className={`p-1.5 rounded border cursor-pointer disabled:opacity-40 ${p.is_active ? 'border-sc-accent/30 text-sc-accent' : 'border-white/[0.08] text-gray-500'}`}
+                        title={p.is_active ? 'Deactivate' : 'Activate'}>
+                        {busyName === p.name ? <Loader className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => setDeleteTarget(p)} disabled={busyName === p.name}
+                        className="p-1.5 rounded border border-white/[0.08] text-gray-500 hover:text-sc-danger cursor-pointer disabled:opacity-40" title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
