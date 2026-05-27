@@ -22,6 +22,7 @@ import {
   parseIniOverrides,
   resolveCategoryFormat,
   searchGlobalIniKeys,
+  applyCategoryPacks,
 } from "../lib/localization";
 
 /**
@@ -134,6 +135,7 @@ export function localizationRoutes() {
           format: z.enum(["suffix", "prefix"]),
         })).optional(),
         enabledPacks: z.array(z.string().max(100)).max(50).optional(),
+        categoryPacks: z.record(z.string().max(50), z.string().max(100)).optional(),
         enhanceContrabandWarnings: z.boolean().optional(),
         enhanceMaterialNames: z.boolean().optional(),
         enhanceBlueprintPools: z.boolean().optional(),
@@ -153,6 +155,10 @@ export function localizationRoutes() {
         ? JSON.stringify(body.enabledPacks)
         : null;
 
+      const categoryPacksJson = body.categoryPacks
+        ? JSON.stringify(body.categoryPacks)
+        : null;
+
       await db
         .prepare(
           `INSERT INTO user_localization_configs (
@@ -160,11 +166,11 @@ export function localizationRoutes() {
             labels_vehicle_components, labels_fps_weapons, labels_fps_armour,
             labels_fps_helmets, labels_fps_attachments, labels_fps_utilities,
             labels_consumables, labels_ship_missiles, label_format,
-            category_formats_json, enabled_packs_json,
+            category_formats_json, enabled_packs_json, category_packs_json,
             enhance_contraband_warnings, enhance_material_names, enhance_blueprint_pools,
             enhance_contract_rep,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(user_id) DO UPDATE SET
             asop_enabled = excluded.asop_enabled,
             labels_vehicle_components = excluded.labels_vehicle_components,
@@ -178,6 +184,7 @@ export function localizationRoutes() {
             label_format = excluded.label_format,
             category_formats_json = COALESCE(excluded.category_formats_json, user_localization_configs.category_formats_json),
             enabled_packs_json = COALESCE(excluded.enabled_packs_json, user_localization_configs.enabled_packs_json),
+            category_packs_json = COALESCE(excluded.category_packs_json, user_localization_configs.category_packs_json),
             enhance_contraband_warnings = excluded.enhance_contraband_warnings,
             enhance_material_names = excluded.enhance_material_names,
             enhance_blueprint_pools = excluded.enhance_blueprint_pools,
@@ -198,6 +205,7 @@ export function localizationRoutes() {
           body.labelFormat ?? "suffix",
           categoryFormatsJson,
           enabledPacksJson,
+          categoryPacksJson,
           body.enhanceContrabandWarnings ? 1 : 0,
           body.enhanceMaterialNames ? 1 : 0,
           body.enhanceBlueprintPools ? 1 : 0,
@@ -681,27 +689,41 @@ export function localizationRoutes() {
     }
 
     // Three-layer merge: base → packs → personal overrides
-    // 1. Load enabled pack overrides (lowest priority of overrides)
+    // 1. Load enabled pack overrides (lowest priority of overrides), then
+    //    apply per-category pack assignments (a category's assigned pack wins
+    //    for keys in that category). Both load from the set of packs referenced
+    //    by either enabledPacks or categoryPacks.
     const overrideMap = new Map<string, string>();
 
-    if (config.enabledPacks.length > 0) {
+    const referencedPacks = new Set<string>([
+      ...config.enabledPacks,
+      ...Object.values(config.categoryPacks),
+    ]);
+    const packEntries: Record<string, Map<string, string>> = {};
+    if (referencedPacks.size > 0) {
+      const names = [...referencedPacks];
       const packRows = await db
         .prepare(
           `SELECT name FROM localization_overlay_packs
-           WHERE is_active = 1 AND name IN (${config.enabledPacks.map(() => "?").join(",")})
+           WHERE is_active = 1 AND name IN (${names.map(() => "?").join(",")})
            ORDER BY sort_order`,
         )
-        .bind(...config.enabledPacks)
+        .bind(...names)
         .all<{ name: string }>();
 
       for (const pack of packRows.results) {
         const content = await kv.get(`localization:pack:${pack.name}:${ver.code}`, "text");
-        if (content) {
-          const parsed = parseIniOverrides(content);
-          for (const [k, v] of parsed) overrideMap.set(k.toLowerCase(), v);
+        const map = new Map<string, string>();
+        if (content) for (const [k, v] of parseIniOverrides(content)) map.set(k.toLowerCase(), v);
+        packEntries[pack.name] = map;
+        // Wholesale: enabled packs apply across all keys (by sort_order).
+        if (config.enabledPacks.includes(pack.name)) {
+          for (const [k, v] of map) overrideMap.set(k, v);
         }
       }
     }
+    // Per-category assignment wins over the wholesale merge for its category.
+    applyCategoryPacks(overrideMap, config.categoryPacks, packEntries);
 
     // 2. Generate personal overrides (highest priority — overwrites packs)
     // All overrideMap keys are lowercased for case-insensitive merge.

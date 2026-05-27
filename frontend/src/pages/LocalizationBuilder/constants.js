@@ -42,6 +42,17 @@ export const EXAMPLE_DATA = {
   ship_missiles: { name: 'Dominator II', manufacturer: 'THRT', size: 3, grade: null, subType: null, seeker: 'EM' },
 }
 
+// Key categories for per-category pack assignment (mirror of KEY_CATEGORIES
+// in src/lib/localization.ts).
+export const KEY_CATEGORIES = [
+  { id: 'ship_names', label: 'Ship Names' },
+  { id: 'items', label: 'Items & Gear' },
+  { id: 'commodities', label: 'Commodities' },
+  { id: 'journal', label: 'Journal & Guides' },
+  { id: 'ui', label: 'UI' },
+  { id: 'other', label: 'Other' },
+]
+
 export function buildPreviewLabel(dbKey, fields, format) {
   const data = EXAMPLE_DATA[dbKey]
   if (!data) return '\u2014'

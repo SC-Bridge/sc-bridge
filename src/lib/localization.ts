@@ -627,6 +627,57 @@ export function searchGlobalIniKeys(
 }
 
 // ---------------------------------------------------------------------------
+// Key categories — per-category pack assignment
+// ---------------------------------------------------------------------------
+
+export interface KeyCategory {
+  id: string;
+  label: string;
+}
+
+/** Categories a global.ini key can be classified into, by key prefix. */
+export const KEY_CATEGORIES: KeyCategory[] = [
+  { id: "ship_names", label: "Ship Names" },
+  { id: "items", label: "Items & Gear" },
+  { id: "commodities", label: "Commodities" },
+  { id: "journal", label: "Journal & Guides" },
+  { id: "ui", label: "UI" },
+  { id: "other", label: "Other" },
+];
+
+/** Classify a global.ini key into a category by its prefix (case-insensitive). */
+export function classifyKey(key: string): string {
+  const k = key.toLowerCase();
+  if (k.startsWith("vehicle_name")) return "ship_names";
+  if (k.startsWith("item_name")) return "items";
+  if (k.startsWith("items_commodities") || k.startsWith("item_commodities")) return "commodities";
+  if (k.startsWith("journal_")) return "journal";
+  if (k.startsWith("ui_")) return "ui";
+  return "other";
+}
+
+/**
+ * Apply per-category pack assignments to an override map (mutates it).
+ * For each `categoryId → packName` assignment, the named pack's values win for
+ * every key whose category matches — letting a user route, say, ship names to
+ * one pack and items to another. `packEntries` maps packName → (lowercased
+ * key → value); assignments referencing an unloaded pack are skipped.
+ */
+export function applyCategoryPacks(
+  overrideMap: Map<string, string>,
+  categoryPacks: Record<string, string>,
+  packEntries: Record<string, Map<string, string>>,
+): void {
+  for (const [catId, packName] of Object.entries(categoryPacks)) {
+    const entries = packEntries[packName];
+    if (!entries) continue;
+    for (const [lk, v] of entries) {
+      if (classifyKey(lk) === catId) overrideMap.set(lk, v);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
@@ -651,6 +702,8 @@ export interface LocalizationConfig {
   labelFormat: LabelFormat;
   categoryFormats: CategoryFormats;
   enabledPacks: string[];
+  /** Per-category pack assignment: categoryId → packName. */
+  categoryPacks: Record<string, string>;
   enhanceContrabandWarnings: boolean;
   enhanceMaterialNames: boolean;
   enhanceBlueprintPools: boolean;
@@ -670,6 +723,7 @@ export const DEFAULT_CONFIG: LocalizationConfig = {
   labelFormat: "suffix",
   categoryFormats: {},
   enabledPacks: [],
+  categoryPacks: {},
   enhanceContrabandWarnings: false,
   enhanceMaterialNames: false,
   enhanceBlueprintPools: false,
@@ -695,6 +749,15 @@ export function configFromRow(row: Record<string, unknown>): LocalizationConfig 
     }
   }
 
+  let categoryPacks: Record<string, string> = {};
+  if (row.category_packs_json && typeof row.category_packs_json === "string") {
+    try {
+      categoryPacks = JSON.parse(row.category_packs_json);
+    } catch {
+      categoryPacks = {};
+    }
+  }
+
   return {
     asopEnabled: !!row.asop_enabled,
     labelsVehicleComponents: !!row.labels_vehicle_components,
@@ -708,6 +771,7 @@ export function configFromRow(row: Record<string, unknown>): LocalizationConfig 
     labelFormat: (row.label_format as LabelFormat) || "suffix",
     categoryFormats,
     enabledPacks,
+    categoryPacks,
     enhanceContrabandWarnings: !!row.enhance_contraband_warnings,
     enhanceMaterialNames: !!row.enhance_material_names,
     enhanceBlueprintPools: !!row.enhance_blueprint_pools,

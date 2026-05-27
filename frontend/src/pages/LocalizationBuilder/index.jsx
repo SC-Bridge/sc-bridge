@@ -121,6 +121,14 @@ export default function LocalizationBuilder() {
     updateConfig({ enabledPacks: next })
   }
 
+  // Assign (or clear, when packName is '') a pack for a string category.
+  const setCategoryPack = (catId, packName) => {
+    const next = { ...(config.categoryPacks || {}) }
+    if (packName) next[catId] = packName
+    else delete next[catId]
+    updateConfig({ categoryPacks: next })
+  }
+
   const getCatFormat = (dbKey) => {
     const formats = config.categoryFormats || {}
     if (formats[dbKey]) return formats[dbKey]
@@ -355,6 +363,8 @@ export default function LocalizationBuilder() {
           packs={overlayPacks}
           enabledPacks={config.enabledPacks || []}
           onTogglePack={togglePack}
+          categoryPacks={config.categoryPacks || {}}
+          onSetCategoryPack={setCategoryPack}
         />
       )}
 

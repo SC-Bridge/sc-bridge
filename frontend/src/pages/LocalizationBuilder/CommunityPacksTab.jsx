@@ -1,6 +1,39 @@
 import React, { useState } from 'react'
 import { Send, Loader, CheckCircle, AlertCircle } from 'lucide-react'
 import CommunityPacksSection from './CommunityPacksSection'
+import { KEY_CATEGORIES } from './constants'
+
+// Optional advanced control: route specific string categories to specific
+// packs. The chosen pack wins for keys in that category, over the wholesale
+// enabled-pack merge.
+function CategoryAssignment({ packs, categoryPacks, onSetCategoryPack }) {
+  if (!packs || packs.length === 0) return null
+  return (
+    <div className="panel">
+      <div className="px-5 py-4 border-b border-sc-border">
+        <h3 className="font-display font-semibold text-sm text-white">Per-Category Assignment <span className="text-[10px] font-mono text-gray-500">advanced</span></h3>
+        <p className="text-xs text-gray-500 mt-0.5">Route a string category to a specific pack — it wins for those keys over your enabled packs.</p>
+      </div>
+      <div className="p-4 space-y-2">
+        {KEY_CATEGORIES.map((cat) => (
+          <div key={cat.id} className="flex items-center justify-between gap-3">
+            <span className="text-sm text-gray-300">{cat.label}</span>
+            <select
+              value={(categoryPacks || {})[cat.id] || ''}
+              onChange={(e) => onSetCategoryPack(cat.id, e.target.value)}
+              className="w-56 px-2 py-1 bg-sc-darker border border-sc-border rounded text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-sc-accent/50"
+            >
+              <option value="">Default (enabled packs)</option>
+              {packs.map((p) => (
+                <option key={p.name} value={p.name}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function RequestPackForm() {
   const [url, setUrl] = useState('')
@@ -73,10 +106,11 @@ function RequestPackForm() {
   )
 }
 
-export default function CommunityPacksTab({ packs, enabledPacks, onTogglePack }) {
+export default function CommunityPacksTab({ packs, enabledPacks, onTogglePack, categoryPacks, onSetCategoryPack }) {
   return (
     <div className="space-y-6">
       <CommunityPacksSection packs={packs} enabledPacks={enabledPacks} onTogglePack={onTogglePack} />
+      <CategoryAssignment packs={packs} categoryPacks={categoryPacks} onSetCategoryPack={onSetCategoryPack} />
       <RequestPackForm />
     </div>
   )
