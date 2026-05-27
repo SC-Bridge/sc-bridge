@@ -67,6 +67,7 @@ crons = [
   "45 3 * * *",  # RSI API images (ships + paints)
   "0 */2 * * *", # UEX commodity prices (every 2h)
   "30 5 * * *",  # UEX item prices (daily)
+  "15 * * * *",  # localization base auto-ingest (hourly — fresh global.ini within ~1h of a patch)
 ]
 
 [env.production.vars]

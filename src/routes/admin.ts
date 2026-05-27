@@ -7,6 +7,7 @@ import { concurrentMap } from "../lib/utils";
 import { validate } from "../lib/validation";
 import { purgeByPrefix } from "../lib/cache";
 import { normaliseTitle } from "../lib/titleNorm";
+import { runLocalizationIngest } from "../sync/localizationIngest";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -656,6 +657,12 @@ export function adminRoutes() {
       return c.json({ ok: true });
     },
   );
+
+  /** POST /api/admin/localization/ingest — run the community base-ini auto-ingest now */
+  routes.post("/localization/ingest", async (c) => {
+    const result = await runLocalizationIngest(c.env);
+    return c.json(result);
+  });
 
   /** GET /api/admin/localization/pack-requests — review user pack requests */
   routes.get("/localization/pack-requests", async (c) => {

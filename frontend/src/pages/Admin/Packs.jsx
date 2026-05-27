@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Upload, Trash2, Power, Loader, FileText, Pencil, Save, X } from 'lucide-react'
+import { Upload, Trash2, Power, Loader, FileText, Pencil, Save, X, RefreshCw } from 'lucide-react'
 import PanelSection from '../../components/PanelSection'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
@@ -116,6 +116,28 @@ export default function AdminPacks() {
     }
   }
 
+  const [ingesting, setIngesting] = useState(false)
+  const ingestNow = async () => {
+    setIngesting(true)
+    try {
+      const res = await fetch('/api/admin/localization/ingest', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.error || 'Ingest failed')
+      const detail = body.status === 'ingested'
+        ? `refreshed ${body.versionCode} from ${body.source} — ${body.keyCount} keys (Δ${body.delta >= 0 ? '+' : ''}${body.delta})`
+        : `${body.status}: ${body.reason}`
+      flash('success', `Base ingest — ${detail}`)
+    } catch (e) {
+      flash('error', e.message)
+    } finally {
+      setIngesting(false)
+    }
+  }
+
   const doDelete = async () => {
     const name = deleteTarget?.name
     setDeleteTarget(null)
@@ -141,6 +163,16 @@ export default function AdminPacks() {
       {message && (
         <p className={`text-xs font-mono ${message.type === 'success' ? 'text-sc-success' : 'text-sc-danger'}`}>{message.text}</p>
       )}
+
+      <PanelSection title="Localization Base (auto-ingest)" icon={RefreshCw}>
+        <div className="p-4 flex items-center justify-between gap-3">
+          <p className="text-xs text-gray-500">Pull a fresh vanilla base global.ini from the community sources (BeltaKoda → Dymerz) for the current default version. Runs hourly in production; trigger it here to test or force a refresh.</p>
+          <button onClick={ingestNow} disabled={ingesting} className="btn-primary flex items-center gap-2 text-sm px-3 py-2 shrink-0 disabled:opacity-50">
+            {ingesting ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {ingesting ? 'Ingesting…' : 'Refresh base now'}
+          </button>
+        </div>
+      </PanelSection>
 
       <PanelSection title="Upload / Replace Pack" icon={Upload}>
         <div className="p-4 space-y-3">

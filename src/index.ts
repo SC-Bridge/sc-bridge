@@ -511,6 +511,16 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
       await syncProductionStatuses(env.DB);
       break;
     }
+    case "15 * * * *": {
+      // Hourly: keep the localization base global.ini fresh by auto-ingesting a
+      // clean community vanilla base (BeltaKoda/Dymerz) within hours of a patch.
+      console.log("[cron] Localization base auto-ingest");
+      logEvent("cron_trigger", { schedule: cron, task: "localization_ingest" });
+      const { runLocalizationIngest } = await import("./sync/localizationIngest");
+      const result = await runLocalizationIngest(env);
+      logEvent("cron_complete", { task: "localization_ingest", ...result });
+      break;
+    }
     case "0 */2 * * *": {
       console.log("[cron] UEX commodity price sync");
       logEvent("cron_trigger", { schedule: cron, task: "uex_commodities" });

@@ -678,6 +678,66 @@ export function applyCategoryPacks(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-ingest decision (safety brain for pulling a community vanilla base)
+// ---------------------------------------------------------------------------
+
+export interface IngestDecision {
+  changed: boolean;
+  ok: boolean;
+  keyCount: number;
+  /** keyCount − current base key count (keyCount when there's no current). */
+  delta: number;
+  reason: string;
+}
+
+/**
+ * Decide whether a freshly-fetched community base global.ini should replace
+ * the current KV base. Only ingests when it actually CHANGED and passes
+ * sanity — guards against a broken/truncated upstream publish silently nuking
+ * everyone's base. `minKeys` floors absolute size; `maxDropFraction` rejects a
+ * suspicious shrink relative to the current base.
+ */
+export function evaluateLocalizationIngest(
+  newContent: string,
+  currentContent: string | null,
+  opts?: { minKeys?: number; maxDropFraction?: number },
+): IngestDecision {
+  const minKeys = opts?.minKeys ?? 1000;
+  const maxDropFraction = opts?.maxDropFraction ?? 0.2;
+
+  const countKeys = (s: string): number => {
+    let n = 0;
+    for (const line of s.split("\n")) {
+      const t = line.trimStart();
+      if (!t || t.startsWith("#") || t.startsWith(";")) continue;
+      if (line.includes("=")) n++;
+    }
+    return n;
+  };
+
+  const keyCount = countKeys(newContent);
+  const currentKeyCount = currentContent ? countKeys(currentContent) : 0;
+  const delta = keyCount - currentKeyCount;
+
+  if (keyCount < minKeys) {
+    return { changed: true, ok: false, keyCount, delta, reason: `Too few keys (${keyCount} < ${minKeys}) — upstream looks broken` };
+  }
+  if (currentContent !== null && newContent === currentContent) {
+    return { changed: false, ok: true, keyCount, delta, reason: "No change vs current base" };
+  }
+  if (currentKeyCount > 0 && keyCount < currentKeyCount * (1 - maxDropFraction)) {
+    return {
+      changed: true,
+      ok: false,
+      keyCount,
+      delta,
+      reason: `Suspicious shrink: ${keyCount} keys vs current ${currentKeyCount} (>${Math.round(maxDropFraction * 100)}% drop)`,
+    };
+  }
+  return { changed: true, ok: true, keyCount, delta, reason: "Changed + passed sanity" };
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 

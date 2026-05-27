@@ -43,6 +43,8 @@ export interface Env {
   DISCORD_CLIENT_SECRET?: string;
   // Discord incoming-webhook URL for "Request a Pack" notifications (optional).
   DISCORD_PACK_REQUEST_WEBHOOK?: string;
+  // Discord incoming-webhook URL for localization auto-ingest ops alerts (optional).
+  DISCORD_LOCALIZATION_WEBHOOK?: string;
   TWITCH_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET?: string;
 }
