@@ -136,7 +136,9 @@ binding = "CHARACTERS"
 bucket_name = "scbridge-characters-staging"
 
 [env.staging.triggers]
-crons = []
+crons = [
+  "15 * * * *",  # localization base auto-ingest — enabled on staging to validate the automated grab
+]
 
 [env.staging.vars]
 RSI_API_ENABLED = "false"
