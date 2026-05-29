@@ -12,6 +12,7 @@ import InsuranceBadge from '../components/InsuranceBadge'
 import StatusBadge from '../components/StatusBadge'
 import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
+import ShareFleetBanner from '../components/ShareFleetBanner'
 import { getRoleGroup } from '../lib/roleGroups'
 
 /** Get display value and numeric sort value for a fleet entry's cost.
@@ -244,6 +245,8 @@ export default function FleetTable() {
         actions={<span className="text-xs font-mono text-gray-500">{sorted.length} ships</span>}
       />
 
+      <ShareFleetBanner />
+
       <div className="flex gap-3 items-center">
         <SearchInput
           value={filter}
@@ -325,14 +328,14 @@ export default function FleetTable() {
                     </span>
                   </th>
                 ))}
-                {inOrgs && <th scope="col" className="table-header">Visibility</th>}
+                <th scope="col" className="table-header">Visibility</th>
                 {inOrgs && <th scope="col" className="table-header">Ops</th>}
               </tr>
             </thead>
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={inOrgs ? 10 : 8} className="py-12">
+                  <td colSpan={inOrgs ? 10 : 9} className="py-12">
                     {fleet && fleet.length === 0 ? (
                       <div className="flex flex-col items-center gap-3 text-center">
                         <Rocket className="w-10 h-10 text-gray-500" />
@@ -455,17 +458,15 @@ export default function FleetTable() {
                     <td className="table-cell">
                       <InsuranceBadge isLifetime={v.is_lifetime} label={v.insurance_label} />
                     </td>
-                    {inOrgs && (
-                      <td className="table-cell" onClick={(e) => e.stopPropagation()}>
-                        <VisibilitySelect
-                          value={v.org_visibility || 'private'}
-                          onChange={async (val) => {
-                            await updateShipVisibility(v.id, { org_visibility: val }).catch(() => {})
-                            refetch()
-                          }}
-                        />
-                      </td>
-                    )}
+                    <td className="table-cell" onClick={(e) => e.stopPropagation()}>
+                      <VisibilitySelect
+                        value={v.org_visibility || 'private'}
+                        onChange={async (val) => {
+                          await updateShipVisibility(v.id, { org_visibility: val }).catch(() => {})
+                          refetch()
+                        }}
+                      />
+                    </td>
                     {inOrgs && (
                       <td className="table-cell text-center" onClick={(e) => e.stopPropagation()}>
                         <input
