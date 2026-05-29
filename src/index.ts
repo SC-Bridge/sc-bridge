@@ -24,6 +24,7 @@ import { gamedataRoutes } from "./routes/gamedata";
 import { localizationRoutes } from "./routes/localization";
 import { publicOpsRoutes } from "./routes/ops";
 import { reputationRoutes } from "./routes/reputation";
+import { publicFleetRoutes } from "./routes/publicFleet";
 import { companionRoutes } from "./routes/companion";
 import { companionAuthRoutes } from "./routes/companion-auth";
 import { loadoutRoutes } from "./routes/loadout";
@@ -434,6 +435,7 @@ app.use("/api/ops/*", async (c, next) => {
 });
 app.route("/api/ops", publicOpsRoutes());
 app.route("/api/users", reputationRoutes());
+app.route("/api/u", publicFleetRoutes());
 app.route("/api/companion", companionRoutes());
 app.route("/api/loadout", loadoutRoutes());
 app.route("/api/components", componentRoutes());
