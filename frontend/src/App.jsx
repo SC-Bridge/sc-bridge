@@ -33,6 +33,7 @@ const Account = lazy(() => import('./pages/Account'))
 const TwoFactorVerify = lazy(() => import('./pages/TwoFactorVerify'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
 const Privacy = lazy(() => import('./pages/Privacy'))
+const PublicFleet = lazy(() => import('./pages/PublicFleet'))
 const Terms = lazy(() => import('./pages/Terms'))
 const CodeSigning = lazy(() => import('./pages/CodeSigning'))
 const Orgs = lazy(() => import('./pages/Orgs'))
@@ -625,6 +626,7 @@ export default function App() {
       <Route path="/terms" element={<Suspense fallback={<LoadingState fullScreen />}><Terms /></Suspense>} />
       <Route path="/code-signing" element={<Suspense fallback={<LoadingState fullScreen />}><CodeSigning /></Suspense>} />
       <Route path="/accept-invitation" element={<Suspense fallback={<LoadingState fullScreen />}><AcceptInvitation /></Suspense>} />
+      <Route path="/u/:handle/fleet" element={<Suspense fallback={<LoadingState fullScreen />}><PublicFleet /></Suspense>} />
 
       {/* App routes — with sidebar layout */}
       <Route
