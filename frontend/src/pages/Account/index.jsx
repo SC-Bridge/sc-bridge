@@ -8,6 +8,7 @@ import LoadingState from '../../components/LoadingState'
 
 import ProfileSection from './ProfileSection'
 import RsiProfileSection from './RsiProfileSection'
+import PublicFleetSection from './PublicFleetSection'
 import LinkedAccountsSection from './LinkedAccountsSection'
 import PasswordSection from './PasswordSection'
 import TwoFactorSection from './TwoFactorSection'
@@ -718,6 +719,7 @@ export default function Account() {
         {[
           { id: 'profile', label: 'Profile' },
           { id: 'rsi', label: 'RSI Profile' },
+          { id: 'public-fleet', label: 'Share Fleet' },
           { id: 'linked', label: 'Linked Accounts' },
           { id: 'password', label: 'Password' },
           { id: '2fa', label: '2FA' },
@@ -763,6 +765,8 @@ export default function Account() {
         onRsiSync={handleRsiSync}
         onRefresh={fetchRsiProfile}
       />
+
+      <PublicFleetSection />
 
       <LinkedAccountsSection
         providers={providers}
