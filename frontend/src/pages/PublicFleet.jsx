@@ -9,6 +9,7 @@ import ShipImage from '../components/ShipImage'
 
 export default function PublicFleet() {
   const { handle } = useParams()
+  const [retryCount, setRetryCount] = useState(0)
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
 
   useEffect(() => {
@@ -22,23 +23,24 @@ export default function PublicFleet() {
           return
         }
         if (!res.ok) {
-          setState({ status: 'error', data: null, error: `HTTP ${res.status}` })
+          setState({ status: 'error', data: null, error: 'Unable to load fleet. Please try again.' })
           return
         }
         const data = await res.json()
+        if (cancelled) return
         setState({ status: 'ok', data, error: null })
       })
-      .catch((err) => {
+      .catch(() => {
         if (cancelled) return
-        setState({ status: 'error', data: null, error: err.message })
+        setState({ status: 'error', data: null, error: 'Unable to load fleet. Please try again.' })
       })
     return () => {
       cancelled = true
     }
-  }, [handle])
+  }, [handle, retryCount])
 
   if (state.status === 'loading') return <LoadingState fullScreen />
-  if (state.status === 'error') return <ErrorState message={state.error} />
+  if (state.status === 'error') return <ErrorState message={state.error} onRetry={() => setRetryCount((c) => c + 1)} />
 
   if (state.status === 'not-found') {
     return (

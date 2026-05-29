@@ -60,6 +60,12 @@ describe('PublicFleet', () => {
     await waitFor(() => expect(screen.getAllByText(/sign in|sign up|create/i).length).toBeGreaterThan(0))
   })
 
+  it('shows a friendly error message on 500', async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'oops' }) })
+    renderAt('/u/X/fleet')
+    await waitFor(() => expect(screen.getByText(/unable to load fleet/i)).toBeInTheDocument())
+  })
+
   it('does NOT render any pledge cost / MSRP text', async () => {
     global.fetch.mockResolvedValue({
       ok: true,
