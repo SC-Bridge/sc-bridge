@@ -15,8 +15,14 @@ import {
   generateItemLabels,
   generateContrabandWarnings,
   generateMaterialShortNames,
+  generateContractOverrides,
+  type ContractRow,
+  humanizeComponentType,
+  missileSeekerCode,
   parseIniOverrides,
   resolveCategoryFormat,
+  searchGlobalIniKeys,
+  applyCategoryPacks,
 } from "../lib/localization";
 
 /**
@@ -125,13 +131,15 @@ export function localizationRoutes() {
         labelsShipMissiles: z.boolean().optional(),
         labelFormat: z.enum(["suffix", "prefix"]).optional(),
         categoryFormats: z.record(z.string(), z.object({
-          fields: z.array(z.enum(["manufacturer", "size", "grade", "subType"])),
+          fields: z.array(z.enum(["manufacturer", "size", "grade", "subType", "seeker"])),
           format: z.enum(["suffix", "prefix"]),
         })).optional(),
         enabledPacks: z.array(z.string().max(100)).max(50).optional(),
+        categoryPacks: z.record(z.string().max(50), z.string().max(100)).optional(),
         enhanceContrabandWarnings: z.boolean().optional(),
         enhanceMaterialNames: z.boolean().optional(),
         enhanceBlueprintPools: z.boolean().optional(),
+        enhanceContractRep: z.boolean().optional(),
       }),
     ),
     async (c) => {
@@ -147,6 +155,10 @@ export function localizationRoutes() {
         ? JSON.stringify(body.enabledPacks)
         : null;
 
+      const categoryPacksJson = body.categoryPacks
+        ? JSON.stringify(body.categoryPacks)
+        : null;
+
       await db
         .prepare(
           `INSERT INTO user_localization_configs (
@@ -154,10 +166,11 @@ export function localizationRoutes() {
             labels_vehicle_components, labels_fps_weapons, labels_fps_armour,
             labels_fps_helmets, labels_fps_attachments, labels_fps_utilities,
             labels_consumables, labels_ship_missiles, label_format,
-            category_formats_json, enabled_packs_json,
+            category_formats_json, enabled_packs_json, category_packs_json,
             enhance_contraband_warnings, enhance_material_names, enhance_blueprint_pools,
+            enhance_contract_rep,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(user_id) DO UPDATE SET
             asop_enabled = excluded.asop_enabled,
             labels_vehicle_components = excluded.labels_vehicle_components,
@@ -171,9 +184,11 @@ export function localizationRoutes() {
             label_format = excluded.label_format,
             category_formats_json = COALESCE(excluded.category_formats_json, user_localization_configs.category_formats_json),
             enabled_packs_json = COALESCE(excluded.enabled_packs_json, user_localization_configs.enabled_packs_json),
+            category_packs_json = COALESCE(excluded.category_packs_json, user_localization_configs.category_packs_json),
             enhance_contraband_warnings = excluded.enhance_contraband_warnings,
             enhance_material_names = excluded.enhance_material_names,
             enhance_blueprint_pools = excluded.enhance_blueprint_pools,
+            enhance_contract_rep = excluded.enhance_contract_rep,
             updated_at = excluded.updated_at`,
         )
         .bind(
@@ -190,9 +205,11 @@ export function localizationRoutes() {
           body.labelFormat ?? "suffix",
           categoryFormatsJson,
           enabledPacksJson,
+          categoryPacksJson,
           body.enhanceContrabandWarnings ? 1 : 0,
           body.enhanceMaterialNames ? 1 : 0,
           body.enhanceBlueprintPools ? 1 : 0,
+          body.enhanceContractRep ? 1 : 0,
         )
         .run();
 
@@ -298,6 +315,265 @@ export function localizationRoutes() {
       })),
     });
   });
+
+  // ── GET /keys — Key Browser: paginated search over the base global.ini ─
+  //
+  // Searches the default version's base global.ini (key OR value substring)
+  // and returns one page of {key, value}. When the user has community packs
+  // enabled, the effective pack override value for a matched key is attached
+  // as `override` so they can see what their build would actually ship.
+
+  routes.get(
+    "/keys",
+    validate(
+      "query",
+      z.object({
+        q: z.string().max(200).optional(),
+        offset: z.coerce.number().int().min(0).max(5_000_000).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      }),
+    ),
+    async (c) => {
+      const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
+      const userId = getAuthUser(c).id;
+      const { q, offset, limit } = c.req.valid("query");
+
+      const ver = await db
+        .prepare("SELECT code FROM game_versions WHERE is_default = 1 LIMIT 1")
+        .first<{ code: string }>();
+      if (!ver) return c.json({ error: "No default game version configured" }, 500);
+
+      const base = await kv.get(`localization:global-ini:${ver.code}`);
+      if (base === null) {
+        return c.json({ error: "Base localization file not available for this version" }, 404);
+      }
+
+      const result = searchGlobalIniKeys(base, { q, offset, limit });
+
+      const configRow = await db
+        .prepare("SELECT enabled_packs_json FROM user_localization_configs WHERE user_id = ?")
+        .bind(userId)
+        .first();
+      const config = configRow ? configFromRow(configRow) : DEFAULT_CONFIG;
+
+      // Load ALL active packs once, keeping each pack's values SEPARATE (for
+      // cross-pack compare). The effective override is then computed from the
+      // user's enabled subset, by sort_order (last wins).
+      const activePacks = await db
+        .prepare("SELECT name, label FROM localization_overlay_packs WHERE is_active = 1 ORDER BY sort_order")
+        .all<{ name: string; label: string }>();
+      const packMaps: { name: string; label: string; map: Map<string, string> }[] = [];
+      for (const p of activePacks.results) {
+        const content = await kv.get(`localization:pack:${p.name}:${ver.code}`, "text");
+        const map = new Map<string, string>();
+        if (content) for (const [k, v] of parseIniOverrides(content)) map.set(k.toLowerCase(), v);
+        packMaps.push({ name: p.name, label: p.label, map });
+      }
+
+      const enabled = new Set(config.enabledPacks);
+      const overrideMap = new Map<string, string>();
+      for (const pm of packMaps) {
+        if (enabled.has(pm.name)) for (const [k, v] of pm.map) overrideMap.set(k, v);
+      }
+
+      // The user's own ad-hoc overrides ("My Customizations"), shown per row.
+      const userOvRows = await db
+        .prepare("SELECT loc_key, value FROM user_localization_overrides WHERE user_id = ?")
+        .bind(userId)
+        .all<{ loc_key: string; value: string }>();
+      const userOv = new Map(userOvRows.results.map((r) => [r.loc_key.toLowerCase(), r.value]));
+
+      const items = result.items.map((it) => {
+        const lk = it.key.toLowerCase();
+        const out: {
+          key: string;
+          value: string;
+          override?: string;
+          userOverride?: string;
+          packs?: { name: string; label: string; value: string }[];
+        } = { key: it.key, value: it.value };
+        const ov = overrideMap.get(lk);
+        if (ov !== undefined) out.override = ov;
+        const uo = userOv.get(lk);
+        if (uo !== undefined) out.userOverride = uo;
+        // Per-pack values for this key (cross-pack compare).
+        const packs = packMaps
+          .filter((pm) => pm.map.has(lk))
+          .map((pm) => ({ name: pm.name, label: pm.label, value: pm.map.get(lk)! }));
+        if (packs.length > 0) out.packs = packs;
+        return out;
+      });
+
+      return c.json({
+        version: ver.code,
+        total: result.total,
+        offset: offset ?? 0,
+        limit: limit ?? 50,
+        items,
+        userOverrideTotal: userOv.size,
+      });
+    },
+  );
+
+  // ── PUT /override — save an ad-hoc single-key override ────────────────
+  routes.put(
+    "/override",
+    validate("json", z.object({
+      key: z.string().min(1).max(300),
+      value: z.string().max(5000),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { key, value } = c.req.valid("json");
+      await db
+        .prepare(
+          `INSERT INTO user_localization_overrides (user_id, loc_key, value, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id, loc_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        )
+        .bind(userId, key, value)
+        .run();
+      return c.json({ ok: true });
+    },
+  );
+
+  // ── DELETE /override — reset a single-key override ────────────────────
+  routes.delete(
+    "/override",
+    validate("query", z.object({ key: z.string().min(1).max(300) })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { key } = c.req.valid("query");
+      await db
+        .prepare("DELETE FROM user_localization_overrides WHERE user_id = ? AND loc_key = ?")
+        .bind(userId, key)
+        .run();
+      return c.json({ ok: true });
+    },
+  );
+
+  // ── DELETE /overrides — clear ALL of the user's ad-hoc overrides ──────
+  routes.delete("/overrides", async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const res = await db
+      .prepare("DELETE FROM user_localization_overrides WHERE user_id = ?")
+      .bind(userId)
+      .run();
+    return c.json({ ok: true, cleared: res.meta.changes ?? 0 });
+  });
+
+  // ── POST /import — import a custom global.ini as personal overrides ────
+  //
+  // Diffs the uploaded file against the base global.ini and imports only the
+  // CHANGED keys (the user's actual customizations) into
+  // user_localization_overrides. Added keys (not in base) are ignored — they
+  // wouldn't match anything on merge. Large diffs are rejected (use a pack).
+  routes.post("/import", async (c) => {
+    const db = c.env.DB;
+    const kv = c.env.LOCALIZATION_KV;
+    const userId = getAuthUser(c).id;
+
+    const uploaded = await c.req.text();
+    if (!uploaded || uploaded.length < 5) {
+      return c.json({ error: "Empty or too-small file" }, 400);
+    }
+
+    const ver = await db
+      .prepare("SELECT code FROM game_versions WHERE is_default = 1 LIMIT 1")
+      .first<{ code: string }>();
+    if (!ver) return c.json({ error: "No default game version configured" }, 500);
+    const base = await kv.get(`localization:global-ini:${ver.code}`);
+    if (base === null) {
+      return c.json({ error: "Base localization file not available for this version" }, 404);
+    }
+
+    const diff = diffGlobalIni(base, uploaded);
+    const IMPORT_MAX = 2000;
+    if (diff.changed.length > IMPORT_MAX) {
+      return c.json(
+        { error: `Too many changes (${diff.changed.length}). For large sets, publish a community pack instead.` },
+        413,
+      );
+    }
+    if (diff.changed.length === 0) {
+      return c.json({ ok: true, imported: 0, message: "No changes vs the base file." });
+    }
+
+    // Upsert in chunks to stay within D1 batch limits.
+    const rows = diff.changed;
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100);
+      await db.batch(
+        chunk.map((ch) =>
+          db
+            .prepare(
+              `INSERT INTO user_localization_overrides (user_id, loc_key, value, updated_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(user_id, loc_key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+            )
+            .bind(userId, ch.key, ch.newValue),
+        ),
+      );
+    }
+
+    return c.json({ ok: true, imported: rows.length });
+  });
+
+  // ── POST /pack-request — user requests a community pack by link ───────
+  //
+  // Records the request (operational, no user_id stored — see migration 0245)
+  // and best-effort notifies Discord via an incoming webhook if configured.
+  routes.post(
+    "/pack-request",
+    validate("json", z.object({
+      url: z.string().url().max(1000),
+      note: z.string().max(1000).optional(),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
+      const user = getAuthUser(c);
+      const { url, note } = c.req.valid("json");
+
+      // Per-user hourly cap (defense-in-depth against spam to the table +
+      // Discord webhook). Transient KV counter with a 1-hour TTL — not user
+      // content, so it's outside the GDPR cascade.
+      const PACK_REQUEST_HOURLY_LIMIT = 10;
+      const rlKey = `ratelimit:packreq:${user.id}`;
+      const count = parseInt((await kv.get(rlKey)) || "0", 10);
+      if (count >= PACK_REQUEST_HOURLY_LIMIT) {
+        return c.json({ error: "Too many pack requests — try again later." }, 429);
+      }
+      await kv.put(rlKey, String(count + 1), { expirationTtl: 3600 });
+
+      await db
+        .prepare("INSERT INTO pack_requests (url, note) VALUES (?, ?)")
+        .bind(url, note ?? null)
+        .run();
+
+      // Best-effort Discord notification — never fails the request.
+      const hook = c.env.DISCORD_PACK_REQUEST_WEBHOOK;
+      if (hook) {
+        try {
+          await fetch(hook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: `📦 **Localization pack request**\nFrom: ${user.name || user.id}\nLink: ${url}${note ? `\nNote: ${note}` : ""}`,
+            }),
+          });
+        } catch {
+          /* notification is best-effort; the request is already recorded */
+        }
+      }
+
+      return c.json({ ok: true });
+    },
+  );
 
   // ── GET /preview — preview override key/value pairs ───────────────
 
@@ -425,27 +701,41 @@ export function localizationRoutes() {
     }
 
     // Three-layer merge: base → packs → personal overrides
-    // 1. Load enabled pack overrides (lowest priority of overrides)
+    // 1. Load enabled pack overrides (lowest priority of overrides), then
+    //    apply per-category pack assignments (a category's assigned pack wins
+    //    for keys in that category). Both load from the set of packs referenced
+    //    by either enabledPacks or categoryPacks.
     const overrideMap = new Map<string, string>();
 
-    if (config.enabledPacks.length > 0) {
+    const referencedPacks = new Set<string>([
+      ...config.enabledPacks,
+      ...Object.values(config.categoryPacks),
+    ]);
+    const packEntries: Record<string, Map<string, string>> = {};
+    if (referencedPacks.size > 0) {
+      const names = [...referencedPacks];
       const packRows = await db
         .prepare(
           `SELECT name FROM localization_overlay_packs
-           WHERE is_active = 1 AND name IN (${config.enabledPacks.map(() => "?").join(",")})
+           WHERE is_active = 1 AND name IN (${names.map(() => "?").join(",")})
            ORDER BY sort_order`,
         )
-        .bind(...config.enabledPacks)
+        .bind(...names)
         .all<{ name: string }>();
 
       for (const pack of packRows.results) {
         const content = await kv.get(`localization:pack:${pack.name}:${ver.code}`, "text");
-        if (content) {
-          const parsed = parseIniOverrides(content);
-          for (const [k, v] of parsed) overrideMap.set(k.toLowerCase(), v);
+        const map = new Map<string, string>();
+        if (content) for (const [k, v] of parseIniOverrides(content)) map.set(k.toLowerCase(), v);
+        packEntries[pack.name] = map;
+        // Wholesale: enabled packs apply across all keys (by sort_order).
+        if (config.enabledPacks.includes(pack.name)) {
+          for (const [k, v] of map) overrideMap.set(k, v);
         }
       }
     }
+    // Per-category assignment wins over the wholesale merge for its category.
+    applyCategoryPacks(overrideMap, config.categoryPacks, packEntries);
 
     // 2. Generate personal overrides (highest priority — overwrites packs)
     // All overrideMap keys are lowercased for case-insensitive merge.
@@ -590,11 +880,13 @@ async function buildOverrides(
     const gradeCol = cat.hasGrade ? "t.grade" : "NULL as grade";
     const tablesWithoutSize = ["consumables", "fps_utilities"];
     const sizeCol = tablesWithoutSize.includes(cat.table) ? "NULL as size" : "t.size";
+    // Only ship_missiles carries a seeker (tracking_signal); others select NULL.
+    const seekerCol = cat.table === "ship_missiles" ? "t.tracking_signal" : "NULL as tracking_signal";
 
     const rows = await db
       .prepare(
         `SELECT t.class_name, t.name, m.code as manufacturer_code,
-                ${sizeCol}, ${gradeCol}, t.sub_type
+                ${sizeCol}, ${gradeCol}, t.sub_type, ${seekerCol}
          FROM ${cat.table} t
          LEFT JOIN manufacturers m ON m.id = t.manufacturer_id
          WHERE t.is_deleted = 0
@@ -607,6 +899,7 @@ async function buildOverrides(
         size: number | null;
         grade: string | null;
         sub_type: string | null;
+        tracking_signal: string | null;
       }>();
 
     const itemRows: ItemRow[] = rows.results.map((r) => ({
@@ -616,6 +909,7 @@ async function buildOverrides(
       size: r.size,
       grade: r.grade,
       subType: r.sub_type,
+      seeker: missileSeekerCode(r.tracking_signal),
     }));
 
     const catFormat = resolveCategoryFormat(config, cat.table);
@@ -671,55 +965,106 @@ async function buildOverrides(
     overrides.push(...generateMaterialShortNames(allMaterialRows, validKeys));
   }
 
-  // Blueprint pools: append blueprint reward lists to contract descriptions
-  if (config.enhanceBlueprintPools) {
-    // Query: for each unique desc_loc_key with blueprints, get the blueprint names
-    const bpRows = await db
-      .prepare(
-        `SELECT DISTINCT cgc.desc_loc_key,
-                COALESCE(fw.name, fa.name, fh.name, fam.name, cb.name) as blueprint_name
-         FROM ${t("contract_generator_blueprint_pools")} cgbp
-         JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
-         JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
-         JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
-         LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fw.is_deleted = 0
-         LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fa.is_deleted = 0
-         LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fh.is_deleted = 0
-         LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '') AND fam.is_deleted = 0
-         WHERE cgc.is_deleted = 0
-         AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
-      )
-      .all<{ desc_loc_key: string; blueprint_name: string }>();
+  // Contract enhancements: reputation labels and/or blueprint pools. Both are
+  // independent toggles, fed as one row set into generateContractOverrides so
+  // they never double-write a shared title/description key.
+  if (config.enhanceBlueprintPools || config.enhanceContractRep) {
+    const contractRows: ContractRow[] = [];
 
-    // Group blueprints by desc_loc_key
-    const descKeyBps = new Map<string, string[]>();
-    for (const row of bpRows.results) {
-      const existing = descKeyBps.get(row.desc_loc_key) || [];
-      if (!existing.includes(row.blueprint_name)) {
-        existing.push(row.blueprint_name);
+    // Blueprint pools: append reward lists to descriptions + [BP] to titles.
+    // Names resolve across FPS gear AND ship components. The blueprint tag is
+    // mixed-case (BP_CRAFT_Mining_Laser_THCN_Helix_S0) while class_names are
+    // stored lowercase, so we lower() the tag side only — this keeps the join
+    // index-friendly (bare column) and recovers the ~40% of pool entries
+    // (mining lasers, salvage modifiers, radars, …) that previously fell
+    // through to the raw, de-camelCased tag name. Pools stay separated.
+    // Nested REPLACE strips BP_CRAFT_ OR a leading BP_ — 1563/1564 tags use
+    // BP_CRAFT_, but one (BP_HRST_LaserScatterGun_S2) uses BP_<MFR>_; stripping
+    // just BP_ leaves the mfr-prefixed class_name (hrst_laserscattergun_s2).
+    if (config.enhanceBlueprintPools) {
+      const bpRows = await db
+        .prepare(
+          `SELECT cgc.title_loc_key, cgc.desc_loc_key, cgc.rep_reward,
+                  cgbp.crafting_blueprint_reward_pool_id AS pool_key,
+                  COALESCE(fw.name, fa.name, fh.name, fam.name, vc.name, cb.name) AS blueprint_name,
+                  CASE WHEN fw.name IS NULL AND fa.name IS NULL AND fh.name IS NULL
+                            AND fam.name IS NULL AND vc.name IS NOT NULL
+                       THEN vc.type END AS component_type
+           FROM ${t("contract_generator_blueprint_pools")} cgbp
+           JOIN ${t("contract_generator_contracts")} cgc ON cgc.id = cgbp.contract_generator_contract_id
+           JOIN ${t("crafting_blueprint_reward_pool_items")} cbri ON cbri.crafting_blueprint_reward_pool_id = cgbp.crafting_blueprint_reward_pool_id
+           JOIN ${t("crafting_blueprints")} cb ON cb.id = cbri.crafting_blueprint_id
+           LEFT JOIN ${t("fps_weapons")} fw ON fw.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fw.is_deleted = 0
+           LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fa.is_deleted = 0
+           LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fh.is_deleted = 0
+           LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND fam.is_deleted = 0
+           LEFT JOIN ${t("vehicle_components")} vc ON vc.class_name = LOWER(REPLACE(REPLACE(cb.tag, 'BP_CRAFT_', ''), 'BP_', '')) AND vc.is_deleted = 0
+           WHERE cgc.is_deleted = 0
+           AND cgc.desc_loc_key IS NOT NULL AND cgc.desc_loc_key != ''`,
+        )
+        .all<{
+          title_loc_key: string | null;
+          desc_loc_key: string | null;
+          rep_reward: number | null;
+          pool_key: number;
+          blueprint_name: string;
+          component_type: string | null;
+        }>();
+
+      for (const r of bpRows.results) {
+        contractRows.push({
+          titleLocKey: r.title_loc_key || "",
+          descLocKey: r.desc_loc_key || "",
+          repReward: r.rep_reward,
+          poolKey: String(r.pool_key),
+          blueprintName: r.blueprint_name,
+          componentType: humanizeComponentType(r.component_type),
+        });
       }
-      descKeyBps.set(row.desc_loc_key, existing);
     }
 
-    // Generate overrides: append blueprint list to description
-    // The key may have a ,P suffix in global.ini (variant marker)
-    for (const [descKey, bpNames] of descKeyBps) {
-      // Try both exact key and ,P variant
-      const candidates = [descKey, `${descKey},P`];
-      const matchedKey = candidates
-        .map((k) => (validKeys ? validKeys.get(k.toLowerCase()) : k))
-        .find(Boolean);
-      if (!matchedKey) continue;
+    // Reputation labels on ALL rep-awarding contracts (rep-only rows; the Set
+    // in the renderer dedupes against rep already contributed by BP rows).
+    if (config.enhanceContractRep) {
+      const repRows = await db
+        .prepare(
+          `SELECT title_loc_key, desc_loc_key, rep_reward
+           FROM ${t("contract_generator_contracts")}
+           WHERE is_deleted = 0 AND rep_reward IS NOT NULL
+           AND (title_loc_key != '' OR desc_loc_key != '')`,
+        )
+        .all<{ title_loc_key: string | null; desc_loc_key: string | null; rep_reward: number | null }>();
 
-      const bpList = bpNames.map((n) => `- ${n}`).join("\\n");
-      // We can't read the original value from the base file here,
-      // so we use a sentinel that the download endpoint will handle:
-      // prefix with \0BP_APPEND\0 to signal "append to existing value"
-      overrides.push({
-        key: matchedKey,
-        value: `\0BP_APPEND\0\\n\\n<EM4>Potential Blueprints</EM4>\\n${bpList}`,
-      });
+      for (const r of repRows.results) {
+        contractRows.push({
+          titleLocKey: r.title_loc_key || "",
+          descLocKey: r.desc_loc_key || "",
+          repReward: r.rep_reward,
+          poolKey: null,
+          blueprintName: null,
+        });
+      }
     }
+
+    overrides.push(
+      ...generateContractOverrides(
+        contractRows,
+        { includeRep: config.enhanceContractRep, includeBlueprints: config.enhanceBlueprintPools },
+        validKeys,
+      ),
+    );
+  }
+
+  // Per-user ad-hoc key overrides ("My Customizations"). Pushed LAST so they
+  // win over community packs and generated labels — these are full-value
+  // replacements the user typed in the Key Browser.
+  const userOverrides = await db
+    .prepare("SELECT loc_key, value FROM user_localization_overrides WHERE user_id = ?")
+    .bind(userId)
+    .all<{ loc_key: string; value: string }>();
+  for (const o of userOverrides.results) {
+    const key = validKeys ? validKeys.get(o.loc_key.toLowerCase()) ?? o.loc_key : o.loc_key;
+    overrides.push({ key, value: o.value });
   }
 
   return overrides;

@@ -7,6 +7,7 @@ import AdminData from './Data'
 import AdminSync from './Sync'
 import AdminCache from './Cache'
 import AdminUsers from './Users'
+import AdminPacks from './Packs'
 
 const SUB_NAV = [
   { to: '/admin', label: 'Overview', end: true },
@@ -14,6 +15,7 @@ const SUB_NAV = [
   { to: '/admin/data', label: 'Data' },
   { to: '/admin/sync', label: 'Sync' },
   { to: '/admin/cache', label: 'Cache' },
+  { to: '/admin/packs', label: 'Packs' },
   { to: '/admin/users', label: 'Users' },
 ]
 
@@ -51,6 +53,7 @@ export default function Admin() {
         <Route path="data" element={<AdminData />} />
         <Route path="sync" element={<AdminSync />} />
         <Route path="cache" element={<AdminCache />} />
+        <Route path="packs" element={<AdminPacks />} />
         <Route path="users" element={<AdminUsers />} />
       </Routes>
     </div>

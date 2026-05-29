@@ -22,6 +22,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     // Tables without ON DELETE CASCADE — must clean up manually
     db.prepare("DELETE FROM user_localization_ship_order WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_localization_configs WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_localization_overrides WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM companion_events WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM companion_status WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM player_reputation WHERE user_id = ?").bind(userId),
@@ -64,9 +65,10 @@ const USER_TABLES = [
   "user_change_history",
   // Org verification pending (0125)
   "org_verification_pending",
-  // Localization builder (0127)
+  // Localization builder (0127) + ad-hoc key overrides (0244)
   "user_localization_configs",
   "user_localization_ship_order",
+  "user_localization_overrides",
   // Companion app (0136) — companion_events + companion_status survive
   "companion_events",
   "companion_status",
@@ -292,6 +294,15 @@ describe("GDPR — User Deletion Cascade", () => {
         .prepare(
           `INSERT INTO user_localization_configs (user_id, asop_enabled)
            VALUES (?, 1)`
+        )
+        .bind(user.userId)
+        .run();
+
+      // user_localization_overrides (migration 0244)
+      await db
+        .prepare(
+          `INSERT INTO user_localization_overrides (user_id, loc_key, value)
+           VALUES (?, 'ui_ButtonConfirm', 'Yes')`
         )
         .bind(user.userId)
         .run();

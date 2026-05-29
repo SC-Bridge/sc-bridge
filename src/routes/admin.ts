@@ -7,6 +7,7 @@ import { concurrentMap } from "../lib/utils";
 import { validate } from "../lib/validation";
 import { purgeByPrefix } from "../lib/cache";
 import { normaliseTitle } from "../lib/titleNorm";
+import { runLocalizationIngest } from "../sync/localizationIngest";
 
 /**
  * /api/admin/* — Admin-only management endpoints (super_admin required)
@@ -623,6 +624,73 @@ export function adminRoutes() {
       .all();
     return c.json({ packs: rows.results });
   });
+
+  /** PATCH /api/admin/localization/overlay-pack/:name — edit active state and/or metadata */
+  routes.patch(
+    "/localization/overlay-pack/:name",
+    validate("param", z.object({ name: z.string().regex(/^[a-z0-9-]+$/) })),
+    validate("json", z.object({
+      is_active: z.boolean().optional(),
+      label: z.string().min(1).max(200).optional(),
+      description: z.string().max(500).nullable().optional(),
+      sort_order: z.coerce.number().int().optional(),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const { name } = c.req.valid("param");
+      const body = c.req.valid("json");
+
+      const sets: string[] = [];
+      const values: unknown[] = [];
+      if (body.is_active !== undefined) { sets.push("is_active = ?"); values.push(body.is_active ? 1 : 0); }
+      if (body.label !== undefined) { sets.push("label = ?"); values.push(body.label); }
+      if (body.description !== undefined) { sets.push("description = ?"); values.push(body.description); }
+      if (body.sort_order !== undefined) { sets.push("sort_order = ?"); values.push(body.sort_order); }
+      if (sets.length === 0) return c.json({ error: "No fields to update" }, 400);
+      sets.push("updated_at = datetime('now')");
+
+      const res = await db
+        .prepare(`UPDATE localization_overlay_packs SET ${sets.join(", ")} WHERE name = ?`)
+        .bind(...values, name)
+        .run();
+      if (!res.meta.changes) return c.json({ error: "Pack not found" }, 404);
+      return c.json({ ok: true });
+    },
+  );
+
+  /** POST /api/admin/localization/ingest — run the community base-ini auto-ingest now */
+  routes.post("/localization/ingest", async (c) => {
+    const result = await runLocalizationIngest(c.env);
+    return c.json(result);
+  });
+
+  /** GET /api/admin/localization/pack-requests — review user pack requests */
+  routes.get("/localization/pack-requests", async (c) => {
+    const db = c.env.DB;
+    const rows = await db
+      .prepare("SELECT * FROM pack_requests ORDER BY created_at DESC LIMIT 200")
+      .all();
+    return c.json({ requests: rows.results });
+  });
+
+  /** DELETE /api/admin/localization/overlay-pack/:name — remove pack + KV content */
+  routes.delete(
+    "/localization/overlay-pack/:name",
+    validate("param", z.object({ name: z.string().regex(/^[a-z0-9-]+$/) })),
+    async (c) => {
+      const db = c.env.DB;
+      const kv = c.env.LOCALIZATION_KV;
+      const { name } = c.req.valid("param");
+      const row = await db
+        .prepare("SELECT version_code FROM localization_overlay_packs WHERE name = ?")
+        .bind(name)
+        .first<{ version_code: string }>();
+      if (!row) return c.json({ error: "Pack not found" }, 404);
+      await kv.delete(`localization:pack:${name}:${row.version_code}`);
+      await db.prepare("DELETE FROM localization_overlay_packs WHERE name = ?").bind(name).run();
+      return c.json({ ok: true });
+    },
+  );
 
   // ── Rating audit (super_admin) ──────────────────────────────────────
 

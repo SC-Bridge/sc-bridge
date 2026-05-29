@@ -1,5 +1,5 @@
 import React from 'react'
-import { FlaskConical, AlertTriangle, Gem } from 'lucide-react'
+import { FlaskConical, AlertTriangle, Gem, Award } from 'lucide-react'
 
 function Toggle({ checked, onChange }) {
   return (
@@ -40,13 +40,24 @@ const ENHANCEMENTS = [
   {
     configKey: 'enhanceBlueprintPools',
     label: 'Blueprint Pools',
-    desc: 'Append potential blueprint rewards to contract descriptions so you can see what each contract might drop before accepting.',
+    desc: 'Tag blueprint-awarding contracts with [BP] + reputation in the title, and append the potential blueprint rewards (kept separated by pool) to the description so you can see what each contract might drop before accepting.',
     icon: FlaskConical,
     iconColor: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30',
-    example: '...contract text... Potential Blueprints: R97 Shotgun, Monde Arms Camo',
-    count: '450+ contracts',
+    example: 'Your Best Shot [10 Rep] [BP] — Potential Blueprints: R97 Shotgun, Monde Arms',
+    count: '320+ contracts',
+  },
+  {
+    configKey: 'enhanceContractRep',
+    label: 'Contract Reputation',
+    desc: 'Show the reputation award amount on every rep-granting contract — [N Rep] in the title and a Reputation Awarded line in the description. Ranges shown when a contract spans difficulty tiers.',
+    icon: Award,
+    iconColor: 'text-amber-400',
+    bgColor: 'bg-amber-500/10',
+    borderColor: 'border-amber-500/30',
+    example: 'Need Resource for Research [100 Rep]',
+    count: '400+ contracts',
   },
 ]
 
