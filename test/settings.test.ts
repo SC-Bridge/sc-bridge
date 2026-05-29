@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
-import { createTestUser, authHeaders } from "./helpers";
+import { createTestUser, authHeaders, seedVehicle } from "./helpers";
 
 describe("Settings — /api/settings/preferences", () => {
   beforeAll(async () => {
@@ -176,6 +176,41 @@ describe("Settings — /api/settings/preferences", () => {
         body: JSON.stringify({ publicFleetShare: "yes" }),
       });
       expect(res.status).toBe(400);
+    });
+
+    it("toggling publicFleetShare off makes /api/u/:handle/fleet return 404", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+
+      // Set up a verified handle and seed a public ship
+      await env.DB.prepare(
+        `INSERT INTO user_rsi_profile (user_id, handle, verified_handle, verified_at, fetched_at)
+         VALUES (?, 'iris', 'iris', datetime('now'), datetime('now'))`,
+      ).bind(userId).run();
+      const vehicleId = await seedVehicle(env.DB, { slug: "300i-iris", name: "300i" });
+      await env.DB.prepare(
+        `INSERT INTO user_fleet (user_id, vehicle_id, org_visibility, imported_at)
+         VALUES (?, ?, 'public', datetime('now'))`,
+      ).bind(userId, vehicleId).run();
+
+      // Toggle ON
+      const onRes = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: "true" }),
+      });
+      expect(onRes.status).toBe(200);
+      let publicRes = await SELF.fetch("http://localhost/api/u/iris/fleet");
+      expect(publicRes.status).toBe(200);
+
+      // Toggle OFF
+      const offRes = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: null }),
+      });
+      expect(offRes.status).toBe(200);
+      publicRes = await SELF.fetch("http://localhost/api/u/iris/fleet");
+      expect(publicRes.status).toBe(404);
     });
   });
 });
