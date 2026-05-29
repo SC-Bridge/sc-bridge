@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
+import { purgePublicFleetCache } from "../lib/publicFleet";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -58,6 +59,14 @@ export function fleetRoutes() {
     if (result.meta.changes === 0) {
       return c.json({ error: "Not found or not authorized" }, 404);
     }
+
+    // Bust public-fleet KV cache so the shareable link reflects the change.
+    // Lookup is best-effort — a missing verified_handle means no cache entry exists.
+    const handleRow = await db
+      .prepare("SELECT verified_handle FROM user_rsi_profile WHERE user_id = ?")
+      .bind(userID)
+      .first<{ verified_handle: string | null }>();
+    await purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handleRow?.verified_handle ?? null);
 
     return c.json({ ok: true });
   });

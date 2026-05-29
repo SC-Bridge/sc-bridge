@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
-import { createTestUser, seedVehicle, seedFleetEntry } from "./helpers";
+import { createTestUser, seedVehicle, seedFleetEntry, authHeaders } from "./helpers";
 
 async function setHandle(userId: string, handle: string) {
   await env.DB.prepare(
@@ -140,5 +140,33 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     const res = await SELF.fetch("http://localhost/api/u/gavin/fleet");
     const body = (await res.json()) as { handle: string };
     expect(body.handle).toBe("Gavin");
+  });
+
+  it("PATCH /api/vehicles/:id/visibility purges public fleet cache", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await setHandle(userId, "Helen");
+    await enableShare(userId);
+    const v1 = await seedVehicle(env.DB, { slug: "cutlass-helen", name: "Cutlass Black" });
+    const fleetId = await seedFleetEntry(env.DB, userId, v1, {});
+
+    // Initial fetch — ship not visible (default visibility is private)
+    let res = await SELF.fetch("http://localhost/api/u/helen/fleet");
+    let body = await res.json() as { ships: unknown[] };
+    expect(body.ships).toHaveLength(0);
+
+    // Flip to public via the authenticated PATCH endpoint
+    const patch = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/visibility`, {
+      method: "PATCH",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ org_visibility: "public" }),
+    });
+    expect(patch.status).toBe(200);
+
+    // Next public fetch must reflect the change (test-env bypasses KV;
+    // in prod, the explicit purge ensures freshness)
+    res = await SELF.fetch("http://localhost/api/u/helen/fleet");
+    body = await res.json() as { ships: Array<{ vehicle_name: string }> };
+    expect(body.ships).toHaveLength(1);
+    expect((body.ships[0] as { vehicle_name: string }).vehicle_name).toBe("Cutlass Black");
   });
 });
