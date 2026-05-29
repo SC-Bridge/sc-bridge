@@ -100,4 +100,40 @@ describe('PublicFleetSection', () => {
       expect(JSON.parse(putCall[1].body)).toEqual({ publicFleetShare: null })
     })
   })
+
+  it('treats extension-verified user as verified (profile.verified_handle null)', async () => {
+    global.fetch = vi.fn((url, opts) => {
+      if (typeof url === 'string' && url.includes('/api/account/rsi-profile')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            profile: { handle: 'ExtUser', verified_handle: null },
+            verification: { verified: true, verified_handle: 'ExtUser' },
+            extensionProfile: { rsi_handle: 'ExtUser' },
+          }),
+        })
+      }
+      if (typeof url === 'string' && url.includes('/api/settings/preferences')) {
+        return Promise.resolve({ ok: true, json: async () => ({}) })
+      }
+      return Promise.reject(new Error(`unmocked: ${url}`))
+    })
+    render(<MemoryRouter><PublicFleetSection /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeInTheDocument())
+    // verification prompt should NOT appear
+    expect(screen.queryByText(/verify your rsi handle/i)).toBeNull()
+  })
+
+  it('shows Failed when clipboard rejects', async () => {
+    // Set up with publicFleetShare enabled so the Copy button is visible immediately
+    setup({ verifiedHandle: 'JeanLuc', publicFleetShare: 'true' })
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('blocked')) },
+      configurable: true,
+    })
+    render(<MemoryRouter><PublicFleetSection /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Copy')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Copy'))
+    await waitFor(() => expect(screen.getByText('Failed')).toBeInTheDocument())
+  })
 })

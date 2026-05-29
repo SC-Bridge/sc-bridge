@@ -20,6 +20,7 @@ export default function PublicFleetSection() {
   const [rsiLoading, setRsiLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -28,7 +29,10 @@ export default function PublicFleetSection() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled) return
-        const handle = data?.profile?.verified_handle || null
+        const handle =
+          data?.profile?.verified_handle ||
+          (data?.verification?.verified ? data?.verification?.verified_handle : null) ||
+          null
         const isVerified = data?.verification?.verified
         setVerifiedHandle(isVerified ? handle : null)
         setRsiLoading(false)
@@ -60,12 +64,16 @@ export default function PublicFleetSection() {
   function copyLink() {
     if (!verifiedHandle) return
     const url = `${window.location.origin}/u/${encodeURIComponent(verifiedHandle)}/fleet`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {
-      // Clipboard blocked — non-critical
-    })
+    navigator.clipboard.writeText(url)
+      .then(() => {
+        setCopyError(false)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {
+        setCopyError(true)
+        setTimeout(() => setCopyError(false), 3000)
+      })
   }
 
   const loading = prefsLoading || rsiLoading
@@ -139,7 +147,12 @@ export default function PublicFleetSection() {
                     className="px-2 py-1 rounded border border-sc-border hover:border-sc-accent/30 hover:bg-sc-accent/10 transition-colors text-xs text-gray-300 flex items-center gap-1 shrink-0"
                     title="Copy link"
                   >
-                    {copied ? (
+                    {copyError ? (
+                      <>
+                        <AlertCircle className="w-3 h-3 text-sc-danger" />
+                        Failed
+                      </>
+                    ) : copied ? (
                       <>
                         <Check className="w-3 h-3 text-green-400" />
                         Copied
