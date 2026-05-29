@@ -22,18 +22,25 @@ export function publicFleetRoutes() {
     const cacheKey = publicFleetCacheKey(handle);
 
     return cachedJson(c, cacheKey, async () => {
+      // Match the handle against EITHER verification path:
+      //   - `user_rsi_profile.verified_handle` (manual citizen-page verification)
+      //   - `user_rsi_profiles.rsi_handle` (browser extension sync)
+      // Both count as "verified" per account.ts:223-225 (`isManualVerified || isExtensionVerified`).
+      // COALESCE prefers the manual handle for canonical-case display.
       const row = await db
         .prepare(
-          `SELECT urp.user_id, urp.verified_handle
-           FROM user_rsi_profile urp
-           JOIN user_settings us
-             ON us.user_id = urp.user_id
-            AND us.key = 'publicFleetShare'
-            AND us.value = 'true'
-           WHERE LOWER(urp.verified_handle) = LOWER(?)
+          `SELECT
+             us.user_id,
+             COALESCE(urp.verified_handle, urps.rsi_handle) AS verified_handle
+           FROM user_settings us
+           LEFT JOIN user_rsi_profile urp ON urp.user_id = us.user_id
+           LEFT JOIN user_rsi_profiles urps ON urps.user_id = us.user_id
+           WHERE us.key = 'publicFleetShare'
+             AND us.value = 'true'
+             AND (LOWER(urp.verified_handle) = LOWER(?) OR LOWER(urps.rsi_handle) = LOWER(?))
            LIMIT 1`,
         )
-        .bind(handle)
+        .bind(handle, handle)
         .first<{ user_id: string; verified_handle: string }>();
 
       if (!row) return null;

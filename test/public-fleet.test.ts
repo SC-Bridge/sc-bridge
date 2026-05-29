@@ -29,6 +29,16 @@ async function setOrgVisibility(fleetId: number, visibility: string) {
     .run();
 }
 
+async function setExtensionHandle(userId: string, handle: string) {
+  await env.DB.prepare(
+    `INSERT INTO user_rsi_profiles (user_id, rsi_handle, synced_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET rsi_handle = excluded.rsi_handle, synced_at = datetime('now')`,
+  )
+    .bind(userId, handle)
+    .run();
+}
+
 describe("Public Fleet API — /api/u/:handle/fleet", () => {
   beforeAll(async () => {
     await setupTestDatabase(env.DB);
@@ -140,6 +150,73 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     const res = await SELF.fetch("http://localhost/api/u/gavin/fleet");
     const body = (await res.json()) as { handle: string };
     expect(body.handle).toBe("Gavin");
+  });
+
+  it("resolves extension-verified user (no user_rsi_profile row, only user_rsi_profiles)", async () => {
+    const { userId } = await createTestUser(env.DB);
+    await setExtensionHandle(userId, "ExtUser");
+    await enableShare(userId);
+    const vid = await seedVehicle(env.DB, { slug: "aurora-extuser", name: "Aurora LN" });
+    const fid = await seedFleetEntry(env.DB, userId, vid, {});
+    await setOrgVisibility(fid, "public");
+
+    const res = await SELF.fetch("http://localhost/api/u/ExtUser/fleet");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { handle: string; ships: Array<{ vehicle_name: string }> };
+    expect(body.handle).toBe("ExtUser");
+    expect(body.ships).toHaveLength(1);
+    expect(body.ships[0].vehicle_name).toBe("Aurora LN");
+  });
+
+  it("extension-verified lookup is case-insensitive", async () => {
+    const { userId } = await createTestUser(env.DB);
+    await setExtensionHandle(userId, "MixedCaseExt");
+    await enableShare(userId);
+    const vid = await seedVehicle(env.DB, { slug: "gladius-mixed", name: "Gladius" });
+    const fid = await seedFleetEntry(env.DB, userId, vid, {});
+    await setOrgVisibility(fid, "public");
+
+    const res = await SELF.fetch("http://localhost/api/u/mixedcaseext/fleet");
+    expect(res.status).toBe(200);
+  });
+
+  it("when user has both manual + extension verification, manual handle takes precedence", async () => {
+    const { userId } = await createTestUser(env.DB);
+    await setHandle(userId, "ManualName");
+    await setExtensionHandle(userId, "ExtName");
+    await enableShare(userId);
+
+    // Both names should resolve to the same user (manual preferred in canonical case)
+    const m = await SELF.fetch("http://localhost/api/u/ManualName/fleet");
+    expect(m.status).toBe(200);
+    const mBody = (await m.json()) as { handle: string };
+    expect(mBody.handle).toBe("ManualName");
+
+    const e = await SELF.fetch("http://localhost/api/u/ExtName/fleet");
+    expect(e.status).toBe(200);
+  });
+
+  it("PATCH /api/vehicles/:id/visibility purges cache for extension-verified user", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await setExtensionHandle(userId, "ExtPurge");
+    await enableShare(userId);
+    const vid = await seedVehicle(env.DB, { slug: "cutlass-extpurge", name: "Cutlass Black" });
+    const fleetId = await seedFleetEntry(env.DB, userId, vid, {});
+
+    let res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
+    let body = (await res.json()) as { ships: unknown[] };
+    expect(body.ships).toHaveLength(0);
+
+    const patch = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/visibility`, {
+      method: "PATCH",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ org_visibility: "public" }),
+    });
+    expect(patch.status).toBe(200);
+
+    res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
+    body = (await res.json()) as { ships: Array<{ vehicle_name: string }> };
+    expect(body.ships).toHaveLength(1);
   });
 
   it("PATCH /api/vehicles/:id/visibility purges public fleet cache", async () => {

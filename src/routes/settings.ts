@@ -4,7 +4,7 @@ import { getAuthUser, type HonoEnv } from "../lib/types";
 import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
 import { logUserChange } from "../lib/change-history";
 import { validate, LLMProvider } from "../lib/validation";
-import { purgePublicFleetCache } from "../lib/publicFleet";
+import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
 
 /**
  * /api/settings/* — User settings and LLM configuration
@@ -229,12 +229,9 @@ export function settingsRoutes() {
     // Bust public-fleet KV cache when the share toggle changes. Use waitUntil
     // so a transient KV error doesn't 500 the settings save.
     if ('publicFleetShare' in body) {
-      const handleRow = await db
-        .prepare("SELECT verified_handle FROM user_rsi_profile WHERE user_id = ?")
-        .bind(userID)
-        .first<{ verified_handle: string | null }>();
+      const handle = await resolveVerifiedHandle(db, userID);
       c.executionCtx.waitUntil(
-        purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handleRow?.verified_handle ?? null)
+        purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle)
           .catch((err) => console.error("[settings/preferences] KV purge failed (non-fatal):", err)),
       );
     }

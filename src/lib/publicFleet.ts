@@ -12,6 +12,25 @@ export async function purgePublicFleetCache(
   await kv.delete(publicFleetCacheKey(handle));
 }
 
+// Resolves a user's verified RSI handle from either verification path.
+// Manual verification writes to `user_rsi_profile.verified_handle`; the
+// browser extension writes to `user_rsi_profiles.rsi_handle` (plural).
+// Manual takes precedence when both are present.
+export async function resolveVerifiedHandle(
+  db: D1Database,
+  userID: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare(
+      `SELECT
+         (SELECT verified_handle FROM user_rsi_profile WHERE user_id = ?) AS manual_handle,
+         (SELECT rsi_handle FROM user_rsi_profiles WHERE user_id = ?) AS ext_handle`,
+    )
+    .bind(userID, userID)
+    .first<{ manual_handle: string | null; ext_handle: string | null }>();
+  return row?.manual_handle || row?.ext_handle || null;
+}
+
 // Curated SELECT for the public fleet endpoint. Excludes all monetary
 // fields per the share-link spec: no pledge_cost, no current_value_cents,
 // no pledge_price (MSRP), no pledge_id/name/date/warbond/is_loaner,
