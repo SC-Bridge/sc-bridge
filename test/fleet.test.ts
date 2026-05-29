@@ -313,4 +313,133 @@ describe("Fleet API — /api/vehicles", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe("PATCH /api/vehicles/bulk-visibility", () => {
+    it("mode 'all' sets every ship in the caller's fleet", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const v1 = await seedVehicle(env.DB, { slug: "bulk-v1", name: "Aurora" });
+      const v2 = await seedVehicle(env.DB, { slug: "bulk-v2", name: "Gladius" });
+      const v3 = await seedVehicle(env.DB, { slug: "bulk-v3", name: "Carrack" });
+      await seedFleetEntry(env.DB, userId, v1, {});
+      await seedFleetEntry(env.DB, userId, v2, {});
+      await seedFleetEntry(env.DB, userId, v3, {});
+
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "all", org_visibility: "public" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; updated: number };
+      expect(body.ok).toBe(true);
+      expect(body.updated).toBe(3);
+
+      const rows = await env.DB
+        .prepare(`SELECT org_visibility FROM user_fleet WHERE user_id = ?`)
+        .bind(userId)
+        .all<{ org_visibility: string }>();
+      expect(rows.results.every((r) => r.org_visibility === "public")).toBe(true);
+    });
+
+    it("mode 'all' never touches another user's ships", async () => {
+      const u1 = await createTestUser(env.DB);
+      const u2 = await createTestUser(env.DB);
+      const v = await seedVehicle(env.DB, { slug: "bulk-isolation", name: "Iso" });
+      await seedFleetEntry(env.DB, u1.userId, v, {});
+      const f2 = await seedFleetEntry(env.DB, u2.userId, v, {});
+
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(u1.sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "all", org_visibility: "public" }),
+      });
+      expect(res.status).toBe(200);
+
+      const otherRow = await env.DB
+        .prepare(`SELECT org_visibility FROM user_fleet WHERE id = ?`)
+        .bind(f2)
+        .first<{ org_visibility: string }>();
+      expect(otherRow?.org_visibility).toBe("private");
+    });
+
+    it("mode 'entries' applies per-id visibility for the caller's ships", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const v1 = await seedVehicle(env.DB, { slug: "entries-v1", name: "Aurora" });
+      const v2 = await seedVehicle(env.DB, { slug: "entries-v2", name: "Gladius" });
+      const f1 = await seedFleetEntry(env.DB, userId, v1, {});
+      const f2 = await seedFleetEntry(env.DB, userId, v2, {});
+
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "entries",
+          entries: [
+            { id: f1, org_visibility: "public" },
+            { id: f2, org_visibility: "officers" },
+          ],
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; updated: number };
+      expect(body.updated).toBe(2);
+
+      const r1 = await env.DB.prepare(`SELECT org_visibility FROM user_fleet WHERE id = ?`).bind(f1).first<{ org_visibility: string }>();
+      const r2 = await env.DB.prepare(`SELECT org_visibility FROM user_fleet WHERE id = ?`).bind(f2).first<{ org_visibility: string }>();
+      expect(r1?.org_visibility).toBe("public");
+      expect(r2?.org_visibility).toBe("officers");
+    });
+
+    it("mode 'entries' silently ignores ids that don't belong to the caller", async () => {
+      const u1 = await createTestUser(env.DB);
+      const u2 = await createTestUser(env.DB);
+      const v = await seedVehicle(env.DB, { slug: "entries-foreign", name: "Iso2" });
+      const f2 = await seedFleetEntry(env.DB, u2.userId, v, {});
+
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(u1.sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "entries",
+          entries: [{ id: f2, org_visibility: "public" }],
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { updated: number };
+      expect(body.updated).toBe(0);
+
+      const r = await env.DB.prepare(`SELECT org_visibility FROM user_fleet WHERE id = ?`).bind(f2).first<{ org_visibility: string }>();
+      expect(r?.org_visibility).toBe("private");
+    });
+
+    it("rejects unauthenticated requests", async () => {
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "all", org_visibility: "public" }),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects invalid org_visibility value", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "all", org_visibility: "bogus" }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects entries-mode body with too many entries (cap 500)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const entries = Array.from({ length: 501 }, (_, i) => ({ id: i + 1, org_visibility: "public" }));
+      const res = await SELF.fetch("http://localhost/api/vehicles/bulk-visibility", {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "entries", entries }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
 });

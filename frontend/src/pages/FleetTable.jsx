@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useFleet, useUserOrgs, updateShipVisibility } from '../hooks/useAPI'
-import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter } from 'lucide-react'
+import { useFleet, useUserOrgs, updateShipVisibility, bulkSetVisibility } from '../hooks/useAPI'
+import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check } from 'lucide-react'
+import AlertBanner from '../components/AlertBanner'
 import PageHeader from '../components/PageHeader'
 import PrivacyMask from '../components/PrivacyMask'
 import LoadingState from '../components/LoadingState'
@@ -80,6 +81,50 @@ const VISIBILITY_OPTIONS = [
   { value: 'public', label: 'Public' },
 ]
 
+// "Set all" header dropdown — same options as the per-row select but the
+// onPick fires a bulk update instead of changing a single row. Rendered in
+// the Visibility column header.
+function BulkVisibilityHeader({ onPick, disabled }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative inline-block ml-2 normal-case">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        className="text-[10px] tracking-wide text-gray-500 hover:text-sc-accent flex items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="Set visibility on every ship in your fleet"
+      >
+        Set all
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 right-0 w-32 rounded-lg bg-gray-800/95 backdrop-blur-md border border-white/[0.1] shadow-xl shadow-black/40 overflow-hidden">
+          {VISIBILITY_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onPick(opt.value) }}
+              className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function VisibilitySelect({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -139,6 +184,46 @@ export default function FleetTable() {
   const sizeFilter = searchParams.get('size') || 'all'
 
   const inOrgs = !!(orgsData?.orgs?.length > 0)
+
+  // Bulk-visibility undo state. Holds the previous (id → org_visibility) snapshot
+  // for 5s so the user can revert a "Set all" they didn't mean. The timerId is
+  // tracked so a second "Set all" cancels any pending dismiss.
+  const [bulkUndo, setBulkUndo] = useState(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  async function handleBulkVisibility(value) {
+    if (!fleet || fleet.length === 0 || bulkBusy) return
+    const snapshot = fleet.map((s) => ({ id: s.id, org_visibility: s.org_visibility || 'private' }))
+    setBulkBusy(true)
+    try {
+      await bulkSetVisibility({ mode: 'all', org_visibility: value })
+      await refetch()
+      if (bulkUndo?.timerId) clearTimeout(bulkUndo.timerId)
+      const timerId = setTimeout(() => setBulkUndo(null), 5000)
+      setBulkUndo({ applied: value, count: snapshot.length, snapshot, timerId })
+    } catch (err) {
+      console.error('[fleet] bulk visibility failed', err)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function handleBulkUndo() {
+    if (!bulkUndo || bulkBusy) return
+    clearTimeout(bulkUndo.timerId)
+    setBulkBusy(true)
+    try {
+      await bulkSetVisibility({ mode: 'entries', entries: bulkUndo.snapshot })
+      await refetch()
+    } catch (err) {
+      console.error('[fleet] bulk undo failed', err)
+    } finally {
+      setBulkBusy(false)
+      setBulkUndo(null)
+    }
+  }
+
+  useEffect(() => () => { if (bulkUndo?.timerId) clearTimeout(bulkUndo.timerId) }, [bulkUndo])
 
   const packFilter = searchParams.get('pack') || 'all'
 
@@ -247,6 +332,28 @@ export default function FleetTable() {
 
       <ShareFleetBanner />
 
+      {bulkUndo && (
+        <AlertBanner variant="success" icon={Check}>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>
+              Set <strong className="text-white">{bulkUndo.count}</strong>{' '}
+              {bulkUndo.count === 1 ? 'ship' : 'ships'} to{' '}
+              <strong className="text-white">
+                {VISIBILITY_OPTIONS.find((o) => o.value === bulkUndo.applied)?.label || bulkUndo.applied}
+              </strong>
+            </span>
+            <button
+              type="button"
+              onClick={handleBulkUndo}
+              disabled={bulkBusy}
+              className="px-3 py-1 rounded border border-sc-border hover:border-sc-accent/40 hover:bg-sc-accent/10 transition-colors text-xs text-gray-300 disabled:opacity-50"
+            >
+              Undo
+            </button>
+          </div>
+        </AlertBanner>
+      )}
+
       <div className="flex gap-3 items-center">
         <SearchInput
           value={filter}
@@ -328,7 +435,10 @@ export default function FleetTable() {
                     </span>
                   </th>
                 ))}
-                <th scope="col" className="table-header">Visibility</th>
+                <th scope="col" className="table-header">
+                  Visibility
+                  <BulkVisibilityHeader onPick={handleBulkVisibility} disabled={bulkBusy || !fleet?.length} />
+                </th>
                 {inOrgs && <th scope="col" className="table-header">Ops</th>}
               </tr>
             </thead>

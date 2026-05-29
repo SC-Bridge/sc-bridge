@@ -329,6 +329,13 @@ export async function updateShipVisibility(fleetEntryId, updates) {
   return patchJSON(`/vehicles/${fleetEntryId}/visibility`, updates)
 }
 
+// Bulk set visibility on many ships in one call.
+//   body = { mode: 'all', org_visibility }
+//   body = { mode: 'entries', entries: [{ id, org_visibility }] }
+export async function bulkSetVisibility(body) {
+  return patchJSON('/vehicles/bulk-visibility', body)
+}
+
 export async function equipFleetPaint(fleetEntryId, paintId) {
   return patchJSON(`/vehicles/${fleetEntryId}/paint`, { paint_id: paintId })
 }

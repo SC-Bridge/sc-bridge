@@ -20,6 +20,66 @@ export function fleetRoutes() {
     return getFleetList(c.env.DB, getAuthUser(c).id, c);
   });
 
+  // PATCH /api/vehicles/bulk-visibility — set visibility on many ships in one call.
+  // Two modes:
+  //   { mode: "all", org_visibility }         → UPDATE every ship in caller's fleet
+  //   { mode: "entries", entries: [{id, ov}] } → per-id batch, scoped to caller's ships
+  // Single KV cache purge fires after the writes via waitUntil.
+  routes.patch("/bulk-visibility",
+    validate("json", z.discriminatedUnion("mode", [
+      z.object({
+        mode: z.literal("all"),
+        org_visibility: OrgVisibility,
+      }),
+      z.object({
+        mode: z.literal("entries"),
+        entries: z
+          .array(z.object({
+            id: z.number().int().positive(),
+            org_visibility: OrgVisibility,
+          }))
+          .min(1, "entries cannot be empty")
+          .max(500, "entries cannot exceed 500 items"),
+      }),
+    ])),
+    async (c) => {
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const body = c.req.valid("json");
+
+      let updated = 0;
+      if (body.mode === "all") {
+        const result = await db
+          .prepare(`UPDATE user_fleet SET org_visibility = ? WHERE user_id = ?`)
+          .bind(body.org_visibility, userID)
+          .run();
+        updated = result.meta.changes ?? 0;
+      } else {
+        // entries — batch the per-id updates. Each statement scopes by user_id
+        // so foreign ids are silently no-ops (consistent with the single-row
+        // visibility PATCH which 404s on foreign ids; for bulk we just count).
+        const stmt = db.prepare(
+          `UPDATE user_fleet SET org_visibility = ? WHERE id = ? AND user_id = ?`,
+        );
+        const batch = body.entries.map((e) =>
+          stmt.bind(e.org_visibility, e.id, userID),
+        );
+        const results = await db.batch(batch);
+        updated = results.reduce((sum, r) => sum + (r.meta.changes ?? 0), 0);
+      }
+
+      // Single KV purge for the whole bulk op — same waitUntil pattern as the
+      // per-ship PATCH so transient KV errors don't fail the user's write.
+      const handle = await resolveVerifiedHandle(db, userID);
+      c.executionCtx.waitUntil(
+        purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle)
+          .catch((err) => console.error("[fleet/bulk-visibility] KV purge failed (non-fatal):", err)),
+      );
+
+      return c.json({ ok: true, updated });
+    },
+  );
+
   // PATCH /api/vehicles/:id/visibility — update org_visibility and/or available_for_ops
   routes.patch("/:id/visibility",
     validate("param", IntIdParam),
