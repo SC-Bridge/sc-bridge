@@ -66,7 +66,10 @@ export function fleetRoutes() {
       .prepare("SELECT verified_handle FROM user_rsi_profile WHERE user_id = ?")
       .bind(userID)
       .first<{ verified_handle: string | null }>();
-    await purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handleRow?.verified_handle ?? null);
+    c.executionCtx.waitUntil(
+      purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handleRow?.verified_handle ?? null)
+        .catch((err) => console.error("[fleet/visibility] KV purge failed (non-fatal):", err)),
+    );
 
     return c.json({ ok: true });
   });
