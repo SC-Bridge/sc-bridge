@@ -130,4 +130,52 @@ describe("Settings — /api/settings/preferences", () => {
       expect(body.fontPreference).toBe("atkinson");
     });
   });
+
+  describe("PUT /api/settings/preferences -- publicFleetShare", () => {
+    it("accepts publicFleetShare='true' and persists it", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: "true" }),
+      });
+      expect(res.status).toBe(200);
+
+      const get = await SELF.fetch("http://localhost/api/settings/preferences", {
+        headers: await authHeaders(sessionToken),
+      });
+      const prefs = (await get.json()) as Record<string, string>;
+      expect(prefs.publicFleetShare).toBe("true");
+    });
+
+    it("clears publicFleetShare when set to null", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: "true" }),
+      });
+      const clear = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: null }),
+      });
+      expect(clear.status).toBe(200);
+      const get = await SELF.fetch("http://localhost/api/settings/preferences", {
+        headers: await authHeaders(sessionToken),
+      });
+      const prefs = (await get.json()) as Record<string, string>;
+      expect(prefs.publicFleetShare).toBeUndefined();
+    });
+
+    it("rejects publicFleetShare with arbitrary string (strict enum)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ publicFleetShare: "yes" }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
 });

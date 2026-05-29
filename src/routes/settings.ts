@@ -179,6 +179,7 @@ export function settingsRoutes() {
       privacyMode: z.enum(['off', 'hidden', 'stealth']).optional(),
       stealthPercent: z.string().max(5).optional(),
       sidebarCollapsed: z.enum(['0', '1']).optional(),
+      publicFleetShare: z.enum(['true']).nullable().optional(),
     }).strict()),
     async (c) => {
     const db = c.env.DB;
