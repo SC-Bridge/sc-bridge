@@ -856,8 +856,6 @@ export function adminRoutes() {
       "ptu_transport_carriage_announcements",
       "ptu_transport_destination_categories",
       "ptu_unified_shake_params",
-      // rock calculator (added in migration 0250)
-      "ptu_mineable_rock_entities",
     ];
 
     const dropStatements: D1PreparedStatement[] = [
