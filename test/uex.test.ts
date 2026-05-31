@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { env } from "cloudflare:test";
 import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
-import { syncCommodities } from "../src/lib/uex";
+import { syncCommodities, syncItems } from "../src/lib/uex";
 
 // Seed prerequisites:
 //   - Both game_versions rows (V1 at is_default=0, V2 at is_default=1)
@@ -203,5 +203,130 @@ describe("UEX UPSERT migrates game_version_id", () => {
     expect(row?.latest_sell_price).toBe(18);
     // ...but game_version_id is STILL V1 — stranded at old version. This is the bug.
     expect(row?.game_version_id).toBe(V1);
+  });
+});
+
+// 2026-06-01 — UEX's commodities_prices_all and items_prices_all both expose
+// per-row `date_modified` (unix seconds) for when the community last updated
+// the price report. The sync previously discarded this, so terminal_inventory
+// only knew when WE last polled UEX (latest_observed_at), not when the
+// community last actually reported the price. Without the report timestamp,
+// the UI can't distinguish "fresh community data" from "UEX serving a 3-week-
+// old report on a low-traffic terminal".
+describe("UEX captures community report timestamp", () => {
+  const db = env.DB as D1Database;
+
+  beforeEach(async () => {
+    await setupTestDatabase(env.DB);
+    await db
+      .prepare(`DELETE FROM terminal_inventory WHERE item_uuid LIKE 'uex-ts-%'`)
+      .run();
+  });
+
+  it("syncCommodities captures date_modified and date_added from the UEX response", async () => {
+    const { termId, uexTerminalId } = await seedTerminal(db);
+
+    // Replace the seed commodity with one whose uuid matches our timestamp test prefix.
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO trade_commodities (uuid, name, slug, category, game_version_id)
+         VALUES ('uex-ts-cmdty', 'TimestampOre', 'timestampore', 'minerals', ?)`,
+      )
+      .bind(TEST_GAME_VERSION_ID)
+      .run();
+
+    const REPORT_MODIFIED = 1779565006; // 2026-05-23 06:36 UTC (9d before today)
+    const REPORT_ADDED = 1703514825; // 2023-12-25 (long-lived row)
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "ok",
+          data: [
+            {
+              id_terminal: uexTerminalId,
+              commodity_name: "TimestampOre",
+              price_buy: 100,
+              price_sell: 120,
+              date_modified: REPORT_MODIFIED,
+              date_added: REPORT_ADDED,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const uexToOurs = new Map<number, number>([[uexTerminalId, termId]]);
+    const count = await syncCommodities(db, uexToOurs, TEST_GAME_VERSION_ID);
+    expect(count).toBe(1);
+
+    const row = await db
+      .prepare(
+        `SELECT uex_date_modified, uex_date_added, latest_buy_price, latest_sell_price
+         FROM terminal_inventory
+         WHERE terminal_id = ? AND item_uuid = 'uex-ts-cmdty'`,
+      )
+      .bind(termId)
+      .first<{
+        uex_date_modified: number;
+        uex_date_added: number;
+        latest_buy_price: number;
+        latest_sell_price: number;
+      }>();
+
+    expect(row).not.toBeNull();
+    expect(row?.uex_date_modified).toBe(REPORT_MODIFIED);
+    expect(row?.uex_date_added).toBe(REPORT_ADDED);
+    // Sanity: prices still bind correctly.
+    expect(row?.latest_buy_price).toBe(100);
+    expect(row?.latest_sell_price).toBe(120);
+
+    vi.restoreAllMocks();
+  });
+
+  it("syncItems captures date_modified and date_added from the UEX response", async () => {
+    const { termId, uexTerminalId } = await seedTerminal(db);
+
+    const ITEM_UUID = "uex-ts-item-uuid";
+    const REPORT_MODIFIED = 1778763945; // 2026-05-13
+    const REPORT_ADDED = 1703516981;
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "ok",
+          data: [
+            {
+              id_terminal: uexTerminalId,
+              item_uuid: ITEM_UUID,
+              item_name: "Omnisky III Cannon",
+              price_buy: 15461,
+              price_sell: 0,
+              date_modified: REPORT_MODIFIED,
+              date_added: REPORT_ADDED,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const uexToOurs = new Map<number, number>([[uexTerminalId, termId]]);
+    const count = await syncItems(db, uexToOurs, TEST_GAME_VERSION_ID);
+    expect(count).toBe(1);
+
+    const row = await db
+      .prepare(
+        `SELECT uex_date_modified, uex_date_added
+         FROM terminal_inventory
+         WHERE terminal_id = ? AND item_uuid = ?`,
+      )
+      .bind(termId, ITEM_UUID)
+      .first<{ uex_date_modified: number; uex_date_added: number }>();
+
+    expect(row).not.toBeNull();
+    expect(row?.uex_date_modified).toBe(REPORT_MODIFIED);
+    expect(row?.uex_date_added).toBe(REPORT_ADDED);
+
+    vi.restoreAllMocks();
   });
 });

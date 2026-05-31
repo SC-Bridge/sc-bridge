@@ -30,6 +30,11 @@ interface UexCommodityPrice {
   commodity_name: string;
   price_buy: number;
   price_sell: number;
+  // Unix-seconds timestamps from UEX. `date_modified` = community last
+  // updated the report; `date_added` = first time UEX saw this entry.
+  // See migration 0247.
+  date_modified?: number;
+  date_added?: number;
 }
 
 interface UexItemPrice {
@@ -38,6 +43,8 @@ interface UexItemPrice {
   item_name: string;
   price_buy: number;
   price_sell: number;
+  date_modified?: number;
+  date_added?: number;
 }
 
 async function fetchUex<T>(endpoint: string): Promise<T[]> {
@@ -148,20 +155,25 @@ export async function syncCommodities(
     // stuck at the OLD version_id when a new patch lands (the UNIQUE is on
     // terminal_id+item_uuid). See project_terminal_inventory_upsert_bug.md
     // for the 2026-05-16 outage this fixes.
+    const modified = p.date_modified ?? null;
+    const added = p.date_added ?? null;
+
     stmts.push(
       db
         .prepare(
           `INSERT INTO terminal_inventory
-           (terminal_id, item_uuid, item_type, item_name, latest_buy_price, latest_sell_price, latest_source, latest_observed_at, game_version_id)
-           VALUES (?, ?, 'commodity', ?, ?, ?, 'uex', datetime('now'), ?)
+           (terminal_id, item_uuid, item_type, item_name, latest_buy_price, latest_sell_price, latest_source, latest_observed_at, game_version_id, uex_date_modified, uex_date_added)
+           VALUES (?, ?, 'commodity', ?, ?, ?, 'uex', datetime('now'), ?, ?, ?)
            ON CONFLICT(terminal_id, item_uuid) DO UPDATE SET
            latest_buy_price = excluded.latest_buy_price,
            latest_sell_price = excluded.latest_sell_price,
            latest_source = 'uex',
            latest_observed_at = datetime('now'),
-           game_version_id = excluded.game_version_id`,
+           game_version_id = excluded.game_version_id,
+           uex_date_modified = excluded.uex_date_modified,
+           uex_date_added = COALESCE(excluded.uex_date_added, terminal_inventory.uex_date_added)`,
         )
-        .bind(ourTermId, itemUuid, p.commodity_name, buy, sell, gvId),
+        .bind(ourTermId, itemUuid, p.commodity_name, buy, sell, gvId, modified, added),
     );
   }
 
@@ -191,21 +203,27 @@ export async function syncItems(
     const sell = p.price_sell || null;
     if (!buy && !sell) continue;
 
+    const modified = p.date_modified ?? null;
+    const added = p.date_added ?? null;
+
     // game_version_id MUST be in the SET clause — see comment in syncCommodities.
+    // uex_date_modified / uex_date_added are also in the SET — see migration 0247.
     stmts.push(
       db
         .prepare(
           `INSERT INTO terminal_inventory
-           (terminal_id, item_uuid, item_type, item_name, latest_buy_price, latest_sell_price, latest_source, latest_observed_at, game_version_id)
-           VALUES (?, ?, 'item', ?, ?, ?, 'uex', datetime('now'), ?)
+           (terminal_id, item_uuid, item_type, item_name, latest_buy_price, latest_sell_price, latest_source, latest_observed_at, game_version_id, uex_date_modified, uex_date_added)
+           VALUES (?, ?, 'item', ?, ?, ?, 'uex', datetime('now'), ?, ?, ?)
            ON CONFLICT(terminal_id, item_uuid) DO UPDATE SET
            latest_buy_price = excluded.latest_buy_price,
            latest_sell_price = excluded.latest_sell_price,
            latest_source = 'uex',
            latest_observed_at = datetime('now'),
-           game_version_id = excluded.game_version_id`,
+           game_version_id = excluded.game_version_id,
+           uex_date_modified = excluded.uex_date_modified,
+           uex_date_added = COALESCE(excluded.uex_date_added, terminal_inventory.uex_date_added)`,
         )
-        .bind(ourTermId, p.item_uuid, p.item_name, buy, sell, gvId),
+        .bind(ourTermId, p.item_uuid, p.item_name, buy, sell, gvId, modified, added),
     );
   }
 
