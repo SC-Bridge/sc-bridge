@@ -38,6 +38,19 @@ export function extractSetName(itemName, manufacturerName) {
 export const PAGE_SIZE_GRID = 60
 export const PAGE_SIZE_LIST = 100
 
+// ── UEX staleness formatter ──────────────────────────────────────────────────
+// Given a unix-seconds timestamp (community-report time from UEX), return a
+// compact age suffix like "17d" / "3h" / "5m". Returns null if input is falsy.
+// nowSec is injectable for deterministic tests.
+export function formatStaleness(unixSec, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!unixSec || typeof unixSec !== 'number') return null
+  const ageSec = Math.max(0, nowSec - unixSec)
+  if (ageSec < 60) return '<1m'
+  if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m`
+  if (ageSec < 86400) return `${Math.floor(ageSec / 3600)}h`
+  return `${Math.floor(ageSec / 86400)}d`
+}
+
 // ── Location entry resolver ───────────────────────────────────────────────────
 export function resolveLocationEntry(entry, type) {
   if (typeof entry === 'string') return { label: entry, detail: null, probability: null }
@@ -57,6 +70,14 @@ export function resolveLocationEntry(entry, type) {
       detail = `Buy: ${Number(buy).toLocaleString()} aUEC`
     } else if (sell) {
       detail = `Sell: ${Number(sell).toLocaleString()} aUEC`
+    }
+
+    // Append UEX community-report age — "(17d)" means the last community update
+    // to this terminal's price was 17 days ago. Empty when UEX hasn't reported
+    // yet (new column 0247, NULL until the next sync touches the row).
+    const staleness = formatStaleness(entry.uex_date_modified)
+    if (staleness && detail !== 'Price unknown') {
+      detail = `${detail} (${staleness})`
     }
 
     const locationLabel = entry.location_label || entry.shop_location || null

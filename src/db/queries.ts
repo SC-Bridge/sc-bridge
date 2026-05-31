@@ -1426,6 +1426,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
   const shopAvailability = await db.prepare(`
     SELECT ti.latest_buy_price AS buy_price,
            ti.latest_sell_price AS sell_price,
+           ti.uex_date_modified AS uex_date_modified,
            s.name AS shop_name, s.slug AS shop_slug,
            s.location_label, s.display_name
     FROM ${t("terminal_inventory")} ti
@@ -1450,6 +1451,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       location_label: r.location_label,
       buy_price: r.buy_price,
       sell_price: r.sell_price,
+      uex_date_modified: r.uex_date_modified,
     });
   }
 
