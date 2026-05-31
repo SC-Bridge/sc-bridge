@@ -278,6 +278,42 @@ export function formatModPct(value) {
   return value > 0 ? `+${pct}%` : `${pct}%`
 }
 
+// Compute weighted-average rock stats from a list of composition elements.
+// Each element row comes from rock_compositions.composition_json verbatim —
+// snake_case fields { element, min_pct, max_pct, probability, quality_scale }.
+// `elementStats` is the same row with a `stats` property holding the matched
+// mineable_elements row { resistance, instability, optimal_window_midpoint,
+// optimal_window_thinness }.
+//
+// Weighting prefers max_pct (upper composition bound) → min_pct → falls back
+// to 1 if both are missing. Empty input returns neutral defaults. Returns a
+// plain object of { resistance, instability, optimal_window_midpoint,
+// optimal_window_thinness } — all numbers between 0 and 1 (instability/window
+// fields), or a positive resistance value.
+export function computeRockStats(elementStats) {
+  const NEUTRAL = { resistance: 0, instability: 0.5, optimal_window_midpoint: 0.5, optimal_window_thinness: 0.5 }
+  if (!elementStats || elementStats.length === 0) return NEUTRAL
+  let totalWeight = 0, avgRes = 0, avgInst = 0, avgMid = 0, avgThin = 0
+  for (const el of elementStats) {
+    // `||` would corrupt a legitimately zero stat (e.g. instability=0 for a
+    // perfectly stable element) by falling through to the neutral default.
+    // `??` only falls through on null/undefined — preserves true zeros.
+    const weight = el.max_pct || el.min_pct || 1
+    avgRes += (el.stats?.resistance ?? 0) * weight
+    avgInst += (el.stats?.instability ?? 0.5) * weight
+    avgMid += (el.stats?.optimal_window_midpoint ?? 0.5) * weight
+    avgThin += (el.stats?.optimal_window_thinness ?? 0.5) * weight
+    totalWeight += weight
+  }
+  if (totalWeight === 0) return NEUTRAL
+  return {
+    resistance: avgRes / totalWeight,
+    instability: avgInst / totalWeight,
+    optimal_window_midpoint: avgMid / totalWeight,
+    optimal_window_thinness: avgThin / totalWeight,
+  }
+}
+
 // Get the strongest non-zero modifier on a piece of equipment
 export function getStrongestMod(item) {
   let best = null

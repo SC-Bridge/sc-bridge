@@ -2,8 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Check, X as XIcon, ChevronDown, Zap, Shield, Activity } from 'lucide-react'
 import {
   SHIP_PRESETS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD,
-  computeEffectiveModifiers, canBreakRock, computeChargeWindow, formatModPct,
-  cleanElementName, friendlyElementName,
+  computeEffectiveModifiers, canBreakRock, computeChargeWindow, computeRockStats,
+  formatModPct, cleanElementName, friendlyElementName,
 } from './miningUtils'
 
 // Custom styled select replacing native <select>
@@ -206,25 +206,7 @@ export default function RockCalculator({ data }) {
     })
   }, [compElements, elements])
 
-  const rockStats = useMemo(() => {
-    if (elementStats.length === 0) return { resistance: 0, instability: 0.5, optimal_window_midpoint: 0.5, optimal_window_thinness: 0.5 }
-    let totalWeight = 0, avgRes = 0, avgInst = 0, avgMid = 0, avgThin = 0
-    for (const el of elementStats) {
-      const weight = el.maxPct || el.minPct || 1
-      avgRes += (el.stats?.resistance || 0) * weight
-      avgInst += (el.stats?.instability || 0.5) * weight
-      avgMid += (el.stats?.optimal_window_midpoint || 0.5) * weight
-      avgThin += (el.stats?.optimal_window_thinness || 0.5) * weight
-      totalWeight += weight
-    }
-    if (totalWeight === 0) return { resistance: 0, instability: 0.5, optimal_window_midpoint: 0.5, optimal_window_thinness: 0.5 }
-    return {
-      resistance: avgRes / totalWeight,
-      instability: avgInst / totalWeight,
-      optimal_window_midpoint: avgMid / totalWeight,
-      optimal_window_thinness: avgThin / totalWeight,
-    }
-  }, [elementStats])
+  const rockStats = useMemo(() => computeRockStats(elementStats), [elementStats])
 
   const result = useMemo(() => {
     let totalDps = 0
@@ -470,7 +452,7 @@ export default function RockCalculator({ data }) {
                           {friendlyElementName(el.element)}
                         </span>
                         <div className="flex items-center gap-3 text-gray-500 font-mono">
-                          {el.maxPct != null && <span>{el.minPct.toFixed(1)}–{el.maxPct.toFixed(1)}%</span>}
+                          {el.max_pct != null && <span>{el.min_pct.toFixed(1)}–{el.max_pct.toFixed(1)}%</span>}
                           {el.stats?.resistance != null && <span className="text-amber-400/60">R:{el.stats.resistance.toFixed(2)}</span>}
                           {el.stats?.instability != null && <span className="text-red-400/60">I:{el.stats.instability.toFixed(0)}</span>}
                         </div>
