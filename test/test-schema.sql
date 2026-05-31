@@ -3999,6 +3999,8 @@ CREATE INDEX idx_rock_compositions_deposit_name
 CREATE INDEX ptu_idx_rock_compositions_deposit_name
   ON ptu_rock_compositions(deposit_name)
   WHERE deposit_name IS NOT NULL;
+CREATE INDEX ptu_idx_rock_compositions_rock_type
+  ON ptu_rock_compositions(rock_type);
 -- ── data ──
 INSERT INTO vehicle_types VALUES(1,'spaceship','Spaceship');
 INSERT INTO vehicle_types VALUES(2,'ground_vehicle','Ground Vehicle');
@@ -4022,8 +4024,8 @@ INSERT INTO production_statuses VALUES(1,'flight_ready','Flight Ready');
 INSERT INTO production_statuses VALUES(2,'in_production','In Production');
 INSERT INTO production_statuses VALUES(3,'in_concept','In Concept');
 INSERT INTO production_statuses VALUES(4,'unknown','Unknown');
-INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-05-31 22:57:45','2026-05-31 22:57:45','11319298');
-INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-05-31 22:58:03','2026-05-31 22:58:03',NULL);
+INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-05-31 23:07:35','2026-05-31 23:07:35','11319298');
+INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-05-31 23:07:53','2026-05-31 23:07:53',NULL);
 INSERT INTO change_event_types VALUES(1,'provider_linked','Provider Linked','auth');
 INSERT INTO change_event_types VALUES(2,'provider_unlinked','Provider Unlinked','auth');
 INSERT INTO change_event_types VALUES(3,'password_set','Password Set','auth');
@@ -4070,4 +4072,4 @@ INSERT INTO rating_categories VALUES(1,'reliability','Reliability','Shows up on 
 INSERT INTO rating_categories VALUES(2,'skill','Skill','Competent at their role');
 INSERT INTO rating_categories VALUES(3,'communication','Communication','Responsive, clear, keeps team informed');
 INSERT INTO rating_categories VALUES(4,'fairness','Fairness','Honest, fair dealings, trustworthy with money');
-INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-05-31 22:58:00','2026-05-31 22:58:00',NULL,0,NULL,0,NULL,NULL);
+INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-05-31 23:07:51','2026-05-31 23:07:51',NULL,0,NULL,0,NULL,NULL);

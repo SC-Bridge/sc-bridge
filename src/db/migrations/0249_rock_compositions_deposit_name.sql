@@ -44,3 +44,9 @@ CREATE TABLE IF NOT EXISTS ptu_rock_compositions (
 CREATE INDEX IF NOT EXISTS ptu_idx_rock_compositions_deposit_name
   ON ptu_rock_compositions(deposit_name)
   WHERE deposit_name IS NOT NULL;
+
+-- Mirror the rock_type index that existed on ptu_rock_compositions in 0215
+-- (lost when this migration DROPped+CREATEd the shadow). Live rock_compositions
+-- still has its idx_rock_compositions_rock_type — keep the shadow in parity.
+CREATE INDEX IF NOT EXISTS ptu_idx_rock_compositions_rock_type
+  ON ptu_rock_compositions(rock_type);
