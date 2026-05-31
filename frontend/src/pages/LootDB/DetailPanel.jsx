@@ -275,7 +275,7 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
       />
       {/* Panel */}
       <div
-        className="fixed right-0 top-0 h-full w-full sm:w-[28rem] bg-sc-darker border-l border-sc-border z-50 flex flex-col overflow-hidden"
+        className="fixed right-0 top-0 h-full w-full sm:w-[36rem] bg-sc-darker border-l border-sc-border z-50 flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
