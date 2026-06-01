@@ -2,6 +2,15 @@ import React, { useMemo } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { friendlyElementName } from './miningUtils'
 
+// Short friendly labels for the rock_type column, used to disambiguate
+// variants that would otherwise produce a colliding element label.
+const ROCK_TYPE_SHORT = {
+  asteroid_ship: 'Asteroid',
+  surface_ship: 'Surface',
+  fps: 'Hand',
+  ground_vehicle: 'Vehicle',
+}
+
 export default function DepositPicker({ compositions, value, onChange }) {
   const depositNames = useMemo(() => {
     const s = new Set()
@@ -17,12 +26,34 @@ export default function DepositPicker({ compositions, value, onChange }) {
   }, [compositions, value?.depositName])
 
   const dominantElementOptions = useMemo(() => {
-    return variantsForDeposit.map((c) => {
-      // class_name is the stable CIG identifier (e.g. "Asteroid_CType_Iron").
-      // `name` may be the localized deposit display string (e.g. "Asteroid (C-Type)")
-      // and won't carry the element suffix — see feedback memory.
-      const m = c.class_name?.match(/_([A-Za-z][a-z]+)$/)
-      return { uuid: c.uuid, element: m ? m[1] : null, name: c.name }
+    // class_name is the stable CIG identifier (e.g. "Asteroid_CType_Iron").
+    // `name` may be the localized deposit display string and won't carry the
+    // element suffix — see feedback memory match-class-name-not-localized-name.
+    const raw = variantsForDeposit
+      .map((c) => {
+        const m = c.class_name?.match(/_([A-Za-z][a-z]+)$/)
+        return {
+          uuid: c.uuid,
+          element: m ? m[1] : null,
+          rock_type: c.rock_type,
+          name: c.name,
+        }
+      })
+      .filter((o) => o.element)
+
+    // If two variants would render the same element label (e.g. Iron (Ore)
+    // has both CommonShipMineablesAsteroid_Iron + CommonShipMineables_Iron),
+    // disambiguate by appending the rock_type context. Single-element deposits
+    // get the bare friendly name to avoid noise.
+    const counts = new Map()
+    for (const o of raw) counts.set(o.element, (counts.get(o.element) || 0) + 1)
+    return raw.map((o) => {
+      const base = friendlyElementName(o.element)
+      const ctx = ROCK_TYPE_SHORT[o.rock_type] ?? o.rock_type
+      return {
+        uuid: o.uuid,
+        label: counts.get(o.element) > 1 && ctx ? `${base} (${ctx})` : base,
+      }
     })
   }, [variantsForDeposit])
 
@@ -46,9 +77,7 @@ export default function DepositPicker({ compositions, value, onChange }) {
           placeholder="All variants (generic)"
           options={[
             { value: '', label: 'All variants (generic)' },
-            ...dominantElementOptions
-              .filter((o) => o.element)
-              .map((o) => ({ value: o.uuid, label: friendlyElementName(o.element) })),
+            ...dominantElementOptions.map((o) => ({ value: o.uuid, label: o.label })),
           ]}
           onChange={(uuid) => onChange({ ...value, compositionUuid: uuid || null })}
         />

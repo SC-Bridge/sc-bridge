@@ -64,4 +64,24 @@ describe('DepositPicker', () => {
       expect.objectContaining({ compositionUuid: 'c-atacamite-iron' }),
     )
   })
+
+  it('disambiguates colliding element labels with rock_type context', () => {
+    // Iron (Ore) has two compositions with the same dominant element but
+    // different rock_types — the dropdown must render distinguishable labels.
+    const onChange = vi.fn()
+    const compositions = [
+      { uuid: 'c-iron-asd',  class_name: 'CommonShipMineablesAsteroid_Iron', rock_type: 'asteroid_ship', name: 'Iron (Ore)', deposit_name: 'Iron (Ore)' },
+      { uuid: 'c-iron-surf', class_name: 'CommonShipMineables_Iron',         rock_type: 'surface_ship',  name: 'Iron (Ore)', deposit_name: 'Iron (Ore)' },
+    ]
+    render(
+      <DepositPicker
+        compositions={compositions}
+        value={{ depositName: 'Iron (Ore)', compositionUuid: null }}
+        onChange={onChange}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /all variants/i }))
+    expect(screen.getByText('Iron (Asteroid)')).toBeInTheDocument()
+    expect(screen.getByText('Iron (Surface)')).toBeInTheDocument()
+  })
 })
