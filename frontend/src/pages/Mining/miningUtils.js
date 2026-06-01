@@ -201,27 +201,6 @@ export function computeEffectiveModifiers(laser, modules, gadget) {
   return result
 }
 
-/**
- * Check if a loadout can fracture a rock
- */
-export function canBreakRock(beamDps, rockResistance, modResistance) {
-  const effectiveResistance = rockResistance * (1 - modResistance)
-  return beamDps > effectiveResistance
-}
-
-/**
- * Compute optimal charge window bounds
- */
-export function computeChargeWindow(rock, mods) {
-  const thinness = rock.optimal_window_thinness || 0.5
-  const midpoint = rock.optimal_window_midpoint || 0.5
-  const windowSize = (1 / Math.max(thinness, 0.01)) * (1 + (mods.mod_optimal_window_size || 0))
-  const windowStart = Math.max(0, midpoint - windowSize / 2)
-  const windowEnd = Math.min(1, midpoint + windowSize / 2)
-  const effectiveInstability = (rock.instability || 0) * (1 + (mods.mod_instability || 0))
-  return { windowStart, windowEnd, windowSize, effectiveInstability, midpoint }
-}
-
 // --- Ship presets for Rock Calculator ---
 export const SHIP_PRESETS = [
   {

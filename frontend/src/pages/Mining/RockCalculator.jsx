@@ -190,6 +190,22 @@ function fmtRange(rangeObj, fmt = (v) => v.toFixed(2)) {
   return `${fmt(rangeObj.min)} – ${fmt(rangeObj.max)} (avg ${fmt(rangeObj.avg)})`
 }
 
+// Module-scope pure helpers — no implicit closure over component state
+function buildElements(compositionUuid, compositions, elements) {
+  const comp = compositions.find((c) => c.uuid === compositionUuid)
+  if (!comp?.composition_json) return []
+  let parsed = []
+  try { parsed = JSON.parse(comp.composition_json) } catch { return [] }
+  return parsed.map((el) => {
+    const match = elements.find((e) => e.class_name?.toLowerCase() === el.element?.toLowerCase())
+    return { ...el, stats: match || {} }
+  })
+}
+
+function rockEntityFor(compositionUuid, rockEntities) {
+  return rockEntities?.find((r) => r.composition_uuid === compositionUuid) ?? null
+}
+
 export default function RockCalculator({ data }) {
   const [shipIndex, setShipIndex] = useState(0)
   const ship = SHIP_PRESETS[shipIndex]
@@ -211,21 +227,6 @@ export default function RockCalculator({ data }) {
     const entitiesByComp = new Set(data.rock_entities.map((r) => r.composition_uuid))
     return compositions.filter((c) => entitiesByComp.has(c.uuid))
   }, [compositions, data?.rock_entities])
-
-  function buildElements(compositionUuid) {
-    const comp = compositions.find((c) => c.uuid === compositionUuid)
-    if (!comp?.composition_json) return []
-    let parsed = []
-    try { parsed = JSON.parse(comp.composition_json) } catch { return [] }
-    return parsed.map((el) => {
-      const match = elements.find((e) => e.class_name?.toLowerCase() === el.element?.toLowerCase())
-      return { ...el, stats: match || {} }
-    })
-  }
-
-  function rockEntityFor(compositionUuid) {
-    return data?.rock_entities?.find((r) => r.composition_uuid === compositionUuid) ?? null
-  }
 
   const shipScopeParams = useMemo(
     () => (data?.global_params ?? []).find((p) => p.scope === 'ship') ?? null,
@@ -265,8 +266,8 @@ export default function RockCalculator({ data }) {
     const perVariant = targets
       .map((uuid) =>
         computeEffectiveRockStats({
-          rockEntity: rockEntityFor(uuid),
-          elements: buildElements(uuid),
+          rockEntity: rockEntityFor(uuid, data?.rock_entities),
+          elements: buildElements(uuid, compositions, elements),
           globalParams: shipScopeParams,
           laserMods: result.mods,
         }),
@@ -334,7 +335,7 @@ export default function RockCalculator({ data }) {
   // Elements list for single-variant display
   const displayElements = useMemo(() => {
     if (!pick.compositionUuid) return []
-    return buildElements(pick.compositionUuid)
+    return buildElements(pick.compositionUuid, compositions, elements)
   }, [pick.compositionUuid, compositions, elements])
 
   const hasLoadout = Object.values(laserIds).some(Boolean)
