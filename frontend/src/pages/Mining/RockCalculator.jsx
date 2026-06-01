@@ -40,20 +40,29 @@ function CustomSelect({ label, value, onChange, options, placeholder = 'Select..
       </button>
       {open && (
         <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-lg bg-gray-800/95 backdrop-blur-md border border-white/[0.1] shadow-xl shadow-black/40 scrollbar-thin">
-          {options.map(opt => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false) }}
-              className={`w-full text-left px-3 py-2 text-xs transition-colors cursor-pointer ${
-                opt.value === value
-                  ? 'bg-sc-accent/10 text-sc-accent'
-                  : 'text-gray-300 hover:bg-white/[0.06] hover:text-white'
-              }`}
-            >
-              {opt.label}
-              {opt.subtitle && <span className="text-gray-500 ml-2">{opt.subtitle}</span>}
-            </button>
+          {options.map((opt, i) => (
+            opt.header ? (
+              <div
+                key={`hdr-${i}`}
+                className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-wider text-gray-500 border-t border-white/[0.04] first:border-t-0"
+              >
+                {opt.label}
+              </div>
+            ) : (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setOpen(false) }}
+                className={`w-full text-left px-3 py-2 text-xs transition-colors cursor-pointer ${
+                  opt.value === value
+                    ? 'bg-sc-accent/10 text-sc-accent'
+                    : 'text-gray-300 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                {opt.label}
+                {opt.subtitle && <span className="text-gray-500 ml-2">{opt.subtitle}</span>}
+              </button>
+            )
           ))}
         </div>
       )}
@@ -361,15 +370,41 @@ export default function RockCalculator({ data }) {
     ]
   }
 
+  // Modules excluded from ship-context picker — these are vehicle-only mining
+  // attachments (ATLS exosuit and ROC ground vehicle) per CIG's
+  // RequiredPortTags=ATLSModifier/ROCdsModifier on their host entities. They
+  // share `miningConsumable` with ship modules so they leak into ship pickers
+  // unless explicitly filtered. See reference_cig_item_port_compatibility memory.
+  const VEHICLE_ONLY_MODULE_NAMES = new Set(['ATLS GEO Module', 'ROC Module'])
+
   const buildModuleOptions = () => {
-    return [
-      { value: '', label: 'None' },
-      ...modules.map(m => ({
-        value: String(m.id),
-        label: m.name,
-        subtitle: m.type,
-      }))
-    ]
+    const eligible = modules.filter(m => !VEHICLE_ONLY_MODULE_NAMES.has(m.name))
+    const actives = eligible.filter(m => m.type === 'active')
+    const passives = eligible.filter(m => m.type === 'passive')
+    const other = eligible.filter(m => m.type !== 'active' && m.type !== 'passive')
+
+    const toOption = (m) => ({
+      value: String(m.id),
+      label: m.name,
+      // Surface charges/lifetime in subtitle for actives so players can see
+      // how many uses they get without opening detail.
+      subtitle:
+        m.type === 'active' && m.charges != null && m.lifetime != null
+          ? `${m.charges}× / ${m.lifetime}s`
+          : undefined,
+    })
+
+    const opts = [{ value: '', label: 'None' }]
+    if (actives.length) {
+      opts.push({ header: true, label: 'Active' }, ...actives.map(toOption))
+    }
+    if (passives.length) {
+      opts.push({ header: true, label: 'Passive' }, ...passives.map(toOption))
+    }
+    if (other.length) {
+      opts.push({ header: true, label: 'Other' }, ...other.map(toOption))
+    }
+    return opts
   }
 
   const gadgetOptions = [
