@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Check, X as XIcon, ChevronDown, Zap, Shield, Activity } from 'lucide-react'
+import { Check, X as XIcon, ChevronDown, Activity } from 'lucide-react'
 import {
   SHIP_PRESETS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD,
-  computeEffectiveModifiers, canBreakRock, computeChargeWindow, formatModPct,
-  cleanElementName, friendlyElementName,
+  computeEffectiveModifiers, formatModPct,
+  friendlyElementName,
 } from './miningUtils'
+import { computeEffectiveRockStats } from './computeEffectiveRockStats'
+import DepositPicker from './DepositPicker'
 
 // Custom styled select replacing native <select>
 function CustomSelect({ label, value, onChange, options, placeholder = 'Select...' }) {
@@ -89,10 +91,19 @@ function StatCard({ label, value, subtitle, color = 'text-sc-accent', glow = fal
   )
 }
 
-function ChargeBar({ windowStart, windowEnd, effectiveInstability }) {
+function ChargeBar({ windowStart, windowEnd, effectiveInstabilityDelta }) {
   const startPct = windowStart * 100
   const endPct = windowEnd * 100
   const catStart = 90
+
+  const instabilityLabel = effectiveInstabilityDelta != null
+    ? (effectiveInstabilityDelta >= 0 ? `+${effectiveInstabilityDelta.toFixed(3)}` : effectiveInstabilityDelta.toFixed(3))
+    : '—'
+  const instabilityColor = effectiveInstabilityDelta != null && effectiveInstabilityDelta > 0.2
+    ? 'text-red-400'
+    : effectiveInstabilityDelta != null && effectiveInstabilityDelta > 0.05
+      ? 'text-amber-400'
+      : 'text-emerald-400'
 
   return (
     <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
@@ -124,10 +135,8 @@ function ChargeBar({ windowStart, windowEnd, effectiveInstability }) {
         <span className="text-gray-500 font-mono">
           Window: {(endPct - startPct).toFixed(1)}% wide
         </span>
-        <span className={`font-mono font-semibold ${
-          effectiveInstability > 700 ? 'text-red-400' : effectiveInstability > 400 ? 'text-amber-400' : 'text-emerald-400'
-        }`}>
-          Instability: {effectiveInstability.toFixed(0)}
+        <span className={`font-mono font-semibold ${instabilityColor}`}>
+          Instability Δ: {instabilityLabel}
         </span>
       </div>
     </div>
@@ -174,6 +183,13 @@ function PowerBar({ totalDps, effectiveResistance, canBreak }) {
   )
 }
 
+/** Format a range as "min – max (avg)" or just "value" for single variants. */
+function fmtRange(rangeObj, fmt = (v) => v.toFixed(2)) {
+  if (!rangeObj) return '—'
+  if (rangeObj.min === rangeObj.max) return fmt(rangeObj.min)
+  return `${fmt(rangeObj.min)} – ${fmt(rangeObj.max)} (avg ${fmt(rangeObj.avg)})`
+}
+
 export default function RockCalculator({ data }) {
   const [shipIndex, setShipIndex] = useState(0)
   const ship = SHIP_PRESETS[shipIndex]
@@ -181,7 +197,7 @@ export default function RockCalculator({ data }) {
   const [laserIds, setLaserIds] = useState({})
   const [moduleIds, setModuleIds] = useState({})
   const [gadget, setGadget] = useState(null)
-  const [selectedCompId, setSelectedCompId] = useState('')
+  const [pick, setPick] = useState({ depositName: null, compositionUuid: null })
 
   const lasers = data?.lasers || []
   const modules = data?.modules || []
@@ -189,42 +205,32 @@ export default function RockCalculator({ data }) {
   const compositions = data?.compositions || []
   const elements = data?.elements || []
 
-  const selectedComp = useMemo(() => {
-    if (!selectedCompId) return null
-    return compositions.find(c => String(c.id) === selectedCompId)
-  }, [compositions, selectedCompId])
+  // Filter compositions to only those with a matching rock entity.
+  const pickerCompositions = useMemo(() => {
+    if (!compositions.length || !data?.rock_entities) return []
+    const entitiesByComp = new Set(data.rock_entities.map((r) => r.composition_uuid))
+    return compositions.filter((c) => entitiesByComp.has(c.uuid))
+  }, [compositions, data?.rock_entities])
 
-  const compElements = useMemo(() => {
-    if (!selectedComp?.composition_json) return []
-    try { return JSON.parse(selectedComp.composition_json) } catch { return [] }
-  }, [selectedComp])
-
-  const elementStats = useMemo(() => {
-    return compElements.map(el => {
-      const match = elements.find(e => e.class_name?.toLowerCase() === el.element?.toLowerCase())
-      return { ...el, stats: match || null }
+  function buildElements(compositionUuid) {
+    const comp = compositions.find((c) => c.uuid === compositionUuid)
+    if (!comp?.composition_json) return []
+    let parsed = []
+    try { parsed = JSON.parse(comp.composition_json) } catch { return [] }
+    return parsed.map((el) => {
+      const match = elements.find((e) => e.class_name?.toLowerCase() === el.element?.toLowerCase())
+      return { ...el, stats: match || {} }
     })
-  }, [compElements, elements])
+  }
 
-  const rockStats = useMemo(() => {
-    if (elementStats.length === 0) return { resistance: 0, instability: 0.5, optimal_window_midpoint: 0.5, optimal_window_thinness: 0.5 }
-    let totalWeight = 0, avgRes = 0, avgInst = 0, avgMid = 0, avgThin = 0
-    for (const el of elementStats) {
-      const weight = el.maxPct || el.minPct || 1
-      avgRes += (el.stats?.resistance || 0) * weight
-      avgInst += (el.stats?.instability || 0.5) * weight
-      avgMid += (el.stats?.optimal_window_midpoint || 0.5) * weight
-      avgThin += (el.stats?.optimal_window_thinness || 0.5) * weight
-      totalWeight += weight
-    }
-    if (totalWeight === 0) return { resistance: 0, instability: 0.5, optimal_window_midpoint: 0.5, optimal_window_thinness: 0.5 }
-    return {
-      resistance: avgRes / totalWeight,
-      instability: avgInst / totalWeight,
-      optimal_window_midpoint: avgMid / totalWeight,
-      optimal_window_thinness: avgThin / totalWeight,
-    }
-  }, [elementStats])
+  function rockEntityFor(compositionUuid) {
+    return data?.rock_entities?.find((r) => r.composition_uuid === compositionUuid) ?? null
+  }
+
+  const shipScopeParams = useMemo(
+    () => (data?.global_params ?? []).find((p) => p.scope === 'ship') ?? null,
+    [data?.global_params],
+  )
 
   const result = useMemo(() => {
     let totalDps = 0
@@ -246,24 +252,93 @@ export default function RockCalculator({ data }) {
       for (const key of MOD_KEYS) allMods[key] += mods[key]
     }
 
-    const breaks = canBreakRock(totalDps, rockStats.resistance, allMods.mod_resistance)
-    const chargeWindow = computeChargeWindow(rockStats, allMods)
-    const effectiveResistance = rockStats.resistance * (1 - allMods.mod_resistance)
+    return { totalDps, mods: allMods }
+  }, [ship, laserIds, moduleIds, gadget])
 
-    return { totalDps, mods: allMods, canBreak: breaks, chargeWindow, effectiveResistance }
-  }, [ship, laserIds, moduleIds, gadget, rockStats])
+  const aggregatedStats = useMemo(() => {
+    if (!pick.depositName) return null
+
+    const targets = pick.compositionUuid
+      ? [pick.compositionUuid]
+      : pickerCompositions.filter((c) => c.deposit_name === pick.depositName).map((c) => c.uuid)
+
+    const perVariant = targets
+      .map((uuid) =>
+        computeEffectiveRockStats({
+          rockEntity: rockEntityFor(uuid),
+          elements: buildElements(uuid),
+          globalParams: shipScopeParams,
+          laserMods: result.mods,
+        }),
+      )
+      .filter(Boolean)
+
+    if (perVariant.length === 0) return null
+    if (perVariant.length === 1) return { single: perVariant[0], count: 1 }
+
+    const keys = [
+      'effective_resistance',
+      'effective_resistance_after_laser',
+      'effective_instability_delta',
+      'effective_window_midpoint_delta',
+      'effective_window_thinness_delta',
+    ]
+    const agg = { range: {}, single: null, count: perVariant.length }
+    for (const k of keys) {
+      const vals = perVariant.map((s) => s[k]).filter((v) => v != null)
+      if (vals.length === 0) continue
+      agg.range[k] = {
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+        avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+      }
+    }
+    return agg
+  }, [pick, pickerCompositions, compositions, elements, data?.rock_entities, shipScopeParams, result.mods])
+
+  // Derive display values from aggregatedStats (single or range avg)
+  const displayStats = useMemo(() => {
+    if (!aggregatedStats) return null
+
+    const get = (key) => {
+      if (aggregatedStats.single) return aggregatedStats.single[key]
+      return aggregatedStats.range?.[key]?.avg ?? null
+    }
+
+    const effectiveResistance = get('effective_resistance') ?? 0
+    const effectiveResistanceAfterLaser = get('effective_resistance_after_laser') ?? effectiveResistance
+    const instabilityDelta = get('effective_instability_delta') ?? 0
+    const windowMidpointDelta = get('effective_window_midpoint_delta') ?? 0
+    const windowThinnessDelta = get('effective_window_thinness_delta') ?? 0
+
+    // Compute window from global params + deltas
+    const globalWindowSize = shipScopeParams?.optimal_window_size ?? 0.1
+    const baseMidpoint = 0.5 + windowMidpointDelta
+    const baseThinness = Math.max(0.01, (1 / globalWindowSize) + windowThinnessDelta)
+    const windowSize = (1 / baseThinness) * (1 + (result.mods.mod_optimal_window_size || 0))
+    const windowStart = Math.max(0, baseMidpoint - windowSize / 2)
+    const windowEnd = Math.min(1, baseMidpoint + windowSize / 2)
+
+    const canBreak = result.totalDps > effectiveResistanceAfterLaser
+
+    return {
+      effectiveResistance,
+      effectiveResistanceAfterLaser,
+      instabilityDelta,
+      windowStart,
+      windowEnd,
+      canBreak,
+    }
+  }, [aggregatedStats, result.mods, result.totalDps, shipScopeParams])
+
+  // Elements list for single-variant display
+  const displayElements = useMemo(() => {
+    if (!pick.compositionUuid) return []
+    return buildElements(pick.compositionUuid)
+  }, [pick.compositionUuid, compositions, elements])
 
   const hasLoadout = Object.values(laserIds).some(Boolean)
-  const hasResults = selectedComp && hasLoadout
-
-  // Build options for custom selects
-  const compOptions = [
-    { value: '', label: 'Select a rock composition...' },
-    ...compositions.map(c => ({
-      value: String(c.id),
-      label: `${c.name} (${c.rock_type})`,
-    }))
-  ]
+  const hasResults = pick.depositName && hasLoadout && displayStats
 
   const buildLaserOptions = (slotSize) => {
     const filtered = lasers.filter(l => l.size === slotSize)
@@ -278,7 +353,6 @@ export default function RockCalculator({ data }) {
   }
 
   const buildModuleOptions = () => {
-    // All modules are size 1 and fit any laser's module sub-slots
     return [
       { value: '', label: 'None' },
       ...modules.map(m => ({
@@ -372,13 +446,8 @@ export default function RockCalculator({ data }) {
 
           {/* Rock selector */}
           <div className="relative z-10 bg-white/[0.03] border border-white/[0.06] rounded-xl p-5">
-            <CustomSelect
-              label="Rock Composition"
-              value={selectedCompId}
-              onChange={setSelectedCompId}
-              options={compOptions}
-              placeholder="Select a rock composition..."
-            />
+            <h3 className="text-xs uppercase tracking-wider text-gray-400 mb-3 font-display">Rock</h3>
+            <DepositPicker compositions={pickerCompositions} value={pick} onChange={setPick} />
           </div>
         </div>
 
@@ -388,17 +457,17 @@ export default function RockCalculator({ data }) {
             <>
               {/* CAN/CANNOT BREAK banner — prominent like RockBreaker */}
               <div className={`relative overflow-hidden rounded-xl border-2 p-6 text-center ${
-                result.canBreak
+                displayStats.canBreak
                   ? 'bg-emerald-500/10 border-emerald-500/40'
                   : 'bg-red-500/10 border-red-500/40'
               }`}>
                 {/* HUD corners */}
-                <div className={`absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 rounded-tl-xl ${result.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 rounded-tr-xl ${result.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 rounded-bl-xl ${result.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 rounded-br-xl ${result.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
+                <div className={`absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 rounded-tl-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
+                <div className={`absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 rounded-tr-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
+                <div className={`absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 rounded-bl-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
+                <div className={`absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 rounded-br-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
 
-                {result.canBreak ? (
+                {displayStats.canBreak ? (
                   <div>
                     <Check className="w-10 h-10 mx-auto mb-2 text-emerald-400" />
                     <p className="text-2xl font-bold tracking-wider text-emerald-400 font-display"
@@ -415,13 +484,19 @@ export default function RockCalculator({ data }) {
                     </p>
                   </div>
                 )}
+
+                {aggregatedStats && aggregatedStats.count > 1 && (
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    Showing average across {aggregatedStats.count} variants — pick a dominant element for exact values
+                  </p>
+                )}
               </div>
 
               {/* Power vs Resistance bar */}
               <PowerBar
                 totalDps={result.totalDps}
-                effectiveResistance={result.effectiveResistance}
-                canBreak={result.canBreak}
+                effectiveResistance={displayStats.effectiveResistanceAfterLaser}
+                canBreak={displayStats.canBreak}
               />
 
               {/* Stats dashboard — RockBreaker-inspired grid */}
@@ -434,45 +509,65 @@ export default function RockCalculator({ data }) {
                 />
                 <StatCard
                   label="Adjusted Resistance"
-                  value={result.effectiveResistance.toFixed(2)}
-                  subtitle={`Base ${rockStats.resistance.toFixed(2)} × ${(1 - result.mods.mod_resistance).toFixed(3)}`}
+                  value={
+                    aggregatedStats?.single
+                      ? displayStats.effectiveResistanceAfterLaser.toFixed(2)
+                      : fmtRange(aggregatedStats?.range?.effective_resistance_after_laser)
+                  }
+                  subtitle={
+                    aggregatedStats?.single
+                      ? `Base ${displayStats.effectiveResistance.toFixed(2)} × ${(1 - (result.mods.mod_resistance || 0)).toFixed(3)}`
+                      : `${aggregatedStats?.count} variants`
+                  }
                   color="text-amber-400"
                 />
                 <StatCard
                   label="Power Difference"
-                  value={(result.totalDps - result.effectiveResistance).toFixed(2)}
-                  color={result.canBreak ? 'text-emerald-400' : 'text-red-400'}
+                  value={(result.totalDps - displayStats.effectiveResistanceAfterLaser).toFixed(2)}
+                  color={displayStats.canBreak ? 'text-emerald-400' : 'text-red-400'}
                   glow
                 />
                 <StatCard
-                  label="Adjusted Instability"
-                  value={result.chargeWindow.effectiveInstability.toFixed(1)}
-                  subtitle={`Base ${rockStats.instability.toFixed(0)} × ${(1 + result.mods.mod_instability).toFixed(3)}`}
-                  color={result.chargeWindow.effectiveInstability > 700 ? 'text-red-400' : result.chargeWindow.effectiveInstability > 400 ? 'text-amber-400' : 'text-emerald-400'}
+                  label="Instability Delta"
+                  value={
+                    aggregatedStats?.single
+                      ? (displayStats.instabilityDelta >= 0
+                          ? `+${displayStats.instabilityDelta.toFixed(3)}`
+                          : displayStats.instabilityDelta.toFixed(3))
+                      : fmtRange(aggregatedStats?.range?.effective_instability_delta, (v) => v.toFixed(3))
+                  }
+                  subtitle="Element modifier sum"
+                  color={displayStats.instabilityDelta > 0.2 ? 'text-red-400' : displayStats.instabilityDelta > 0.05 ? 'text-amber-400' : 'text-emerald-400'}
                 />
               </div>
 
               {/* Charge window */}
               <ChargeBar
-                windowStart={result.chargeWindow.windowStart}
-                windowEnd={result.chargeWindow.windowEnd}
-                effectiveInstability={result.chargeWindow.effectiveInstability}
+                windowStart={displayStats.windowStart}
+                windowEnd={displayStats.windowEnd}
+                effectiveInstabilityDelta={displayStats.instabilityDelta}
               />
 
-              {/* Rock elements */}
-              {elementStats.length > 0 && (
+              {/* Rock elements — only shown for specific variant */}
+              {pick.compositionUuid && displayElements.length > 0 && (
                 <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
                   <h4 className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Rock Composition Elements</h4>
                   <div className="space-y-1.5">
-                    {elementStats.map((el, i) => (
+                    {displayElements.map((el, i) => (
                       <div key={i} className="flex items-center justify-between text-xs">
                         <span className="text-gray-300">
                           {friendlyElementName(el.element)}
                         </span>
                         <div className="flex items-center gap-3 text-gray-500 font-mono">
-                          {el.maxPct != null && <span>{el.minPct.toFixed(1)}–{el.maxPct.toFixed(1)}%</span>}
-                          {el.stats?.resistance != null && <span className="text-amber-400/60">R:{el.stats.resistance.toFixed(2)}</span>}
-                          {el.stats?.instability != null && <span className="text-red-400/60">I:{el.stats.instability.toFixed(0)}</span>}
+                          {el.max_pct != null && (
+                            <span>{(el.min_pct ?? 0).toFixed(1)}–{el.max_pct.toFixed(1)}%</span>
+                          )}
+                          {el.stats?.element_resistance != null && (
+                            <span className="text-amber-400/60">R:{el.stats.element_resistance.toFixed(3)}</span>
+                          )}
+                          {el.stats?.element_instability != null && (
+                            <span className="text-red-400/60">I:{el.stats.element_instability.toFixed(3)}</span>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -511,7 +606,7 @@ export default function RockCalculator({ data }) {
               </div>
               <p className="text-sm text-gray-500 mb-1">Configure your loadout</p>
               <p className="text-xs text-gray-600 max-w-xs">
-                Select a ship, equip a laser, and choose a rock composition to see fracture analysis.
+                Select a ship, equip a laser, and choose a rock to see fracture analysis.
               </p>
             </div>
           )}
