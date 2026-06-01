@@ -48,7 +48,12 @@ const userRole = ac.newRole({
 
 // Cache auth instance per isolate — avoids reconstructing on every request.
 // WeakMap keyed on the D1 binding ensures the cache is scoped to the env.
-const authCache = new WeakMap<D1Database, ReturnType<typeof betterAuth>>();
+// Typed loosely: the plugin-extended Auth type (with admin + twoFactor adding
+// `banned`/`twoFactorEnabled` to the inferred User) doesn't unify with the
+// bare `Auth<BetterAuthOptions>` since better-auth 1.6. Callers always get
+// the precise type back from createAuth().
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const authCache = new WeakMap<D1Database, any>();
 
 export function createAuth(env: Env) {
   const cached = authCache.get(env.DB);

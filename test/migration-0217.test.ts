@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, reset } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
 
 // Migration 0217 adds slot_type + item_class to crafting_blueprint_slots
@@ -96,6 +96,9 @@ async function getColumns(
 
 describe("migration 0217 — crafting_blueprint_slots item slots", () => {
   beforeAll(async () => {
+    // pool-workers v0.16 dropped per-test isolatedStorage — wipe any baseline
+    // state left by other suites so applyMigration() runs against a fresh DB.
+    await reset();
     await setupSchema();
     await applyMigration();
   });

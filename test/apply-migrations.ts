@@ -15,7 +15,7 @@
  * src/db/migrations/, so a stale baseline can't slip through.
  * ─────────────────────────────────────────────────────────────────────────
  */
-import { env } from "cloudflare:test";
+import { env, reset } from "cloudflare:test";
 
 // Split the baseline into individual statements. .dump terminates every
 // statement with ";\n" (internal lines of a multi-line CREATE end with ","),
@@ -32,9 +32,16 @@ function splitStatements(sql: string): string[] {
 }
 
 /**
- * Apply the baseline schema to a fresh D1 database. Call in beforeAll().
+ * Apply the baseline schema to a fresh D1 database. Call in beforeAll() or
+ * beforeEach() — idempotent.
+ *
+ * `reset()` wipes all bindings' persisted data (D1, KV, durable objects) up
+ * front. Required since @cloudflare/vitest-pool-workers v0.16 (vitest v4)
+ * dropped the per-test isolatedStorage default — multiple setupTestDatabase
+ * calls within a file would otherwise hit "table 'user' already exists".
  */
 export async function setupTestDatabase(db: D1Database): Promise<void> {
+  await reset();
   // The baseline is already FK-clean (generated with FK on so cascades fired;
   // orphan image seed excluded), so no PRAGMA is needed — and miniflare ignores
   // PRAGMA foreign_keys anyway. One atomic batch, fewest storage round-trips.

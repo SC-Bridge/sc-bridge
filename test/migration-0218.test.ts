@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, reset } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
 
 const SCHEMA_STATEMENTS = [
@@ -42,6 +42,9 @@ async function getColumns(table: string) {
 
 describe("migration 0218 — Vehicle Command Module fields", () => {
   beforeAll(async () => {
+    // pool-workers v0.16 dropped per-test isolatedStorage — wipe baseline
+    // state from prior suites before applyMigration() ALTERs vehicles.
+    await reset();
     await setupSchema();
     await applyMigration();
   });

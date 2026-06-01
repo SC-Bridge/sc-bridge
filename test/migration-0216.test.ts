@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, reset } from "cloudflare:test";
 import { describe, it, expect, beforeEach } from "vitest";
 
 // Minimal schema needed for this migration test.
@@ -161,6 +161,10 @@ async function applyMigration() {
 
 describe("migration 0216 — dedupe crafting tables", () => {
   beforeEach(async () => {
+    // pool-workers v0.16 dropped per-test isolatedStorage — wipe any state
+    // left by other suites so our minimal pre-0216 schema isn't contaminated
+    // by the full baseline (which already has the UNIQUE index applied).
+    await reset();
     await setupSchema();
     await seedDupes();
   });
