@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
 
-describe("GET /api/gamedata/mining — new tables", () => {
+describe("GET /api/gamedata/mining - new tables", () => {
   beforeAll(async () => {
     await setupTestDatabase(env.DB);
 

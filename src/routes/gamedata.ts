@@ -301,6 +301,7 @@ const [
           .all(),
         db
           .prepare(`SELECT * FROM ${t("mineable_rock_entities")}
+             WHERE removed = 0 AND (is_deleted IS NULL OR is_deleted = 0)
              ORDER BY class_name`,
           )
           .all(),
