@@ -41,9 +41,10 @@ export const VERSIONED_TABLES = [
   // NPC children
   "npc_loadout_items", "npc_loadouts",
   // Mining
-  "rock_compositions", "mining_quality_distributions", "mining_modules",
+  "mineable_rock_entities", "rock_compositions", "mining_quality_distributions", "mining_modules",
   "mining_locations", "mining_lasers", "mining_gadgets",
   "mining_clustering_presets", "mineable_elements",
+  "mining_global_params",
   // FPS tables → manufacturers
   "fps_weapons", "fps_utilities", "fps_melee", "fps_helmets",
   "fps_clothing", "fps_attachments", "fps_armour",

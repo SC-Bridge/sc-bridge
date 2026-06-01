@@ -232,6 +232,8 @@ const [
         lasers,
         modules,
         gadgets,
+        rockEntities,
+        globalParams,
       ] = await Promise.all([
         db
           .prepare(`SELECT me.* FROM ${t("mineable_elements")} me
@@ -297,6 +299,17 @@ const [
              ORDER BY name`,
           )
           .all(),
+        db
+          .prepare(`SELECT * FROM ${t("mineable_rock_entities")}
+             WHERE removed = 0 AND (is_deleted IS NULL OR is_deleted = 0)
+             ORDER BY class_name`,
+          )
+          .all(),
+        db
+          .prepare(`SELECT * FROM ${t("mining_global_params")}
+             ORDER BY scope`,
+          )
+          .all(),
       ])
 
       // Nest clustering params into their parent presets
@@ -322,6 +335,8 @@ const [
         lasers: lasers.results,
         modules: modules.results,
         gadgets: gadgets.results,
+        rock_entities: rockEntities.results,
+        global_params: globalParams.results,
       }
     })
   })
