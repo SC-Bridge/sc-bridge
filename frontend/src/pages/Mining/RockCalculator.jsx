@@ -6,6 +6,7 @@ import {
   friendlyElementName,
 } from './miningUtils'
 import { computeEffectiveRockStats } from './computeEffectiveRockStats'
+import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
 import DepositPicker from './DepositPicker'
 
 // Custom styled select replacing native <select>
@@ -202,10 +203,6 @@ function buildElements(compositionUuid, compositions, elements) {
   })
 }
 
-function rockEntityFor(compositionUuid, rockEntities) {
-  return rockEntities?.find((r) => r.composition_uuid === compositionUuid) ?? null
-}
-
 export default function RockCalculator({ data }) {
   const [shipIndex, setShipIndex] = useState(0)
   const ship = SHIP_PRESETS[shipIndex]
@@ -221,12 +218,19 @@ export default function RockCalculator({ data }) {
   const compositions = data?.compositions || []
   const elements = data?.elements || []
 
-  // Filter compositions to only those with a matching rock entity.
-  const pickerCompositions = useMemo(() => {
-    if (!compositions.length || !data?.rock_entities) return []
-    const entitiesByComp = new Set(data.rock_entities.map((r) => r.composition_uuid))
-    return compositions.filter((c) => entitiesByComp.has(c.uuid))
-  }, [compositions, data?.rock_entities])
+  // Show every composition that has a deposit_name. Comps without a direct
+  // mineable_rock_entities row (the CommonShipMineables_X shared templates)
+  // still get math via resolveRockEntity's median fallback below — they're
+  // exactly what a player scans in the wild, so they MUST be visible.
+  const pickerCompositions = useMemo(
+    () => (compositions ?? []).filter((c) => c.deposit_name),
+    [compositions],
+  )
+
+  const medianBaseByCategory = useMemo(
+    () => buildMedianBaseByCategory(data?.rock_entities ?? []),
+    [data?.rock_entities],
+  )
 
   const shipScopeParams = useMemo(
     () => (data?.global_params ?? []).find((p) => p.scope === 'ship') ?? null,
@@ -264,18 +268,22 @@ export default function RockCalculator({ data }) {
       : pickerCompositions.filter((c) => c.deposit_name === pick.depositName).map((c) => c.uuid)
 
     const perVariant = targets
-      .map((uuid) =>
-        computeEffectiveRockStats({
-          rockEntity: rockEntityFor(uuid, data?.rock_entities),
+      .map((uuid) => {
+        const entity = resolveRockEntity(uuid, compositions, data?.rock_entities, medianBaseByCategory)
+        const stats = computeEffectiveRockStats({
+          rockEntity: entity,
           elements: buildElements(uuid, compositions, elements),
           globalParams: shipScopeParams,
           laserMods: result.mods,
-        }),
-      )
+        })
+        if (!stats) return null
+        return { ...stats, is_fallback: !!entity?.is_fallback }
+      })
       .filter(Boolean)
 
     if (perVariant.length === 0) return null
-    if (perVariant.length === 1) return { single: perVariant[0], count: 1 }
+    const anyFallback = perVariant.some((v) => v.is_fallback)
+    if (perVariant.length === 1) return { single: perVariant[0], count: 1, is_fallback: anyFallback }
 
     const keys = [
       'effective_resistance',
@@ -284,7 +292,7 @@ export default function RockCalculator({ data }) {
       'effective_window_midpoint_delta',
       'effective_window_thinness_delta',
     ]
-    const agg = { range: {}, single: null, count: perVariant.length }
+    const agg = { range: {}, single: null, count: perVariant.length, is_fallback: anyFallback }
     for (const k of keys) {
       const vals = perVariant.map((s) => s[k]).filter((v) => v != null)
       if (vals.length === 0) continue
@@ -295,7 +303,7 @@ export default function RockCalculator({ data }) {
       }
     }
     return agg
-  }, [pick, pickerCompositions, compositions, elements, data?.rock_entities, shipScopeParams, result.mods])
+  }, [pick, pickerCompositions, compositions, elements, data?.rock_entities, shipScopeParams, medianBaseByCategory, result.mods])
 
   // Derive display values from aggregatedStats (single or range avg)
   const displayStats = useMemo(() => {
@@ -489,6 +497,11 @@ export default function RockCalculator({ data }) {
                 {aggregatedStats && aggregatedStats.count > 1 && (
                   <p className="text-[10px] text-gray-500 mt-2">
                     Showing average across {aggregatedStats.count} variants — pick a dominant element for exact values
+                  </p>
+                )}
+                {aggregatedStats?.is_fallback && (
+                  <p className="text-[10px] text-amber-400/80 mt-1">
+                    ≈ Typical values — this deposit type has no per-rock data; using median of similar rocks
                   </p>
                 )}
               </div>

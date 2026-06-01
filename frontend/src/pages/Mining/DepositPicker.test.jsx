@@ -2,11 +2,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import DepositPicker from './DepositPicker'
 
+// Note: in real data the `name` column mirrors the LOCALIZED deposit_name
+// across every variant of a deposit — the dominant-element regex must
+// operate on `class_name`, not `name`. See feedback memory:
+// match-class-name-not-localized-name.
 const FIXTURE_COMPOSITIONS = [
-  { uuid: 'c-atacamite',         name: 'Atacamite',         deposit_name: 'Atacamite Deposit' },
-  { uuid: 'c-atacamite-iron',    name: 'Atacamite_Iron',    deposit_name: 'Atacamite Deposit' },
-  { uuid: 'c-atacamite-copper',  name: 'Atacamite_Copper',  deposit_name: 'Atacamite Deposit' },
-  { uuid: 'c-asteroid-ctype',    name: 'Asteroid_CType',    deposit_name: 'Asteroid (C-Type)' },
+  { uuid: 'c-atacamite',         class_name: 'Atacamite',         name: 'Atacamite Deposit', deposit_name: 'Atacamite Deposit' },
+  { uuid: 'c-atacamite-iron',    class_name: 'Atacamite_Iron',    name: 'Atacamite Deposit', deposit_name: 'Atacamite Deposit' },
+  { uuid: 'c-atacamite-copper',  class_name: 'Atacamite_Copper',  name: 'Atacamite Deposit', deposit_name: 'Atacamite Deposit' },
+  { uuid: 'c-asteroid-ctype',    class_name: 'Asteroid_CType',    name: 'Asteroid (C-Type)', deposit_name: 'Asteroid (C-Type)' },
 ]
 
 describe('DepositPicker', () => {

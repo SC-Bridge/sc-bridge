@@ -18,7 +18,10 @@ export default function DepositPicker({ compositions, value, onChange }) {
 
   const dominantElementOptions = useMemo(() => {
     return variantsForDeposit.map((c) => {
-      const m = c.name?.match(/_([A-Za-z][a-z]+)$/i)
+      // class_name is the stable CIG identifier (e.g. "Asteroid_CType_Iron").
+      // `name` may be the localized deposit display string (e.g. "Asteroid (C-Type)")
+      // and won't carry the element suffix — see feedback memory.
+      const m = c.class_name?.match(/_([A-Za-z][a-z]+)$/)
       return { uuid: c.uuid, element: m ? m[1] : null, name: c.name }
     })
   }, [variantsForDeposit])
