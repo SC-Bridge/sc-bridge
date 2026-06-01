@@ -378,7 +378,10 @@ export default function RockCalculator({ data }) {
   ]
 
   return (
-    <div className="space-y-6">
+    // pb-72 reserves room below the page so the Rock / Dominant-Element
+    // dropdowns (max-h-60 ≈ 240px + padding) can fully open without being
+    // clipped by the viewport when the user scrolls them into the bottom.
+    <div className="space-y-6 pb-72">
       {/* Two-column layout: Setup | Results */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
         {/* LEFT: Setup — descending z-index so dropdowns overlay cards below */}
