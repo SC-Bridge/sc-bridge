@@ -21,9 +21,13 @@ export function migrateRoutes() {
     }
 
     const auth = createAuth(c.env);
-    const { toBeCreated, toBeAdded, runMigrations } = await (
-      await import("better-auth/db")
-    ).getMigrations(auth.options);
+    // better-auth v1.6 moved the `getMigrations` export from `better-auth/db`
+    // to a dedicated `better-auth/db/migration` subpath. Pre-v1.6 callers
+    // imported from `better-auth/db`.
+    const { getMigrations } = await import("better-auth/db/migration");
+    const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(
+      auth.options,
+    );
 
     if (toBeCreated.length === 0 && toBeAdded.length === 0) {
       return c.json({ ok: true, message: "No migrations needed" });
@@ -31,8 +35,8 @@ export function migrateRoutes() {
 
     await runMigrations();
     return c.json({
-      tablesCreated: toBeCreated.map((t) => t.table),
-      columnsAdded: toBeAdded.map((t) => t.table),
+      tablesCreated: toBeCreated.map((t: { table: string }) => t.table),
+      columnsAdded: toBeAdded.map((t: { table: string }) => t.table),
     });
   });
 

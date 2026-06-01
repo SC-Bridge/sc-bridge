@@ -11,11 +11,13 @@ import { createTestUser, authHeaders } from "./helpers";
  */
 describe("POST /api/localization/pack-request", () => {
   let sessionToken: string;
+  let userId: string;
 
   beforeAll(async () => {
     await setupTestDatabase(env.DB);
     const user = await createTestUser(env.DB);
     sessionToken = user.sessionToken;
+    userId = user.userId;
   });
 
   it("requires authentication", async () => {
@@ -55,6 +57,12 @@ describe("POST /api/localization/pack-request", () => {
   });
 
   it("rate-limits a user after the hourly cap (429)", async () => {
+    // pool-workers v0.16 dropped per-test isolatedStorage — clear both the
+    // per-user rate-limit counter (KV) and the pack_requests rows (D1) so the
+    // earlier `it()` submissions don't eat into this test's hourly budget.
+    await env.DB.prepare("DELETE FROM pack_requests").run();
+    const kv = (env as unknown as { LOCALIZATION_KV: KVNamespace }).LOCALIZATION_KV;
+    await kv.delete(`ratelimit:packreq:${userId}`);
     const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
     const submit = (n: number) =>
       SELF.fetch("http://localhost/api/localization/pack-request", {
