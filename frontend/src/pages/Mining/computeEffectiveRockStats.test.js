@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeEffectiveRockStats } from './computeEffectiveRockStats'
+import { computeEffectiveRockStats, computeQualityBand } from './computeEffectiveRockStats'
 
 function ce({ element, min_pct, max_pct, probability = 1.0, ...stats }) {
   return {
@@ -97,5 +97,80 @@ describe('computeEffectiveRockStats', () => {
     })
     expect(result.effective_instability_delta).toBeCloseTo(0.3, 4)
     expect(result.effective_window_midpoint_delta).toBeCloseTo(0.1, 4)
+  })
+
+  describe('qualityRoll (quality band)', () => {
+    // tin: instability 50, resistance 0.2, 20-60% range
+    const tinRock = (qualityRoll) => computeEffectiveRockStats({
+      rockEntity: { laser_damage_full_value: 1000 },
+      elements: [ce({ element: 'tin', min_pct: 20, max_pct: 60, probability: 1.0,
+                       element_resistance: 0.2, element_instability: 50 })],
+      globalParams: GLOBAL_SHIP,
+      laserMods: { mod_resistance: 0 },
+      qualityRoll,
+    })
+
+    it('qualityRoll=0 uses min_pct (lean roll)', () => {
+      // weight = 0.20 * 1.0 = 0.20 → resistance = 1000 * (1 + 0.2*0.20) = 1040
+      expect(tinRock(0).effective_resistance).toBeCloseTo(1040, 0)
+      // instability = 50 * 0.20 = 10
+      expect(tinRock(0).effective_instability_delta).toBeCloseTo(10, 4)
+    })
+
+    it('qualityRoll=1 uses max_pct (rich roll)', () => {
+      // weight = 0.60 * 1.0 = 0.60 → resistance = 1000 * (1 + 0.2*0.60) = 1120
+      expect(tinRock(1).effective_resistance).toBeCloseTo(1120, 0)
+      // instability = 50 * 0.60 = 30
+      expect(tinRock(1).effective_instability_delta).toBeCloseTo(30, 4)
+    })
+
+    it('default (omitted) qualityRoll equals 0.5 midpoint', () => {
+      const omitted = computeEffectiveRockStats({
+        rockEntity: { laser_damage_full_value: 1000 },
+        elements: [ce({ element: 'tin', min_pct: 20, max_pct: 60, probability: 1.0,
+                         element_resistance: 0.2, element_instability: 50 })],
+        globalParams: GLOBAL_SHIP,
+        laserMods: { mod_resistance: 0 },
+      })
+      expect(omitted.effective_resistance).toBeCloseTo(tinRock(0.5).effective_resistance, 6)
+      expect(omitted.effective_instability_delta).toBeCloseTo(tinRock(0.5).effective_instability_delta, 6)
+    })
+
+    it('rich roll raises instability above lean roll (the quality→difficulty signal)', () => {
+      expect(tinRock(1).effective_instability_delta).toBeGreaterThan(tinRock(0).effective_instability_delta)
+    })
+
+    it('clamps qualityRoll outside [0,1]', () => {
+      expect(tinRock(5).effective_instability_delta).toBeCloseTo(tinRock(1).effective_instability_delta, 6)
+      expect(tinRock(-3).effective_instability_delta).toBeCloseTo(tinRock(0).effective_instability_delta, 6)
+    })
+  })
+})
+
+describe('computeQualityBand', () => {
+  const args = {
+    rockEntity: { laser_damage_full_value: 2000 },
+    elements: [{
+      element: 'quant', min_pct: 20, max_pct: 50, probability: 1.0,
+      stats: { element_resistance: 0.95, element_instability: 1000,
+               element_optimal_window_midpoint: 0, element_optimal_window_thinness: 0,
+               element_explosion_multiplier: 0 },
+    }],
+    globalParams: { resistance_curve_factor: 1.0 },
+    laserMods: { mod_resistance: 0 },
+  }
+
+  it('returns lean / avg / rich sampled at qualityRoll 0 / 0.5 / 1', () => {
+    const band = computeQualityBand(args)
+    expect(band).not.toBeNull()
+    // rich instability (50% quant) > avg (35%) > lean (20%) — strictly increasing
+    expect(band.rich.effective_instability_delta).toBeGreaterThan(band.avg.effective_instability_delta)
+    expect(band.avg.effective_instability_delta).toBeGreaterThan(band.lean.effective_instability_delta)
+    // resistance climbs too for this high-resistance element
+    expect(band.rich.effective_resistance).toBeGreaterThan(band.lean.effective_resistance)
+  })
+
+  it('returns null when the rock cannot be resolved', () => {
+    expect(computeQualityBand({ ...args, rockEntity: null })).toBeNull()
   })
 })

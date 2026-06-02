@@ -5,7 +5,7 @@ import {
   computeEffectiveModifiers, formatModPct,
   friendlyElementName,
 } from './miningUtils'
-import { computeEffectiveRockStats } from './computeEffectiveRockStats'
+import { computeQualityBand } from './computeEffectiveRockStats'
 import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
 import DepositPicker from './DepositPicker'
 
@@ -193,11 +193,18 @@ function PowerBar({ totalDps, effectiveResistance, canBreak }) {
   )
 }
 
-/** Format a range as "min – max (avg)" or just "value" for single variants. */
-function fmtRange(rangeObj, fmt = (v) => v.toFixed(2)) {
-  if (!rangeObj) return '—'
-  if (rangeObj.min === rangeObj.max) return fmt(rangeObj.min)
-  return `${fmt(rangeObj.min)} – ${fmt(rangeObj.max)} (avg ${fmt(rangeObj.avg)})`
+/** The avg (expected) value of a quality band, formatted. */
+function fmtBandAvg(band, fmt = (v) => v.toFixed(2)) {
+  if (!band || band.avg == null) return '—'
+  return fmt(band.avg)
+}
+
+/** "Lean X → Rich Y" sub-line for a quality band. Collapses to a single
+ *  value when lean and rich coincide (e.g. a single fixed-% element). */
+function fmtBandSpread(band, fmt = (v) => v.toFixed(2)) {
+  if (!band || band.lean == null || band.rich == null) return null
+  if (Math.abs(band.lean - band.rich) < 1e-6) return null
+  return `Lean ${fmt(band.lean)} → Rich ${fmt(band.rich)}`
 }
 
 // Module-scope pure helpers — no implicit closure over component state
@@ -269,6 +276,18 @@ export default function RockCalculator({ data }) {
     return { totalDps, mods: allMods }
   }, [ship, laserIds, moduleIds, gadget])
 
+  // Per-stat quality band. For each target composition we sample the quality
+  // roll (lean/avg/rich); across variants (generic deposit mode) we average
+  // each quality point. `band[key] = { lean, avg, rich }`. The `avg` point is
+  // the expected rock and drives the can-break / charge math; lean→rich shows
+  // how difficulty (esp. instability) climbs with quality.
+  const BAND_KEYS = [
+    'effective_resistance',
+    'effective_resistance_after_laser',
+    'effective_instability_delta',
+    'effective_window_midpoint_delta',
+    'effective_window_thinness_delta',
+  ]
   const aggregatedStats = useMemo(() => {
     if (!pick.depositName) return null
 
@@ -279,49 +298,38 @@ export default function RockCalculator({ data }) {
     const perVariant = targets
       .map((uuid) => {
         const entity = resolveRockEntity(uuid, compositions, data?.rock_entities, medianBaseByCategory)
-        const stats = computeEffectiveRockStats({
+        const qb = computeQualityBand({
           rockEntity: entity,
           elements: buildElements(uuid, compositions, elements),
           globalParams: shipScopeParams,
           laserMods: result.mods,
         })
-        if (!stats) return null
-        return { ...stats, is_fallback: !!entity?.is_fallback }
+        if (!qb) return null
+        return { ...qb, is_fallback: !!entity?.is_fallback }
       })
       .filter(Boolean)
 
     if (perVariant.length === 0) return null
     const anyFallback = perVariant.some((v) => v.is_fallback)
-    if (perVariant.length === 1) return { single: perVariant[0], count: 1, is_fallback: anyFallback }
 
-    const keys = [
-      'effective_resistance',
-      'effective_resistance_after_laser',
-      'effective_instability_delta',
-      'effective_window_midpoint_delta',
-      'effective_window_thinness_delta',
-    ]
-    const agg = { range: {}, single: null, count: perVariant.length, is_fallback: anyFallback }
-    for (const k of keys) {
-      const vals = perVariant.map((s) => s[k]).filter((v) => v != null)
-      if (vals.length === 0) continue
-      agg.range[k] = {
-        min: Math.min(...vals),
-        max: Math.max(...vals),
-        avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+    // band[key] = { lean, avg, rich } averaged across variants at each quality point
+    const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length
+    const band = {}
+    for (const k of BAND_KEYS) {
+      band[k] = {
+        lean: mean(perVariant.map((v) => v.lean?.[k] ?? v.avg[k])),
+        avg: mean(perVariant.map((v) => v.avg[k])),
+        rich: mean(perVariant.map((v) => v.rich?.[k] ?? v.avg[k])),
       }
     }
-    return agg
+    return { band, count: perVariant.length, is_fallback: anyFallback }
   }, [pick, pickerCompositions, compositions, elements, data?.rock_entities, shipScopeParams, medianBaseByCategory, result.mods])
 
-  // Derive display values from aggregatedStats (single or range avg)
+  // Derive display values from the band's avg (expected) quality point.
   const displayStats = useMemo(() => {
     if (!aggregatedStats) return null
 
-    const get = (key) => {
-      if (aggregatedStats.single) return aggregatedStats.single[key]
-      return aggregatedStats.range?.[key]?.avg ?? null
-    }
+    const get = (key) => aggregatedStats.band?.[key]?.avg ?? null
 
     const effectiveResistance = get('effective_resistance') ?? 0
     const effectiveResistanceAfterLaser = get('effective_resistance_after_laser') ?? effectiveResistance
@@ -561,15 +569,10 @@ export default function RockCalculator({ data }) {
                 />
                 <StatCard
                   label="Adjusted Resistance"
-                  value={
-                    aggregatedStats?.single
-                      ? displayStats.effectiveResistanceAfterLaser.toFixed(2)
-                      : fmtRange(aggregatedStats?.range?.effective_resistance_after_laser)
-                  }
+                  value={fmtBandAvg(aggregatedStats?.band?.effective_resistance_after_laser)}
                   subtitle={
-                    aggregatedStats?.single
-                      ? `Base ${displayStats.effectiveResistance.toFixed(2)} × ${(1 - (result.mods.mod_resistance || 0)).toFixed(3)}`
-                      : `${aggregatedStats?.count} variants`
+                    fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser)
+                    ?? (aggregatedStats?.count > 1 ? `${aggregatedStats.count} variants` : 'expected roll')
                   }
                   color="text-amber-400"
                 />
@@ -580,15 +583,12 @@ export default function RockCalculator({ data }) {
                   glow
                 />
                 <StatCard
-                  label="Instability Delta"
-                  value={
-                    aggregatedStats?.single
-                      ? (displayStats.instabilityDelta >= 0
-                          ? `+${displayStats.instabilityDelta.toFixed(3)}`
-                          : displayStats.instabilityDelta.toFixed(3))
-                      : fmtRange(aggregatedStats?.range?.effective_instability_delta, (v) => v.toFixed(3))
+                  label="Instability"
+                  value={fmtBandAvg(aggregatedStats?.band?.effective_instability_delta, (v) => (v >= 0 ? `+${v.toFixed(3)}` : v.toFixed(3)))}
+                  subtitle={
+                    fmtBandSpread(aggregatedStats?.band?.effective_instability_delta, (v) => v.toFixed(3))
+                    ?? 'rises with quality'
                   }
-                  subtitle="Element modifier sum"
                   color={displayStats.instabilityDelta > 0.2 ? 'text-red-400' : displayStats.instabilityDelta > 0.05 ? 'text-amber-400' : 'text-emerald-400'}
                 />
               </div>
