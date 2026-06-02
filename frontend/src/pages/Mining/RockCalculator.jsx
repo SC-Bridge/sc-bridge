@@ -208,14 +208,32 @@ function fmtBandSpread(band, fmt = (v) => v.toFixed(2)) {
 }
 
 // Module-scope pure helpers — no implicit closure over component state
-function buildElements(compositionUuid, compositions, elements) {
+//
+// computeEffectiveRockStats reads element stats under `element_`-prefixed keys
+// (element_resistance, element_instability, …) but the mineable_elements rows
+// from /api/gamedata/mining carry UNPREFIXED columns (resistance, instability,
+// …). Map them here — without this the join "succeeds" but every stat reads
+// undefined → 0, so resistance/instability deltas are silently inert for every
+// rock (quantainium looks identical to iron).
+export function elementStats(row) {
+  if (!row) return {}
+  return {
+    element_resistance: row.resistance,
+    element_instability: row.instability,
+    element_optimal_window_midpoint: row.optimal_window_midpoint,
+    element_optimal_window_thinness: row.optimal_window_thinness,
+    element_explosion_multiplier: row.explosion_multiplier,
+  }
+}
+
+export function buildElements(compositionUuid, compositions, elements) {
   const comp = compositions.find((c) => c.uuid === compositionUuid)
   if (!comp?.composition_json) return []
   let parsed = []
   try { parsed = JSON.parse(comp.composition_json) } catch { return [] }
   return parsed.map((el) => {
     const match = elements.find((e) => e.class_name?.toLowerCase() === el.element?.toLowerCase())
-    return { ...el, stats: match || {} }
+    return { ...el, stats: elementStats(match) }
   })
 }
 
@@ -357,10 +375,26 @@ export default function RockCalculator({ data }) {
     }
   }, [aggregatedStats, result.mods, result.totalDps, shipScopeParams])
 
-  // Elements list for single-variant display
+  // Elements list for single-variant display. A composition can list the same
+  // element as multiple parts (e.g. CommonShipMineables_Iron has two iron_ore
+  // bands with different quality_scale) — merge them per element for display
+  // (min of mins, max of maxes) so the player sees "Iron Ore" once. The math
+  // (aggregatedStats) still uses the raw per-part breakdown.
   const displayElements = useMemo(() => {
     if (!pick.compositionUuid) return []
-    return buildElements(pick.compositionUuid, compositions, elements)
+    const raw = buildElements(pick.compositionUuid, compositions, elements)
+    const merged = new Map()
+    for (const el of raw) {
+      const key = el.element
+      const prev = merged.get(key)
+      if (!prev) {
+        merged.set(key, { ...el })
+      } else {
+        prev.min_pct = Math.min(prev.min_pct ?? 0, el.min_pct ?? 0)
+        prev.max_pct = Math.max(prev.max_pct ?? 0, el.max_pct ?? 0)
+      }
+    }
+    return [...merged.values()]
   }, [pick.compositionUuid, compositions, elements])
 
   const hasLoadout = Object.values(laserIds).some(Boolean)
