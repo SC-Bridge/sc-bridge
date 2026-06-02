@@ -164,6 +164,24 @@ export function friendlyCompositionName(raw) {
   return s
 }
 
+// Classify a weighted instability value (0–1000 scale) into a player-facing
+// danger band. Thresholds align with the existing instabilityColor cutoffs
+// (400 / 700) plus a Stable/Twitchy split at 100. `barPct` is for a 0–100%
+// gauge. Used by the Rock Calculator results panel so a raw "+36" reads as
+// "Stable · low shatter risk" instead of an opaque number.
+const INSTABILITY_BANDS = [
+  { max: 100, label: 'Stable',   risk: 'low shatter risk',      text: 'text-emerald-400', dot: 'bg-emerald-400', bar: 'bg-emerald-500' },
+  { max: 400, label: 'Twitchy',  risk: 'moderate shatter risk', text: 'text-yellow-400',  dot: 'bg-yellow-400',  bar: 'bg-yellow-500' },
+  { max: 700, label: 'Volatile', risk: 'high shatter risk',     text: 'text-orange-400',  dot: 'bg-orange-400',  bar: 'bg-orange-500' },
+  { max: Infinity, label: 'Extreme', risk: 'extreme shatter risk', text: 'text-red-400', dot: 'bg-red-400', bar: 'bg-red-500' },
+]
+
+export function instabilityBand(val) {
+  const v = typeof val === 'number' ? val : 0
+  const band = INSTABILITY_BANDS.find((b) => v < b.max) ?? INSTABILITY_BANDS[INSTABILITY_BANDS.length - 1]
+  return { ...band, value: v, barPct: Math.max(0, Math.min(100, (v / 1000) * 100)) }
+}
+
 // --- Instability color helpers ---
 export function instabilityColor(val) {
   if (val == null) return 'text-gray-400'

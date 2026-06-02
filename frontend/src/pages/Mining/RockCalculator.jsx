@@ -3,7 +3,7 @@ import { Check, X as XIcon, ChevronDown, Activity } from 'lucide-react'
 import {
   SHIP_PRESETS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD,
   computeEffectiveModifiers, formatModPct,
-  friendlyElementName,
+  friendlyElementName, instabilityBand,
 } from './miningUtils'
 import { computeQualityBand } from './computeEffectiveRockStats'
 import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
@@ -85,39 +85,18 @@ function ShipButton({ preset, active, onClick }) {
   )
 }
 
-// Stat card inspired by RockBreaker's stats dashboard
-function StatCard({ label, value, subtitle, color = 'text-sc-accent', glow = false }) {
-  return (
-    <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-      <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{label}</p>
-      <p
-        className={`text-xl font-bold font-mono ${color}`}
-        style={glow ? { textShadow: `0 0 12px currentColor` } : undefined}
-      >
-        {value}
-      </p>
-      {subtitle && <p className="text-[10px] text-gray-600 mt-1 font-mono">{subtitle}</p>}
-    </div>
-  )
-}
-
-function ChargeBar({ windowStart, windowEnd, effectiveInstabilityDelta }) {
+function ChargeBar({ windowStart, windowEnd }) {
   const startPct = windowStart * 100
   const endPct = windowEnd * 100
+  const widthPct = endPct - startPct
   const catStart = 90
-
-  const instabilityLabel = effectiveInstabilityDelta != null
-    ? (effectiveInstabilityDelta >= 0 ? `+${effectiveInstabilityDelta.toFixed(3)}` : effectiveInstabilityDelta.toFixed(3))
-    : '—'
-  const instabilityColor = effectiveInstabilityDelta != null && effectiveInstabilityDelta > 0.2
-    ? 'text-red-400'
-    : effectiveInstabilityDelta != null && effectiveInstabilityDelta > 0.05
-      ? 'text-amber-400'
-      : 'text-emerald-400'
 
   return (
     <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Charge Window</div>
+      <div className="flex items-baseline justify-between mb-3">
+        <div className="text-[10px] uppercase tracking-wider text-gray-500">Optimal Charge Zone — release here</div>
+        <div className="text-sm font-mono font-semibold text-emerald-400">{startPct.toFixed(0)}–{endPct.toFixed(0)}%</div>
+      </div>
       <div className="relative h-8 bg-white/[0.04] rounded-full overflow-hidden">
         {/* Background gradient */}
         <div className="absolute inset-0" style={{
@@ -130,25 +109,49 @@ function ChargeBar({ windowStart, windowEnd, effectiveInstabilityDelta }) {
         {/* Optimal window */}
         <div
           className="absolute top-0 bottom-0 bg-emerald-500/30 border-l-2 border-r-2 border-emerald-400/60"
-          style={{ left: `${startPct}%`, width: `${Math.max(endPct - startPct, 0.5)}%` }}
+          style={{ left: `${startPct}%`, width: `${Math.max(widthPct, 0.5)}%` }}
         />
-        {/* Labels */}
         <div className="absolute inset-0 flex items-center px-3 justify-between text-[10px] font-mono">
           <span className="text-gray-500">0%</span>
-          <span className="text-emerald-400 font-semibold bg-black/30 px-2 py-0.5 rounded">
-            {startPct.toFixed(0)}–{endPct.toFixed(0)}%
-          </span>
           <span className="text-gray-500">100%</span>
         </div>
       </div>
-      <div className="flex items-center justify-between mt-2 text-xs">
-        <span className="text-gray-500 font-mono">
-          Window: {(endPct - startPct).toFixed(1)}% wide
-        </span>
-        <span className={`font-mono font-semibold ${instabilityColor}`}>
-          Instability Δ: {instabilityLabel}
-        </span>
+      <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+        Hold the beam between <span className="text-gray-300">{startPct.toFixed(0)}%</span> and <span className="text-gray-300">{endPct.toFixed(0)}%</span> charge
+        {widthPct < 8 ? ' — a narrow window, easy to overshoot.' : ', then ease off — past the red zone is a catastrophic shatter.'}
+      </p>
+    </div>
+  )
+}
+
+// Player-facing stability readout: named band + dot + risk phrase + 0–1000
+// gauge, with the raw weighted instability and quality spread as a footnote.
+function StabilityCard({ band, leanInstability, richInstability }) {
+  const showSpread = leanInstability != null && richInstability != null
+    && Math.abs(leanInstability - richInstability) > 1e-6
+  return (
+    <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-2.5 h-2.5 rounded-full ${band.dot}`} />
+          <span className={`text-lg font-bold ${band.text}`}>{band.label}</span>
+        </div>
+        <span className={`text-sm font-mono ${band.text}`}>{band.risk}</span>
       </div>
+      <div className="h-1.5 rounded-full bg-white/[0.06] mt-3 overflow-hidden">
+        <div className={`h-full rounded-full ${band.bar}`} style={{ width: `${band.barPct}%` }} />
+      </div>
+      <p className="text-[11px] text-gray-500 mt-2.5 leading-relaxed">
+        {band.label === 'Stable'   && 'Forgiving — little danger of a catastrophic shatter.'}
+        {band.label === 'Twitchy'  && 'Stay attentive — overcharging will shatter it.'}
+        {band.label === 'Volatile' && 'Dangerous — overcharge even slightly and it shatters.'}
+        {band.label === 'Extreme'  && 'Brutal — the shatter window is unforgiving.'}
+        {' '}Higher-quality (richer) rolls of this rock get more unstable.
+      </p>
+      <p className="text-[10px] text-gray-600 mt-1.5 font-mono">
+        instability {Math.round(band.value)} / 1000
+        {showSpread && <> · lean {Math.round(leanInstability)} → rich {Math.round(richInstability)}</>}
+      </p>
     </div>
   )
 }
@@ -163,7 +166,7 @@ function PowerBar({ totalDps, effectiveResistance, canBreak }) {
 
   return (
     <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Power vs Resistance</div>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Power vs Rock</div>
       <div className="relative h-6 bg-white/[0.04] rounded-full overflow-hidden">
         {/* Power bar */}
         <div
@@ -180,23 +183,17 @@ function PowerBar({ totalDps, effectiveResistance, canBreak }) {
       </div>
       <div className="flex items-center justify-between mt-2 text-xs font-mono">
         <span className="text-gray-400">
-          Your Power: <span className="text-sc-accent">{totalDps.toFixed(1)}</span>
+          Your power <span className="text-sc-accent">{totalDps.toFixed(0)}</span>
         </span>
         <span className={canBreak ? 'text-emerald-400' : 'text-red-400'}>
-          {canBreak ? 'Surplus' : 'Deficit'}: {diffPct.toFixed(1)}%
+          {canBreak ? 'Surplus' : 'Deficit'} {diffPct.toFixed(0)}%
         </span>
         <span className="text-gray-400">
-          Required: <span className="text-amber-400">{effectiveResistance.toFixed(1)}</span>
+          Needs <span className="text-amber-400">{effectiveResistance.toFixed(0)}</span>
         </span>
       </div>
     </div>
   )
-}
-
-/** The avg (expected) value of a quality band, formatted. */
-function fmtBandAvg(band, fmt = (v) => v.toFixed(2)) {
-  if (!band || band.avg == null) return '—'
-  return fmt(band.avg)
 }
 
 /** "Lean X → Rich Y" sub-line for a quality band. Collapses to a single
@@ -205,6 +202,19 @@ function fmtBandSpread(band, fmt = (v) => v.toFixed(2)) {
   if (!band || band.lean == null || band.rich == null) return null
   if (Math.abs(band.lean - band.rich) < 1e-6) return null
   return `Lean ${fmt(band.lean)} → Rich ${fmt(band.rich)}`
+}
+
+/** Plain-language difficulty tag for a composition element, from its signed
+ *  resistance modifier + raw instability. Lets a player read "easy" / "brutal"
+ *  instead of "R:-0.400 I:50.000". */
+function elementDifficultyTag(stats) {
+  const r = stats?.element_resistance
+  const i = stats?.element_instability
+  if (r == null && i == null) return null
+  if ((r ?? 0) >= 0.6 || (i ?? 0) >= 700) return { label: 'brutal', tone: 'text-red-400' }
+  if ((r ?? 0) >= 0.3 || (i ?? 0) >= 400) return { label: 'tough', tone: 'text-orange-400' }
+  if ((r ?? 0) <= -0.3 && (i ?? 0) < 100) return { label: 'easy', tone: 'text-emerald-400' }
+  return { label: 'moderate', tone: 'text-gray-400' }
 }
 
 // Module-scope pure helpers — no implicit closure over component state
@@ -364,6 +374,14 @@ export default function RockCalculator({ data }) {
     const windowEnd = Math.min(1, baseMidpoint + windowSize / 2)
 
     const canBreak = result.totalDps > effectiveResistanceAfterLaser
+    // Margin: how much your power over/under-shoots the rock's resistance.
+    const marginPct = effectiveResistanceAfterLaser > 0
+      ? Math.abs((result.totalDps - effectiveResistanceAfterLaser) / effectiveResistanceAfterLaser) * 100
+      : 0
+
+    const band = instabilityBand(instabilityDelta)
+    const leanInstability = aggregatedStats.band?.effective_instability_delta?.lean
+    const richInstability = aggregatedStats.band?.effective_instability_delta?.rich
 
     return {
       effectiveResistance,
@@ -372,6 +390,10 @@ export default function RockCalculator({ data }) {
       windowStart,
       windowEnd,
       canBreak,
+      marginPct,
+      band,
+      leanInstability,
+      richInstability,
     }
   }, [aggregatedStats, result.mods, result.totalDps, shipScopeParams])
 
@@ -563,6 +585,11 @@ export default function RockCalculator({ data }) {
                       style={{ textShadow: '0 0 20px rgba(52, 211, 153, 0.5)' }}>
                       CAN BREAK
                     </p>
+                    <p className="text-xs text-gray-300 mt-1.5">
+                      Your laser overpowers this rock by{' '}
+                      <span className="text-emerald-400 font-semibold">{displayStats.marginPct.toFixed(0)}%</span>
+                      {displayStats.marginPct < 15 && <span className="text-amber-400"> — tight</span>}
+                    </p>
                   </div>
                 ) : (
                   <div>
@@ -570,6 +597,9 @@ export default function RockCalculator({ data }) {
                     <p className="text-2xl font-bold tracking-wider text-red-400 font-display"
                       style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.5)' }}>
                       CANNOT BREAK
+                    </p>
+                    <p className="text-xs text-gray-300 mt-1.5">
+                      Short by <span className="text-red-400 font-semibold">{displayStats.marginPct.toFixed(0)}%</span> — needs a stronger laser or modules
                     </p>
                   </div>
                 )}
@@ -586,86 +616,71 @@ export default function RockCalculator({ data }) {
                 )}
               </div>
 
-              {/* Power vs Resistance bar */}
-              <PowerBar
-                totalDps={result.totalDps}
-                effectiveResistance={displayStats.effectiveResistanceAfterLaser}
-                canBreak={displayStats.canBreak}
-              />
-
-              {/* Stats dashboard — RockBreaker-inspired grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <StatCard
-                  label="Total Laser Power"
-                  value={result.totalDps.toFixed(2)}
-                  color="text-sc-accent"
-                  glow
+              {/* Power vs Rock bar (your power vs power-to-fracture) */}
+              <div>
+                <PowerBar
+                  totalDps={result.totalDps}
+                  effectiveResistance={displayStats.effectiveResistanceAfterLaser}
+                  canBreak={displayStats.canBreak}
                 />
-                <StatCard
-                  label="Adjusted Resistance"
-                  value={fmtBandAvg(aggregatedStats?.band?.effective_resistance_after_laser)}
-                  subtitle={
-                    fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser)
-                    ?? (aggregatedStats?.count > 1 ? `${aggregatedStats.count} variants` : 'expected roll')
-                  }
-                  color="text-amber-400"
-                />
-                <StatCard
-                  label="Power Difference"
-                  value={(result.totalDps - displayStats.effectiveResistanceAfterLaser).toFixed(2)}
-                  color={displayStats.canBreak ? 'text-emerald-400' : 'text-red-400'}
-                  glow
-                />
-                <StatCard
-                  label="Instability"
-                  value={fmtBandAvg(aggregatedStats?.band?.effective_instability_delta, (v) => (v >= 0 ? `+${v.toFixed(3)}` : v.toFixed(3)))}
-                  subtitle={
-                    fmtBandSpread(aggregatedStats?.band?.effective_instability_delta, (v) => v.toFixed(3))
-                    ?? 'rises with quality'
-                  }
-                  color={displayStats.instabilityDelta > 0.2 ? 'text-red-400' : displayStats.instabilityDelta > 0.05 ? 'text-amber-400' : 'text-emerald-400'}
-                />
+                {fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser, (v) => v.toFixed(0)) && (
+                  <p className="text-[10px] text-gray-600 mt-1.5 ml-1 font-mono">
+                    power needed by quality — {fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser, (v) => v.toFixed(0))}
+                  </p>
+                )}
               </div>
 
-              {/* Charge window */}
+              {/* Stability — the danger axis, as a named band */}
+              <StabilityCard
+                band={displayStats.band}
+                leanInstability={displayStats.leanInstability}
+                richInstability={displayStats.richInstability}
+              />
+
+              {/* Optimal charge zone */}
               <ChargeBar
                 windowStart={displayStats.windowStart}
                 windowEnd={displayStats.windowEnd}
-                effectiveInstabilityDelta={displayStats.instabilityDelta}
               />
 
-              {/* Rock elements — only shown for specific variant */}
+              {/* What's in it — only shown for a specific variant */}
               {pick.compositionUuid && displayElements.length > 0 && (
                 <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-                  <h4 className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Rock Composition Elements</h4>
+                  <h4 className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">What's in it</h4>
                   <div className="space-y-1.5">
-                    {displayElements.map((el, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs">
-                        <span className="text-gray-300">
-                          {friendlyElementName(el.element)}
-                        </span>
-                        <div className="flex items-center gap-3 text-gray-500 font-mono">
-                          {el.max_pct != null && (
-                            <span>{(el.min_pct ?? 0).toFixed(1)}–{el.max_pct.toFixed(1)}%</span>
-                          )}
-                          {el.stats?.element_resistance != null && (
-                            <span className="text-amber-400/60">R:{el.stats.element_resistance.toFixed(3)}</span>
-                          )}
-                          {el.stats?.element_instability != null && (
-                            <span className="text-red-400/60">I:{el.stats.element_instability.toFixed(3)}</span>
-                          )}
+                    {displayElements.map((el, i) => {
+                      const tag = elementDifficultyTag(el.stats)
+                      return (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-300">{friendlyElementName(el.element)}</span>
+                          <div className="flex items-center gap-3 font-mono text-gray-500">
+                            {el.max_pct != null && (
+                              <span>{(el.min_pct ?? 0).toFixed(0)}–{el.max_pct.toFixed(0)}%</span>
+                            )}
+                            {tag && <span className={tag.tone}>{tag.label}</span>}
+                            {/* raw modifiers kept for power users */}
+                            {el.stats?.element_resistance != null && (
+                              <span className="text-gray-600">R:{el.stats.element_resistance.toFixed(2)}</span>
+                            )}
+                            {el.stats?.element_instability != null && (
+                              <span className="text-gray-600">I:{el.stats.element_instability.toFixed(0)}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Effective modifiers */}
+              {/* Your loadout bonuses — collapsed; power-user detail */}
               {MOD_KEYS.some(k => Math.abs(result.mods[k]) > 0.0001) && (
-                <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-                  <h4 className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Effective Modifiers</h4>
-                  <div className="grid grid-cols-2 gap-2">
+                <details className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg px-4 py-3 group">
+                  <summary className="text-[10px] uppercase tracking-wider text-gray-500 cursor-pointer select-none flex items-center gap-2 list-none">
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                    Your laser &amp; module bonuses
+                  </summary>
+                  <div className="grid grid-cols-2 gap-2 mt-3">
                     {MOD_KEYS.map(key => {
                       const val = result.mods[key]
                       if (Math.abs(val) < 0.0001) return null
@@ -680,7 +695,7 @@ export default function RockCalculator({ data }) {
                       )
                     })}
                   </div>
-                </div>
+                </details>
               )}
             </>
           ) : (
