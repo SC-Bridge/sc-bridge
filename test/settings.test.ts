@@ -42,6 +42,45 @@ describe("Settings — /api/settings/preferences", () => {
       expect(body.privacyMode).toBe("hidden");
     });
 
+    it("stores and retrieves miningLoadouts (JSON array string)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+
+      const loadouts = JSON.stringify([
+        { name: "My MOLE", ship: 1, laserIds: { 0: 12 }, moduleIds: { "0-0": 5 }, gadget: 3 },
+      ]);
+      const putRes = await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ miningLoadouts: loadouts }),
+      });
+      expect(putRes.status).toBe(200);
+
+      const getRes = await SELF.fetch("http://localhost/api/settings/preferences", { headers });
+      const body = (await getRes.json()) as Record<string, string>;
+      expect(body.miningLoadouts).toBe(loadouts);
+      // round-trips back to a usable array
+      expect(JSON.parse(body.miningLoadouts)[0].name).toBe("My MOLE");
+    });
+
+    it("clears miningLoadouts when set to null", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = await authHeaders(sessionToken);
+      await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ miningLoadouts: "[]" }),
+      });
+      await SELF.fetch("http://localhost/api/settings/preferences", {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ miningLoadouts: null }),
+      });
+      const getRes = await SELF.fetch("http://localhost/api/settings/preferences", { headers });
+      const body = (await getRes.json()) as Record<string, string>;
+      expect(body.miningLoadouts).toBeUndefined();
+    });
+
     it("stores and retrieves stealthPercent", async () => {
       const { sessionToken } = await createTestUser(env.DB);
       const headers = await authHeaders(sessionToken);

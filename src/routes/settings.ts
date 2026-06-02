@@ -181,6 +181,10 @@ export function settingsRoutes() {
       stealthPercent: z.string().max(5).optional(),
       sidebarCollapsed: z.enum(['0', '1']).optional(),
       publicFleetShare: z.enum(['true']).nullable().optional(),
+      // Saved Rock Calculator loadouts — a JSON array string, persisted per
+      // account for logged-in users (anonymous users keep theirs in
+      // localStorage). Capped to keep the KV value sane.
+      miningLoadouts: z.string().max(20000).nullable().optional(),
     }).strict()),
     async (c) => {
     const db = c.env.DB;

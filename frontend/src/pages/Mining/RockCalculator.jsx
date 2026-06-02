@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { Check, X as XIcon, ChevronDown, Activity } from 'lucide-react'
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Check, X as XIcon, ChevronDown, Activity, Save, Trash2 } from 'lucide-react'
 import {
   SHIP_PRESETS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD,
   computeEffectiveModifiers, formatModPct,
@@ -7,6 +8,13 @@ import {
 } from './miningUtils'
 import { computeQualityBand } from './computeEffectiveRockStats'
 import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
+import { encodeLoadoutParams, decodeLoadoutParams } from './loadoutCodec'
+import {
+  serializeLoadout, resolveLoadout, upsertLoadout, removeLoadout,
+  readLocalLoadouts, writeLocalLoadouts,
+} from './loadoutStore'
+import { useSession } from '../../lib/auth-client'
+import { usePreferences, setPreferences } from '../../hooks/useAPI'
 import DepositPicker from './DepositPicker'
 
 // Custom styled select replacing native <select>
@@ -261,6 +269,92 @@ export default function RockCalculator({ data }) {
   const gadgets = data?.gadgets || []
   const compositions = data?.compositions || []
   const elements = data?.elements || []
+
+  // ── Deep-link: hydrate state from the URL once data is available, then keep
+  //    the URL in sync as the loadout/rock changes (shareable scenario). We
+  //    only touch our own keys so the parent's `tab` param is preserved.
+  const [searchParams, setSearchParams] = useSearchParams()
+  // `hydrated` is state (not a ref) so the URL-writer below only runs on the
+  // render AFTER hydration — the hydrated values are applied in the same batch
+  // as setHydrated(true), so the writer never clobbers the incoming link with
+  // default state first.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => {
+    if (hydrated || !data) return
+    const decoded = decodeLoadoutParams(searchParams, data, SHIP_PRESETS.length)
+    if (decoded) {
+      setShipIndex(decoded.shipIndex)
+      setLaserIds(decoded.laserIds)
+      setModuleIds(decoded.moduleIds)
+      setGadget(decoded.gadget)
+      setPick(decoded.pick)
+    }
+    setHydrated(true)
+  }, [data, searchParams, hydrated])
+
+  useEffect(() => {
+    if (!hydrated) return
+    const next = encodeLoadoutParams({ shipIndex, laserIds, moduleIds, gadget, pick })
+    setSearchParams((prev) => {
+      const merged = new URLSearchParams(prev)
+      // Drop our keys, then re-add the current set (so removals clear from URL).
+      for (const k of [...merged.keys()]) {
+        if (k === 'ship' || k === 'gadget' || k === 'rock' || k === 'el'
+            || /^l\d+$/.test(k) || /^m\d+-\d+$/.test(k)) merged.delete(k)
+      }
+      for (const [k, v] of Object.entries(next)) merged.set(k, v)
+      return merged
+    }, { replace: true })
+  }, [hydrated, shipIndex, laserIds, moduleIds, gadget, pick, setSearchParams])
+
+  // ── Saved loadouts: account-backed when logged in, localStorage otherwise.
+  const { data: session } = useSession()
+  const isLoggedIn = !!session?.user
+  const { data: prefs } = usePreferences({ skip: !isLoggedIn })
+  const [loadouts, setLoadouts] = useState([])
+  const [loadoutName, setLoadoutName] = useState('')
+
+  // Load saved loadouts from the right source once we know auth state.
+  useEffect(() => {
+    if (isLoggedIn) {
+      if (prefs === null) return // still loading
+      try {
+        const arr = prefs?.miningLoadouts ? JSON.parse(prefs.miningLoadouts) : []
+        setLoadouts(Array.isArray(arr) ? arr : [])
+      } catch { setLoadouts([]) }
+    } else {
+      setLoadouts(readLocalLoadouts())
+    }
+  }, [isLoggedIn, prefs])
+
+  const persistLoadouts = useCallback((next) => {
+    setLoadouts(next)
+    if (isLoggedIn) {
+      setPreferences({ miningLoadouts: next.length ? JSON.stringify(next) : null })
+        .catch((err) => console.error('[mining] save loadouts failed:', err))
+    } else {
+      writeLocalLoadouts(next)
+    }
+  }, [isLoggedIn])
+
+  const saveCurrentLoadout = useCallback(() => {
+    const name = loadoutName.trim()
+    if (!name) return
+    persistLoadouts(upsertLoadout(loadouts, serializeLoadout(name, { shipIndex, laserIds, moduleIds, gadget })))
+    setLoadoutName('')
+  }, [loadoutName, loadouts, shipIndex, laserIds, moduleIds, gadget, persistLoadouts])
+
+  const applyLoadout = useCallback((entry) => {
+    const r = resolveLoadout(entry, data)
+    setShipIndex(r.shipIndex)
+    setLaserIds(r.laserIds)
+    setModuleIds(r.moduleIds)
+    setGadget(r.gadget)
+  }, [data])
+
+  const deleteLoadout = useCallback((name) => {
+    persistLoadouts(removeLoadout(loadouts, name))
+  }, [loadouts, persistLoadouts])
 
   // Show every composition that has a deposit_name. Comps without a direct
   // mineable_rock_entities row (the CommonShipMineables_X shared templates)
@@ -559,6 +653,60 @@ export default function RockCalculator({ data }) {
           <div className="relative z-10 bg-white/[0.03] border border-white/[0.06] rounded-xl p-5">
             <h3 className="text-xs uppercase tracking-wider text-gray-400 mb-3 font-display">Rock</h3>
             <DepositPicker compositions={pickerCompositions} value={pick} onChange={setPick} />
+          </div>
+
+          {/* Saved loadouts — save the current ship config, reload it later.
+              Backed by your account when logged in, otherwise this browser. */}
+          <div className="relative z-0 bg-white/[0.03] border border-white/[0.06] rounded-xl p-5">
+            <h3 className="text-xs uppercase tracking-wider text-gray-400 mb-3 font-display">Saved Loadouts</h3>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={loadoutName}
+                onChange={(e) => setLoadoutName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveCurrentLoadout() }}
+                placeholder="Name this loadout…"
+                maxLength={40}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm bg-white/[0.03] border border-white/[0.08] text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-sc-accent/40"
+              />
+              <button
+                type="button"
+                onClick={saveCurrentLoadout}
+                disabled={!loadoutName.trim() || !Object.values(laserIds).some(Boolean)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-sc-accent/15 text-sc-accent border border-sc-accent/30 hover:bg-sc-accent/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" /> Save
+              </button>
+            </div>
+
+            {loadouts.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-gray-600">
+                  {isLoggedIn ? 'Saved to your account' : 'Saved in this browser'}
+                </p>
+                {loadouts.map((lo) => (
+                  <div key={lo.name} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyLoadout(lo)}
+                      className="flex-1 min-w-0 text-left px-3 py-2 rounded-lg text-xs bg-white/[0.03] border border-white/[0.06] text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer truncate"
+                    >
+                      {lo.name}
+                      <span className="text-gray-600 ml-2">{SHIP_PRESETS[lo.ship]?.name ?? 'Ship'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteLoadout(lo.name)}
+                      aria-label={`Delete ${lo.name}`}
+                      className="p-2 rounded-lg text-gray-600 hover:text-red-400 hover:bg-white/[0.04] transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
