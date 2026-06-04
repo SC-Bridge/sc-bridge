@@ -3,6 +3,8 @@ import {
   humanizeComponentType,
   missileSeekerCode,
   generateItemLabels,
+  ALL_LABEL_FIELDS,
+  CATEGORY_AVAILABLE_FIELDS,
   type ItemRow,
 } from "../src/lib/localization";
 
@@ -26,6 +28,8 @@ function itemRow(over: Partial<ItemRow>): ItemRow {
     grade: null,
     subType: null,
     seeker: null,
+    componentClass: null,
+    type: null,
     ...over,
   };
 }
@@ -51,6 +55,11 @@ describe("humanizeComponentType", () => {
   it("returns null for empty/nullish input", () => {
     expect(humanizeComponentType("")).toBeNull();
     expect(humanizeComponentType(null)).toBeNull();
+  });
+
+  it("treats the CIG 'UNDEFINED' sentinel as null (never a real type)", () => {
+    expect(humanizeComponentType("UNDEFINED")).toBeNull();
+    expect(humanizeComponentType("undefined")).toBeNull();
   });
 });
 
@@ -80,5 +89,102 @@ describe("generateItemLabels — seeker field", () => {
     const rows: ItemRow[] = [itemRow({ seeker: null })];
     const out = generateItemLabels(rows, { fields: ["seeker"], format: "prefix" });
     expect(out[0].value).toBe("Dominator II Missile");
+  });
+});
+
+describe("generateItemLabels — componentClass field", () => {
+  it("appends the component class (Military/Stealth/…) to the tag", () => {
+    const rows: ItemRow[] = [
+      itemRow({
+        className: "cooler_godi_s2_military",
+        name: "FullStop",
+        manufacturerCode: "GODI",
+        size: 2,
+        grade: "C",
+        subType: "Cooler",
+        componentClass: "Military",
+      }),
+    ];
+    const out = generateItemLabels(rows, {
+      fields: ["manufacturer", "size", "grade", "subType", "componentClass"],
+      format: "suffix",
+    });
+    expect(out[0].value).toBe("FullStop [GODI | S2 | Gr.C | Cooler | Military]");
+  });
+
+  it("omits the class when the row has none", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "FullStop", subType: "Cooler", componentClass: null }),
+    ];
+    const out = generateItemLabels(rows, {
+      fields: ["subType", "componentClass"],
+      format: "suffix",
+    });
+    expect(out[0].value).toBe("FullStop [Cooler]");
+  });
+});
+
+describe("generateItemLabels — Type field (subType) coalesce vs UNDEFINED", () => {
+  // CIG sets AttachDef.SubType="UNDEFINED" for coolers/shields/quantum drives,
+  // putting the real classification in AttachDef.Type ("Cooler"). The Type label
+  // field should fall back to the humanized `type` column rather than print
+  // the literal "UNDEFINED".
+  it("falls back to humanized type when subType is UNDEFINED", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "AbsoluteZero", subType: "UNDEFINED", type: "Cooler" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("AbsoluteZero [Cooler]");
+  });
+
+  it("humanizes a PascalCase type fallback (QuantumDrive -> Quantum Drive)", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "VK00", subType: "UNDEFINED", type: "QuantumDrive" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("VK00 [Quantum Drive]");
+  });
+
+  it("keeps a meaningful subType instead of the type fallback", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Thruster_X", subType: "FixedThruster", type: "MainThruster" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("Thruster_X [FixedThruster]");
+  });
+
+  it("drops the Type field entirely when subType is UNDEFINED and no type is available", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Pint Glass", subType: "UNDEFINED", type: null }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("Pint Glass");
+  });
+
+  it("drops the Type field when BOTH subType and type are UNDEFINED (the medical-canister case)", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Pancea MedGel Canister", size: 1, grade: "1", subType: "UNDEFINED", type: "UNDEFINED" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["size", "grade", "subType"], format: "suffix" });
+    expect(out[0].value).toBe("Pancea MedGel Canister [S1 | Gr.1]");
+  });
+});
+
+describe("label-field source of truth", () => {
+  // The save endpoint's Zod enum is built from ALL_LABEL_FIELDS, so it must
+  // contain every field any category can offer — otherwise saving a config
+  // that uses that field fails validation (regression: componentClass was
+  // selectable in the UI but rejected on save).
+  it("ALL_LABEL_FIELDS covers every field in CATEGORY_AVAILABLE_FIELDS", () => {
+    const allowed = new Set<string>(ALL_LABEL_FIELDS);
+    for (const [cat, fields] of Object.entries(CATEGORY_AVAILABLE_FIELDS)) {
+      for (const f of fields) {
+        expect(allowed.has(f), `${cat} offers "${f}" but it's not in ALL_LABEL_FIELDS`).toBe(true);
+      }
+    }
+  });
+
+  it("includes componentClass", () => {
+    expect(ALL_LABEL_FIELDS).toContain("componentClass");
   });
 });

@@ -13,7 +13,7 @@ export const LABEL_CATEGORIES = [
 
 // Only fields with meaningful, varied data per category
 export const CATEGORY_FIELDS = {
-  vehicle_components: ['manufacturer', 'size', 'grade', 'subType'],
+  vehicle_components: ['manufacturer', 'size', 'grade', 'subType', 'componentClass'],
   fps_weapons: ['manufacturer', 'size', 'subType'],
   fps_armour: ['manufacturer', 'subType'],
   fps_helmets: ['manufacturer', 'grade', 'subType'],
@@ -29,10 +29,11 @@ export const FIELD_LABELS = {
   grade: 'Grade',
   subType: 'Type',
   seeker: 'Seeker',
+  componentClass: 'Class',
 }
 
 export const EXAMPLE_DATA = {
-  vehicle_components: { name: 'FullStop', manufacturer: 'GODI', size: 2, grade: 'C', subType: 'Cooler' },
+  vehicle_components: { name: 'FullStop', manufacturer: 'GODI', size: 2, grade: 'C', subType: 'Cooler', componentClass: 'Military' },
   fps_weapons: { name: 'Demeco LMG', manufacturer: 'KRIG', size: 2, grade: null, subType: 'LMG' },
   fps_armour: { name: 'Morozov Core', manufacturer: 'AEGS', size: null, grade: null, subType: 'Torso' },
   fps_helmets: { name: 'Calva Helmet', manufacturer: 'AEGS', size: null, grade: 'A', subType: 'Heavy' },
@@ -63,6 +64,7 @@ export function buildPreviewLabel(dbKey, fields, format) {
     if (field === 'grade' && data.grade) parts.push(`Gr.${data.grade}`)
     if (field === 'subType' && data.subType) parts.push(data.subType)
     if (field === 'seeker' && data.seeker) parts.push(data.seeker)
+    if (field === 'componentClass' && data.componentClass) parts.push(data.componentClass)
   }
   const tag = parts.join(' | ')
   if (!tag) return data.name

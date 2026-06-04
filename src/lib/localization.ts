@@ -36,12 +36,30 @@ export interface ItemRow {
   subType: string | null;
   /** Short missile seeker code (EM/IR/CS); only set for ship_missiles. */
   seeker?: string | null;
+  /** Component role/class (Military/Stealth/Industrial/Civilian/Competition); only set for vehicle_components. */
+  componentClass?: string | null;
+  /** Raw component type (vehicle_components.type, e.g. "Cooler"); fallback for the Type field when subType is "UNDEFINED". */
+  type?: string | null;
 }
 
 export type LabelFormat = "suffix" | "prefix";
 
+/**
+ * Every field that can appear in a label tag. Single source of truth — the
+ * save endpoint's Zod enum (src/routes/localization.ts) is built from this, so
+ * adding a field here automatically keeps validation in sync.
+ */
+export const ALL_LABEL_FIELDS = [
+  "manufacturer",
+  "size",
+  "grade",
+  "subType",
+  "seeker",
+  "componentClass",
+] as const;
+
 /** A field that can appear in a label tag */
-export type LabelField = "manufacturer" | "size" | "grade" | "subType" | "seeker";
+export type LabelField = (typeof ALL_LABEL_FIELDS)[number];
 
 /** Per-category format configuration */
 export interface CategoryFormat {
@@ -60,7 +78,7 @@ export type CategoryFormats = Record<string, CategoryFormat>;
 // Excludes: columns that don't exist on the table, columns where every row
 // has the same value (e.g. grade=A only), or columns with unhelpful data.
 export const CATEGORY_AVAILABLE_FIELDS: Record<string, LabelField[]> = {
-  vehicle_components: ["manufacturer", "size", "grade", "subType"],
+  vehicle_components: ["manufacturer", "size", "grade", "subType", "componentClass"],
   fps_weapons: ["manufacturer", "size", "subType"],
   fps_armour: ["manufacturer", "subType"],
   fps_helmets: ["manufacturer", "grade", "subType"],
@@ -77,6 +95,7 @@ export const FIELD_LABELS: Record<LabelField, string> = {
   grade: "Grade",
   subType: "Type",
   seeker: "Seeker",
+  componentClass: "Class",
 };
 
 /** Default format for a category: all available fields, suffix format */
@@ -155,11 +174,22 @@ function buildDetailTag(
       case "grade":
         if (row.grade) parts.push(`Gr.${row.grade}`);
         break;
-      case "subType":
-        if (row.subType) parts.push(row.subType);
+      case "subType": {
+        // CIG stores SubType="UNDEFINED" for many components (coolers, shields,
+        // quantum drives); the meaningful classification lives in `type`. Use a
+        // real subType, else fall back to the humanized type, else drop it.
+        const typeLabel =
+          row.subType && row.subType !== "UNDEFINED"
+            ? row.subType
+            : humanizeComponentType(row.type ?? null);
+        if (typeLabel) parts.push(typeLabel);
         break;
+      }
       case "seeker":
         if (row.seeker) parts.push(row.seeker);
+        break;
+      case "componentClass":
+        if (row.componentClass) parts.push(row.componentClass);
         break;
     }
   }
@@ -311,6 +341,9 @@ const COMPONENT_TYPE_LABELS: Record<string, string> = {
 /** Humanize a vehicle_components.type value for display, or null if empty. */
 export function humanizeComponentType(type: string | null): string | null {
   if (!type) return null;
+  // CIG uses the literal "UNDEFINED" as a no-value sentinel on AttachDef
+  // Type/SubType — never a real type. Treat it as null everywhere.
+  if (type.toUpperCase() === "UNDEFINED") return null;
   if (COMPONENT_TYPE_LABELS[type]) return COMPONENT_TYPE_LABELS[type];
   return type
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
