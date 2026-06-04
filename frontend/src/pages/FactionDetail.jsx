@@ -685,11 +685,14 @@ export default function FactionDetail() {
         )}
       </div>
 
-      {/* Slide container */}
-      <div className="relative overflow-hidden min-h-[200px]">
+      {/* Slide container — both panels share one grid cell so the container
+          sizes to whichever is taller. (Absolute-positioning the detail panel
+          removed it from flow, so a tall blueprint list overflowed the
+          list-height container and got clipped — #147 / #163.) */}
+      <div className="relative grid overflow-hidden min-h-[200px]">
         {/* Mission list */}
         <div
-          className={`transition-all duration-500 ease-in-out ${isDetailView ? 'pointer-events-none' : ''}`}
+          className={`col-start-1 row-start-1 transition-all duration-500 ease-in-out ${isDetailView ? 'pointer-events-none' : ''}`}
           style={{ transform: isDetailView ? 'translateX(-100%)' : 'translateX(0)', opacity: isDetailView ? 0 : 1 }}
         >
           {/* Category filter */}
@@ -750,7 +753,7 @@ export default function FactionDetail() {
 
         {/* Mission detail (slides in from right) */}
         <div
-          className={`absolute top-0 left-0 right-0 transition-all duration-500 ease-in-out ${!isDetailView ? 'pointer-events-none' : ''}`}
+          className={`col-start-1 row-start-1 transition-all duration-500 ease-in-out ${!isDetailView ? 'pointer-events-none' : ''}`}
           style={{ transform: isDetailView ? 'translateX(0)' : 'translateX(100%)', opacity: isDetailView ? 1 : 0 }}
         >
           {selectedMission && (
