@@ -38,6 +38,8 @@ export interface ItemRow {
   seeker?: string | null;
   /** Component role/class (Military/Stealth/Industrial/Civilian/Competition); only set for vehicle_components. */
   componentClass?: string | null;
+  /** Raw component type (vehicle_components.type, e.g. "Cooler"); fallback for the Type field when subType is "UNDEFINED". */
+  type?: string | null;
 }
 
 export type LabelFormat = "suffix" | "prefix";
@@ -172,9 +174,17 @@ function buildDetailTag(
       case "grade":
         if (row.grade) parts.push(`Gr.${row.grade}`);
         break;
-      case "subType":
-        if (row.subType) parts.push(row.subType);
+      case "subType": {
+        // CIG stores SubType="UNDEFINED" for many components (coolers, shields,
+        // quantum drives); the meaningful classification lives in `type`. Use a
+        // real subType, else fall back to the humanized type, else drop it.
+        const typeLabel =
+          row.subType && row.subType !== "UNDEFINED"
+            ? row.subType
+            : humanizeComponentType(row.type ?? null);
+        if (typeLabel) parts.push(typeLabel);
         break;
+      }
       case "seeker":
         if (row.seeker) parts.push(row.seeker);
         break;

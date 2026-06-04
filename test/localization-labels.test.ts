@@ -29,6 +29,7 @@ function itemRow(over: Partial<ItemRow>): ItemRow {
     subType: null,
     seeker: null,
     componentClass: null,
+    type: null,
     ...over,
   };
 }
@@ -115,6 +116,44 @@ describe("generateItemLabels — componentClass field", () => {
       format: "suffix",
     });
     expect(out[0].value).toBe("FullStop [Cooler]");
+  });
+});
+
+describe("generateItemLabels — Type field (subType) coalesce vs UNDEFINED", () => {
+  // CIG sets AttachDef.SubType="UNDEFINED" for coolers/shields/quantum drives,
+  // putting the real classification in AttachDef.Type ("Cooler"). The Type label
+  // field should fall back to the humanized `type` column rather than print
+  // the literal "UNDEFINED".
+  it("falls back to humanized type when subType is UNDEFINED", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "AbsoluteZero", subType: "UNDEFINED", type: "Cooler" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("AbsoluteZero [Cooler]");
+  });
+
+  it("humanizes a PascalCase type fallback (QuantumDrive -> Quantum Drive)", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "VK00", subType: "UNDEFINED", type: "QuantumDrive" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("VK00 [Quantum Drive]");
+  });
+
+  it("keeps a meaningful subType instead of the type fallback", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Thruster_X", subType: "FixedThruster", type: "MainThruster" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("Thruster_X [FixedThruster]");
+  });
+
+  it("drops the Type field entirely when subType is UNDEFINED and no type is available", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Pint Glass", subType: "UNDEFINED", type: null }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
+    expect(out[0].value).toBe("Pint Glass");
   });
 });
 
