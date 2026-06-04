@@ -42,8 +42,22 @@ export interface ItemRow {
 
 export type LabelFormat = "suffix" | "prefix";
 
+/**
+ * Every field that can appear in a label tag. Single source of truth — the
+ * save endpoint's Zod enum (src/routes/localization.ts) is built from this, so
+ * adding a field here automatically keeps validation in sync.
+ */
+export const ALL_LABEL_FIELDS = [
+  "manufacturer",
+  "size",
+  "grade",
+  "subType",
+  "seeker",
+  "componentClass",
+] as const;
+
 /** A field that can appear in a label tag */
-export type LabelField = "manufacturer" | "size" | "grade" | "subType" | "seeker" | "componentClass";
+export type LabelField = (typeof ALL_LABEL_FIELDS)[number];
 
 /** Per-category format configuration */
 export interface CategoryFormat {

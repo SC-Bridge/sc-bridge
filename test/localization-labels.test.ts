@@ -3,6 +3,8 @@ import {
   humanizeComponentType,
   missileSeekerCode,
   generateItemLabels,
+  ALL_LABEL_FIELDS,
+  CATEGORY_AVAILABLE_FIELDS,
   type ItemRow,
 } from "../src/lib/localization";
 
@@ -113,5 +115,24 @@ describe("generateItemLabels — componentClass field", () => {
       format: "suffix",
     });
     expect(out[0].value).toBe("FullStop [Cooler]");
+  });
+});
+
+describe("label-field source of truth", () => {
+  // The save endpoint's Zod enum is built from ALL_LABEL_FIELDS, so it must
+  // contain every field any category can offer — otherwise saving a config
+  // that uses that field fails validation (regression: componentClass was
+  // selectable in the UI but rejected on save).
+  it("ALL_LABEL_FIELDS covers every field in CATEGORY_AVAILABLE_FIELDS", () => {
+    const allowed = new Set<string>(ALL_LABEL_FIELDS);
+    for (const [cat, fields] of Object.entries(CATEGORY_AVAILABLE_FIELDS)) {
+      for (const f of fields) {
+        expect(allowed.has(f), `${cat} offers "${f}" but it's not in ALL_LABEL_FIELDS`).toBe(true);
+      }
+    }
+  });
+
+  it("includes componentClass", () => {
+    expect(ALL_LABEL_FIELDS).toContain("componentClass");
   });
 });

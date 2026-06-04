@@ -8,6 +8,7 @@ import {
   type ItemRow,
   type LabelOverride,
   type LocalizationConfig,
+  ALL_LABEL_FIELDS,
   DEFAULT_CONFIG,
   configFromRow,
   diffGlobalIni,
@@ -131,7 +132,7 @@ export function localizationRoutes() {
         labelsShipMissiles: z.boolean().optional(),
         labelFormat: z.enum(["suffix", "prefix"]).optional(),
         categoryFormats: z.record(z.string(), z.object({
-          fields: z.array(z.enum(["manufacturer", "size", "grade", "subType", "seeker"])),
+          fields: z.array(z.enum(ALL_LABEL_FIELDS)),
           format: z.enum(["suffix", "prefix"]),
         })).optional(),
         enabledPacks: z.array(z.string().max(100)).max(50).optional(),
