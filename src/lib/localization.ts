@@ -341,6 +341,9 @@ const COMPONENT_TYPE_LABELS: Record<string, string> = {
 /** Humanize a vehicle_components.type value for display, or null if empty. */
 export function humanizeComponentType(type: string | null): string | null {
   if (!type) return null;
+  // CIG uses the literal "UNDEFINED" as a no-value sentinel on AttachDef
+  // Type/SubType — never a real type. Treat it as null everywhere.
+  if (type.toUpperCase() === "UNDEFINED") return null;
   if (COMPONENT_TYPE_LABELS[type]) return COMPONENT_TYPE_LABELS[type];
   return type
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

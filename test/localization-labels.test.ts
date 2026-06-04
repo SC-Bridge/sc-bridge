@@ -56,6 +56,11 @@ describe("humanizeComponentType", () => {
     expect(humanizeComponentType("")).toBeNull();
     expect(humanizeComponentType(null)).toBeNull();
   });
+
+  it("treats the CIG 'UNDEFINED' sentinel as null (never a real type)", () => {
+    expect(humanizeComponentType("UNDEFINED")).toBeNull();
+    expect(humanizeComponentType("undefined")).toBeNull();
+  });
 });
 
 describe("missileSeekerCode", () => {
@@ -154,6 +159,14 @@ describe("generateItemLabels — Type field (subType) coalesce vs UNDEFINED", ()
     ];
     const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" });
     expect(out[0].value).toBe("Pint Glass");
+  });
+
+  it("drops the Type field when BOTH subType and type are UNDEFINED (the medical-canister case)", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "Pancea MedGel Canister", size: 1, grade: "1", subType: "UNDEFINED", type: "UNDEFINED" }),
+    ];
+    const out = generateItemLabels(rows, { fields: ["size", "grade", "subType"], format: "suffix" });
+    expect(out[0].value).toBe("Pancea MedGel Canister [S1 | Gr.1]");
   });
 });
 
