@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Clock, Layers, FlaskConical, Crosshair, Zap, Target, MapPin, Gift, FileText } from 'lucide-react'
+import { ArrowLeft, Clock, Layers, FlaskConical, Crosshair, Zap, Target, MapPin, Gift, FileText, Lock } from 'lucide-react'
 import { useCrafting } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
@@ -258,10 +258,15 @@ export default function BlueprintDetail() {
                 </Link>
               ))}
             </div>
-          ) : (
-            <p className="text-xs text-gray-500 italic">
-              Blueprint acquisition unknown — may be available at fabricators or from missions not yet documented.
+          ) : blueprint.is_default ? (
+            <p className="text-xs text-emerald-400/80 italic">
+              Known by default — available to craft from the start, no blueprint needed.
             </p>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-amber-500/5 border border-amber-500/15 text-amber-400/90">
+              <Lock className="w-3 h-3" />
+              <span>Exists in-game, but not yet obtainable — Star Citizen defines no source for this blueprint yet.</span>
+            </div>
           )}
         </div>
       </div>

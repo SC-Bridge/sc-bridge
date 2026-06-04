@@ -970,9 +970,9 @@ return cachedJson(c, `gd:missions`, async () => {
     const db = c.env.DB
 return cachedJson(c, `gd:crafting`, async () => {
       const [bpResult, slotResult, modResult, propResult, resResult] = await Promise.all([
-        db.prepare(`SELECT cb.id, cb.uuid, cb.tag, cb.name, cb.type, cb.sub_type, cb.craft_time_seconds
+        db.prepare(`SELECT cb.id, cb.uuid, cb.tag, cb.name, cb.type, cb.sub_type, cb.craft_time_seconds, cb.is_default
            FROM ${t("crafting_blueprints")} cb
-           
+
            ORDER BY cb.type, cb.sub_type, cb.name`
         ).all(),
         db.prepare(`SELECT MIN(cbs.id) AS id, cbs.crafting_blueprint_id, cbs.slot_index, COALESCE(cbs.slot_name, cbs.name) AS name,
