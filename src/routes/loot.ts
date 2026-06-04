@@ -18,9 +18,10 @@ import {
   removeFromLootWishlist,
   getLootSets,
   getLootSetBySlug,
+  reportUserItemPrice,
 } from "../db/queries";
 import { validate } from "../lib/validation";
-import { cachedJson, cacheSlug } from "../lib/cache";
+import { cachedJson, cacheSlug, purgeByPrefix } from "../lib/cache";
 import { getActiveChannel, isPTUChannel } from "../lib/ptu";
 
 // Auth middleware — reused for collection and wishlist sub-paths
@@ -256,6 +257,50 @@ export function lootRoutes() {
       },
     );
   });
+
+  // POST /api/loot/:uuid/report-price — community price report (auth required).
+  // Stored like UEX/companion data: source='user' in the same tables, so it
+  // surfaces through the standard shop-availability query.
+  app.post(
+    "/:uuid/report-price",
+    requireUser,
+    validate(
+      "json",
+      z
+        .object({
+          shopId: z.number().int().positive(),
+          buyPrice: z.number().nonnegative().max(1_000_000_000).nullable().optional(),
+          sellPrice: z.number().nonnegative().max(1_000_000_000).nullable().optional(),
+        })
+        .refine((b) => b.buyPrice != null || b.sellPrice != null, {
+          message: "Provide a buy and/or sell price",
+        }),
+    ),
+    async (c) => {
+      const uuid = c.req.param("uuid");
+      const { shopId, buyPrice, sellPrice } = c.req.valid("json");
+      const userId = getAuthUser(c).id;
+      const channel = getActiveChannel(c);
+      const isPTU = isPTUChannel(channel);
+      const result = await reportUserItemPrice(
+        c.env.DB,
+        uuid,
+        shopId,
+        buyPrice ?? null,
+        sellPrice ?? null,
+        userId,
+        isPTU,
+      );
+      if ("error" in result) return c.json({ error: result.error }, result.status);
+      // Purge the cached detail so the new price surfaces immediately.
+      c.executionCtx.waitUntil(
+        purgeByPrefix(c.env.SC_BRIDGE_CACHE, `loot:detail:${cacheSlug(uuid)}`).catch((err) =>
+          console.error("report-price cache purge failed", err),
+        ),
+      );
+      return c.json({ ok: true });
+    },
+  );
 
   // GET /api/loot/:uuid — full detail + location data (public)
   // Must be last to avoid matching /collection and /wishlist
