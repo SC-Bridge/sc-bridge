@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, Package, Swords, FileText, Bookmark, BookmarkPlus, Plus, Check } from 'lucide-react'
+import { ArrowLeft, Package, Swords, FileText, Bookmark, BookmarkPlus, Plus, Check, MapPin } from 'lucide-react'
 import { useLootItem, useLootCollection, useLootWishlist, toggleLootWishlist, setLootCollectionQuantity } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
@@ -8,6 +9,54 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import ResistanceBar from './ResistanceBar'
 import LocationSection from './LocationSection'
+import ReportPriceModal from './ReportPriceModal'
+
+// Price provenance → display label + badge style (#139: UEX / SC-Companion / User Reported)
+const PRICE_SOURCE_BADGES = {
+  uex: { label: 'UEX', cls: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
+  'sc-companion': { label: 'SC-Companion', cls: 'bg-violet-500/10 text-violet-400 border-violet-500/20' },
+  user: { label: 'User Reported', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+}
+
+function WhereToBuy({ shops, isAuthed, onReport }) {
+  const sorted = [...shops].sort((a, b) => (a.location_label || '').localeCompare(b.location_label || ''))
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-[10px] font-display uppercase tracking-widest text-gray-500">Where to Buy</h3>
+        {isAuthed ? (
+          <button onClick={onReport} className="text-[10px] font-mono text-sc-accent hover:text-sc-accent/80 transition-colors">+ Report price</button>
+        ) : (
+          <Link to="/login" className="text-[10px] font-mono text-gray-500 hover:text-gray-300 transition-colors">Log in to report</Link>
+        )}
+      </div>
+      {sorted.length === 0 ? (
+        <div className="flex items-center gap-2 px-3 py-4 text-xs text-gray-500">
+          <MapPin className="w-3.5 h-3.5 text-gray-600" />
+          Location unknown — no community price reported yet.
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {sorted.map((s, i) => {
+            const badge = PRICE_SOURCE_BADGES[s.price_source] || null
+            return (
+              <div key={i} className="flex items-center justify-between gap-2 pl-2 border-l border-sc-border py-0.5">
+                <span className="min-w-0">
+                  <span className="text-xs font-mono text-gray-200 break-words">{s.shop_name}</span>
+                  {s.location_label && <span className="text-[10px] font-mono text-gray-500 ml-1.5">{s.location_label}</span>}
+                </span>
+                <span className="flex items-center gap-1.5 shrink-0">
+                  {s.buy_price > 0 && <span className="text-[11px] font-mono text-amber-400">{Math.round(s.buy_price).toLocaleString()} aUEC</span>}
+                  {badge && <span className={`text-[9px] font-mono px-1 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const STAT_GROUPS = {
   combat: {
@@ -106,9 +155,10 @@ function StatGroup({ label, stats, det }) {
 export default function FullItemDetail() {
   const { uuid } = useParams()
   const navigate = useNavigate()
-  const { data: item, loading, error } = useLootItem(uuid)
+  const { data: item, loading, error, refetch } = useLootItem(uuid)
   const { data: session } = useSession()
   const isAuthed = !!session?.user
+  const [reportOpen, setReportOpen] = useState(false)
   const { data: collectionIds, refetch: refetchCollection } = useLootCollection(isAuthed)
   const { data: wishlistItems, refetch: refetchWishlist } = useLootWishlist(isAuthed)
 
@@ -214,10 +264,12 @@ export default function FullItemDetail() {
         ))}
       </div>
 
-      {/* Where to find */}
+      {/* Where to buy — shops + prices (UEX / SC-Companion / user reports) */}
+      <WhereToBuy shops={locationData('shops')} isAuthed={isAuthed} onReport={() => setReportOpen(true)} />
+
+      {/* Where to find — containers, NPCs, contracts (shops moved to Where to Buy) */}
       {(() => {
         const locationSections = [
-          { label: 'Shops', icon: ShoppingCart, type: 'shops', data: locationData('shops') },
           { label: 'Containers', icon: Package, type: 'containers', data: locationData('containers'), npcData: npcEntries },
           { label: 'Contracts', icon: FileText, type: 'contracts', data: locationData('contracts') },
         ]
@@ -234,6 +286,15 @@ export default function FullItemDetail() {
           </div>
         )
       })()}
+
+      {reportOpen && (
+        <ReportPriceModal
+          uuid={uuid}
+          itemName={humanizeRawDisplayName(item.name)}
+          onClose={() => setReportOpen(false)}
+          onSubmitted={refetch}
+        />
+      )}
     </div>
   )
 }

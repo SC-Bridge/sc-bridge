@@ -379,6 +379,17 @@ export function useLootItem(uuid) {
   return useAPI(uuid ? `/loot/${uuid}` : null, { skip: !uuid })
 }
 
+// Player-visitable shop list (id, name, display_name, location_label) for the
+// price-report picker.
+export function useShopList() {
+  return useAPI('/gamedata/shops')
+}
+
+// Submit a community price report for an item at a shop (requires auth).
+export async function reportItemPrice(uuid, { shopId, buyPrice, sellPrice }) {
+  return apiFetch('POST', `/loot/${uuid}/report-price`, { shopId, buyPrice, sellPrice })
+}
+
 export function useLootLocations() {
   return useAPI('/loot/locations')
 }
