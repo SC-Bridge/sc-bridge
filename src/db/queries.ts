@@ -1185,6 +1185,72 @@ export async function getLootItems(db: D1Database, isPTU = false): Promise<LootI
   return result.results as unknown as LootItem[];
 }
 
+/**
+ * Record a user-reported price for an item at a shop. Mirrors the UEX/companion
+ * write path: appends an append-only row to price_observations (source='user')
+ * and upserts terminal_inventory.latest_* with latest_source='user', so the
+ * report surfaces through the same shop-availability query as UEX. The user
+ * picks a shop (how players think); we attach to that shop's first terminal —
+ * display is by shop, so the exact terminal is immaterial.
+ */
+export async function reportUserItemPrice(
+  db: D1Database,
+  uuid: string,
+  shopId: number,
+  buyPrice: number | null,
+  sellPrice: number | null,
+  userId: string,
+  isPTU = false,
+): Promise<{ ok: true } | { error: string; status: 400 | 404 }> {
+  const t = (name: string) => (isPTU ? `ptu_${name}` : name);
+
+  const item = await db
+    .prepare(`SELECT name FROM ${t("loot_map")} WHERE uuid = ? AND is_deleted = 0`)
+    .bind(uuid)
+    .first<{ name: string }>();
+  if (!item) return { error: "Item not found", status: 404 };
+
+  const term = await db
+    .prepare(`SELECT id FROM ${t("terminals")} WHERE shop_id = ? AND is_deleted = 0 ORDER BY id LIMIT 1`)
+    .bind(shopId)
+    .first<{ id: number }>();
+  if (!term) return { error: "That shop has no terminal to attach a price to", status: 400 };
+
+  const gv = await db
+    .prepare(`SELECT id FROM game_versions WHERE channel = 'LIVE' AND is_default = 1 LIMIT 1`)
+    .first<{ id: number }>();
+  const gvId = gv?.id ?? null;
+
+  const stmts: D1PreparedStatement[] = [];
+  const obs = (type: "buy" | "sell", price: number) =>
+    db
+      .prepare(
+        `INSERT INTO ${t("price_observations")} (terminal_id, item_uuid, observation_type, price, source, user_id, observed_at)
+         VALUES (?, ?, ?, ?, 'user', ?, datetime('now'))`,
+      )
+      .bind(term.id, uuid, type, price, userId);
+  if (buyPrice != null) stmts.push(obs("buy", buyPrice));
+  if (sellPrice != null) stmts.push(obs("sell", sellPrice));
+
+  stmts.push(
+    db
+      .prepare(
+        `INSERT INTO ${t("terminal_inventory")}
+          (terminal_id, item_uuid, item_type, item_name, latest_buy_price, latest_sell_price, latest_source, latest_observed_at, game_version_id)
+         VALUES (?, ?, 'item', ?, ?, ?, 'user', datetime('now'), ?)
+         ON CONFLICT(terminal_id, item_uuid) DO UPDATE SET
+           latest_buy_price = COALESCE(excluded.latest_buy_price, terminal_inventory.latest_buy_price),
+           latest_sell_price = COALESCE(excluded.latest_sell_price, terminal_inventory.latest_sell_price),
+           latest_source = 'user',
+           latest_observed_at = datetime('now')`,
+      )
+      .bind(term.id, uuid, item.name, buyPrice, sellPrice, gvId),
+  );
+
+  await db.batch(stmts);
+  return { ok: true };
+}
+
 export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false): Promise<Record<string, unknown> | null> {
   // Channel-aware table aliases. Every versioned table this function references
   // routes through `t(...)`; non-versioned tables (npc_factions, user_*, etc.)
@@ -1426,6 +1492,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
   const shopAvailability = await db.prepare(`
     SELECT ti.latest_buy_price AS buy_price,
            ti.latest_sell_price AS sell_price,
+           ti.latest_source AS price_source,
            ti.uex_date_modified AS uex_date_modified,
            s.name AS shop_name, s.slug AS shop_slug,
            s.location_label, s.display_name
@@ -1451,6 +1518,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       location_label: r.location_label,
       buy_price: r.buy_price,
       sell_price: r.sell_price,
+      price_source: r.price_source,
       uex_date_modified: r.uex_date_modified,
     });
   }
