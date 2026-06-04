@@ -882,11 +882,13 @@ async function buildOverrides(
     const sizeCol = tablesWithoutSize.includes(cat.table) ? "NULL as size" : "t.size";
     // Only ship_missiles carries a seeker (tracking_signal); others select NULL.
     const seekerCol = cat.table === "ship_missiles" ? "t.tracking_signal" : "NULL as tracking_signal";
+    // Only vehicle_components carries a component_class (Military/Stealth/…); others select NULL.
+    const classCol = cat.table === "vehicle_components" ? "t.component_class" : "NULL as component_class";
 
     const rows = await db
       .prepare(
         `SELECT t.class_name, t.name, m.code as manufacturer_code,
-                ${sizeCol}, ${gradeCol}, t.sub_type, ${seekerCol}
+                ${sizeCol}, ${gradeCol}, t.sub_type, ${seekerCol}, ${classCol}
          FROM ${cat.table} t
          LEFT JOIN manufacturers m ON m.id = t.manufacturer_id
          WHERE t.is_deleted = 0
@@ -900,6 +902,7 @@ async function buildOverrides(
         grade: string | null;
         sub_type: string | null;
         tracking_signal: string | null;
+        component_class: string | null;
       }>();
 
     const itemRows: ItemRow[] = rows.results.map((r) => ({
@@ -910,6 +913,7 @@ async function buildOverrides(
       grade: r.grade,
       subType: r.sub_type,
       seeker: missileSeekerCode(r.tracking_signal),
+      componentClass: r.component_class,
     }));
 
     const catFormat = resolveCategoryFormat(config, cat.table);

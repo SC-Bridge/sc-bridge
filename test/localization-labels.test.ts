@@ -26,6 +26,7 @@ function itemRow(over: Partial<ItemRow>): ItemRow {
     grade: null,
     subType: null,
     seeker: null,
+    componentClass: null,
     ...over,
   };
 }
@@ -80,5 +81,37 @@ describe("generateItemLabels — seeker field", () => {
     const rows: ItemRow[] = [itemRow({ seeker: null })];
     const out = generateItemLabels(rows, { fields: ["seeker"], format: "prefix" });
     expect(out[0].value).toBe("Dominator II Missile");
+  });
+});
+
+describe("generateItemLabels — componentClass field", () => {
+  it("appends the component class (Military/Stealth/…) to the tag", () => {
+    const rows: ItemRow[] = [
+      itemRow({
+        className: "cooler_godi_s2_military",
+        name: "FullStop",
+        manufacturerCode: "GODI",
+        size: 2,
+        grade: "C",
+        subType: "Cooler",
+        componentClass: "Military",
+      }),
+    ];
+    const out = generateItemLabels(rows, {
+      fields: ["manufacturer", "size", "grade", "subType", "componentClass"],
+      format: "suffix",
+    });
+    expect(out[0].value).toBe("FullStop [GODI | S2 | Gr.C | Cooler | Military]");
+  });
+
+  it("omits the class when the row has none", () => {
+    const rows: ItemRow[] = [
+      itemRow({ name: "FullStop", subType: "Cooler", componentClass: null }),
+    ];
+    const out = generateItemLabels(rows, {
+      fields: ["subType", "componentClass"],
+      format: "suffix",
+    });
+    expect(out[0].value).toBe("FullStop [Cooler]");
   });
 });

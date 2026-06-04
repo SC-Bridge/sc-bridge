@@ -36,12 +36,14 @@ export interface ItemRow {
   subType: string | null;
   /** Short missile seeker code (EM/IR/CS); only set for ship_missiles. */
   seeker?: string | null;
+  /** Component role/class (Military/Stealth/Industrial/Civilian/Competition); only set for vehicle_components. */
+  componentClass?: string | null;
 }
 
 export type LabelFormat = "suffix" | "prefix";
 
 /** A field that can appear in a label tag */
-export type LabelField = "manufacturer" | "size" | "grade" | "subType" | "seeker";
+export type LabelField = "manufacturer" | "size" | "grade" | "subType" | "seeker" | "componentClass";
 
 /** Per-category format configuration */
 export interface CategoryFormat {
@@ -60,7 +62,7 @@ export type CategoryFormats = Record<string, CategoryFormat>;
 // Excludes: columns that don't exist on the table, columns where every row
 // has the same value (e.g. grade=A only), or columns with unhelpful data.
 export const CATEGORY_AVAILABLE_FIELDS: Record<string, LabelField[]> = {
-  vehicle_components: ["manufacturer", "size", "grade", "subType"],
+  vehicle_components: ["manufacturer", "size", "grade", "subType", "componentClass"],
   fps_weapons: ["manufacturer", "size", "subType"],
   fps_armour: ["manufacturer", "subType"],
   fps_helmets: ["manufacturer", "grade", "subType"],
@@ -77,6 +79,7 @@ export const FIELD_LABELS: Record<LabelField, string> = {
   grade: "Grade",
   subType: "Type",
   seeker: "Seeker",
+  componentClass: "Class",
 };
 
 /** Default format for a category: all available fields, suffix format */
@@ -160,6 +163,9 @@ function buildDetailTag(
         break;
       case "seeker":
         if (row.seeker) parts.push(row.seeker);
+        break;
+      case "componentClass":
+        if (row.componentClass) parts.push(row.componentClass);
         break;
     }
   }
