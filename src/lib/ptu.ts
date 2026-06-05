@@ -23,10 +23,10 @@ export const VERSIONED_TABLES = [
   "loot_item_locations", "loot_map",
   "vehicle_components",
   // Component subtables
-  "component_coolers", "component_mining", "component_missiles",
-  "component_powerplants", "component_qed", "component_quantum_drives",
-  "component_radar", "component_shields", "component_thrusters",
-  "component_turrets", "component_weapons",
+  "component_coolers", "component_fuel_nozzles", "component_mining",
+  "component_missiles", "component_powerplants", "component_qed",
+  "component_quantum_drives", "component_radar", "component_shields",
+  "component_thrusters", "component_turrets", "component_weapons",
   // Shop children → shops
   "shop_locations", "shop_franchises",
   "terminal_inventory", "terminals",
