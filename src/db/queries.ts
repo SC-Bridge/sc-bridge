@@ -1378,7 +1378,8 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
         ct.rotation_speed, ct.min_pitch, ct.max_pitch, ct.min_yaw, ct.max_yaw, ct.gimbal_type,
         cth.thrust_force, cth.fuel_burn_rate,
         cr.radar_range, cr.radar_angle,
-        ce.qed_range, ce.qed_strength
+        ce.qed_range, ce.qed_strength,
+        cfn.hydrogen_flow_rate, cfn.quantum_flow_rate, cfn.max_integrity
       FROM ${t("vehicle_components")} vc
       LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
       LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
@@ -1389,6 +1390,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       LEFT JOIN ${t("component_thrusters")} cth ON cth.component_id = vc.id
       LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
       LEFT JOIN ${t("component_qed")} ce ON ce.component_id = vc.id
+      LEFT JOIN ${t("component_fuel_nozzles")} cfn ON cfn.component_id = vc.id
       WHERE vc.id = ?`)
       .bind(item.vehicle_component_id)
       .first() as Record<string, unknown> | null;
@@ -1432,12 +1434,14 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
         cw.rounds_per_minute, cw.ammo_container_size, cw.damage_per_shot, cw.damage_type,
         cw.projectile_speed, cw.effective_range, cw.dps, cw.heat_per_shot, cw.fire_modes,
         cs.shield_hp, cs.shield_regen, cs.resist_physical, cs.resist_energy,
-        cp.power_output, cq.quantum_speed, cq.quantum_range
+        cp.power_output, cq.quantum_speed, cq.quantum_range,
+        cfn.hydrogen_flow_rate, cfn.quantum_flow_rate, cfn.max_integrity
       FROM ${t("vehicle_components")} vc
       LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
       LEFT JOIN ${t("component_shields")} cs ON cs.component_id = vc.id
       LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
       LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
+      LEFT JOIN ${t("component_fuel_nozzles")} cfn ON cfn.component_id = vc.id
       WHERE vc.uuid = ?`)
       .bind(uuid)
       .first() as Record<string, unknown> | null;

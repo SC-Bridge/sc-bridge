@@ -88,6 +88,10 @@ const STAT_GROUPS = {
     label: 'Missile',
     keys: ['missile_type', 'tracking_signal', 'lock_time', 'lock_range', 'speed', 'blast_radius', 'ammo_count'],
   },
+  refueling: {
+    label: 'Refueling',
+    keys: ['hydrogen_flow_rate', 'quantum_flow_rate', 'max_integrity'],
+  },
 }
 
 const STAT_LABELS = {
@@ -110,6 +114,7 @@ const STAT_LABELS = {
   qed_range: 'QED Range', qed_strength: 'QED Strength',
   missile_type: 'Type', tracking_signal: 'Tracking', lock_time: 'Lock Time',
   lock_range: 'Lock Range', speed: 'Speed', blast_radius: 'Blast Radius', ammo_count: 'Ammo',
+  hydrogen_flow_rate: 'Hydrogen Flow', quantum_flow_rate: 'Quantum Flow', max_integrity: 'Max Integrity',
 }
 
 function formatValue(key, value) {
