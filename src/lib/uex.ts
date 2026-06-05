@@ -60,7 +60,54 @@ async function fetchUex<T>(endpoint: string): Promise<T[]> {
 export interface SyncResult {
   commodities: number;
   items: number;
+  /** loot_map rows created for buy-only items that UEX knows but extraction misses. */
+  backfilled?: number;
   errors: string[];
+}
+
+/**
+ * Backfill loot_map for "buy-only" items: items UEX prices but that the p4k
+ * extractor never produced (they're sold at shops but never in a loot table,
+ * so the loot-table-driven loot_map build skips them — e.g. the RediMake
+ * fabricator, ship bombs, refueling nozzles, ship modules, mobiGlas casings).
+ *
+ * Without a loot_map row they're unsearchable and their UEX prices are orphaned.
+ * This creates a minimal loot_map row keyed by the item's uuid (matching
+ * terminal_inventory.item_uuid), so it becomes searchable and the "Where to Buy"
+ * shop query links its prices automatically. Idempotent (NOT EXISTS guard) and
+ * self-healing — re-creates rows after a full DB reload on the next sync.
+ *
+ * Category is assigned by name (the entity isn't extracted, so we have no type).
+ * Tagged data_source='terminal_inventory_backfill'. Excludes UEX commodities
+ * (item_type='commodity' live in trade_commodities) and lowercase/placeholder junk.
+ */
+export async function backfillBuyOnlyLootMap(db: D1Database, gvId: number): Promise<number> {
+  const res = await db
+    .prepare(
+      `INSERT INTO loot_map (uuid, name, category, data_source, game_version_id)
+       SELECT g.item_uuid, g.item_name,
+         CASE WHEN g.item_name LIKE 'mobiGlas%' THEN 'clothing'
+              WHEN g.item_name LIKE '%Bomb%' OR g.item_name LIKE '%Gatling%' THEN 'ship_weapon'
+              WHEN g.item_name LIKE 'RediMake%' THEN 'misc'
+              ELSE 'ship_component' END,
+         'terminal_inventory_backfill', ?1
+       FROM (
+         SELECT DISTINCT ti.item_uuid, ti.item_name
+         FROM terminal_inventory ti
+         WHERE ti.is_deleted = 0
+           AND ti.latest_source IS NOT NULL
+           AND ti.item_type = 'item'
+           AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)
+           AND ti.item_name GLOB '*[A-Z]*'
+           AND ti.item_name NOT LIKE '%PLACEHOLDER%'
+           AND NOT EXISTS (
+             SELECT 1 FROM loot_map lm WHERE lm.uuid = ti.item_uuid AND lm.is_deleted = 0
+           )
+       ) g`,
+    )
+    .bind(gvId)
+    .run();
+  return res.meta?.changes ?? 0;
 }
 
 export async function syncUexPrices(
@@ -99,6 +146,10 @@ export async function syncUexPrices(
   try {
     if (type === "items" || type === "all") {
       result.items = await syncItems(db, uexToOurs, gvId);
+      // Durable fix for buy-only items the p4k extractor misses (#135): once
+      // UEX knows an item, ensure it has a loot_map row so it's searchable +
+      // price-linked. Self-healing across full DB reloads.
+      result.backfilled = await backfillBuyOnlyLootMap(db, gvId);
     }
   } catch (e) {
     result.errors.push(`Item sync failed: ${e instanceof Error ? e.message : String(e)}`);
