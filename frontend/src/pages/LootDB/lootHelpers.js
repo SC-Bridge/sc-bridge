@@ -51,6 +51,24 @@ export function formatStaleness(unixSec, nowSec = Math.floor(Date.now() / 1000))
   return `${Math.floor(ageSec / 86400)}d`
 }
 
+// ── Show filter predicate (collection / wishlist / crafted overlay) ───────────
+// A crafted item is something you "have" just like a looted one (#92), so the
+// "collected" view includes crafted items and "uncollected" excludes them.
+// ctx: { collected: Map<uuid,qty>, wishlistIds: Set<uuid>, craftedMap: Record<uuid,qty> }
+export function matchesShowFilter(item, show, ctx) {
+  const { collected, wishlistIds, craftedMap } = ctx
+  const uuid = item.uuid
+  const isCrafted = (craftedMap?.[uuid] ?? 0) > 0
+  const hasIt = collected.has(uuid) || isCrafted
+  switch (show) {
+    case 'collected':   return hasIt
+    case 'uncollected': return !hasIt
+    case 'wishlisted':  return wishlistIds.has(uuid)
+    case 'crafted':     return isCrafted
+    default:            return true // 'all' and any unknown value
+  }
+}
+
 // ── Location entry resolver ───────────────────────────────────────────────────
 export function resolveLocationEntry(entry, type) {
   if (typeof entry === 'string') return { label: entry, detail: null, probability: null }

@@ -27,6 +27,7 @@ import {
 import {
   extractSetName, PAGE_SIZE_GRID, PAGE_SIZE_LIST,
   buildShoppingList, groupWishlistItems, groupWishlistByLocation, getPrimarySource, SOURCE_DEFS,
+  matchesShowFilter,
 } from './lootHelpers'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
@@ -67,6 +68,7 @@ const SHOW_OPTIONS = [
   { value: 'collected', label: 'Collected' },
   { value: 'uncollected', label: 'Uncollected' },
   { value: 'wishlisted', label: 'Wishlisted' },
+  { value: 'crafted', label: 'Crafted' },
 ]
 
 // ── Shopping List Modal ─────────────────────────────────────────────────────
@@ -346,13 +348,10 @@ export default function LootDB() {
       }
     }
 
-    // Show filter (collection/wishlist overlay)
-    if (show === 'collected') {
-      items = items.filter((i) => collected.has(i.uuid))
-    } else if (show === 'uncollected') {
-      items = items.filter((i) => !collected.has(i.uuid))
-    } else if (show === 'wishlisted') {
-      items = items.filter((i) => wishlistIds.has(i.uuid))
+    // Show filter (collection/wishlist/crafted overlay). Crafted items count as
+    // owned, so 'collected' includes them and 'uncollected' excludes them (#92).
+    if (show !== 'all') {
+      items = items.filter((i) => matchesShowFilter(i, show, { collected, wishlistIds, craftedMap }))
     }
 
     if (search.trim()) {
@@ -393,7 +392,7 @@ export default function LootDB() {
     }
 
     return items
-  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds])
+  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds, craftedMap])
 
   const pageSize = viewMode === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST
   const totalPages = Math.ceil(filtered.length / pageSize)
@@ -851,6 +850,7 @@ export default function LootDB() {
                   key={item.id}
                   item={item}
                   collectionQty={collected.get(item.uuid) ?? 0}
+                  craftedQty={craftedMap?.[item.uuid] ?? 0}
                   onSetCollectionQty={handleSetCollectionQty}
                   wishlisted={wishlistIds.has(item.uuid)}
                   onToggleWishlist={handleToggleWishlist}
@@ -867,6 +867,7 @@ export default function LootDB() {
                 const catStyle = CATEGORY_BADGE_STYLES[eCat] || CATEGORY_BADGE_STYLES.unknown
                 const catLabel = CATEGORY_LABELS[eCat] || eCat
                 const itemCollectionQty = collected.get(item.uuid) ?? 0
+                const itemCraftedQty = craftedMap?.[item.uuid] ?? 0
                 const isWishlisted = wishlistIds.has(item.uuid)
                 return (
                   <div
@@ -885,6 +886,15 @@ export default function LootDB() {
                     {item.rarity && rs && (
                       <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
                         {item.rarity}
+                      </span>
+                    )}
+                    {isAuthed && itemCraftedQty > 0 && (
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90 shrink-0"
+                        title={`${itemCraftedQty} crafted via My Blueprints`}
+                      >
+                        <Package className="w-3 h-3" />
+                        {itemCraftedQty}
                       </span>
                     )}
                     <SourceIcons item={item} />
