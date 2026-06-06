@@ -14,6 +14,7 @@ import DamageBreakdown from './DamageBreakdown'
 import PowerPips from './PowerPips'
 import ModulesSection from './ModulesSection'
 import PaintsSection from './PaintsSection'
+import LocationPlanner from './LocationPlanner'
 import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape } from './loadoutHelpers'
 
 export default function Loadout() {
@@ -114,6 +115,12 @@ export default function Loadout() {
     return aggregateCombatStats(merged)
   }, [stockComponents, overrides])
 
+  // Effective loadout (stock with overrides applied) for the Location Planner (#94)
+  const effectiveComponents = useMemo(() => {
+    if (!stockComponents) return []
+    return stockComponents.map(c => overrides[c.port_id] ? { ...c, ...overrides[c.port_id] } : c)
+  }, [stockComponents, overrides])
+
   // Auto-collapse Point Defense section when >6 items
   useEffect(() => {
     const pdcGroup = grouped.find(g => g.label === 'Point Defense')
@@ -139,6 +146,7 @@ export default function Loadout() {
           port_id: portId, component_id: component.id,
           child_name: component.name, component_name: component.name,
           component_uuid: component.uuid,
+          shops: component.shops, // keep accurate buy locations for the Location Planner (#94)
           type: component.type, size: component.size, grade: component.grade,
           manufacturer_name: component.manufacturer_name,
           power_output: component.power_output, cooling_rate: component.cooling_rate,
@@ -458,6 +466,11 @@ export default function Loadout() {
             />
           </div>
         )}
+
+        {/* LOCATION PLANNER — where to buy the active loadout's components (#94) */}
+        <div className="mt-4">
+          <LocationPlanner components={effectiveComponents} />
+        </div>
       </div>
       </>}
 
