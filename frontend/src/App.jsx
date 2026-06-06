@@ -26,6 +26,7 @@ const AnalysisHistory = lazy(() => import('./pages/AnalysisHistory'))
 const Import = lazy(() => import('./pages/Import'))
 const ShipDB = lazy(() => import('./pages/ShipDB'))
 const ShipDetail = lazy(() => import('./pages/ShipDetail'))
+const Salvageable = lazy(() => import('./pages/Salvageable'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
@@ -103,6 +104,7 @@ const referenceGroup = {
   icon: BookOpen,
   items: [
     { to: '/ships', icon: Database, label: 'Ship DB' },
+    { to: '/salvageable', icon: Wrench, label: 'Salvageable Ships' },
     { to: '/paints', icon: Palette, label: 'Paints' },
     { to: '/careers', icon: Briefcase, label: 'Careers & Roles' },
     { to: '/law', icon: Scale, label: 'Law System' },
@@ -713,6 +715,7 @@ export default function App() {
 
                       {/* Public game data routes */}
                       <Route path="/ships" element={<ShipDB />} />
+                      <Route path="/salvageable" element={<Salvageable />} />
                       <Route path="/ships/:slug" element={<ShipDetail />} />
                       <Route path="/paints" element={<PaintBrowser />} />
                       <Route path="/paints/:slug" element={<PaintDetail />} />
