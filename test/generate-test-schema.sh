@@ -35,7 +35,9 @@ COMBINED="$WORK/combined.sql"
   # Better Auth core tables — MUST stay in sync with the schema Better Auth
   # creates at runtime. Migration 0004 ALTERs "user", so these exist first.
   echo 'CREATE TABLE IF NOT EXISTS "user" (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, role TEXT DEFAULT '"'"'user'"'"', banned INTEGER DEFAULT 0, banReason TEXT, banExpires TEXT);'
-  echo 'CREATE TABLE IF NOT EXISTS "session" (id TEXT PRIMARY KEY NOT NULL, expiresAt TEXT NOT NULL, token TEXT NOT NULL UNIQUE, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES "user"(id), impersonatedBy TEXT, activeOrganizationId TEXT);'
+  # session: impersonatedBy is added by migration 0257 (admin plugin column that
+  # drifted on prod), so it is NOT in this bootstrap — the migration adds it.
+  echo 'CREATE TABLE IF NOT EXISTS "session" (id TEXT PRIMARY KEY NOT NULL, expiresAt TEXT NOT NULL, token TEXT NOT NULL UNIQUE, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES "user"(id), activeOrganizationId TEXT);'
   echo 'CREATE TABLE IF NOT EXISTS "account" (id TEXT PRIMARY KEY NOT NULL, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt TEXT, refreshTokenExpiresAt TEXT, scope TEXT, password TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);'
   echo 'CREATE TABLE IF NOT EXISTS "verification" (id TEXT PRIMARY KEY NOT NULL, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt TEXT NOT NULL, createdAt TEXT, updatedAt TEXT);'
   echo 'CREATE TABLE IF NOT EXISTS "organization" (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, logo TEXT, createdAt TEXT NOT NULL, metadata TEXT);'
@@ -44,6 +46,10 @@ COMBINED="$WORK/combined.sql"
   # better-auth two-factor plugin table — created at runtime by the plugin, not via
   # a D1 migration file. Must exist BEFORE migration 0256 which ALTERs it.
   echo 'CREATE TABLE IF NOT EXISTS "twoFactor" (id TEXT PRIMARY KEY NOT NULL, secret TEXT NOT NULL, backupCodes TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id));'
+  # better-auth passkey plugin table — also runtime-created/out-of-band. Legacy
+  # shape (matches prod: includes webauthnUserID, no aaguid). Migration 0257 adds
+  # aaguid. Must exist BEFORE 0257 ALTERs it.
+  echo 'CREATE TABLE IF NOT EXISTS "passkey" (id TEXT PRIMARY KEY NOT NULL, name TEXT, publicKey TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), webauthnUserID TEXT, counter INTEGER NOT NULL DEFAULT 0, deviceType TEXT, backedUp INTEGER, transports TEXT, credentialID TEXT NOT NULL, createdAt TEXT);'
   # All migrations in lexical order (matches readD1Migrations).
   COUNT=0
   for f in $(ls "$MIG_DIR"/*.sql | sort); do
