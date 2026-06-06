@@ -885,6 +885,163 @@ export function decideLocalizationIngest(
   return { action: "unchanged", reason: "No source published a new base since last run", seen };
 }
 
+// ── Version-aware auto-detect ──────────────────────────────────────────────
+
+export interface DetectedVersion {
+  /** Stable code matching game_versions.code, e.g. "4.8.1-live". */
+  code: string;
+  /** "live" | "ptu" | "eptu". */
+  channel: string;
+  /** Build number, e.g. "11952564", or null if the commit didn't carry one. */
+  build: string | null;
+}
+
+/**
+ * Parse the SC version a community-repo commit represents, from its message.
+ * Handles Dymerz ("4.8.1-live.11952564 English and Brazilian") and BeltaKoda
+ * ("feat(4.8.0-live): release ..."). Returns null when there's no version token
+ * (e.g. a "refactor: ..." chore). The channel matters: Dymerz commits BOTH live
+ * and ptu to the same english/global.ini, so callers gate on channel==='live'
+ * before ingesting into the LIVE base.
+ */
+export function parseVersionFromCommit(message: string): DetectedVersion | null {
+  if (!message) return null;
+  const m = message.match(/(\d+\.\d+\.\d+)-(live|ptu|eptu)(?:\.(\d+))?/i);
+  if (!m) return null;
+  const channel = m[2].toLowerCase();
+  return { code: `${m[1]}-${channel}`, channel, build: m[3] ?? null };
+}
+
+/**
+ * Compare two stable version codes by their numeric X.Y.Z (channel ignored —
+ * callers gate on channel separately). >0 if `a` is newer, <0 if older, 0 if
+ * equal or unparseable. Numeric per-segment (4.10 > 4.9), not lexical.
+ */
+export function compareVersionCodes(a: string, b: string): number {
+  const nums = (s: string): number[] | null => {
+    const m = s.match(/(\d+)\.(\d+)\.(\d+)/);
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  };
+  const na = nums(a);
+  const nb = nums(b);
+  if (!na || !nb) return 0;
+  for (let i = 0; i < 3; i++) {
+    if (na[i] !== nb[i]) return na[i] - nb[i];
+  }
+  return 0;
+}
+
+export interface VersionedSourceFetch {
+  name: string;
+  content: string | null;
+  /** Detected version for this source — only resolved when the content changed
+   *  (a fresh publish), so we don't hit the GitHub API every idle run. */
+  version: DetectedVersion | null;
+}
+
+export interface VersionedIngestDecision {
+  action: "stage-new" | "refresh-current" | "unchanged" | "skip";
+  source?: string;
+  content?: string;
+  /** KV version-code to write the base under (a new code for stage-new, the
+   *  current default for refresh-current). */
+  targetCode?: string;
+  /** For stage-new: the new version to create (default is NOT flipped). */
+  version?: DetectedVersion;
+  keyCount?: number;
+  delta?: number;
+  /** For stage-new: key-level diff vs the current base, for the review ping. */
+  diff?: GlobalIniDiff;
+  reason: string;
+  seen: Record<string, string>;
+}
+
+/**
+ * Version-aware localization ingest decision. Two outcomes that matter:
+ *  - STAGE-NEW: a source published a NEWER LIVE version than the current default
+ *    and we don't have it yet → stage it under its own code (preserve current,
+ *    never flip default; a human promotes). The diff vs the current base rides
+ *    along for the review ping.
+ *  - REFRESH-CURRENT: a same-patch base update → delegate to the tested
+ *    decideLocalizationIngest (canonical-on-change / fresh-on-publish + the
+ *    no-regression guard). Only canonical (BeltaKoda, LIVE-pathed) or a source
+ *    whose detected version IS the current default is eligible — this stops a
+ *    Dymerz PTU commit (same english/global.ini path) from overwriting LIVE.
+ */
+export function decideVersionedIngest(
+  sources: VersionedSourceFetch[],
+  currentDefaultCode: string,
+  currentBase: string | null,
+  knownCodes: string[],
+  state: IngestSeenState,
+  opts?: { minKeys?: number; maxDropFraction?: number },
+): VersionedIngestDecision {
+  const prevSeen = state.seen ?? {};
+  const seen: Record<string, string> = { ...prevSeen };
+  const hashes: Record<string, string> = {};
+  for (const s of sources) {
+    if (s.content !== null) {
+      const h = hashIni(s.content);
+      hashes[s.name] = h;
+      seen[s.name] = h;
+    }
+  }
+  if (!sources.some((s) => s.content !== null)) {
+    return { action: "skip", reason: "All sources failed to fetch", seen };
+  }
+
+  const known = new Set(knownCodes);
+  const canonicalName = sources[0]?.name;
+
+  // ── Pass 1: a NEWER LIVE version we don't have yet → stage it. Idempotency
+  // comes from knownCodes (once the version row exists it won't re-stage), so
+  // this also catches a version already published when the feature first ships.
+  for (const s of sources) {
+    if (s.content === null || !s.version) continue;
+    if (s.version.channel !== "live") continue; // PTU/EPTU never touches the LIVE base
+    if (known.has(s.version.code)) continue; // already staged/known
+    if (compareVersionCodes(s.version.code, currentDefaultCode) <= 0) continue; // not newer
+    const ev = evaluateLocalizationIngest(s.content, null, opts);
+    if (!ev.ok) continue; // suspiciously small — skip this publish
+    const diff = currentBase ? diffGlobalIni(currentBase, s.content) : { added: [], removed: [], changed: [] };
+    return {
+      action: "stage-new",
+      source: s.name,
+      content: s.content,
+      targetCode: s.version.code,
+      version: s.version,
+      keyCount: ev.keyCount,
+      diff,
+      reason: `New LIVE version ${s.version.code} published by ${s.name}`,
+      seen,
+    };
+  }
+
+  // ── Pass 2: same-patch refresh of the current default base. Filter to sources
+  // eligible to touch the LIVE current base, then reuse decideLocalizationIngest.
+  const eligible: SourceFetch[] = sources
+    .filter((s) => s.name === canonicalName || (s.version?.channel === "live" && s.version.code === currentDefaultCode))
+    .map((s) => ({ name: s.name, content: s.content }));
+  const refresh = decideLocalizationIngest(eligible, currentBase, state, opts);
+
+  if (refresh.action === "ingest") {
+    return {
+      action: "refresh-current",
+      source: refresh.source,
+      content: refresh.content,
+      targetCode: currentDefaultCode,
+      keyCount: refresh.keyCount,
+      delta: refresh.delta,
+      reason: refresh.reason,
+      seen, // full per-source seen (decideLocalizationIngest only saw eligible sources)
+    };
+  }
+  if (refresh.action === "skip") {
+    return { action: "skip", reason: refresh.reason, seen };
+  }
+  return { action: "unchanged", reason: refresh.reason, seen };
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
