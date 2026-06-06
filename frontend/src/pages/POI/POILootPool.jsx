@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import {
-  RARITY_STYLES, CATEGORY_LABELS, CATEGORY_BADGE_STYLES, CATEGORY_ORDER,
+  RARITY_STYLES, RARITY_ORDER, CATEGORY_LABELS, CATEGORY_BADGE_STYLES, CATEGORY_ORDER,
   humanizeRawDisplayName,
 } from '../../lib/lootDisplay'
 
@@ -24,26 +24,30 @@ function pct(n) {
 export default function POILootPool({ envelope }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  const [rarity, setRarity] = useState('all')
 
   const pools = envelope.data || []
 
-  // Merge + filter items across pools for the current category/search so the
-  // filter chips operate over everything visible on screen at once.
-  const { visiblePools, categoryCounts } = useMemo(() => {
+  // Merge + filter items across pools for the current category/rarity/search so
+  // the filter chips operate over everything visible on screen at once.
+  const { visiblePools, categoryCounts, rarityCounts } = useMemo(() => {
     const q = query.trim().toLowerCase()
     const counts = { all: 0 }
+    const rCounts = {}
     const out = pools.map(pool => {
       const filtered = pool.items.filter(item => {
         counts.all++
         counts[item.category] = (counts[item.category] || 0) + 1
+        if (item.rarity) rCounts[item.rarity] = (rCounts[item.rarity] || 0) + 1
         if (category !== 'all' && item.category !== category) return false
+        if (rarity !== 'all' && item.rarity !== rarity) return false
         if (q && !item.name.toLowerCase().includes(q)) return false
         return true
       })
       return { ...pool, filteredItems: filtered }
     })
-    return { visiblePools: out, categoryCounts: counts }
-  }, [pools, query, category])
+    return { visiblePools: out, categoryCounts: counts, rarityCounts: rCounts }
+  }, [pools, query, category, rarity])
 
   if (envelope.partial && envelope.count === 0) {
     return (
@@ -59,6 +63,7 @@ export default function POILootPool({ envelope }) {
 
   const totalItems = pools.reduce((sum, p) => sum + p.items.length, 0)
   const orderedCats = ['all', ...CATEGORY_ORDER.filter(c => categoryCounts[c] > 0)]
+  const presentRarities = RARITY_ORDER.filter(r => rarityCounts[r] > 0)
 
   return (
     <section className="space-y-4">
@@ -92,6 +97,38 @@ export default function POILootPool({ envelope }) {
           ))}
         </div>
       </div>
+
+      {/* Rarity / quality filter (#95) — only shown when items carry rarity */}
+      {presentRarities.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap items-center">
+          <span className="text-[10px] font-display uppercase tracking-wider text-gray-600 mr-1">Quality</span>
+          <button
+            onClick={() => setRarity('all')}
+            className={`px-2.5 py-1 text-[10px] font-display uppercase tracking-wide rounded border transition-colors ${
+              rarity === 'all'
+                ? 'text-sc-accent border-sc-accent/40 bg-sc-accent/10'
+                : 'text-gray-500 border-sc-border hover:text-gray-300'
+            }`}
+          >
+            All ({categoryCounts.all || 0})
+          </button>
+          {presentRarities.map(r => {
+            const rs = RARITY_STYLES[r]
+            const active = rarity === r
+            return (
+              <button
+                key={r}
+                onClick={() => setRarity(active ? 'all' : r)}
+                className={`px-2.5 py-1 text-[10px] font-mono rounded border transition-colors ${
+                  active ? rs.badge : 'text-gray-500 border-sc-border hover:text-gray-300'
+                }`}
+              >
+                {r} ({rarityCounts[r]})
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {visiblePools.map(pool => {
         if (pool.filteredItems.length === 0) return null
