@@ -277,4 +277,70 @@ describe("User Blueprints API", () => {
       expect(second.status).toBe(409);
     });
   });
+
+  describe("PUT /state — un-owning must NOT delete saved builds (data-loss regression)", () => {
+    // PUT /state validates blueprintUuid as a real UUID, so seed a UUID-shaped BP.
+    const BP_UUID = "11111111-2222-4333-8444-555555555555";
+    let seeded = false;
+    async function seedUuidBp() {
+      if (seeded) return;
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO crafting_blueprints (uuid, tag, name, type, sub_type)
+         VALUES (?, 'BP_UUID', 'UUID BP', 'weapons', 'rifle')`,
+      ).bind(BP_UUID).run();
+      seeded = true;
+    }
+
+    it("keeps the blueprint + its builds when Owned is unchecked", async () => {
+      await seedUuidBp();
+      const { sessionToken: tok, userId: uid } = await createTestUser(env.DB);
+      const save = await SELF.fetch(`http://localhost/api/blueprints/${BP_UUID}/builds`, {
+        method: "POST",
+        headers: { ...(await authHeaders(tok)), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Keepme", qualityConfig: { "0": 800 } }),
+      });
+      expect(save.status).toBe(200);
+
+      // Uncheck Owned (no wishlist) — used to delete the parent row + orphan the build.
+      const unown = await SELF.fetch("http://localhost/api/blueprints/state", {
+        method: "PUT",
+        headers: { ...(await authHeaders(tok)), "Content-Type": "application/json" },
+        body: JSON.stringify({ blueprintUuid: BP_UUID, owned: false }),
+      });
+      expect(unown.status).toBe(200);
+
+      const build = await env.DB
+        .prepare("SELECT name FROM user_blueprint_builds WHERE user_id = ? AND blueprint_uuid = ?")
+        .bind(uid, BP_UUID)
+        .first<{ name: string }>();
+      expect(build?.name).toBe("Keepme");
+
+      const list = await SELF.fetch("http://localhost/api/blueprints", { headers: await authHeaders(tok) });
+      const body = (await list.json()) as { items: Array<{ blueprint_uuid: string; is_owned: boolean; builds: unknown[] }> };
+      const item = body.items.find((i) => i.blueprint_uuid === BP_UUID);
+      expect(item).toBeTruthy();
+      expect(item!.is_owned).toBe(false);  // flag cleared…
+      expect(item!.builds.length).toBe(1); // …but the build is preserved
+    });
+
+    it("still deletes a bare owned marker with no builds or config", async () => {
+      await seedUuidBp();
+      const { sessionToken: tok, userId: uid } = await createTestUser(env.DB);
+      await SELF.fetch("http://localhost/api/blueprints/state", {
+        method: "PUT",
+        headers: { ...(await authHeaders(tok)), "Content-Type": "application/json" },
+        body: JSON.stringify({ blueprintUuid: BP_UUID, owned: true }),
+      });
+      await SELF.fetch("http://localhost/api/blueprints/state", {
+        method: "PUT",
+        headers: { ...(await authHeaders(tok)), "Content-Type": "application/json" },
+        body: JSON.stringify({ blueprintUuid: BP_UUID, owned: false }),
+      });
+      const row = await env.DB
+        .prepare("SELECT id FROM user_blueprints WHERE user_id = ? AND blueprint_uuid = ?")
+        .bind(uid, BP_UUID)
+        .first();
+      expect(row).toBeNull();
+    });
+  });
 });

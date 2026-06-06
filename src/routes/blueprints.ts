@@ -173,9 +173,13 @@ export function blueprintRoutes() {
       const nextWishlist =
         wishlist ?? (existing ? existing.is_wishlist === 1 : false);
 
-      // Both flags off → delete the row. But keep rows that have
-      // crafted_quantity > 0 or a saved quality_config (the user has
-      // attached crafting work to this BP and we shouldn't drop it).
+      // Both flags off → delete the row ONLY if it's a bare marker. Keep it if
+      // the user has attached any crafting work: crafted_quantity, a legacy
+      // quality_config, OR — critically — saved builds. Builds live in the
+      // separate user_blueprint_builds table (keyed by blueprint_uuid, FK to
+      // user not user_blueprints), so deleting the parent row would orphan them
+      // and they'd vanish from the saved list. (Data-loss bug: un-checking
+      // Owned wiped saved builds.)
       if (!nextOwned && !nextWishlist) {
         const detail = existing
           ? await db
@@ -189,9 +193,19 @@ export function blueprintRoutes() {
                 quality_config_json: string | null;
               }>()
           : null;
+        const builds = existing
+          ? await db
+              .prepare(
+                `SELECT COUNT(*) AS n FROM user_blueprint_builds
+                 WHERE user_id = ? AND blueprint_uuid = ?`,
+              )
+              .bind(userId, blueprintUuid)
+              .first<{ n: number }>()
+          : null;
         const hasWork =
           (detail?.crafted_quantity ?? 0) > 0 ||
-          !!detail?.quality_config_json;
+          !!detail?.quality_config_json ||
+          (builds?.n ?? 0) > 0;
         if (!hasWork && existing) {
           await db
             .prepare("DELETE FROM user_blueprints WHERE id = ?")
