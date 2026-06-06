@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FlaskConical, Search, X } from 'lucide-react'
-import { useCrafting, useUserBlueprints, setBlueprintState } from '../../../hooks/useAPI'
+import { useCrafting, useUserBlueprints, setBlueprintState, updateBlueprintBuild, deleteBlueprintBuild } from '../../../hooks/useAPI'
 import LoadingState from '../../../components/LoadingState'
 import ErrorState from '../../../components/ErrorState'
 import ViewToggle from '../../../components/ViewToggle'
@@ -280,6 +280,28 @@ export default function CraftingV2() {
     return out
   }, [stateFilter, userBp.data, bpByUuid, activeType, axes, subFilters, normSearch])
 
+  // Per-build "Made N" + delete (saved builds are site-only; no Owned concept).
+  const handleSetBuildQty = useCallback(async (build, qty) => {
+    if (String(build.id).startsWith('legacy-')) return // legacy single-config has no build row
+    try {
+      await updateBlueprintBuild(build.id, { craftedQuantity: qty })
+      await userBp.refetch?.()
+    } catch (e) {
+      console.error('Failed to update build crafted quantity', e)
+    }
+  }, [userBp])
+
+  const handleDeleteBuild = useCallback(async (build) => {
+    if (String(build.id).startsWith('legacy-')) return
+    if (!window.confirm(`Delete the build "${build.name}"? This can't be undone.`)) return
+    try {
+      await deleteBlueprintBuild(build.id)
+      await userBp.refetch?.()
+    } catch (e) {
+      console.error('Failed to delete build', e)
+    }
+  }, [userBp])
+
   const handleQualitySim = (bp) => navigate(`/crafting/${bp.id}?tab=quality`)
   // Open the blueprint detail (default 'materials' tab) — shows "How to Obtain"
   // / acquisition sources. Restores the click-through that used to work.
@@ -446,18 +468,15 @@ export default function CraftingV2() {
                 blueprint={bp}
                 buildLabel={build.name}
                 statsOverride={statsOverride}
-                isInCompare={compare.isInTray(bp)}
-                isOwned={!!bp.uuid && ownedSet.has(bp.uuid)}
-                isWishlist={!!bp.uuid && wishlistSet.has(bp.uuid)}
+                buildCraftedQty={build.crafted_quantity ?? 0}
+                onSetBuildQty={(qty) => handleSetBuildQty(build, qty)}
+                onDeleteBuild={() => handleDeleteBuild(build)}
                 hasSavedSim
-                onToggleOwned={handleToggleOwned}
-                onToggleWishlist={handleToggleWishlist}
                 onQualitySim={() =>
                   navigate(
                     `/crafting/${bp.id}?tab=quality${String(build.id).startsWith('legacy-') ? '' : `&build=${build.id}`}`,
                   )
                 }
-                onCompare={compare.toggle}
                 onOpen={handleOpenDetail}
               />
             ))}

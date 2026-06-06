@@ -1,5 +1,5 @@
 import React from 'react'
-import { Star, SlidersHorizontal, Repeat, Clock, Box, Check, Bookmark } from 'lucide-react'
+import { Star, SlidersHorizontal, Repeat, Clock, Box, Check, Bookmark, Minus, Plus, Trash2 } from 'lucide-react'
 import StatCell from './StatCell'
 import { resolveStats } from './statConfig'
 import { formatCraftTime } from '../craftingUtils'
@@ -34,7 +34,11 @@ export default function BlueprintCard({
   onOpen = () => {},
   buildLabel = null,
   statsOverride = null,
+  buildCraftedQty = 0,
+  onSetBuildQty = () => {},
+  onDeleteBuild = () => {},
 }) {
+  const isBuildCard = buildLabel != null
   const stats = resolveStats(blueprint, statsOverride)
   const name = blueprint.base_stats?.item_name || blueprint.name
   const type = blueprint.type
@@ -147,7 +151,52 @@ export default function BlueprintCard({
         </div>
       </div>
 
-      {/* Action row — 4 cells */}
+      {/* Action row. Build cards (site-only saved configs) get build actions —
+          NOT Owned/Wishlist, which belong to the real base blueprint. */}
+      {isBuildCard ? (
+        <div className="flex items-stretch border-t border-[var(--separator-subtle)]">
+          {/* "Made N of this build" — per-build crafted quantity */}
+          <div className="flex items-center gap-2 px-3 py-[8px] flex-1 border-r border-[var(--separator-subtle)]">
+            <span className="font-mono text-[9px] uppercase tracking-[0.05em] text-[var(--text-muted)]">Made</span>
+            <div className="ml-auto inline-flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onSetBuildQty(Math.max(0, buildCraftedQty - 1))}
+                disabled={buildCraftedQty <= 0}
+                aria-label="Decrease made count"
+                className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--sc-accent)] hover:bg-[var(--hover-bg)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+              <span className={`font-mono text-xs w-5 text-center ${buildCraftedQty > 0 ? 'text-[rgb(52,211,153)]' : 'text-[var(--text-muted)]'}`}>
+                {buildCraftedQty}
+              </span>
+              <button
+                type="button"
+                onClick={() => onSetBuildQty(buildCraftedQty + 1)}
+                aria-label="Increase made count"
+                className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--sc-accent)] hover:bg-[var(--hover-bg)] transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+          <ActionButton
+            icon={<SlidersHorizontal className="w-3 h-3" />}
+            label="Edit"
+            aria-label="Edit this build in the Quality Sim"
+            activeTint="accent"
+            onClick={() => onQualitySim(blueprint)}
+            divider
+          />
+          <ActionButton
+            icon={<Trash2 className="w-3 h-3" />}
+            label="Delete"
+            aria-label="Delete this build"
+            onClick={() => onDeleteBuild()}
+          />
+        </div>
+      ) : (
       <div className="grid grid-cols-4 border-t border-[var(--separator-subtle)]">
         <ActionButton
           icon={
@@ -202,6 +251,7 @@ export default function BlueprintCard({
           onClick={() => onCompare(blueprint)}
         />
       </div>
+      )}
     </article>
   )
 }
