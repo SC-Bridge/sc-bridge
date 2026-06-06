@@ -216,4 +216,65 @@ describe("User Blueprints API", () => {
       expect(verify.items).toHaveLength(0);
     });
   });
+
+  describe("POST /api/blueprints/:uuid/builds", () => {
+    it("saves a named build (regression: malformed UNION/LIMIT existence check 500'd)", async () => {
+      const res = await SELF.fetch(
+        "http://localhost/api/blueprints/test-bp-uuid/builds",
+        {
+          method: "POST",
+          headers: {
+            ...(await authHeaders(sessionToken)),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: "Max Quality",
+            qualityConfig: { "0": 1000, "1": 750 },
+            notes: "best roll",
+          }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; id: number };
+      expect(body.ok).toBe(true);
+      expect(body.id).toBeGreaterThan(0);
+
+      const row = await env.DB
+        .prepare("SELECT name FROM user_blueprint_builds WHERE id = ?")
+        .bind(body.id)
+        .first<{ name: string }>();
+      expect(row?.name).toBe("Max Quality");
+    });
+
+    it("returns 404 for an unknown blueprint uuid", async () => {
+      const res = await SELF.fetch(
+        "http://localhost/api/blueprints/does-not-exist/builds",
+        {
+          method: "POST",
+          headers: {
+            ...(await authHeaders(sessionToken)),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name: "x", qualityConfig: { "0": 500 } }),
+        },
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects a duplicate build name with 409", async () => {
+      const body = JSON.stringify({ name: "Dupe", qualityConfig: { "0": 500 } });
+      const opts = {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body,
+      };
+      const first = await SELF.fetch("http://localhost/api/blueprints/test-bp-uuid/builds", opts);
+      expect(first.status).toBe(200);
+      const second = await SELF.fetch("http://localhost/api/blueprints/test-bp-uuid/builds", {
+        ...opts,
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      });
+      expect(second.status).toBe(409);
+    });
+  });
 });

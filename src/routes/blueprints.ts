@@ -413,15 +413,23 @@ export function blueprintRoutes() {
       const blueprintUuid = c.req.param("uuid");
       const { name, qualityConfig, notes } = c.req.valid("json");
 
-      // Verify the blueprint exists in either channel.
-      const exists = await db
-        .prepare(
-          `SELECT 1 FROM crafting_blueprints WHERE uuid = ? LIMIT 1
-           UNION ALL
-           SELECT 1 FROM ptu_crafting_blueprints WHERE uuid = ? LIMIT 1`,
-        )
-        .bind(blueprintUuid, blueprintUuid)
+      // Verify the blueprint exists in either channel. Check LIVE first; only
+      // consult the PTU shadow table if LIVE misses. (A per-SELECT `LIMIT`
+      // before `UNION ALL` is invalid SQLite and threw "LIMIT clause should
+      // come after UNION ALL not before" → every build-save 500'd.) The PTU
+      // shadow table is dropped in some environments during LIVE transitions,
+      // so a missing-table error there is treated as "not in PTU".
+      let exists = await db
+        .prepare("SELECT 1 FROM crafting_blueprints WHERE uuid = ? LIMIT 1")
+        .bind(blueprintUuid)
         .first();
+      if (!exists) {
+        exists = await db
+          .prepare("SELECT 1 FROM ptu_crafting_blueprints WHERE uuid = ? LIMIT 1")
+          .bind(blueprintUuid)
+          .first()
+          .catch(() => null);
+      }
       if (!exists) return c.json({ error: "Blueprint not found" }, 404);
 
       // Auto-mark owned + ensure a parent user_blueprints row exists.
