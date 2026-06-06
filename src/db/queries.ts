@@ -1447,6 +1447,17 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       .first() as Record<string, unknown> | null;
   }
 
+  // Fallback: ship_weapon ordnance (bombs/missiles) without FK — match by UUID
+  // to ship_missiles. The buy-only bombs (Colossus/Stormburst/Thunderball) get a
+  // ship_weapon loot_map row from the UEX backfill with ship_missile_id=NULL, so
+  // they miss the vehicle_components fallback above; their stats live here.
+  if (!details && item.category === 'ship_weapon') {
+    details = await db
+      .prepare(`SELECT name, type, sub_type, size, grade, description, missile_type, lock_time, tracking_signal, damage, damage_type, blast_radius, speed, lock_range, ammo_count FROM ${t("ship_missiles")} WHERE uuid = ?`)
+      .bind(uuid)
+      .first() as Record<string, unknown> | null;
+  }
+
   // Fetch locations from junction table, resolving UUIDs to display names.
   // 9 vestigial cols were dropped in migration 0203 (buy_price/sell_price →
   // terminal_inventory; contract_name/guild/reward_type/reward_amount/reward_max/amount
