@@ -200,6 +200,57 @@ export function fleetRoutes() {
     },
   );
 
+  // PUT /api/vehicles/:id/tags — replace the full tag set on a fleet entry (#120).
+  // Replace-all semantics keep the client simple: send the desired tags, we
+  // diff against what's stored. Tags are trimmed, de-duped (case-insensitive),
+  // capped at 10 per ship and 24 chars each.
+  routes.put("/:id/tags",
+    validate("param", IntIdParam),
+    validate("json", z.object({
+      tags: z.array(z.string().trim().min(1).max(24)).max(10),
+    })),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const { tags } = c.req.valid("json");
+
+      // Ownership check.
+      const fleetEntry = await db
+        .prepare("SELECT id FROM user_fleet WHERE id = ? AND user_id = ?")
+        .bind(id, userID)
+        .first<{ id: number }>();
+      if (!fleetEntry) {
+        return c.json({ error: "Fleet entry not found" }, 404);
+      }
+
+      // De-dupe case-insensitively, preserving the first-seen casing.
+      const seen = new Set<string>();
+      const clean: string[] = [];
+      for (const t of tags) {
+        const key = t.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        clean.push(t);
+      }
+
+      // Replace-all: clear then insert. One batch so it's atomic.
+      const stmts = [
+        db.prepare("DELETE FROM user_fleet_tags WHERE user_fleet_id = ? AND user_id = ?").bind(id, userID),
+        ...clean.map((tag) =>
+          db
+            .prepare(
+              "INSERT INTO user_fleet_tags (user_fleet_id, user_id, tag) VALUES (?, ?, ?)",
+            )
+            .bind(id, userID, tag),
+        ),
+      ];
+      await db.batch(stmts);
+
+      return c.json({ ok: true, tags: clean });
+    },
+  );
+
   // GET /api/vehicles/:id/upgrades — get CCU chain for a fleet entry
   routes.get("/:id/upgrades",
     validate("param", IntIdParam),
@@ -388,7 +439,28 @@ async function getFleetList(
     .bind(userID)
     .all();
 
-  return c.json(result.results);
+  // Hydrate per-ship custom tags (#120) in one query, grouped by fleet entry.
+  const tagRows = await db
+    .prepare(
+      `SELECT user_fleet_id, tag FROM user_fleet_tags
+       WHERE user_id = ? ORDER BY tag`,
+    )
+    .bind(userID)
+    .all<{ user_fleet_id: number; tag: string }>();
+
+  const tagsByFleet = new Map<number, string[]>();
+  for (const row of tagRows.results) {
+    const list = tagsByFleet.get(row.user_fleet_id) ?? [];
+    list.push(row.tag);
+    tagsByFleet.set(row.user_fleet_id, list);
+  }
+
+  const withTags = result.results.map((r: any) => ({
+    ...r,
+    tags: tagsByFleet.get(r.id) ?? [],
+  }));
+
+  return c.json(withTags);
 }
 
 async function getFleetLoaners(

@@ -408,6 +408,11 @@ export async function equipFleetPaint(fleetEntryId, paintId) {
   return patchJSON(`/vehicles/${fleetEntryId}/paint`, { paint_id: paintId })
 }
 
+// Replace the full custom-tag set on a fleet entry (#120). Returns { ok, tags }.
+export async function setVehicleTags(fleetEntryId, tags) {
+  return putJSON(`/vehicles/${fleetEntryId}/tags`, { tags })
+}
+
 export async function updateOrgSettings(slug, settings) {
   return patchJSON(`/orgs/${slug}`, settings)
 }
