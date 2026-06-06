@@ -1,5 +1,5 @@
 import React from 'react'
-import { Star, SlidersHorizontal, Repeat, Clock, Box, Check } from 'lucide-react'
+import { Star, SlidersHorizontal, Repeat, Clock, Box, Check, Bookmark } from 'lucide-react'
 import StatCell from './StatCell'
 import { resolveStats } from './statConfig'
 import { formatCraftTime } from '../craftingUtils'
@@ -32,8 +32,10 @@ export default function BlueprintCard({
   onQualitySim = () => {},
   onCompare = () => {},
   onOpen = () => {},
+  buildLabel = null,
+  statsOverride = null,
 }) {
-  const stats = resolveStats(blueprint)
+  const stats = resolveStats(blueprint, statsOverride)
   const name = blueprint.base_stats?.item_name || blueprint.name
   const type = blueprint.type
   const subType = blueprint.sub_type
@@ -104,6 +106,14 @@ export default function BlueprintCard({
             {name}
           </button>
         </h3>
+
+        {/* Saved-build name — these stats are this build's quality config (#90) */}
+        {buildLabel && (
+          <div className="-mt-[6px] inline-flex items-center gap-[5px] self-start rounded-[var(--radius-sm,6px)] border border-[var(--sc-accent)]/30 bg-[var(--sc-accent)]/10 px-[7px] py-[2px] font-mono text-[10px] text-[var(--sc-accent)]">
+            <Bookmark className="w-2.5 h-2.5" />
+            {buildLabel}
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-[6px] py-[10px] border-t border-b border-[var(--separator-subtle)]">
           {stats.map(stat => (

@@ -30,24 +30,27 @@
  * @param {object} blueprint - { type, base_stats, slots }
  * @returns {object} overlay with computed `_max` fields
  */
-export function computeMaxStats(blueprint) {
+import { interpolateModifier } from '../craftingUtils'
+
+/**
+ * Shared core: walk slot modifiers, multiply each stat by `modMult(mod, slotIndex)`,
+ * apply the products to base_stats. Returns a `_max`-keyed overlay (the field
+ * names are historical — they hold the value at whatever quality modMult encodes).
+ */
+function computeStatOverlay(blueprint, modMult) {
   if (!blueprint || !blueprint.base_stats) return {}
 
-  // Walk all slot modifiers and build a product of modifier_at_end per
-  // stat key. At Q1000 the crafted multiplier for a given stat is the
-  // product of every modifier's `modifier_at_end` keyed by that stat
-  // (mirrors interpolateModifier(mod, 1000) which returns modifier_at_end).
   const multipliers = new Map()
   const slots = blueprint.slots || []
-  for (const slot of slots) {
-    if (!slot.modifiers) continue
+  slots.forEach((slot, slotIndex) => {
+    if (!slot.modifiers) return
     for (const mod of slot.modifiers) {
       const key = mod.key || mod.name
       if (!key) continue
       const current = multipliers.get(key) ?? 1
-      multipliers.set(key, current * (mod.modifier_at_end ?? 1))
+      multipliers.set(key, current * modMult(mod, slotIndex))
     }
-  }
+  })
 
   const base = blueprint.base_stats
   const result = {}
@@ -57,8 +60,8 @@ export function computeMaxStats(blueprint) {
     const rpmMult = multipliers.get('weapon_firerate') ?? 1
     const damageBase = base.damage
     const rpmBase = base.rounds_per_minute
-    // Both damage and rpm are required to derive dps_max — if either is
-    // missing, skip the weapons block entirely rather than half-populate.
+    // Both damage and rpm are required to derive dps — if either is missing,
+    // skip the weapons block entirely rather than half-populate.
     if (damageBase != null && rpmBase != null) {
       result.rounds_per_minute_max = rpmBase * rpmMult
       result.dps_max = (damageBase * dmgMult) * (rpmBase * rpmMult) / 60
@@ -72,4 +75,27 @@ export function computeMaxStats(blueprint) {
   // ammo: intentionally unimplemented until modifier mapping is confirmed.
 
   return result
+}
+
+export function computeMaxStats(blueprint) {
+  // Q1000 best case: modifier_at_end == interpolateModifier(mod, 1000).
+  return computeStatOverlay(blueprint, (mod) => mod.modifier_at_end ?? 1)
+}
+
+/**
+ * Compute a saved build's stat overlay at ITS quality config (not max).
+ * qualityConfig is keyed by slot index ("0","1",...) → quality 0-1000
+ * (mirrors QualitySim's `qualities` map; default 500 for an unset slot).
+ * Lets the Saved-Sim view show each build's distinct stats instead of
+ * collapsing every build into one max-stats card.
+ *
+ * @param {object} blueprint - { type, base_stats, slots }
+ * @param {object} qualityConfig - { [slotIndex]: quality }
+ * @returns {object} overlay with computed `_max` fields (= build values)
+ */
+export function computeBuildStats(blueprint, qualityConfig) {
+  const cfg = qualityConfig || {}
+  return computeStatOverlay(blueprint, (mod, slotIndex) =>
+    interpolateModifier(mod, cfg[slotIndex] ?? cfg[String(slotIndex)] ?? 500),
+  )
 }

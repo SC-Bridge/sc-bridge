@@ -11,6 +11,7 @@ import BlueprintListView from './BlueprintListView'
 import CompareTray from './CompareTray'
 import useCompareTray from './useCompareTray'
 import { deriveCategory, SUB_FILTERS } from './blueprintCategory'
+import { computeBuildStats } from './computeMaxStats'
 
 const VIEW_STORAGE_KEY = 'blueprintView'
 const TYPE_STORAGE_KEY = 'blueprintType'
@@ -142,12 +143,32 @@ export default function CraftingV2() {
     return s
   }, [userBp.data])
 
+  // Total saved BUILDS (not blueprints) — the Saved Sim view is build-centric
+  // (one card per build, since each build's quality config yields different
+  // stats). Legacy pre-0226 single-config rows count as one build.
+  const totalBuilds = useMemo(() => {
+    let n = 0
+    for (const item of userBp.data?.items || []) {
+      if (item.builds?.length) n += item.builds.length
+      else if (item.has_quality_config) n += 1
+    }
+    return n
+  }, [userBp.data])
+
   const counts = useMemo(() => ({
     all: data?.blueprints?.length ?? 0,
     owned: ownedSet.size,
     wishlist: wishlistSet.size,
-    sim: simSet.size,
-  }), [data, ownedSet, wishlistSet, simSet])
+    sim: totalBuilds,
+  }), [data, ownedSet, wishlistSet, totalBuilds])
+
+  // uuid → catalog blueprint (carries slots/modifiers/base_stats for per-build
+  // stat computation).
+  const bpByUuid = useMemo(() => {
+    const m = new Map()
+    for (const bp of data?.blueprints || []) if (bp.uuid) m.set(bp.uuid, bp)
+    return m
+  }, [data])
 
   const normSearch = search.trim().toLowerCase()
 
@@ -220,6 +241,44 @@ export default function CraftingV2() {
       return true
     })
   }, [categoryBlueprints, stateFilter, ownedSet, wishlistSet, simSet, subFilters, axes, normSearch])
+
+  // Saved Sim view: one card PER BUILD (not per blueprint), each with its own
+  // quality-config stats. Expands the user's saved builds in the active
+  // category, applying the same sub-filter + search rules. Search also matches
+  // the build name (so "Full Send 9" finds it).
+  const simBuilds = useMemo(() => {
+    if (stateFilter !== 'sim') return []
+    const out = []
+    for (const item of userBp.data?.items || []) {
+      const bp = bpByUuid.get(item.blueprint_uuid)
+      if (!bp || deriveCategory(bp) !== activeType) continue
+
+      // Sub-filter axes apply at the blueprint level.
+      let axisOk = true
+      for (const axis of axes) {
+        const sel = subFilters[axis.key]
+        if (sel && sel !== 'all' && String(axis.extract(bp)) !== sel) { axisOk = false; break }
+      }
+      if (!axisOk) continue
+
+      // mig-0226 named builds, or a legacy single saved config as one build.
+      const builds = item.builds?.length
+        ? item.builds
+        : (item.has_quality_config
+            ? [{ id: `legacy-${item.blueprint_uuid}`, name: item.nickname || 'Saved config', quality_config: item.quality_config }]
+            : [])
+
+      for (const build of builds) {
+        if (normSearch) {
+          const hay = [build.name, bp.base_stats?.item_name, bp.name, bp.tag, bp.sub_type]
+            .filter(Boolean).join(' ').toLowerCase()
+          if (!hay.includes(normSearch)) continue
+        }
+        out.push({ bp, build, statsOverride: computeBuildStats(bp, build.quality_config) })
+      }
+    }
+    return out
+  }, [stateFilter, userBp.data, bpByUuid, activeType, axes, subFilters, normSearch])
 
   const handleQualitySim = (bp) => navigate(`/crafting/${bp.id}?tab=quality`)
   // Open the blueprint detail (default 'materials' tab) — shows "How to Obtain"
@@ -372,8 +431,39 @@ export default function CraftingV2() {
         )
       })}
 
-      {/* Grid or list */}
-      {blueprints.length === 0 ? (
+      {/* Saved Sim view = one card PER BUILD (each with its own quality stats) */}
+      {stateFilter === 'sim' ? (
+        simBuilds.length === 0 ? (
+          <div className="text-center py-16">
+            <FlaskConical className="w-12 h-12 mx-auto mb-3 text-[var(--text-subtle)]" />
+            <p className="text-[var(--text-muted)]">No saved builds for this type.</p>
+          </div>
+        ) : (
+          <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {simBuilds.map(({ bp, build, statsOverride }) => (
+              <BlueprintCard
+                key={`build-${build.id}`}
+                blueprint={bp}
+                buildLabel={build.name}
+                statsOverride={statsOverride}
+                isInCompare={compare.isInTray(bp)}
+                isOwned={!!bp.uuid && ownedSet.has(bp.uuid)}
+                isWishlist={!!bp.uuid && wishlistSet.has(bp.uuid)}
+                hasSavedSim
+                onToggleOwned={handleToggleOwned}
+                onToggleWishlist={handleToggleWishlist}
+                onQualitySim={() =>
+                  navigate(
+                    `/crafting/${bp.id}?tab=quality${String(build.id).startsWith('legacy-') ? '' : `&build=${build.id}`}`,
+                  )
+                }
+                onCompare={compare.toggle}
+                onOpen={handleOpenDetail}
+              />
+            ))}
+          </div>
+        )
+      ) : blueprints.length === 0 ? (
         <div className="text-center py-16">
           <FlaskConical className="w-12 h-12 mx-auto mb-3 text-[var(--text-subtle)]" />
           <p className="text-[var(--text-muted)]">No blueprints for this type.</p>

@@ -99,7 +99,7 @@ function roundTo(value, d) {
  *   the computation is done client-side on every render (memoized by
  *   the caller if perf becomes an issue; map lookups are cheap).
  */
-export function resolveStats(blueprint) {
+export function resolveStats(blueprint, statsOverride = null) {
   const type = blueprint?.type
   const config = STAT_CONFIG[type]
   if (!config) return []
@@ -108,7 +108,10 @@ export function resolveStats(blueprint) {
   // base_stats. If base_stats already has a `_max` field (e.g. from
   // fabricated test fixtures), the computed value wins — it's the
   // canonical derivation from the crafting model.
-  const computedMax = computeMaxStats(blueprint)
+  // `statsOverride` (a precomputed _max overlay) lets the Saved-Sim view show a
+  // specific build's stats (computeBuildStats at its quality config) instead of
+  // the blueprint's Q1000 max.
+  const computedMax = statsOverride ?? computeMaxStats(blueprint)
   const mergedBlueprint = {
     ...blueprint,
     base_stats: { ...(blueprint?.base_stats ?? {}), ...computedMax },

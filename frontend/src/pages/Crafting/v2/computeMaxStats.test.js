@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMaxStats } from './computeMaxStats'
+import { computeMaxStats, computeBuildStats } from './computeMaxStats'
 
 /**
  * Simulates a weapon blueprint with slot modifiers that boost damage by
@@ -161,5 +161,65 @@ describe('computeMaxStats', () => {
       // Unkeyed modifier ignored → multipliers stay at 1
       expect(result.dps_max).toBe(1000)
     })
+  })
+})
+
+// Build stats interpolate at the build's saved quality config (per slot),
+// so each saved build renders its own distinct stats.
+const WEAPON_BP_Q = {
+  type: 'weapons',
+  base_stats: { damage: 100, rounds_per_minute: 600 },
+  slots: [
+    {
+      modifiers: [
+        { key: 'weapon_damage', start_quality: 0, end_quality: 1000, modifier_at_start: 1.0, modifier_at_end: 1.5 },
+        { key: 'weapon_firerate', start_quality: 0, end_quality: 1000, modifier_at_start: 1.0, modifier_at_end: 1.2 },
+      ],
+    },
+  ],
+}
+
+describe('computeBuildStats', () => {
+  it('at Q1000 equals computeMaxStats (best case)', () => {
+    const build = computeBuildStats(WEAPON_BP_Q, { 0: 1000 })
+    const max = computeMaxStats(WEAPON_BP_Q)
+    expect(build.dps_max).toBeCloseTo(max.dps_max, 5)
+    expect(build.rounds_per_minute_max).toBeCloseTo(max.rounds_per_minute_max, 5)
+  })
+
+  it('at Q0 equals base (modifier_at_start = 1.0)', () => {
+    const build = computeBuildStats(WEAPON_BP_Q, { 0: 0 })
+    // damage 100×1, rpm 600×1 → dps 1000
+    expect(build.dps_max).toBeCloseTo(1000, 5)
+    expect(build.rounds_per_minute_max).toBeCloseTo(600, 5)
+  })
+
+  it('at Q500 interpolates halfway', () => {
+    const build = computeBuildStats(WEAPON_BP_Q, { 0: 500 })
+    // dmg mult = 1.25, rpm mult = 1.10 → dps = (100×1.25)×(600×1.10)/60 = 137.5
+    expect(build.rounds_per_minute_max).toBeCloseTo(660, 5)
+    expect(build.dps_max).toBeCloseTo((125 * 660) / 60, 5)
+  })
+
+  it('different configs yield different stats (the reason for per-build cards)', () => {
+    const a = computeBuildStats(WEAPON_BP_Q, { 0: 250 })
+    const b = computeBuildStats(WEAPON_BP_Q, { 0: 900 })
+    expect(b.dps_max).toBeGreaterThan(a.dps_max)
+  })
+
+  it('defaults an unset slot to Q500', () => {
+    const withDefault = computeBuildStats(WEAPON_BP_Q, {}) // no slot 0 entry
+    const explicit500 = computeBuildStats(WEAPON_BP_Q, { 0: 500 })
+    expect(withDefault.dps_max).toBeCloseTo(explicit500.dps_max, 5)
+  })
+
+  it('accepts string-keyed slot indices (as stored in quality_config_json)', () => {
+    const strKey = computeBuildStats(WEAPON_BP_Q, { '0': 1000 })
+    expect(strKey.dps_max).toBeCloseTo(computeMaxStats(WEAPON_BP_Q).dps_max, 5)
+  })
+
+  it('returns {} for null blueprint / missing base_stats', () => {
+    expect(computeBuildStats(null, { 0: 500 })).toEqual({})
+    expect(computeBuildStats({ type: 'weapons', slots: [] }, { 0: 500 })).toEqual({})
   })
 })
