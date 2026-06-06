@@ -1,10 +1,10 @@
-import { Bookmark, BookmarkPlus, Check } from 'lucide-react'
+import { Bookmark, BookmarkPlus, Check, Package } from 'lucide-react'
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
 import ItemCardStats from './ItemCardStats'
 
-export default function ItemCard({ item, collectionQty, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
+export default function ItemCard({ item, collectionQty, craftedQty = 0, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
   const rs = rarityStyle(item.rarity)
   const eCat = effectiveCategory(item)
   const catStyle = CATEGORY_BADGE_STYLES[eCat] || CATEGORY_BADGE_STYLES.unknown
@@ -44,6 +44,15 @@ export default function ItemCard({ item, collectionQty, onSetCollectionQty, wish
         {item.rarity && item.rarity !== 'N/A' && (
           <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
             {item.rarity}
+          </span>
+        )}
+        {isAuthed && craftedQty > 0 && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90"
+            title={`${craftedQty} crafted via My Blueprints`}
+          >
+            <Package className="w-3 h-3" />
+            {craftedQty}
           </span>
         )}
       </div>
