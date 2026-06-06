@@ -330,3 +330,47 @@ export function aggregateCombatStats(components) {
     totalPowerOutput, totalPowerDraw, totalCoolingRate,
   }
 }
+
+// ─── Location planner (#94) ─────────────────────────────────────────────────
+// Group the active loadout's components by the cheapest shop that sells each,
+// producing a "go here for these items" shopping plan. Components carry a
+// `shops` array ({ shop_name, location_label, buy_price }) from the
+// /api/loadout/:slug/components response (loadout.ts shopMap). Components with
+// no buyable shop entry fall into `lootOnly`.
+export function groupLoadoutByLocation(components) {
+  const empty = { groups: [], lootOnly: [], totalCost: 0 }
+  if (!Array.isArray(components) || components.length === 0) return empty
+
+  const groups = new Map() // key → { shop_name, location_label, items, subtotal }
+  const lootOnly = []
+
+  for (const comp of components) {
+    const name = comp.name || comp.component_name || comp.child_name || 'Component'
+    const buyable = (comp.shops || []).filter((s) => Number(s.buy_price) > 0)
+    if (buyable.length === 0) {
+      lootOnly.push({ name })
+      continue
+    }
+    // Cheapest shop wins (optimized per-item; the cart's "Optimize" does true
+    // set-cover across shops — this is the lighter inline summary).
+    const best = buyable.reduce((a, b) => (Number(b.buy_price) < Number(a.buy_price) ? b : a))
+    const key = [best.shop_name, best.location_label].filter(Boolean).join(' · ') || 'Unknown shop'
+    if (!groups.has(key)) {
+      groups.set(key, { shop_name: best.shop_name || null, location_label: best.location_label || null, items: [], subtotal: 0 })
+    }
+    const g = groups.get(key)
+    g.items.push({ name, buy_price: Number(best.buy_price) })
+    g.subtotal += Number(best.buy_price)
+  }
+
+  const ordered = [...groups.values()].sort((a, b) =>
+    (a.shop_name || '').localeCompare(b.shop_name || ''),
+  )
+  for (const g of ordered) g.items.sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    groups: ordered,
+    lootOnly: lootOnly.sort((a, b) => a.name.localeCompare(b.name)),
+    totalCost: ordered.reduce((sum, g) => sum + g.subtotal, 0),
+  }
+}

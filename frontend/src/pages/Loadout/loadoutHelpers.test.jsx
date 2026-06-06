@@ -3,6 +3,7 @@ import {
   fmtInt, fmtCompact, fmtDec1, fmtPct, fmtSpeed, fmtRange, fmtRPM,
   getPortCategory, getDamageType, aggregateCombatStats,
   PORT_CATEGORY_ORDER, COMPONENT_TYPE_TO_PORT_TYPE,
+  groupLoadoutByLocation,
 } from './loadoutHelpers'
 
 
@@ -311,5 +312,60 @@ describe('COMPONENT_TYPE_TO_PORT_TYPE', () => {
     expect(COMPONENT_TYPE_TO_PORT_TYPE.QuantumDrive).toBe('quantum_drive')
     expect(COMPONENT_TYPE_TO_PORT_TYPE.WeaponGun).toBe('weapon')
     expect(COMPONENT_TYPE_TO_PORT_TYPE.Radar).toBe('sensor')
+  })
+})
+
+describe('groupLoadoutByLocation (#94)', () => {
+  const cooler = {
+    name: 'Cooler A',
+    shops: [
+      { shop_name: 'Dumper\'s Depot', location_label: 'Area18', buy_price: 5000 },
+      { shop_name: 'CenterMass', location_label: 'New Babbage', buy_price: 4200 },
+    ],
+  }
+  const shield = {
+    name: 'Shield B',
+    shops: [{ shop_name: 'CenterMass', location_label: 'New Babbage', buy_price: 12000 }],
+  }
+  const lootOnlyComp = { name: 'Rare PowerPlant', shops: [] }
+  const noPriceComp = { name: 'Broken Listing', shops: [{ shop_name: 'X', location_label: 'Y', buy_price: 0 }] }
+
+  it('groups each component under its cheapest shop', () => {
+    const { groups } = groupLoadoutByLocation([cooler, shield])
+    const center = groups.find((g) => g.shop_name === 'CenterMass')
+    expect(center).toBeTruthy()
+    // cooler is cheapest at CenterMass (4200) and shield only at CenterMass (12000)
+    const names = center.items.map((i) => i.name).sort()
+    expect(names).toEqual(['Cooler A', 'Shield B'])
+    expect(center.subtotal).toBe(4200 + 12000)
+  })
+
+  it('does not list a component at a pricier shop once it picks the cheapest', () => {
+    const { groups } = groupLoadoutByLocation([cooler])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].shop_name).toBe('CenterMass')
+    expect(groups[0].items[0].buy_price).toBe(4200)
+  })
+
+  it('buckets shopless / zero-price components into lootOnly', () => {
+    const { lootOnly } = groupLoadoutByLocation([lootOnlyComp, noPriceComp])
+    expect(lootOnly.map((i) => i.name).sort()).toEqual(['Broken Listing', 'Rare PowerPlant'])
+  })
+
+  it('computes a grand total across all shop groups', () => {
+    const { totalCost } = groupLoadoutByLocation([cooler, shield])
+    expect(totalCost).toBe(4200 + 12000)
+  })
+
+  it('sorts groups by shop name and tolerates empty input', () => {
+    expect(groupLoadoutByLocation([])).toEqual({ groups: [], lootOnly: [], totalCost: 0 })
+    expect(groupLoadoutByLocation(null)).toEqual({ groups: [], lootOnly: [], totalCost: 0 })
+  })
+
+  it('accepts component_name as a fallback label', () => {
+    const { groups } = groupLoadoutByLocation([
+      { component_name: 'Legacy Named', shops: [{ shop_name: 'S', location_label: 'L', buy_price: 100 }] },
+    ])
+    expect(groups[0].items[0].name).toBe('Legacy Named')
   })
 })
