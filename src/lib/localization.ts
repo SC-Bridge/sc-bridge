@@ -770,6 +770,121 @@ export function evaluateLocalizationIngest(
   return { changed: true, ok: true, keyCount, delta, reason: "Changed + passed sanity" };
 }
 
+/** A community source's fetch result for one ingest run. `content: null` = the
+ *  fetch failed this run (skip it, but keep its last-seen hash). */
+export interface SourceFetch {
+  name: string;
+  content: string | null;
+}
+
+/** Per-source content fingerprints from the previous run (source name → hash). */
+export interface IngestSeenState {
+  seen: Record<string, string>;
+}
+
+export interface IngestDecisionMulti {
+  action: "ingest" | "unchanged" | "skip";
+  /** Source chosen (when action === "ingest"). */
+  source?: string;
+  /** Content to write (when action === "ingest"). */
+  content?: string;
+  keyCount?: number;
+  delta?: number;
+  reason: string;
+  /** Updated per-source seen hashes to persist for the next run. */
+  seen: Record<string, string>;
+}
+
+/**
+ * Cheap, deterministic content fingerprint (length + djb2). Detects when a
+ * SOURCE itself publishes a new file — distinct from comparing against our
+ * stored base, which would thrash between two sources that ship different
+ * bytes for the *same* patch.
+ */
+export function hashIni(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(h, 33) + s.charCodeAt(i)) | 0;
+  }
+  return `${s.length}:${(h >>> 0).toString(36)}`;
+}
+
+/**
+ * Choose whether/what to ingest from MULTIPLE community base sources, given the
+ * current KV base and the per-source hashes seen last run. `sources` is in
+ * canonical-preference order — index 0 is the canonical source (BeltaKoda).
+ *
+ * Rules (this is the fix for "catch a new INI from EITHER source"):
+ *  - A source is only a real candidate if its content DIFFERS from our base
+ *    (evaluateLocalizationIngest.changed) and passes the sanity gate.
+ *  - The CANONICAL source ingests on any such difference (it's the live base —
+ *    refreshing toward it never thrashes, since once ingested it equals base).
+ *  - A NON-canonical source ingests ONLY when it has actually just PUBLISHED
+ *    (its hash changed since last run). That's what lets a new patch land via
+ *    Dymerz while BeltaKoda is still stale, WITHOUT ping-ponging between two
+ *    sources that merely differ in bytes for the same patch.
+ *  - Sources are considered in order, so the canonical one wins when both moved.
+ *  - Always returns the updated `seen` map (records every source we fetched,
+ *    including baselines on the first run).
+ */
+export function decideLocalizationIngest(
+  sources: SourceFetch[],
+  current: string | null,
+  state: IngestSeenState,
+  opts?: { minKeys?: number; maxDropFraction?: number },
+): IngestDecisionMulti {
+  const prevSeen = state.seen ?? {};
+  const seen: Record<string, string> = { ...prevSeen };
+
+  const hashes: Record<string, string> = {};
+  for (const s of sources) {
+    if (s.content !== null) {
+      const h = hashIni(s.content);
+      hashes[s.name] = h;
+      seen[s.name] = h; // record/refresh baseline for every fetched source
+    }
+  }
+
+  if (!sources.some((s) => s.content !== null)) {
+    return { action: "skip", reason: "All sources failed to fetch", seen };
+  }
+
+  const canonicalName = sources[0]?.name;
+  let rejection: string | null = null;
+
+  for (const s of sources) {
+    if (s.content === null) continue;
+    const d = evaluateLocalizationIngest(s.content, current, opts);
+    if (!d.changed) continue; // equals our current base — nothing to take here
+    if (!d.ok) {
+      rejection ??= `${s.name}: ${d.reason}`;
+      continue; // broken/suspicious publish — fall through to the next source
+    }
+    // No-regression guard: never overwrite a base that has MORE keys than the
+    // source offers. A net key loss means our base is newer than this source
+    // (e.g. we extracted a patch locally before BeltaKoda/Dymerz published it).
+    // Silent skip — benign, and it auto-resumes once the source catches up
+    // (delta >= 0). Patches almost always ADD keys, so this rarely blocks a
+    // legitimate update; a genuine key-removing patch is left for a manual call.
+    if (current !== null && d.delta < 0) continue;
+    const isCanonical = s.name === canonicalName;
+    const isFresh = prevSeen[s.name] !== undefined && prevSeen[s.name] !== hashes[s.name];
+    if (!isCanonical && !isFresh) continue; // differs but not a fresh publish → hold (anti-thrash)
+    return {
+      action: "ingest",
+      source: s.name,
+      content: s.content,
+      keyCount: d.keyCount,
+      delta: d.delta,
+      reason: d.reason,
+      seen,
+    };
+  }
+
+  if (rejection) return { action: "skip", reason: rejection, seen };
+  return { action: "unchanged", reason: "No source published a new base since last run", seen };
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
