@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate } from "../lib/validation";
+import { ptuShadowExists } from "../lib/ptu";
 
 /**
  * /api/blueprints/* — User-saved blueprints (owned / wishlist / crafting tracker)
@@ -34,40 +35,58 @@ export function blueprintRoutes() {
     const db = c.env.DB;
     const userId = getAuthUser(c).id;
 
+    // PTU shadow tables are DROPped by the PTU purge between cycles. Only join
+    // them when present; otherwise every PTU alias collapses to NULL so this
+    // LIVE query keeps working (it would 500 with "no such table" otherwise).
+    const hasPtu = await ptuShadowExists(db);
+    const p = (ref: string) => (hasPtu ? ref : "NULL");
+    // class_name match target (PTU output_item folds to NULL when no PTU).
+    const outItem = `LOWER(COALESCE(lcb.output_item, ${p("pcb.output_item")}))`;
+    // pcb must join BEFORE the live fps joins — their ON clauses reference
+    // pcb.output_item (via outItem); an ON clause can't reference a table to its
+    // right. The item-name PTU joins are referenced only in SELECT, so they go
+    // at the end.
+    const ptuBpJoin = hasPtu
+      ? `LEFT JOIN ptu_crafting_blueprints pcb ON pcb.uuid = ub.blueprint_uuid`
+      : ``;
+    const ptuItemJoins = hasPtu
+      ? `LEFT JOIN ptu_fps_weapons  pfw ON LOWER(pfw.class_name) = ${outItem}
+         LEFT JOIN ptu_fps_armour   pfa ON LOWER(pfa.class_name) = ${outItem}
+         LEFT JOIN ptu_fps_helmets  pfh ON LOWER(pfh.class_name) = ${outItem}
+         LEFT JOIN ptu_fps_ammo_types pam ON LOWER(pam.class_name) = ${outItem}
+         LEFT JOIN ptu_vehicle_components pvc ON LOWER(pvc.class_name) = ${outItem}`
+      : ``;
+
     const rows = await db
       .prepare(
         `SELECT ub.id, ub.crafting_blueprint_id, ub.blueprint_uuid,
                 ub.is_owned, ub.is_wishlist,
                 ub.nickname, ub.crafted_quantity,
                 ub.quality_config_json, ub.source, ub.updated_at,
-                COALESCE(lcb.name, pcb.name) AS blueprint_name,
-                COALESCE(lcb.tag, pcb.tag) AS tag,
-                COALESCE(lcb.type, pcb.type) AS type,
-                COALESCE(lcb.sub_type, pcb.sub_type) AS sub_type,
-                COALESCE(lcb.craft_time_seconds, pcb.craft_time_seconds) AS craft_time_seconds,
-                COALESCE(lcb.output_item, pcb.output_item) AS output_item,
+                COALESCE(lcb.name, ${p("pcb.name")}) AS blueprint_name,
+                COALESCE(lcb.tag, ${p("pcb.tag")}) AS tag,
+                COALESCE(lcb.type, ${p("pcb.type")}) AS type,
+                COALESCE(lcb.sub_type, ${p("pcb.sub_type")}) AS sub_type,
+                COALESCE(lcb.craft_time_seconds, ${p("pcb.craft_time_seconds")}) AS craft_time_seconds,
+                COALESCE(lcb.output_item, ${p("pcb.output_item")}) AS output_item,
                 COALESCE(lcb.id, ub.crafting_blueprint_id) AS resolved_blueprint_id,
-                CASE WHEN lcb.id IS NULL AND pcb.id IS NOT NULL THEN 1 ELSE 0 END AS is_ptu_only,
+                CASE WHEN lcb.id IS NULL AND ${p("pcb.id")} IS NOT NULL THEN 1 ELSE 0 END AS is_ptu_only,
                 COALESCE(
-                  lfw.name, pfw.name,
-                  lfa.name, pfa.name,
-                  lfh.name, pfh.name,
-                  lam.name, pam.name,
-                  lvc.name, pvc.name
+                  lfw.name, ${p("pfw.name")},
+                  lfa.name, ${p("pfa.name")},
+                  lfh.name, ${p("pfh.name")},
+                  lam.name, ${p("pam.name")},
+                  lvc.name, ${p("pvc.name")}
                 ) AS item_name
          FROM user_blueprints ub
          LEFT JOIN crafting_blueprints lcb ON lcb.uuid = ub.blueprint_uuid
-         LEFT JOIN ptu_crafting_blueprints pcb ON pcb.uuid = ub.blueprint_uuid
-         LEFT JOIN fps_weapons      lfw ON LOWER(lfw.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN ptu_fps_weapons  pfw ON LOWER(pfw.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN fps_armour       lfa ON LOWER(lfa.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN ptu_fps_armour   pfa ON LOWER(pfa.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN fps_helmets      lfh ON LOWER(lfh.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN ptu_fps_helmets  pfh ON LOWER(pfh.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN fps_ammo_types   lam ON LOWER(lam.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN ptu_fps_ammo_types pam ON LOWER(pam.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN vehicle_components     lvc ON LOWER(lvc.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
-         LEFT JOIN ptu_vehicle_components pvc ON LOWER(pvc.class_name) = LOWER(COALESCE(lcb.output_item, pcb.output_item))
+         ${ptuBpJoin}
+         LEFT JOIN fps_weapons      lfw ON LOWER(lfw.class_name) = ${outItem}
+         LEFT JOIN fps_armour       lfa ON LOWER(lfa.class_name) = ${outItem}
+         LEFT JOIN fps_helmets      lfh ON LOWER(lfh.class_name) = ${outItem}
+         LEFT JOIN fps_ammo_types   lam ON LOWER(lam.class_name) = ${outItem}
+         LEFT JOIN vehicle_components     lvc ON LOWER(lvc.class_name) = ${outItem}
+         ${ptuItemJoins}
          WHERE ub.user_id = ?
          ORDER BY ub.updated_at DESC`,
       )
@@ -284,7 +303,8 @@ export function blueprintRoutes() {
               "SELECT uuid FROM ptu_crafting_blueprints WHERE id = ? LIMIT 1",
             )
             .bind(craftingBlueprintId)
-            .first<{ uuid: string }>();
+            .first<{ uuid: string }>()
+            .catch(() => null); // PTU shadow table may be purged
           resolvedUuid = ptu?.uuid ?? null;
           // PTU id space differs — don't pin liveId to a PTU value.
           if (!live) liveId = null;

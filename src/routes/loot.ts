@@ -48,7 +48,8 @@ async function lootUuidExists(
   const ptu = await db
     .prepare("SELECT 1 FROM ptu_loot_map WHERE uuid = ? LIMIT 1")
     .bind(uuid)
-    .first();
+    .first()
+    .catch(() => null); // PTU shadow table may be purged between cycles
   if (ptu) return "ptu";
   return null;
 }

@@ -86,6 +86,28 @@ export function resolveTable(table: string, isPTU: boolean): string {
 }
 
 /**
+ * Whether the PTU shadow tables currently exist.
+ *
+ * The PTU purge (DELETE /api/admin/versions/ptu) DROPs every `ptu_*` versioned
+ * table when a PTU cycle ends. LIVE queries that UNION/JOIN `ptu_*` tables
+ * (crafting/loot resolution) must guard against their absence — otherwise a
+ * sanctioned purge breaks LIVE features with "no such table".
+ *
+ * The versioned shadow set is dropped/created atomically, so one representative
+ * table (`ptu_crafting_blueprints`) reliably indicates the whole set. Cheap
+ * sqlite_master lookup; not cached, so it self-heals the moment PTU data
+ * reloads (and never serves a stale "exists" after a purge).
+ */
+export async function ptuShadowExists(db: D1Database): Promise<boolean> {
+  const row = await db
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ptu_crafting_blueprints' LIMIT 1",
+    )
+    .first();
+  return !!row;
+}
+
+/**
  * Returns a SQL fragment for read queries that should expose a SUPERSET of
  * LIVE + PTU when in PTU channel.
  *

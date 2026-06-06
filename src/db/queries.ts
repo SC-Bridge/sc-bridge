@@ -15,6 +15,7 @@ import type {
 } from "../lib/types";
 import { extractSetName, makeSetSlug } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
+import { ptuShadowExists } from "../lib/ptu";
 
 // --- Loot summary stats (category-aware card display) ---
 // LEFT JOINs to detail tables for key stats shown on item cards.
@@ -1602,6 +1603,25 @@ export async function getUserCraftedByLootUuid(
   db: D1Database,
   userId: string,
 ): Promise<Record<string, number>> {
+  // The PTU shadow tables (ptu_crafting_blueprints / ptu_loot_map) are DROPped
+  // by the PTU purge when a cycle ends. Only include the PTU branches when the
+  // shadow schema exists, else this LIVE query 500s with "no such table".
+  const hasPtu = await ptuShadowExists(db);
+  const bpCte = hasPtu
+    ? `SELECT uuid, output_item FROM crafting_blueprints
+       UNION ALL
+       SELECT uuid, output_item FROM ptu_crafting_blueprints`
+    : `SELECT uuid, output_item FROM crafting_blueprints`;
+  const ptuLootUnion = hasPtu
+    ? `UNION ALL
+       SELECT plm.uuid AS loot_uuid, SUM(ct.qty) AS crafted
+         FROM crafted_totals ct
+         JOIN bp ON bp.uuid = ct.blueprint_uuid
+         JOIN ptu_loot_map plm ON LOWER(plm.class_name) = LOWER(bp.output_item)
+        WHERE bp.output_item IS NOT NULL
+        GROUP BY plm.uuid`
+    : ``;
+
   const result = await db
     .prepare(
       `WITH crafted_totals AS (
@@ -1619,9 +1639,7 @@ export async function getUserCraftedByLootUuid(
          GROUP BY blueprint_uuid
        ),
        bp AS (
-         SELECT uuid, output_item FROM crafting_blueprints
-         UNION ALL
-         SELECT uuid, output_item FROM ptu_crafting_blueprints
+         ${bpCte}
        )
        SELECT lm.uuid AS loot_uuid, SUM(ct.qty) AS crafted
          FROM crafted_totals ct
@@ -1629,13 +1647,7 @@ export async function getUserCraftedByLootUuid(
          JOIN loot_map lm ON LOWER(lm.class_name) = LOWER(bp.output_item)
         WHERE bp.output_item IS NOT NULL
         GROUP BY lm.uuid
-       UNION ALL
-       SELECT plm.uuid AS loot_uuid, SUM(ct.qty) AS crafted
-         FROM crafted_totals ct
-         JOIN bp ON bp.uuid = ct.blueprint_uuid
-         JOIN ptu_loot_map plm ON LOWER(plm.class_name) = LOWER(bp.output_item)
-        WHERE bp.output_item IS NOT NULL
-        GROUP BY plm.uuid`,
+       ${ptuLootUnion}`,
     )
     .bind(userId)
     .all<{ loot_uuid: string; crafted: number }>();
