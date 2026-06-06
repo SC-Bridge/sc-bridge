@@ -9,6 +9,7 @@ import {
   getLootLocationDetail,
   getUserLootCollection,
   getUserCraftedByLootUuid,
+  getUserSavedBuildsByLootUuid,
   addToLootCollection,
   setLootCollectionQuantity,
   removeFromLootCollection,
@@ -75,6 +76,7 @@ export function lootRoutes() {
   app.use("/wishlist", requireUser);
   app.use("/wishlist/*", requireUser);
   app.use("/crafted", requireUser);
+  app.use("/saved-builds", requireUser);
 
   // GET /api/loot/crafted — per-uuid crafted totals for the current user.
   // Sums user_blueprints.crafted_quantity + user_blueprint_builds.crafted_quantity,
@@ -83,6 +85,15 @@ export function lootRoutes() {
   app.get("/crafted", async (c) => {
     const user = getAuthUser(c);
     const map = await getUserCraftedByLootUuid(c.env.DB, user.id);
+    return c.json(map);
+  });
+
+  // GET /api/loot/saved-builds — per-uuid saved builds (names + made count) for
+  // the current user, including made=0. Lets the Item Finder show a "saved
+  // build" marker and search by build name. (Site-only quality presets.)
+  app.get("/saved-builds", async (c) => {
+    const user = getAuthUser(c);
+    const map = await getUserSavedBuildsByLootUuid(c.env.DB, user.id);
     return c.json(map);
   });
 

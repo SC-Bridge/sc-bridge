@@ -1,10 +1,10 @@
-import { Bookmark, BookmarkPlus, Check, Package } from 'lucide-react'
+import { Bookmark, BookmarkPlus, Check, Package, SlidersHorizontal } from 'lucide-react'
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
 import ItemCardStats from './ItemCardStats'
 
-export default function ItemCard({ item, collectionQty, craftedQty = 0, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
+export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBuildCount = 0, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
   const rs = rarityStyle(item.rarity)
   const eCat = effectiveCategory(item)
   const catStyle = CATEGORY_BADGE_STYLES[eCat] || CATEGORY_BADGE_STYLES.unknown
@@ -53,6 +53,15 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, onSetCol
           >
             <Package className="w-3 h-3" />
             {craftedQty}
+          </span>
+        )}
+        {isAuthed && savedBuildCount > 0 && (
+          <span
+            className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-sc-accent/30 bg-sc-accent/10 text-sc-accent"
+            title={`${savedBuildCount} saved build${savedBuildCount !== 1 ? 's' : ''} in My Blueprints`}
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            {savedBuildCount}
           </span>
         )}
       </div>

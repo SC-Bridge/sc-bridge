@@ -428,6 +428,13 @@ export function useLootCrafted(isAuthed) {
   return useAPI('/loot/crafted', { skip: !isAuthed })
 }
 
+// Per-loot-uuid saved builds (names + made count), incl. made=0. Auth-only.
+// Returns { [loot_uuid]: [{ name, crafted }] }. Powers the Item Finder
+// "saved build" marker + search-by-build-name.
+export function useLootSavedBuilds(isAuthed) {
+  return useAPI('/loot/saved-builds', { skip: !isAuthed })
+}
+
 /**
  * Hangar inventory — every user_pledge_items row joined to its parent
  * pledge. Returns `{ items, counts, total }`. counts is keyed by kind

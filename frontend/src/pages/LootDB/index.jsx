@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import {
   useLoot, useLootCollection, toggleLootCollection,
-  useLootWishlist, toggleLootWishlist, useLootCrafted,
+  useLootWishlist, toggleLootWishlist, useLootCrafted, useLootSavedBuilds,
   setLootCollectionQuantity, setLootWishlistQuantity,
 } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
@@ -129,6 +129,16 @@ export default function LootDB() {
   const { data: collectionIds, refetch: refetchCollection } = useLootCollection(isAuthed)
   const { data: wishlistItems, refetch: refetchWishlist } = useLootWishlist(isAuthed)
   const { data: craftedMap } = useLootCrafted(isAuthed)
+  const { data: savedBuildsMap } = useLootSavedBuilds(isAuthed)
+
+  // loot_uuid → lowercased build-name string, for search-by-build-name.
+  const savedBuildSearch = useMemo(() => {
+    const m = {}
+    for (const [uuid, builds] of Object.entries(savedBuildsMap || {})) {
+      m[uuid] = builds.map((b) => b.name).join(' ').toLowerCase()
+    }
+    return m
+  }, [savedBuildsMap])
 
   // Map<loot_uuid, quantity> — uuid-keyed since 0225 so the lookup
   // works across LIVE and PTU channels (loot_map ids differ between
@@ -361,7 +371,9 @@ export default function LootDB() {
         const type = i.type ? i.type.toLowerCase() : ''
         const subType = i.sub_type ? i.sub_type.toLowerCase() : ''
         const mfr = i.manufacturer_name ? i.manufacturer_name.toLowerCase() : ''
-        const haystack = `${name} ${type} ${subType} ${mfr}`
+        // Saved build names so "Full Send 9" finds the FS-9 item (#90 feedback).
+        const builds = savedBuildSearch[i.uuid] || ''
+        const haystack = `${name} ${type} ${subType} ${mfr} ${builds}`
         return tokens.every((t) => haystack.includes(t))
       })
     }
@@ -392,7 +404,7 @@ export default function LootDB() {
     }
 
     return items
-  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds, craftedMap])
+  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds, craftedMap, savedBuildSearch])
 
   const pageSize = viewMode === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST
   const totalPages = Math.ceil(filtered.length / pageSize)
@@ -851,6 +863,7 @@ export default function LootDB() {
                   item={item}
                   collectionQty={collected.get(item.uuid) ?? 0}
                   craftedQty={craftedMap?.[item.uuid] ?? 0}
+                  savedBuildCount={savedBuildsMap?.[item.uuid]?.length ?? 0}
                   onSetCollectionQty={handleSetCollectionQty}
                   wishlisted={wishlistIds.has(item.uuid)}
                   onToggleWishlist={handleToggleWishlist}

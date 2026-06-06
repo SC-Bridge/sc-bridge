@@ -1660,6 +1660,62 @@ export async function getUserCraftedByLootUuid(
 }
 
 /**
+ * Saved builds per loot item, for the Item Finder. Unlike
+ * getUserCraftedByLootUuid (which sums crafted_quantity > 0), this returns ALL
+ * the user's saved builds — including made=0 ones — with their names, so the
+ * Item Finder can surface "you have a saved build" and search by build name.
+ *
+ * Maps user_blueprint_builds → blueprint output_item → loot_map.uuid across
+ * LIVE (+ PTU when the shadow schema exists). Returns
+ * { [loot_uuid]: [{ name, crafted }] }.
+ */
+export async function getUserSavedBuildsByLootUuid(
+  db: D1Database,
+  userId: string,
+): Promise<Record<string, { name: string; crafted: number }[]>> {
+  const hasPtu = await ptuShadowExists(db);
+  const bpCte = hasPtu
+    ? `SELECT uuid, output_item FROM crafting_blueprints
+       UNION ALL
+       SELECT uuid, output_item FROM ptu_crafting_blueprints`
+    : `SELECT uuid, output_item FROM crafting_blueprints`;
+  const ptuLootUnion = hasPtu
+    ? `UNION ALL
+       SELECT plm.uuid AS loot_uuid, ub.name AS build_name, ub.crafted_quantity AS crafted
+         FROM user_builds ub
+         JOIN bp ON bp.uuid = ub.blueprint_uuid
+         JOIN ptu_loot_map plm ON LOWER(plm.class_name) = LOWER(bp.output_item)
+        WHERE bp.output_item IS NOT NULL`
+    : ``;
+
+  const result = await db
+    .prepare(
+      `WITH user_builds AS (
+         SELECT blueprint_uuid, name, crafted_quantity
+           FROM user_blueprint_builds
+          WHERE user_id = ?1 AND blueprint_uuid IS NOT NULL
+       ),
+       bp AS (
+         ${bpCte}
+       )
+       SELECT lm.uuid AS loot_uuid, ub.name AS build_name, ub.crafted_quantity AS crafted
+         FROM user_builds ub
+         JOIN bp ON bp.uuid = ub.blueprint_uuid
+         JOIN loot_map lm ON LOWER(lm.class_name) = LOWER(bp.output_item)
+        WHERE bp.output_item IS NOT NULL
+       ${ptuLootUnion}`,
+    )
+    .bind(userId)
+    .all<{ loot_uuid: string; build_name: string; crafted: number }>();
+
+  const out: Record<string, { name: string; crafted: number }[]> = {};
+  for (const row of result.results) {
+    (out[row.loot_uuid] ??= []).push({ name: row.build_name, crafted: row.crafted ?? 0 });
+  }
+  return out;
+}
+
+/**
  * Resolve a best-effort LIVE loot_map_id for the given uuid. Returns
  * null if the item only exists in PTU. Legacy column on
  * user_loot_collection / user_loot_wishlist — kept for any consumers
