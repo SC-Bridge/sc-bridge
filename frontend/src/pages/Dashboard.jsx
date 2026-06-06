@@ -22,8 +22,11 @@ export default function Dashboard() {
     return <LoadingState variant="skeleton" />
   }
 
-  if (statusError || analysisError) {
-    return <ErrorState error={statusError || analysisError} />
+  // Only surface analysisError when the user is still logged in — a 401 from
+  // analysis during logout (stale isLoggedIn before the session atom updates)
+  // is expected and should not flash an error on the way out.
+  if (statusError || (isLoggedIn && analysisError)) {
+    return <ErrorState message={statusError || analysisError} />
   }
 
   // Public landing — show when not logged in

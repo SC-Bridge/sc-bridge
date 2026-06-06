@@ -41,6 +41,9 @@ COMBINED="$WORK/combined.sql"
   echo 'CREATE TABLE IF NOT EXISTS "organization" (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, logo TEXT, createdAt TEXT NOT NULL, metadata TEXT);'
   echo 'CREATE TABLE IF NOT EXISTS "member" (id TEXT PRIMARY KEY NOT NULL, organizationId TEXT NOT NULL REFERENCES "organization"(id), userId TEXT NOT NULL REFERENCES "user"(id), role TEXT NOT NULL DEFAULT '"'"'member'"'"', createdAt TEXT NOT NULL);'
   echo 'CREATE TABLE IF NOT EXISTS "invitation" (id TEXT PRIMARY KEY NOT NULL, organizationId TEXT NOT NULL REFERENCES "organization"(id), email TEXT NOT NULL, role TEXT, status TEXT NOT NULL DEFAULT '"'"'pending'"'"', expiresAt TEXT NOT NULL, inviterId TEXT NOT NULL REFERENCES "user"(id));'
+  # better-auth two-factor plugin table — created at runtime by the plugin, not via
+  # a D1 migration file. Must exist BEFORE migration 0256 which ALTERs it.
+  echo 'CREATE TABLE IF NOT EXISTS "twoFactor" (id TEXT PRIMARY KEY NOT NULL, secret TEXT NOT NULL, backupCodes TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id));'
   # All migrations in lexical order (matches readD1Migrations).
   COUNT=0
   for f in $(ls "$MIG_DIR"/*.sql | sort); do
