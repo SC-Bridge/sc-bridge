@@ -498,13 +498,13 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       .prepare(
         `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                 t.shop_name_key AS location_key,
-                ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                ROUND(ti.latest_buy_price) AS buy_price,
                 s.display_name AS shop_name, s.location_label
            FROM terminal_inventory ti
            JOIN loot_map lm ON lm.uuid = ti.item_uuid
            JOIN terminals t ON t.id = ti.terminal_id
            LEFT JOIN shops s ON s.id = t.shop_id
-          WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+          WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
             AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
       )
       .bind(...classNames)
@@ -1571,14 +1571,15 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
     if (locationsByType[key]) locationsByType[key].push(r);
   }
 
-  // Enrich with shop availability — only community-reported prices (UEX)
-  // Game-file base prices are unreliable and should not surface in the UI.
-  // Match all variants of this item by name (e.g., turret vs non-turret
-  // versions of the same weapon share "Internal Tank" / "Shield Generator"
-  // / other generic names). Use an EXISTS subquery so we don't hit D1's
-  // 100-bindings-per-statement limit — some generic names like "Internal
-  // Tank" have 290+ variants which would blow a plain IN (?,?,...).
-  const itemName = item.name as string;
+  // Enrich with shop availability — only community-reported prices (UEX);
+  // game-file base prices are unreliable and should not surface in the UI.
+  // Match THIS exact item (its uuid), not every variant sharing the display
+  // name. CIG reuses one name across distinct variants — e.g. "MSD-683 Missile
+  // Rack" (a sold 8-rack vs a ship-default 16-rack) — so a name match attributed
+  // a sibling variant's shops to an item that isn't itself sold. This keeps the
+  // Item Finder's "Where to Buy" consistent with the loadout planner, which
+  // matches the exact component (#94). Still community-priced only (base prices
+  // are unreliable game-file defaults).
   const shopAvailability = await db.prepare(`
     SELECT ti.latest_buy_price AS buy_price,
            ti.latest_sell_price AS sell_price,
@@ -1589,14 +1590,11 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
     FROM ${t("terminal_inventory")} ti
     JOIN ${t("terminals")} term ON term.id = ti.terminal_id
     JOIN ${t("shops")} s ON s.id = term.shop_id
-    WHERE EXISTS (
-      SELECT 1 FROM ${t("loot_map")} lm
-      WHERE lm.uuid = ti.item_uuid AND lm.name = ?
-    )
+    WHERE ti.item_uuid = ?
       AND ti.latest_source IS NOT NULL
       AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)
     ORDER BY s.location_label, s.name
-  `).bind(itemName).all();
+  `).bind(item.uuid).all();
 
   for (const shop of shopAvailability.results) {
     const r = shop as Record<string, unknown>;

@@ -271,13 +271,13 @@ export function loadoutRoutes() {
         (ph) =>
           `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   t.shop_name_key AS location_key,
-                  ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                  ROUND(ti.latest_buy_price) AS buy_price,
                   s.display_name AS shop_name, s.location_label
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-           WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+           WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
              AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
       );
 
@@ -443,13 +443,13 @@ export function loadoutRoutes() {
         .prepare(
           `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   tm.shop_name_key AS location_key,
-                  ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                  ROUND(ti.latest_buy_price) AS buy_price,
                   s.display_name AS shop_name, s.location_label
              FROM terminal_inventory ti
              JOIN loot_map lm ON lm.uuid = ti.item_uuid
              JOIN terminals tm ON tm.id = ti.terminal_id
              LEFT JOIN shops s ON s.id = tm.shop_id
-            WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+            WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
               AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
         )
         .bind(...classNames)
@@ -563,16 +563,16 @@ export function loadoutRoutes() {
            SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_display_name,
                   s.location_label,
-                  ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                  ROUND(ti.latest_buy_price) AS buy_price,
                   ROW_NUMBER() OVER (
                     PARTITION BY lm.class_name
-                    ORDER BY COALESCE(ti.latest_buy_price, ti.base_buy_price) ASC
+                    ORDER BY ti.latest_buy_price ASC
                   ) AS rn
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-           WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+           WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
          ) cheapest ON cheapest.class_name = vc.class_name AND cheapest.rn = 1
          LEFT JOIN user_fleet uf ON uf.id = ulc.source_fleet_id
          LEFT JOIN ${t("vehicles")} v ON v.id = uf.vehicle_id
@@ -594,16 +594,16 @@ export function loadoutRoutes() {
 
     const rows = await c.env.DB
       .prepare(`SELECT t.shop_name_key AS location_key,
-                ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                ROUND(ti.latest_buy_price) AS buy_price,
                 COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_name,
                 s.location_label
          FROM ${t("terminal_inventory")} ti
          JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
          JOIN ${t("terminals")} t ON t.id = ti.terminal_id
          LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-         WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+         WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
            AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') = ?
-         ORDER BY COALESCE(ti.latest_buy_price, ti.base_buy_price) ASC`,
+         ORDER BY ti.latest_buy_price ASC`,
       )
       .bind(className)
       .all();
