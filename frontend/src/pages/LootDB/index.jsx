@@ -4,12 +4,12 @@ import {
   Search, ShoppingCart, Package, Swords, FileText, MapPin,
   LayoutGrid, List, X, ChevronRight, ChevronDown, Check, Plus, Bookmark, BookmarkPlus,
   ArrowUpDown, ChevronsUpDown, ChevronsDownUp,
-  CheckCircle2, Layers,
+  CheckCircle2, Layers, SlidersHorizontal,
 } from 'lucide-react'
 import {
   useLoot, useLootCollection, toggleLootCollection,
   useLootWishlist, toggleLootWishlist, useLootCrafted, useLootSavedBuilds,
-  setLootCollectionQuantity, setLootWishlistQuantity,
+  setLootCollectionQuantity, setLootWishlistQuantity, updateBlueprintBuild,
 } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
 import PageHeader from '../../components/PageHeader'
@@ -31,6 +31,7 @@ import {
 } from './lootHelpers'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
+import MadeStepper from './MadeStepper'
 import ItemCard from './ItemCard'
 import DetailPanel from './DetailPanel'
 import MultiFilterStrip from './MultiFilterStrip'
@@ -130,7 +131,7 @@ export default function LootDB() {
   const { data: collectionIds, refetch: refetchCollection } = useLootCollection(isAuthed)
   const { data: wishlistItems, refetch: refetchWishlist } = useLootWishlist(isAuthed)
   const { data: craftedMap } = useLootCrafted(isAuthed)
-  const { data: savedBuildsMap } = useLootSavedBuilds(isAuthed)
+  const { data: savedBuildsMap, refetch: refetchSavedBuilds } = useLootSavedBuilds(isAuthed)
 
   // loot_uuid → lowercased build-name string, for search-by-build-name.
   const savedBuildSearch = useMemo(() => {
@@ -481,6 +482,20 @@ export default function LootDB() {
       actionErrorTimer.current = setTimeout(() => setActionError(null), 3000)
     }
   }, [refetchCollection])
+
+  // "Made N of this build" — a saved build's crafted_quantity. Distinct from
+  // Collected (looted items): you can't collect a site-only build, but you can
+  // craft N of it in-game (#90).
+  const handleSetBuildQty = useCallback(async (buildId, qty) => {
+    try {
+      await updateBlueprintBuild(buildId, { craftedQuantity: Math.max(0, qty) })
+      refetchSavedBuilds()
+    } catch (err) {
+      setActionError('Made-count update failed: ' + err.message)
+      clearTimeout(actionErrorTimer.current)
+      actionErrorTimer.current = setTimeout(() => setActionError(null), 3000)
+    }
+  }, [refetchSavedBuilds])
 
   const handleToggleWishlist = useCallback(async (uuid, isWishlisted) => {
     try {
@@ -905,6 +920,7 @@ export default function LootDB() {
                   craftedQty={craftedMap?.[item.uuid] ?? 0}
                   savedBuildCount={savedBuildsMap?.[item.uuid]?.length ?? 0}
                   onSetCollectionQty={handleSetCollectionQty}
+                  onSetBuildQty={handleSetBuildQty}
                   wishlisted={wishlistIds.has(item.uuid)}
                   onToggleWishlist={handleToggleWishlist}
                   isAuthed={isAuthed}
@@ -922,26 +938,35 @@ export default function LootDB() {
                 const itemCollectionQty = collected.get(item.uuid) ?? 0
                 const itemCraftedQty = craftedMap?.[item.uuid] ?? 0
                 const isWishlisted = wishlistIds.has(item.uuid)
+                const build = item._build || null
                 return (
                   <div
                     key={item.id}
                     className="flex items-center gap-3 px-3 py-2 hover:bg-white/3 cursor-pointer transition-colors"
                     onClick={() => setDetailUuid(item.uuid)}
                   >
-                    {/* Collected indicator */}
-                    {isAuthed && itemCollectionQty > 0 && (
+                    {/* Collected indicator (looted items only) */}
+                    {isAuthed && !build && itemCollectionQty > 0 && (
                       <CheckCircle2 className="w-3.5 h-3.5 text-sc-accent shrink-0" />
                     )}
                     <span className={`text-[10px] font-display uppercase px-1.5 py-0.5 rounded w-20 text-center shrink-0 ${catStyle}`}>
                       {catLabel}
                     </span>
-                    <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{humanizeRawDisplayName(item.name)}</span>
+                    {build && (
+                      <span className="flex items-center gap-1 text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded border border-sc-accent/30 bg-sc-accent/10 text-sc-accent shrink-0">
+                        <SlidersHorizontal className="w-3 h-3" /> Build
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">
+                      {build ? item.name : humanizeRawDisplayName(item.name)}
+                      {build && <span className="text-sc-accent/60 font-mono"> · {build.baseName}</span>}
+                    </span>
                     {item.rarity && rs && (
                       <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge} shrink-0`}>
                         {item.rarity}
                       </span>
                     )}
-                    {isAuthed && itemCraftedQty > 0 && (
+                    {isAuthed && !build && itemCraftedQty > 0 && (
                       <span
                         className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90 shrink-0"
                         title={`${itemCraftedQty} crafted via My Blueprints`}
@@ -950,9 +975,16 @@ export default function LootDB() {
                         {itemCraftedQty}
                       </span>
                     )}
-                    <SourceIcons item={item} />
+                    {!build && <SourceIcons item={item} />}
                     <ChevronRight className="w-3 h-3 text-gray-600 shrink-0" />
-                    {isAuthed && (
+                    {isAuthed && build ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <MadeStepper
+                          qty={build.crafted}
+                          onSetQty={(qty) => handleSetBuildQty(build.id, qty)}
+                        />
+                      </div>
+                    ) : isAuthed && (
                       <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleToggleWishlist(item.uuid, isWishlisted)}

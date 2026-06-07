@@ -2,6 +2,7 @@ import { Bookmark, BookmarkPlus, Check, Package, SlidersHorizontal } from 'lucid
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
+import MadeStepper from './MadeStepper'
 import ItemCardStats from './ItemCardStats'
 
 function fmtStat(n) {
@@ -9,7 +10,7 @@ function fmtStat(n) {
   return n >= 1000 ? Math.round(n).toLocaleString() : (n % 1 === 0 ? n : n.toFixed(1))
 }
 
-export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBuildCount = 0, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
+export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBuildCount = 0, onSetCollectionQty, onSetBuildQty = () => {}, wishlisted, onToggleWishlist, isAuthed, onSelect }) {
   const rs = rarityStyle(item.rarity)
   const eCat = effectiveCategory(item)
   const catStyle = CATEGORY_BADGE_STYLES[eCat] || CATEGORY_BADGE_STYLES.unknown
@@ -51,14 +52,6 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBui
           >
             {wishlisted ? <Bookmark className="w-3.5 h-3.5" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
           </button>
-        )}
-        {build && build.crafted > 0 && (
-          <span
-            className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90"
-            title={`Made ${build.crafted}`}
-          >
-            <Package className="w-3 h-3" />{build.crafted}
-          </span>
         )}
         {item.rarity && item.rarity !== 'N/A' && (
           <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
@@ -108,8 +101,10 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBui
         </div>
       )}
 
-      {/* Bottom row: sources + collection stepper (not for build cards) */}
-      {!build && (
+      {/* Bottom row: looted items get sources + Collected stepper. Build cards
+          get a "Made N" stepper — you can't collect a site-only build, but you
+          can craft N of it in-game (#90). */}
+      {!build ? (
         <div className="flex items-center justify-between mt-auto pt-1">
           <SourceIcons item={item} />
           {isAuthed && (
@@ -120,6 +115,16 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBui
               />
             </div>
           )}
+        </div>
+      ) : isAuthed && (
+        <div className="flex items-center justify-between mt-auto pt-1">
+          <span className="text-[10px] font-mono uppercase tracking-wide text-gray-500">Made</span>
+          <div onClick={(e) => e.stopPropagation()}>
+            <MadeStepper
+              qty={build.crafted}
+              onSetQty={(qty) => onSetBuildQty(build.id, qty)}
+            />
+          </div>
         </div>
       )}
     </div>
