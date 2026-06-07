@@ -344,7 +344,38 @@ describe('groupLoadoutByLocation (#94)', () => {
     const { groups } = groupLoadoutByLocation([cooler])
     expect(groups).toHaveLength(1)
     expect(groups[0].shop_name).toBe('CenterMass')
-    expect(groups[0].items[0].buy_price).toBe(4200)
+    expect(groups[0].items[0].unit_price).toBe(4200)
+  })
+
+  it('aggregates identical components into one ×N line with a line total', () => {
+    // 6× the same gun, each cheapest at the same shop.
+    const gun = { name: 'CF-337 Panther Repeater', shops: [{ shop_name: 'Cubby Blast', location_label: 'Levski', buy_price: 9240 }] }
+    const { groups, totalCost } = groupLoadoutByLocation(Array(6).fill(gun))
+    expect(groups).toHaveLength(1)
+    expect(groups[0].items).toHaveLength(1)
+    const line = groups[0].items[0]
+    expect(line.qty).toBe(6)
+    expect(line.unit_price).toBe(9240)
+    expect(line.line_total).toBe(9240 * 6)
+    expect(groups[0].subtotal).toBe(9240 * 6)
+    expect(totalCost).toBe(9240 * 6)
+  })
+
+  it('aggregates loot-only duplicates with a qty', () => {
+    const { lootOnly } = groupLoadoutByLocation([lootOnlyComp, lootOnlyComp, noPriceComp])
+    const byName = Object.fromEntries(lootOnly.map((i) => [i.name, i.qty]))
+    expect(byName['Rare PowerPlant']).toBe(2)
+    expect(byName['Broken Listing']).toBe(1)
+  })
+
+  it('skips nameless / placeholder ports entirely', () => {
+    const { groups, lootOnly } = groupLoadoutByLocation([
+      { name: '', shops: [] },               // empty port
+      { shops: [] },                          // no name at all
+      { name: null, component_name: null },   // placeholder
+    ])
+    expect(groups).toEqual([])
+    expect(lootOnly).toEqual([])
   })
 
   it('buckets shopless / zero-price components into lootOnly', () => {

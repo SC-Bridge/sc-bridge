@@ -57,8 +57,15 @@ export default function LocationPlanner({ components }) {
               <ul>
                 {g.items.map((item, ii) => (
                   <li key={ii} className="flex items-center justify-between gap-3 px-4 py-1.5 hover:bg-white/[0.02] transition-colors">
-                    <span className="text-sm text-gray-300 truncate">{item.name}</span>
-                    <span className="text-[11px] font-mono text-gray-500 shrink-0">{fmtInt(item.buy_price)}</span>
+                    <span className="text-sm text-gray-300 truncate">
+                      {item.name}
+                      {item.qty > 1 && <span className="text-gray-500"> ×{item.qty}</span>}
+                    </span>
+                    <span className="text-[11px] font-mono text-gray-500 shrink-0">
+                      {item.qty > 1
+                        ? `${fmtInt(item.unit_price)} ea · ${fmtInt(item.line_total)}`
+                        : fmtInt(item.line_total)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -75,6 +82,7 @@ export default function LocationPlanner({ components }) {
                 {lootOnly.map((item, ii) => (
                   <li key={ii} className="px-4 py-1.5 text-sm text-gray-400 truncate hover:bg-white/[0.02] transition-colors">
                     {item.name}
+                    {item.qty > 1 && <span className="text-gray-500"> ×{item.qty}</span>}
                   </li>
                 ))}
               </ul>

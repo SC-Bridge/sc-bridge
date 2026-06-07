@@ -341,14 +341,18 @@ export function groupLoadoutByLocation(components) {
   const empty = { groups: [], lootOnly: [], totalCost: 0 }
   if (!Array.isArray(components) || components.length === 0) return empty
 
-  const groups = new Map() // key → { shop_name, location_label, items, subtotal }
-  const lootOnly = []
+  const groups = new Map()   // shopKey → { shop_name, location_label, items: Map<name,{qty,unit_price}>, subtotal }
+  const lootOnly = new Map() // name → qty
 
   for (const comp of components) {
-    const name = comp.name || comp.component_name || comp.child_name || 'Component'
+    const name = comp.name || comp.component_name || comp.child_name
+    // Skip empty/placeholder ports — an unnamed component is useless in a
+    // shopping list (these were the noisy generic "Component" rows).
+    if (!name) continue
+
     const buyable = (comp.shops || []).filter((s) => Number(s.buy_price) > 0)
     if (buyable.length === 0) {
-      lootOnly.push({ name })
+      lootOnly.set(name, (lootOnly.get(name) || 0) + 1)
       continue
     }
     // Cheapest shop wins (optimized per-item; the cart's "Optimize" does true
@@ -356,21 +360,35 @@ export function groupLoadoutByLocation(components) {
     const best = buyable.reduce((a, b) => (Number(b.buy_price) < Number(a.buy_price) ? b : a))
     const key = [best.shop_name, best.location_label].filter(Boolean).join(' · ') || 'Unknown shop'
     if (!groups.has(key)) {
-      groups.set(key, { shop_name: best.shop_name || null, location_label: best.location_label || null, items: [], subtotal: 0 })
+      groups.set(key, { shop_name: best.shop_name || null, location_label: best.location_label || null, items: new Map(), subtotal: 0 })
     }
     const g = groups.get(key)
-    g.items.push({ name, buy_price: Number(best.buy_price) })
-    g.subtotal += Number(best.buy_price)
+    const price = Number(best.buy_price)
+    // Aggregate identical components (e.g. 6× CF-337) into one ×N line.
+    const existing = g.items.get(name)
+    if (existing) existing.qty += 1
+    else g.items.set(name, { name, qty: 1, unit_price: price })
+    g.subtotal += price
   }
 
-  const ordered = [...groups.values()].sort((a, b) =>
-    (a.shop_name || '').localeCompare(b.shop_name || ''),
-  )
-  for (const g of ordered) g.items.sort((a, b) => a.name.localeCompare(b.name))
+  const ordered = [...groups.values()]
+    .map((g) => ({
+      shop_name: g.shop_name,
+      location_label: g.location_label,
+      items: [...g.items.values()]
+        .map((it) => ({ name: it.name, qty: it.qty, unit_price: it.unit_price, line_total: it.unit_price * it.qty }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      subtotal: g.subtotal,
+    }))
+    .sort((a, b) => (a.shop_name || '').localeCompare(b.shop_name || ''))
+
+  const lootOnlyArr = [...lootOnly.entries()]
+    .map(([name, qty]) => ({ name, qty }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   return {
     groups: ordered,
-    lootOnly: lootOnly.sort((a, b) => a.name.localeCompare(b.name)),
+    lootOnly: lootOnlyArr,
     totalCost: ordered.reduce((sum, g) => sum + g.subtotal, 0),
   }
 }

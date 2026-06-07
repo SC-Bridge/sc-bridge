@@ -279,7 +279,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       deepest AS (
         SELECT
           pt.root_id,
-          vc.name, vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
+          vc.name, vc.class_name, vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
           cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute,
           cw.projectile_speed, cw.effective_range, cw.heat_per_shot,
           cw.ammo_container_size, vc.power_draw, vc.power_draw_min, cw.fire_modes,
@@ -419,6 +419,9 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         COALESCE(d.absorb_physical_min, ms.absorb_physical_min) AS absorb_physical_min,
         COALESCE(d.absorb_physical_max, ms.absorb_physical_max) AS absorb_physical_max,
         COALESCE(d.manufacturer_name, mm.name) AS manufacturer_name,
+        -- Buyable item class for the Location Planner shop join (#94): prefer the
+        -- deepest real component (the actual gun/shield), fall back to the mount.
+        COALESCE(d.class_name, mount.class_name) AS class_name,
         COALESCE(wc.cnt, 0) AS weapon_count,
         COALESCE(mc.cnt, 0) AS missile_count
       FROM ship_ports p
@@ -476,7 +479,60 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
     .bind(slug, slug)
     .all();
 
-  return result.results as Record<string, unknown>[];
+  const components = result.results as Record<string, unknown>[];
+
+  // Attach shop availability so the Location Planner (#94) can show where to buy
+  // each installed component. Same join the component picker uses: loot_map.uuid
+  // → terminal_inventory → terminals → shops, keyed by class_name (LIVE only —
+  // getShipLoadout is not PTU-routed). Single IN-query; a ship has <100 ports.
+  const classNames = [
+    ...new Set(
+      components
+        .map((c) => (c.class_name as string | null) ?? "")
+        .filter(Boolean),
+    ),
+  ];
+  if (classNames.length > 0) {
+    const ph = classNames.map(() => "?").join(",");
+    const shopRows = await db
+      .prepare(
+        `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
+                t.shop_name_key AS location_key,
+                ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                s.display_name AS shop_name, s.location_label
+           FROM terminal_inventory ti
+           JOIN loot_map lm ON lm.uuid = ti.item_uuid
+           JOIN terminals t ON t.id = ti.terminal_id
+           LEFT JOIN shops s ON s.id = t.shop_id
+          WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+            AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
+      )
+      .bind(...classNames)
+      .all<{
+        class_name: string;
+        location_key: string;
+        buy_price: number | null;
+        shop_name: string | null;
+        location_label: string | null;
+      }>();
+
+    const shopMap: Record<string, Array<Record<string, unknown>>> = {};
+    for (const row of shopRows.results) {
+      (shopMap[row.class_name] ??= []).push({
+        location_key: row.location_key,
+        shop_name:
+          row.shop_name ||
+          (row.location_key || "").replace(/^Inv_/, "").replace(/_/g, " "),
+        location_label: row.location_label,
+        buy_price: row.buy_price,
+      });
+    }
+    for (const c of components) {
+      c.shops = shopMap[(c.class_name as string) ?? ""] || [];
+    }
+  }
+
+  return components;
 }
 
 export async function getShipModules(db: D1Database, slug: string, isPTU = false): Promise<Record<string, unknown>[]> {
