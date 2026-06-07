@@ -1659,20 +1659,32 @@ export async function getUserCraftedByLootUuid(
   return out;
 }
 
+export interface SavedBuildEntry {
+  id: number;
+  name: string;
+  crafted: number;
+  /** Per crafting-property-key multiplier (modifiers × the build's quality
+   *  config). Type-agnostic; the client maps keys → display stats. */
+  multipliers: Record<string, number>;
+}
+
 /**
  * Saved builds per loot item, for the Item Finder. Unlike
  * getUserCraftedByLootUuid (which sums crafted_quantity > 0), this returns ALL
- * the user's saved builds — including made=0 ones — with their names, so the
- * Item Finder can surface "you have a saved build" and search by build name.
+ * the user's saved builds — including made=0 — with their name, made count, and
+ * the per-stat multipliers from the build's quality config, so the Item Finder
+ * can render each build as its own item card with its tuned stats and find it
+ * by build name.
  *
  * Maps user_blueprint_builds → blueprint output_item → loot_map.uuid across
- * LIVE (+ PTU when the shadow schema exists). Returns
- * { [loot_uuid]: [{ name, crafted }] }.
+ * LIVE (+ PTU when the shadow schema exists). Multipliers come from the LIVE
+ * crafting_slot_modifiers (PTU-only blueprint modifiers degrade to base stats).
+ * Returns { [loot_uuid]: SavedBuildEntry[] }.
  */
 export async function getUserSavedBuildsByLootUuid(
   db: D1Database,
   userId: string,
-): Promise<Record<string, { name: string; crafted: number }[]>> {
+): Promise<Record<string, SavedBuildEntry[]>> {
   const hasPtu = await ptuShadowExists(db);
   const bpCte = hasPtu
     ? `SELECT uuid, output_item FROM crafting_blueprints
@@ -1681,7 +1693,9 @@ export async function getUserSavedBuildsByLootUuid(
     : `SELECT uuid, output_item FROM crafting_blueprints`;
   const ptuLootUnion = hasPtu
     ? `UNION ALL
-       SELECT plm.uuid AS loot_uuid, ub.name AS build_name, ub.crafted_quantity AS crafted
+       SELECT plm.uuid AS loot_uuid, ub.id AS build_id, ub.name AS build_name,
+              ub.crafted_quantity AS crafted, ub.quality_config_json AS qc,
+              ub.blueprint_uuid AS bp_uuid
          FROM user_builds ub
          JOIN bp ON bp.uuid = ub.blueprint_uuid
          JOIN ptu_loot_map plm ON LOWER(plm.class_name) = LOWER(bp.output_item)
@@ -1691,14 +1705,16 @@ export async function getUserSavedBuildsByLootUuid(
   const result = await db
     .prepare(
       `WITH user_builds AS (
-         SELECT blueprint_uuid, name, crafted_quantity
+         SELECT id, blueprint_uuid, name, crafted_quantity, quality_config_json
            FROM user_blueprint_builds
           WHERE user_id = ?1 AND blueprint_uuid IS NOT NULL
        ),
        bp AS (
          ${bpCte}
        )
-       SELECT lm.uuid AS loot_uuid, ub.name AS build_name, ub.crafted_quantity AS crafted
+       SELECT lm.uuid AS loot_uuid, ub.id AS build_id, ub.name AS build_name,
+              ub.crafted_quantity AS crafted, ub.quality_config_json AS qc,
+              ub.blueprint_uuid AS bp_uuid
          FROM user_builds ub
          JOIN bp ON bp.uuid = ub.blueprint_uuid
          JOIN loot_map lm ON LOWER(lm.class_name) = LOWER(bp.output_item)
@@ -1706,11 +1722,77 @@ export async function getUserSavedBuildsByLootUuid(
        ${ptuLootUnion}`,
     )
     .bind(userId)
-    .all<{ loot_uuid: string; build_name: string; crafted: number }>();
+    .all<{
+      loot_uuid: string;
+      build_id: number;
+      build_name: string;
+      crafted: number;
+      qc: string | null;
+      bp_uuid: string;
+    }>();
 
-  const out: Record<string, { name: string; crafted: number }[]> = {};
-  for (const row of result.results) {
-    (out[row.loot_uuid] ??= []).push({ name: row.build_name, crafted: row.crafted ?? 0 });
+  if (!result.results.length) return {};
+
+  // Fetch the crafting modifiers for the distinct blueprints (LIVE table —
+  // blueprint_uuid is denormalised onto crafting_slot_modifiers).
+  const bpUuids = [...new Set(result.results.map((r) => r.bp_uuid))];
+  const ph = bpUuids.map(() => "?").join(",");
+  const modRows = await db
+    .prepare(
+      `SELECT csm.blueprint_uuid AS bp_uuid, cp.key AS prop_key, csm.slot_index,
+              csm.start_quality, csm.end_quality,
+              csm.modifier_at_start, csm.modifier_at_end
+         FROM crafting_slot_modifiers csm
+         JOIN crafting_properties cp ON cp.id = csm.crafting_property_id
+        WHERE csm.blueprint_uuid IN (${ph})`,
+    )
+    .bind(...bpUuids)
+    .all<{
+      bp_uuid: string;
+      prop_key: string;
+      slot_index: number;
+      start_quality: number;
+      end_quality: number;
+      modifier_at_start: number;
+      modifier_at_end: number;
+    }>();
+
+  const modsByBp = new Map<string, typeof modRows.results>();
+  for (const m of modRows.results) {
+    const list = modsByBp.get(m.bp_uuid) ?? [];
+    list.push(m);
+    modsByBp.set(m.bp_uuid, list);
+  }
+
+  // interpolateModifier (mirrors frontend craftingUtils): linear between
+  // start/end quality; clamps outside the range.
+  const interp = (m: (typeof modRows.results)[number], q: number): number => {
+    if (q <= m.start_quality) return m.modifier_at_start;
+    if (q >= m.end_quality) return m.modifier_at_end;
+    const t = (q - m.start_quality) / (m.end_quality - m.start_quality);
+    return m.modifier_at_start + (m.modifier_at_end - m.modifier_at_start) * t;
+  };
+
+  const out: Record<string, SavedBuildEntry[]> = {};
+  for (const r of result.results) {
+    let cfg: Record<string, number> = {};
+    try {
+      cfg = r.qc ? JSON.parse(r.qc) : {};
+    } catch {
+      cfg = {};
+    }
+    const mods = modsByBp.get(r.bp_uuid) ?? [];
+    const multipliers: Record<string, number> = {};
+    for (const m of mods) {
+      const q = cfg[m.slot_index] ?? cfg[String(m.slot_index)] ?? 500;
+      multipliers[m.prop_key] = (multipliers[m.prop_key] ?? 1) * interp(m, q);
+    }
+    (out[r.loot_uuid] ??= []).push({
+      id: r.build_id,
+      name: r.build_name,
+      crafted: r.crafted ?? 0,
+      multipliers,
+    });
   }
   return out;
 }

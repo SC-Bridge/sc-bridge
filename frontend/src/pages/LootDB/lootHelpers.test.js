@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatStaleness, resolveLocationEntry, matchesShowFilter } from './lootHelpers'
+import { formatStaleness, resolveLocationEntry, matchesShowFilter, buildSyntheticItem } from './lootHelpers'
 
 // 2026-06-01 UTC — anchor for deterministic age calculations.
 const NOW = Math.floor(new Date('2026-06-01T00:00:00Z').getTime() / 1000)
@@ -136,5 +136,48 @@ describe('matchesShowFilter — collection/wishlist/crafted overlay (#92)', () =
     expect(matchesShowFilter(crafted, 'crafted', noCrafted)).toBe(false)
     expect(matchesShowFilter(crafted, 'collected', noCrafted)).toBe(false)
     expect(matchesShowFilter(crafted, 'all', noCrafted)).toBe(true)
+  })
+})
+
+describe('buildSyntheticItem (#90 — builds as Item-Finder items)', () => {
+  const baseWeapon = { uuid: 'u1', name: 'FS-9 LMG', type: 'weapon', damage: 40, rounds_per_minute: 650, dps: 157.1 }
+
+  it('returns null without a base item', () => {
+    expect(buildSyntheticItem(null, { id: 1, name: 'x', multipliers: {} })).toBeNull()
+  })
+
+  it('scales damage/rpm and recomputes dps from the build multipliers', () => {
+    const item = buildSyntheticItem(baseWeapon, {
+      id: 9, name: 'Full Send 9', crafted: 2,
+      multipliers: { weapon_damage: 1.2, weapon_firerate: 1.1 },
+    })
+    expect(item.damage).toBeCloseTo(48, 5)        // 40 × 1.2
+    expect(item.rounds_per_minute).toBeCloseTo(715, 5) // 650 × 1.1
+    expect(item.dps).toBeCloseTo(157.1 * 1.2 * 1.1, 4)
+  })
+
+  it('carries build metadata + a base→tuned lift, and a unique id', () => {
+    const item = buildSyntheticItem(baseWeapon, { id: 9, name: 'Full Send 9', crafted: 3, multipliers: { weapon_damage: 1.25 } })
+    expect(item.id).toBe('build-9')
+    expect(item.name).toBe('Full Send 9')
+    expect(item._build).toMatchObject({ id: 9, name: 'Full Send 9', crafted: 3, baseName: 'FS-9 LMG' })
+    expect(item._lift.label).toBe('DPS')
+    expect(item._lift.base).toBe(157.1)
+    expect(item._lift.tuned).toBeCloseTo(157.1 * 1.25, 4)
+  })
+
+  it('no multipliers → base stats, no lift (e.g. QT drive build with no modifiers)', () => {
+    const drive = { uuid: 'd1', name: 'Quantum Drive', type: 'QuantumDrive', quantum_speed: 100 }
+    const item = buildSyntheticItem(drive, { id: 4, name: 'My Drive', crafted: 0, multipliers: {} })
+    expect(item.quantum_speed).toBe(100)
+    expect(item._lift).toBeUndefined()
+    expect(item._build.name).toBe('My Drive')
+  })
+
+  it('scales armour resists by damagemitigation', () => {
+    const armour = { uuid: 'a1', name: 'Plate', type: 'armour', resist_physical: 0.3, resist_energy: 0.2 }
+    const item = buildSyntheticItem(armour, { id: 7, name: 'Tank', crafted: 0, multipliers: { armor_damagemitigation: 1.4 } })
+    expect(item.resist_physical).toBeCloseTo(0.42, 5)
+    expect(item.resist_energy).toBeCloseTo(0.28, 5)
   })
 })

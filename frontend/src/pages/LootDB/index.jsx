@@ -27,7 +27,7 @@ import {
 import {
   extractSetName, PAGE_SIZE_GRID, PAGE_SIZE_LIST,
   buildShoppingList, groupWishlistItems, groupWishlistByLocation, getPrimarySource, SOURCE_DEFS,
-  matchesShowFilter,
+  matchesShowFilter, buildSyntheticItem,
 } from './lootHelpers'
 import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
@@ -69,6 +69,7 @@ const SHOW_OPTIONS = [
   { value: 'uncollected', label: 'Uncollected' },
   { value: 'wishlisted', label: 'Wishlisted' },
   { value: 'crafted', label: 'Crafted' },
+  { value: 'builds', label: 'My Builds' },
 ]
 
 // ── Shopping List Modal ─────────────────────────────────────────────────────
@@ -139,6 +140,24 @@ export default function LootDB() {
     }
     return m
   }, [savedBuildsMap])
+
+  // Synthetic Item-Finder items for the user's saved builds — each the base
+  // loot item with the build's tuned stats + name (#90). These are findable by
+  // search and browsable via the "My Builds" filter.
+  const buildItems = useMemo(() => {
+    if (!savedBuildsMap || !allItems) return []
+    const byUuid = new Map(allItems.map((i) => [i.uuid, i]))
+    const out = []
+    for (const [uuid, builds] of Object.entries(savedBuildsMap)) {
+      const base = byUuid.get(uuid)
+      if (!base) continue
+      for (const b of builds) {
+        const synth = buildSyntheticItem(base, b)
+        if (synth) out.push(synth)
+      }
+    }
+    return out
+  }, [savedBuildsMap, allItems])
 
   // Map<loot_uuid, quantity> — uuid-keyed since 0225 so the lookup
   // works across LIVE and PTU channels (loot_map ids differ between
@@ -378,6 +397,27 @@ export default function LootDB() {
       })
     }
 
+    // Saved builds as items (#90). 'builds' → only builds; 'all' → base + builds
+    // interleaved (so "FS-9" shows base + variants + your "Full Send 9"); other
+    // show filters stay base-only.
+    if (isAuthed && (show === 'builds' || show === 'all') && buildItems.length) {
+      let mb = buildItems
+      if (category !== 'all') mb = mb.filter((i) => effectiveCategory(i) === category)
+      if (brand) mb = mb.filter((i) => i.manufacturer_name === brand)
+      if (rarities.size > 0) mb = mb.filter((i) => rarities.has(i.rarity || 'Common'))
+      if (search.trim()) {
+        const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
+        mb = mb.filter((i) => {
+          // match the build name AND the base item name/type/mfr.
+          const hay = `${i._build.name} ${i._build.baseName} ${i.type || ''} ${i.sub_type || ''} ${i.manufacturer_name || ''}`.toLowerCase()
+          return tokens.every((t) => hay.includes(t))
+        })
+      }
+      items = show === 'builds' ? mb : items.concat(mb)
+    } else if (show === 'builds') {
+      items = []
+    }
+
     // Sort
     const rarityRank = { Legendary: 0, Epic: 1, Rare: 2, Uncommon: 3, Common: 4, 'N/A': 5 }
     if (sortBy === 'rarity') {
@@ -404,7 +444,7 @@ export default function LootDB() {
     }
 
     return items
-  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds, craftedMap, savedBuildSearch])
+  }, [allItems, category, brand, setName, rarities, sources, search, sortBy, show, filterDimensions, filterIncludes, filterExcludes, collected, wishlistIds, craftedMap, savedBuildSearch, buildItems, isAuthed])
 
   const pageSize = viewMode === 'grid' ? PAGE_SIZE_GRID : PAGE_SIZE_LIST
   const totalPages = Math.ceil(filtered.length / pageSize)

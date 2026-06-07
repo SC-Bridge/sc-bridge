@@ -299,3 +299,51 @@ export function groupWishlistByLocation(items) {
   // Sort by location name, group by source type
   return [...locMap.values()].sort((a, b) => a.location.localeCompare(b.location))
 }
+
+// ── Saved builds as Item-Finder items (#90) ─────────────────────────────────
+// A saved build is "my tuned version of this item". Map crafting modifier keys
+// → the loot item's stat fields so a build renders as a real item card with its
+// own numbers (and a base→tuned lift on the headline stat).
+const BUILD_MULT_FIELDS = {
+  weapon_damage: ['damage'],
+  weapon_firerate: ['rounds_per_minute'],
+  armor_damagemitigation: ['resist_physical', 'resist_energy', 'resist_distortion', 'resist_stun', 'resist_thermal'],
+}
+
+/**
+ * Build a synthetic Item-Finder item from a base loot item + a saved build
+ * (id, name, crafted, multipliers). Scales the mapped stat fields, recomputes
+ * dps, and stashes `_build` metadata + a `_lift` (headline base→tuned) for the
+ * card. Returns null if there's no base item.
+ */
+export function buildSyntheticItem(base, build) {
+  if (!base) return null
+  const m = build.multipliers || {}
+  const out = {
+    ...base,
+    id: `build-${build.id}`,
+    name: build.name,
+    _build: { id: build.id, name: build.name, crafted: build.crafted ?? 0, baseName: base.name },
+  }
+
+  for (const [key, fields] of Object.entries(BUILD_MULT_FIELDS)) {
+    const mult = m[key]
+    if (mult == null || mult === 1) continue
+    for (const f of fields) {
+      if (typeof base[f] === 'number') out[f] = base[f] * mult
+    }
+  }
+
+  // dps = damage × rpm / 60, so it scales by the product of those two mults.
+  const dmgM = m.weapon_damage ?? 1
+  const fireM = m.weapon_firerate ?? 1
+  if (typeof base.dps === 'number' && (dmgM !== 1 || fireM !== 1)) {
+    out.dps = base.dps * dmgM * fireM
+  }
+
+  // Headline base→tuned for the card (weapons: DPS).
+  if (typeof base.dps === 'number' && out.dps !== base.dps) {
+    out._lift = { label: 'DPS', base: base.dps, tuned: out.dps }
+  }
+  return out
+}

@@ -29,6 +29,27 @@ describe("Loot Saved Builds — GET /api/loot/saved-builds", () => {
       `INSERT INTO crafting_blueprints (uuid, tag, name, type, sub_type, output_item)
        VALUES (?, 'BP_SB', 'SB Rifle BP', 'weapons', 'rifle', 'sb_rifle_01')`,
     ).bind(bpUuid).run();
+    const bp = await env.DB.prepare("SELECT id FROM crafting_blueprints WHERE uuid = ?")
+      .bind(bpUuid).first<{ id: number }>();
+
+    // A weapon_damage modifier on slot 0: 1.0 → 1.5 across Q0..Q1000.
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO crafting_properties (key, name, unit, category) VALUES ('weapon_damage', 'Damage', 'dmg', 'weapons')",
+    ).run();
+    const prop = await env.DB.prepare("SELECT id FROM crafting_properties WHERE key = 'weapon_damage'")
+      .first<{ id: number }>();
+    await env.DB.prepare(
+      `INSERT INTO crafting_blueprint_slots (crafting_blueprint_id, slot_index, name, resource_name, quantity)
+       VALUES (?, 0, 'Slot 1', 'Test Resource', 1)`,
+    ).bind(bp!.id).run();
+    const slot = await env.DB.prepare("SELECT id FROM crafting_blueprint_slots WHERE crafting_blueprint_id = ? AND slot_index = 0")
+      .bind(bp!.id).first<{ id: number }>();
+    await env.DB.prepare(
+      `INSERT INTO crafting_slot_modifiers
+         (crafting_blueprint_slot_id, crafting_property_id, slot_index, blueprint_uuid,
+          start_quality, end_quality, modifier_at_start, modifier_at_end)
+       VALUES (?, ?, 0, ?, 0, 1000, 1.0, 1.5)`,
+    ).bind(slot!.id, prop!.id, bpUuid).run();
 
     // Two builds: one made, one not (made=0 must still appear).
     await env.DB.batch([
@@ -53,12 +74,18 @@ describe("Loot Saved Builds — GET /api/loot/saved-builds", () => {
       headers: await authHeaders(sessionToken),
     });
     expect(res.status).toBe(200);
-    const map = (await res.json()) as Record<string, { name: string; crafted: number }[]>;
+    const map = (await res.json()) as Record<string, { name: string; crafted: number; multipliers: Record<string, number> }[]>;
     const builds = map[lootUuid];
     expect(builds).toBeTruthy();
-    const byName = Object.fromEntries(builds.map((b) => [b.name, b.crafted]));
-    expect(byName["Glass Cannon"]).toBe(3);
-    expect(byName["Budget"]).toBe(0); // made=0 still surfaced
+    const byName = Object.fromEntries(builds.map((b) => [b.name, b]));
+    expect(byName["Glass Cannon"].crafted).toBe(3);
+    expect(byName["Budget"].crafted).toBe(0); // made=0 still surfaced
+
+    // Multipliers from modifier × quality config:
+    // Glass Cannon @ Q1000 → modifier_at_end = 1.5
+    expect(byName["Glass Cannon"].multipliers.weapon_damage).toBeCloseTo(1.5, 5);
+    // Budget @ Q250 → 1.0 + 0.5*(250/1000) = 1.125
+    expect(byName["Budget"].multipliers.weapon_damage).toBeCloseTo(1.125, 5);
   });
 
   it("returns empty object when the user has no builds", async () => {
