@@ -405,13 +405,15 @@ export function loadoutRoutes() {
 
     const overrides = await c.env.DB
       .prepare(`SELECT ufl.id, ufl.port_id, ufl.component_id,
-                vc.name AS component_name, vc.uuid AS component_uuid,
+                vc.name AS component_name, vc.name AS child_name,
+                vc.uuid AS component_uuid, vc.class_name,
                 vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
                 cp.power_output, cc.cooling_rate, cs.shield_hp, cs.shield_regen,
-                cs.resist_physical, cs.resist_energy, cs.resist_distortion,
+                cs.resist_physical, cs.resist_energy, cs.resist_distortion, cs.resist_thermal,
                 cq.quantum_speed, cq.quantum_range, cq.fuel_rate, cq.spool_time,
-                cw.dps, cw.damage_per_shot, cw.rounds_per_minute, cw.effective_range,
-                cr.radar_range, vc.power_draw, vc.thermal_output,
+                cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute, cw.effective_range,
+                cw.damage_physical, cw.damage_energy, cw.damage_distortion, cw.damage_thermal,
+                cr.radar_range, vc.power_draw, vc.power_draw_min, vc.thermal_output,
                 m.name AS manufacturer_name
          FROM user_fleet_loadout ufl
          JOIN ${t("vehicle_components")} vc ON vc.id = ufl.component_id
@@ -425,9 +427,48 @@ export function loadoutRoutes() {
          WHERE ufl.user_id = ? AND ufl.user_fleet_id = ?`,
       )
       .bind(user.id, fleetId)
-      .all();
+      .all<Record<string, unknown>>();
 
-    return c.json({ overrides: overrides.results });
+    // Attach shops (exact class_name only — same rule as getShipLoadout, no
+    // name-variant fallback) so a saved swap carries its real buy locations
+    // into the Location Planner instead of inheriting the stock component's
+    // shops on the client-side merge (#94).
+    const rows = overrides.results;
+    const classNames = [
+      ...new Set(rows.map((r) => (r.class_name as string | null) ?? "").filter(Boolean)),
+    ];
+    if (classNames.length > 0) {
+      const ph = classNames.map(() => "?").join(",");
+      const shopRows = await c.env.DB
+        .prepare(
+          `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
+                  tm.shop_name_key AS location_key,
+                  ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                  s.display_name AS shop_name, s.location_label
+             FROM terminal_inventory ti
+             JOIN loot_map lm ON lm.uuid = ti.item_uuid
+             JOIN terminals tm ON tm.id = ti.terminal_id
+             LEFT JOIN shops s ON s.id = tm.shop_id
+            WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+              AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
+        )
+        .bind(...classNames)
+        .all<{ class_name: string; location_key: string; buy_price: number | null; shop_name: string | null; location_label: string | null }>();
+      const shopMap: Record<string, Array<Record<string, unknown>>> = {};
+      for (const row of shopRows.results) {
+        (shopMap[row.class_name] ??= []).push({
+          location_key: row.location_key,
+          shop_name: row.shop_name || (row.location_key || "").replace(/^Inv_/, "").replace(/_/g, " "),
+          location_label: row.location_label,
+          buy_price: row.buy_price,
+        });
+      }
+      for (const r of rows) r.shops = shopMap[(r.class_name as string) ?? ""] || [];
+    } else {
+      for (const r of rows) r.shops = [];
+    }
+
+    return c.json({ overrides: rows });
   });
 
   // PUT /api/loadout/fleet/:id — save loadout overrides (bulk)

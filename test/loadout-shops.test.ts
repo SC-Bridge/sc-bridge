@@ -1,7 +1,7 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
-import { seedVehicle, seedLootItem } from "./helpers";
+import { seedVehicle, seedLootItem, createTestUser, authHeaders, seedFleetEntry } from "./helpers";
 import { getShipLoadout } from "../src/db/queries";
 
 /**
@@ -11,9 +11,14 @@ import { getShipLoadout } from "../src/db/queries";
  * planner showed everything as "loot only".
  */
 describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
+  let vid: number;
+  let fleetId: number;
+  let buyCompId: number;
+  let sessionToken: string;
+
   beforeAll(async () => {
     await setupTestDatabase(env.DB);
-    const vid = await seedVehicle(env.DB, { slug: "shoptest-ship", name: "Shop Test Ship" });
+    vid = await seedVehicle(env.DB, { slug: "shoptest-ship", name: "Shop Test Ship" });
 
     // Three power plants: sold directly, loot-only, and a ship-default variant
     // whose exact class_name isn't sold but a same-NAMED variant is.
@@ -74,6 +79,18 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
       `INSERT INTO terminal_inventory (terminal_id, item_uuid, item_name, latest_buy_price, latest_source, latest_observed_at, game_version_id)
        VALUES (?, ?, 'Shared Power Plant', 4500, 'uex', datetime('now'), ?)`,
     ).bind(t!.id, lmShared.uuid, TEST_GAME_VERSION_ID).run();
+
+    // A saved fleet-loadout override (the user swapped port-pp-loot to the
+    // buyable plant) — exercises GET /fleet/:id carrying shops after save (#94).
+    const user = await createTestUser(env.DB);
+    sessionToken = user.sessionToken;
+    fleetId = await seedFleetEntry(env.DB, user.userId, vid);
+    buyCompId = (await env.DB.prepare("SELECT id FROM vehicle_components WHERE uuid = 'comp-pp-buy'").first<{ id: number }>())!.id;
+    const portLoot = (await env.DB.prepare("SELECT id FROM vehicle_ports WHERE uuid = 'port-pp-loot'").first<{ id: number }>())!.id;
+    await env.DB.prepare(
+      `INSERT INTO user_fleet_loadout (user_id, user_fleet_id, port_id, component_id, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'))`,
+    ).bind(user.userId, fleetId, portLoot, buyCompId).run();
   });
 
   it("exposes class_name + attaches shops to buyable stock components", async () => {
@@ -103,5 +120,22 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
     const shared = comps.find((c) => c.class_name === "shoptest_pp_default");
     expect(shared).toBeTruthy();
     expect(shared!.shops).toEqual([]);
+  });
+
+  it("GET /fleet/:id carries class_name + child_name + shops on saved overrides", async () => {
+    const res = await SELF.fetch(`http://localhost/api/loadout/fleet/${fleetId}`, {
+      headers: await authHeaders(sessionToken),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { overrides: Array<Record<string, unknown>> };
+    const ov = body.overrides.find((o) => o.component_id === buyCompId);
+    expect(ov).toBeTruthy();
+    // Without these, the client merge falls back to the stock component's name
+    // and shops (the save-reverts-to-default + wrong-shop bug).
+    expect(ov!.class_name).toBe("shoptest_pp_buy");
+    expect(ov!.child_name).toBe("Buyable Power Plant");
+    const shops = ov!.shops as Array<Record<string, unknown>>;
+    expect(shops).toHaveLength(1);
+    expect(shops[0].buy_price).toBe(9240);
   });
 });
