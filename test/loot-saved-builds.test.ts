@@ -74,12 +74,17 @@ describe("Loot Saved Builds — GET /api/loot/saved-builds", () => {
       headers: await authHeaders(sessionToken),
     });
     expect(res.status).toBe(200);
-    const map = (await res.json()) as Record<string, { name: string; crafted: number; multipliers: Record<string, number> }[]>;
+    const map = (await res.json()) as Record<string, { name: string; crafted: number; blueprintId: number | null; multipliers: Record<string, number> }[]>;
     const builds = map[lootUuid];
     expect(builds).toBeTruthy();
     const byName = Object.fromEntries(builds.map((b) => [b.name, b]));
     expect(byName["Glass Cannon"].crafted).toBe(3);
     expect(byName["Budget"].crafted).toBe(0); // made=0 still surfaced
+
+    // blueprintId resolves to the LIVE crafting_blueprints.id (for deep-linking
+    // a build card back to its Quality Sim).
+    expect(typeof byName["Glass Cannon"].blueprintId).toBe("number");
+    expect(byName["Glass Cannon"].blueprintId).toBeGreaterThan(0);
 
     // Multipliers from modifier × quality config:
     // Glass Cannon @ Q1000 → modifier_at_end = 1.5

@@ -21,7 +21,7 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBui
   return (
     <div
       className="panel p-3 flex flex-col gap-1.5 cursor-pointer hover:border-sc-border/80 transition-all duration-150 relative"
-      onClick={() => onSelect(item.uuid)}
+      onClick={() => onSelect(item.uuid, build)}
     >
       {/* Collected indicator (not for build cards) */}
       {isCollected && !build && (

@@ -1,10 +1,12 @@
-import { X, ShoppingCart, Package, FileText, Plus, Bookmark, BookmarkPlus, ExternalLink } from 'lucide-react'
+import { X, ShoppingCart, Package, FileText, Plus, Bookmark, BookmarkPlus, ExternalLink, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useLootItem } from '../../hooks/useAPI'
 import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, RESISTANCE_KEYS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
 import LoadingState from '../../components/LoadingState'
 import LocationSection from './LocationSection'
 import ResistanceBar from './ResistanceBar'
+import MadeStepper from './MadeStepper'
+import { applyBuildMultipliers } from './lootHelpers'
 
 // ── Detail panel helpers ──────────────────────────────────────────────────────
 
@@ -257,7 +259,7 @@ const EFFECT_LABELS = {
   WheezingAudioMask: 'Wheezing Audio',
 }
 
-export default function DetailPanel({ uuid, manufacturerName, collectionQty, craftedQty = 0, onSetCollectionQty, wishlisted, onToggleWishlist, isAuthed, onClose }) {
+export default function DetailPanel({ uuid, build = null, manufacturerName, collectionQty, craftedQty = 0, onSetCollectionQty, onSetBuildQty = () => {}, wishlisted, onToggleWishlist, isAuthed, onClose }) {
   const { data: item, loading } = useLootItem(uuid)
 
   if (!uuid) return null
@@ -285,7 +287,7 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-sc-border shrink-0">
-          <span className="text-xs font-display uppercase tracking-wider text-gray-400">Item Detail</span>
+          <span className="text-xs font-display uppercase tracking-wider text-gray-400">{build ? 'Build Detail' : 'Item Detail'}</span>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
@@ -303,13 +305,23 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
 
         {item && !loading && (
           <div className="flex-1 overflow-y-auto p-4 pb-8 space-y-5">
-            {/* Name + badges */}
+            {/* Name + badges. Build variant: build name as title, base item as
+                subtitle (the build is a tuned version of that item). */}
             <div className="space-y-2">
-              <h2 className="text-sm font-semibold text-white leading-tight">{humanizeRawDisplayName(item.name)}</h2>
-              {manufacturerName && (
+              <h2 className="text-sm font-semibold text-white leading-tight">
+                {build ? build.name : humanizeRawDisplayName(item.name)}
+              </h2>
+              {build ? (
+                <p className="text-[10px] font-mono text-sc-accent/70">{humanizeRawDisplayName(item.name)}</p>
+              ) : manufacturerName && (
                 <p className="text-[10px] font-mono text-gray-500">{manufacturerName}</p>
               )}
               <div className="flex flex-wrap items-center gap-1.5">
+                {build && (
+                  <span className="flex items-center gap-1 text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded border border-sc-accent/30 bg-sc-accent/10 text-sc-accent">
+                    <SlidersHorizontal className="w-3 h-3" /> Build
+                  </span>
+                )}
                 <span className={`text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
                   {catLabel}
                 </span>
@@ -324,8 +336,8 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
                   </span>
                 )}
               </div>
-              {/* Full page link for complex items */}
-              {(eCat === 'ship_component' || eCat === 'ship_weapon' || eCat === 'missile') && (
+              {/* Full page link for complex items (base item only) */}
+              {!build && (eCat === 'ship_component' || eCat === 'ship_weapon' || eCat === 'missile') && (
                 <Link
                   to={`/loot/${uuid}/detail`}
                   className="inline-flex items-center gap-1.5 text-[10px] font-display uppercase tracking-wide text-sc-accent hover:text-sc-accent/80 transition-colors"
@@ -335,8 +347,34 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
               )}
             </div>
 
-            {/* Action buttons */}
-            {isAuthed && (
+            {/* Saved-build banner — a build is your tuned, site-only version of
+                this blueprint. Link back to its Quality Sim; track Made count. */}
+            {build && (
+              <div className="panel p-3 space-y-2 border border-sc-accent/20">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-display uppercase tracking-wider text-sc-accent/80">Your saved build</span>
+                  {isAuthed && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-display uppercase tracking-wide text-gray-500">Made</span>
+                      <MadeStepper qty={build.crafted ?? 0} onSetQty={(q) => onSetBuildQty(build.id, q)} />
+                    </div>
+                  )}
+                </div>
+                {build.blueprintId != null ? (
+                  <Link
+                    to={`/crafting/${build.blueprintId}?tab=quality&build=${build.id}`}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-display uppercase tracking-wide text-sc-accent hover:text-sc-accent/80 transition-colors"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" /> Open in Quality Sim
+                  </Link>
+                ) : (
+                  <p className="text-[10px] font-mono text-gray-500">Tuned from {humanizeRawDisplayName(item.name)}.</p>
+                )}
+              </div>
+            )}
+
+            {/* Action buttons (base item only — a build isn't lootable/ownable) */}
+            {isAuthed && !build && (
               <div className="flex gap-2">
                 <button
                   onClick={() => onToggleWishlist(uuid, wishlisted)}
@@ -384,7 +422,7 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
                 across user_blueprints + user_blueprint_builds whose
                 output_item maps to this loot item. Mutated from /crafting,
                 shown here as a passive indicator. */}
-            {isAuthed && craftedQty > 0 && (
+            {isAuthed && !build && craftedQty > 0 && (
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90">
                 <Package className="w-3.5 h-3.5" />
                 <span className="text-xs font-mono">{craftedQty}</span>
@@ -399,7 +437,8 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
 
             {/* Item stats from linked table */}
             {item.item_details && (() => {
-              const det = item.item_details
+              // Build variant shows this build's tuned numbers.
+              const det = build ? applyBuildMultipliers(item.item_details, build.multipliers) : item.item_details
               const hasDescription = !!det.description
 
               // Primary stat — big highlighted number
@@ -576,8 +615,9 @@ export default function DetailPanel({ uuid, manufacturerName, collectionQty, cra
               )
             })()}
 
-            {/* Where to find — structured location data from API */}
-            {(() => {
+            {/* Where to find — base item only. A saved build isn't looted; it's
+                crafted from the blueprint linked in the banner above. */}
+            {!build && (() => {
               const npcEntries = locationData('npcs')
               const locationSections = [
                 { label: 'Shops',      icon: ShoppingCart, type: 'shops',      data: locationData('shops') },

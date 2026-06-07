@@ -270,7 +270,17 @@ export default function LootDB() {
   }, [setSearchParams])
 
   const [detailUuid, setDetailUuid] = useState(routeUuid || null)
+  // When a saved-build card is opened, the panel renders the build variant
+  // (tuned stats + link back to its Quality Sim) instead of the base item.
+  const [detailBuild, setDetailBuild] = useState(null)
   const [showShoppingList, setShowShoppingList] = useState(false)
+
+  // Open the detail panel. A build card passes its `_build`; a real item passes
+  // nothing → base detail.
+  const openDetail = useCallback((uuid, build = null) => {
+    setDetailUuid(uuid)
+    setDetailBuild(build || null)
+  }, [])
 
   // Multi-dimensional sub-filters (per-category)
   const { dimensions: filterDimensions, includes: filterIncludes, excludes: filterExcludes, toggle: toggleFilter, clearAll: clearAllDimFilters, hasAny: hasAnyDimFilters } = useMultiFilters(category)
@@ -924,7 +934,7 @@ export default function LootDB() {
                   wishlisted={wishlistIds.has(item.uuid)}
                   onToggleWishlist={handleToggleWishlist}
                   isAuthed={isAuthed}
-                  onSelect={setDetailUuid}
+                  onSelect={openDetail}
                 />
               ))}
             </div>
@@ -943,7 +953,7 @@ export default function LootDB() {
                   <div
                     key={item.id}
                     className="flex items-center gap-3 px-3 py-2 hover:bg-white/3 cursor-pointer transition-colors"
-                    onClick={() => setDetailUuid(item.uuid)}
+                    onClick={() => openDetail(item.uuid, item._build || null)}
                   >
                     {/* Collected indicator (looted items only) */}
                     {isAuthed && !build && itemCollectionQty > 0 && (
@@ -1044,14 +1054,16 @@ export default function LootDB() {
     {detailUuid && (
       <DetailPanel
         uuid={detailUuid}
+        build={detailBuild}
         manufacturerName={detailItemMeta?.manufacturer_name ?? null}
         collectionQty={collected.get(detailUuid) ?? 0}
         craftedQty={craftedMap?.[detailUuid] ?? 0}
         onSetCollectionQty={handleSetCollectionQty}
+        onSetBuildQty={handleSetBuildQty}
         wishlisted={wishlistIds.has(detailUuid)}
         onToggleWishlist={handleToggleWishlist}
         isAuthed={isAuthed}
-        onClose={() => { setDetailUuid(null); if (routeUuid) navigate('/loot', { replace: true }) }}
+        onClose={() => { setDetailUuid(null); setDetailBuild(null); if (routeUuid) navigate('/loot', { replace: true }) }}
       />
     )}
     </>

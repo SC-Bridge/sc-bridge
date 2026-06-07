@@ -1691,6 +1691,10 @@ export interface SavedBuildEntry {
   id: number;
   name: string;
   crafted: number;
+  /** LIVE crafting_blueprints.id for the build's parent blueprint — lets the
+   *  Item Finder deep-link a build card back to its Quality Sim. Null for
+   *  PTU-only blueprints (not addressable in the LIVE crafting view). */
+  blueprintId: number | null;
   /** Per crafting-property-key multiplier (modifiers × the build's quality
    *  config). Type-agnostic; the client maps keys → display stats. */
   multipliers: Record<string, number>;
@@ -1715,15 +1719,15 @@ export async function getUserSavedBuildsByLootUuid(
 ): Promise<Record<string, SavedBuildEntry[]>> {
   const hasPtu = await ptuShadowExists(db);
   const bpCte = hasPtu
-    ? `SELECT uuid, output_item FROM crafting_blueprints
+    ? `SELECT id, uuid, output_item FROM crafting_blueprints
        UNION ALL
-       SELECT uuid, output_item FROM ptu_crafting_blueprints`
-    : `SELECT uuid, output_item FROM crafting_blueprints`;
+       SELECT id, uuid, output_item FROM ptu_crafting_blueprints`
+    : `SELECT id, uuid, output_item FROM crafting_blueprints`;
   const ptuLootUnion = hasPtu
     ? `UNION ALL
        SELECT plm.uuid AS loot_uuid, ub.id AS build_id, ub.name AS build_name,
               ub.crafted_quantity AS crafted, ub.quality_config_json AS qc,
-              ub.blueprint_uuid AS bp_uuid
+              ub.blueprint_uuid AS bp_uuid, bp.id AS bp_id
          FROM user_builds ub
          JOIN bp ON bp.uuid = ub.blueprint_uuid
          JOIN ptu_loot_map plm ON LOWER(plm.class_name) = LOWER(bp.output_item)
@@ -1742,7 +1746,7 @@ export async function getUserSavedBuildsByLootUuid(
        )
        SELECT lm.uuid AS loot_uuid, ub.id AS build_id, ub.name AS build_name,
               ub.crafted_quantity AS crafted, ub.quality_config_json AS qc,
-              ub.blueprint_uuid AS bp_uuid
+              ub.blueprint_uuid AS bp_uuid, bp.id AS bp_id
          FROM user_builds ub
          JOIN bp ON bp.uuid = ub.blueprint_uuid
          JOIN loot_map lm ON LOWER(lm.class_name) = LOWER(bp.output_item)
@@ -1757,6 +1761,7 @@ export async function getUserSavedBuildsByLootUuid(
       crafted: number;
       qc: string | null;
       bp_uuid: string;
+      bp_id: number;
     }>();
 
   if (!result.results.length) return {};
@@ -1819,6 +1824,7 @@ export async function getUserSavedBuildsByLootUuid(
       id: r.build_id,
       name: r.build_name,
       crafted: r.crafted ?? 0,
+      blueprintId: r.bp_id ?? null,
       multipliers,
     });
   }

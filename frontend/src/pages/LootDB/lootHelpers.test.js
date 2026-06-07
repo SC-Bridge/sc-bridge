@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatStaleness, resolveLocationEntry, matchesShowFilter, buildSyntheticItem } from './lootHelpers'
+import { formatStaleness, resolveLocationEntry, matchesShowFilter, buildSyntheticItem, applyBuildMultipliers } from './lootHelpers'
 
 // 2026-06-01 UTC — anchor for deterministic age calculations.
 const NOW = Math.floor(new Date('2026-06-01T00:00:00Z').getTime() / 1000)
@@ -179,5 +179,36 @@ describe('buildSyntheticItem (#90 — builds as Item-Finder items)', () => {
     const item = buildSyntheticItem(armour, { id: 7, name: 'Tank', crafted: 0, multipliers: { armor_damagemitigation: 1.4 } })
     expect(item.resist_physical).toBeCloseTo(0.42, 5)
     expect(item.resist_energy).toBeCloseTo(0.28, 5)
+  })
+
+  it('carries blueprintId + multipliers on _build for the detail-panel link', () => {
+    const item = buildSyntheticItem(baseWeapon, {
+      id: 9, name: 'Full Send 9', crafted: 2, blueprintId: 474,
+      multipliers: { weapon_damage: 1.25 },
+    })
+    expect(item._build.blueprintId).toBe(474)
+    expect(item._build.multipliers).toEqual({ weapon_damage: 1.25 })
+    expect(item._build.baseUuid).toBe('u1')
+  })
+})
+
+describe('applyBuildMultipliers (shared by card + detail panel)', () => {
+  it('scales mapped fields and recomputes dps without mutating the input', () => {
+    const det = { damage: 40, rounds_per_minute: 650, dps: 157.1, effective_range: 50 }
+    const out = applyBuildMultipliers(det, { weapon_damage: 1.2, weapon_firerate: 1.1 })
+    expect(out.damage).toBeCloseTo(48, 5)
+    expect(out.rounds_per_minute).toBeCloseTo(715, 5)
+    expect(out.dps).toBeCloseTo(157.1 * 1.2 * 1.1, 4)
+    expect(out.effective_range).toBe(50) // untouched
+    expect(det.damage).toBe(40)          // input not mutated
+  })
+
+  it('no multipliers → returns an equivalent object', () => {
+    const det = { quantum_speed: 100 }
+    expect(applyBuildMultipliers(det, {})).toEqual({ quantum_speed: 100 })
+  })
+
+  it('tolerates null details', () => {
+    expect(applyBuildMultipliers(null, { weapon_damage: 2 })).toBeNull()
   })
 })
