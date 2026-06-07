@@ -28,7 +28,7 @@ export default function LocationPlanner({ components }) {
         <span className="text-sm font-medium text-gray-200">Location Planner</span>
         <span className="text-xs text-gray-500">
           {shopCount} shop{shopCount !== 1 ? 's' : ''}
-          {lootOnly.length > 0 && ` · ${lootOnly.length} loot-only`}
+          {lootOnly.length > 0 && ` · ${lootOnly.length} not sold`}
         </span>
         {totalCost > 0 && (
           <span className="ml-auto text-xs text-amber-300 flex items-center gap-1">
@@ -80,8 +80,8 @@ export default function LocationPlanner({ components }) {
             <div className="px-3 pt-3 pb-2">
               <div className="flex items-center gap-2 rounded-t-md border-l-2 border-gray-600 bg-white/[0.03] px-3 py-2">
                 <Package className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                <span className="text-xs font-semibold text-gray-300">Loot only</span>
-                <span className="text-[11px] text-gray-500">not sold at any known shop</span>
+                <span className="text-xs font-semibold text-gray-300">Not Sold or Lootable</span>
+                <span className="text-[11px] text-gray-500">ship stock · not sold separately</span>
               </div>
               <ul className="ml-[7px] border-l-2 border-white/[0.06] pl-3 py-1">
                 {lootOnly.map((item, ii) => (

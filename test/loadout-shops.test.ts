@@ -94,13 +94,14 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
     expect(loot!.shops).toEqual([]);
   });
 
-  it("falls back to same-named variant shops when the exact SKU is not sold", async () => {
+  it("does NOT borrow a same-named variant's shops — ship-default SKU stays empty", async () => {
+    // comp-pp-shared (shoptest_pp_default) shares the display name "Shared Power
+    // Plant" with a SOLD variant (shoptest_pp_sold), but is a distinct component.
+    // Borrowing the other variant's price would misrepresent it, so it must
+    // surface as "Not Sold or Lootable" (no shops), not a fake price.
     const comps = await getShipLoadout(env.DB, "shoptest-ship");
     const shared = comps.find((c) => c.class_name === "shoptest_pp_default");
     expect(shared).toBeTruthy();
-    const shops = shared!.shops as Array<Record<string, unknown>>;
-    expect(shops).toHaveLength(1);
-    expect(shops[0].buy_price).toBe(4500);
-    expect(shops[0].via_name).toBe(true); // matched by display name, not exact SKU
+    expect(shared!.shops).toEqual([]);
   });
 });
