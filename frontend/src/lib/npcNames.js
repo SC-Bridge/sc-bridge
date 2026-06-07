@@ -131,6 +131,11 @@ export function formatActorName(actor) {
   // Strip EntityClassDefinition prefix
   let name = actor.replace(/^EntityClassDefinition\./, '')
 
+  // Strip the SLoadoutAssortment. namespace prefix — loadout names arrive as
+  // "SLoadoutAssortment.Criminal_Guard_Pyro_Heavy_Juggernaut"; without this the
+  // UI shows a stray "Sloadout Assortment." in front of every NPC.
+  name = name.replace(/^SLoadoutAssortment\./i, '')
+
   // Strip common NPC archetype prefixes to get the meaningful part
   // "PU_Human_Enemy_GroundCombat_NPC_Pyro_Outlaw_Sniper" → "Pyro_Outlaw_Sniper"
   name = name.replace(/^PU_Human_Enemy_GroundCombat_NPC_/i, '')

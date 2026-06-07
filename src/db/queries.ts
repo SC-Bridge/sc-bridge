@@ -1469,6 +1469,8 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       lil.per_container, lil.per_roll, lil.rolls, lil.loot_table,
       lil.actor, lil.faction, lil.slot, lil.probability, lil.spawn_locations,
       lil.weight,
+      nl.loadout_name as npc_loadout_name,
+      nf.name as npc_faction, nf.code as npc_faction_code,
       COALESCE(
         s.name,
         sml.name,
@@ -1484,15 +1486,22 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
     LEFT JOIN ${t("shops")} s ON lil.source_type = 'shop' AND s.uuid = lil.location_key
     LEFT JOIN ${t("star_map_locations")} sml ON lil.source_type = 'container' AND sml.uuid = lil.location_key
     LEFT JOIN ${t("npc_loadouts")} nl ON lil.source_type = 'npc' AND nl.uuid = lil.location_key
+    LEFT JOIN npc_factions nf ON nf.id = nl.faction_id
     WHERE lil.loot_map_id = ?
     ORDER BY lil.source_type, location_name
   `).bind(item.id).all();
 
   const locationsByType: Record<string, Record<string, unknown>[]> = { containers: [], shops: [], npcs: [], contracts: [] };
+  // Junction NPC rows are noisy (UUID faction fallbacks, the item's own
+  // mag/attachment loadout containers, faction-less loadouts). Hold them aside
+  // and prefer the clean class_name enrichment below; only fall back to the
+  // faction-resolved junction rows when enrichment finds nothing.
+  const junctionNpcs: Record<string, unknown>[] = [];
   for (const loc of locations.results) {
     const r = loc as Record<string, unknown>;
     const st = r.source_type as string;
     if (st === 'shop') continue; // Shop data comes from terminal_inventory enrichment below
+    if (st === 'npc') { junctionNpcs.push(r); continue; }
     const key = st + 's';
     if (locationsByType[key]) locationsByType[key].push(r);
   }
@@ -1567,6 +1576,25 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
           from_loadout: true,
         });
       }
+    }
+  }
+
+  // Fallback: only when class_name enrichment produced no NPCs, surface the
+  // faction-resolved junction rows (drops UUID-faction / faction-less junk).
+  if (locationsByType.npcs.length === 0 && junctionNpcs.length > 0) {
+    for (const r of junctionNpcs) {
+      if (!r.npc_faction) continue;
+      locationsByType.npcs.push({
+        source_type: 'npc',
+        location_key: r.npc_faction,
+        actor: r.npc_loadout_name,
+        faction: r.npc_faction,
+        faction_code: r.npc_faction_code,
+        slot: r.slot,
+        probability: r.probability,
+        spawn_locations: r.spawn_locations,
+        from_loadout: false,
+      });
     }
   }
 
