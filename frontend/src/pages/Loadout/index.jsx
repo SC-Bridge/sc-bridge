@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight } from 'lucide-react'
+import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight, FlaskConical, ExternalLink } from 'lucide-react'
 import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ComponentPicker from './ComponentPicker'
@@ -200,6 +200,22 @@ export default function Loadout() {
 
   return (
     <div className="min-h-screen animate-fade-in-up">
+      {/* Under-testing notice — the loadout builder + Location Planner are still
+          being validated; invite bug reports. */}
+      <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2">
+        <div className="max-w-[1400px] mx-auto flex items-center gap-2 text-[12px] text-amber-200/90 flex-wrap">
+          <FlaskConical className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span>The loadout builder &amp; Location Planner are still under testing — data may be incomplete or off.</span>
+          <a
+            href="https://github.com/SC-Bridge/sc-bridge/issues/new?template=01-bug-report.yml"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-amber-300 hover:text-amber-200 underline underline-offset-2 transition-colors"
+          >
+            Report an issue <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      </div>
       {/* ============================================================ */}
       {/* SHIP HERO HEADER                                              */}
       {/* ============================================================ */}
