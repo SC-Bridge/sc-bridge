@@ -15,10 +15,12 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
     await setupTestDatabase(env.DB);
     const vid = await seedVehicle(env.DB, { slug: "shoptest-ship", name: "Shop Test Ship" });
 
-    // Two power plants: one sold in a shop, one loot-only.
+    // Three power plants: sold directly, loot-only, and a ship-default variant
+    // whose exact class_name isn't sold but a same-NAMED variant is.
     for (const [uuid, cls, name] of [
       ["comp-pp-buy", "shoptest_pp_buy", "Buyable Power Plant"],
       ["comp-pp-loot", "shoptest_pp_loot", "Loot Power Plant"],
+      ["comp-pp-shared", "shoptest_pp_default", "Shared Power Plant"],
     ] as const) {
       await env.DB.prepare(
         `INSERT INTO vehicle_components (uuid, name, slug, class_name, type, size, grade, game_version_id, created_at, updated_at)
@@ -40,6 +42,10 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
         `INSERT INTO vehicle_ports (uuid, vehicle_id, name, category_label, size_min, size_max, port_type, equipped_item_uuid, editable, game_version_id)
          VALUES ('port-pp-loot', ?, 'hardpoint_power_2', 'Power', 2, 2, 'power', 'comp-pp-loot', 1, ?)`,
       ).bind(vid, TEST_GAME_VERSION_ID),
+      env.DB.prepare(
+        `INSERT INTO vehicle_ports (uuid, vehicle_id, name, category_label, size_min, size_max, port_type, equipped_item_uuid, editable, game_version_id)
+         VALUES ('port-pp-shared', ?, 'hardpoint_power_3', 'Power', 2, 2, 'power', 'comp-pp-shared', 1, ?)`,
+      ).bind(vid, TEST_GAME_VERSION_ID),
     ]);
 
     // Shop chain for the buyable plant only: loot_map → terminal_inventory → terminals → shops.
@@ -59,6 +65,15 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
       `INSERT INTO terminal_inventory (terminal_id, item_uuid, item_name, latest_buy_price, latest_source, latest_observed_at, game_version_id)
        VALUES (?, ?, 'Buyable Power Plant', 9240, 'uex', datetime('now'), ?)`,
     ).bind(t!.id, lm.uuid, TEST_GAME_VERSION_ID).run();
+
+    // A SOLD variant that shares the display name "Shared Power Plant" but has a
+    // different class_name than the installed comp-pp-shared (shoptest_pp_default).
+    const lmShared = await seedLootItem(env.DB, { name: "Shared Power Plant", category: "ship_component" });
+    await env.DB.prepare("UPDATE loot_map SET class_name = 'shoptest_pp_sold' WHERE uuid = ?").bind(lmShared.uuid).run();
+    await env.DB.prepare(
+      `INSERT INTO terminal_inventory (terminal_id, item_uuid, item_name, latest_buy_price, latest_source, latest_observed_at, game_version_id)
+       VALUES (?, ?, 'Shared Power Plant', 4500, 'uex', datetime('now'), ?)`,
+    ).bind(t!.id, lmShared.uuid, TEST_GAME_VERSION_ID).run();
   });
 
   it("exposes class_name + attaches shops to buyable stock components", async () => {
@@ -77,5 +92,15 @@ describe("getShipLoadout — Location Planner shop attachment (#94)", () => {
     const loot = comps.find((c) => c.class_name === "shoptest_pp_loot");
     expect(loot).toBeTruthy();
     expect(loot!.shops).toEqual([]);
+  });
+
+  it("falls back to same-named variant shops when the exact SKU is not sold", async () => {
+    const comps = await getShipLoadout(env.DB, "shoptest-ship");
+    const shared = comps.find((c) => c.class_name === "shoptest_pp_default");
+    expect(shared).toBeTruthy();
+    const shops = shared!.shops as Array<Record<string, unknown>>;
+    expect(shops).toHaveLength(1);
+    expect(shops[0].buy_price).toBe(4500);
+    expect(shops[0].via_name).toBe(true); // matched by display name, not exact SKU
   });
 });

@@ -530,6 +530,69 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
     for (const c of components) {
       c.shops = shopMap[(c.class_name as string) ?? ""] || [];
     }
+  } else {
+    for (const c of components) c.shops = [];
+  }
+
+  // Name fallback. CIG reuses one display name across variants (e.g. "MSD-683
+  // Missile Rack" → the Asgard's ship-default mrck_s07_anvl_asgard_16_s03, which
+  // isn't sold, plus a buyable mrck_s06_behr_octo_s03). The exact installed SKU
+  // may have no shops while a same-named variant is on sale everywhere. For a
+  // shopping aid, "where do I buy an MSD-683?" is the useful answer — so when a
+  // component's class_name has no shops, attach the same-named variants' shops.
+  // The loadout rows expose the display name as component_name/child_name/
+  // mount_name (not `name`), matching the frontend's fallback chain.
+  const compName = (c: Record<string, unknown>): string =>
+    ((c.component_name || c.child_name || c.mount_name || c.name) as string) || "";
+  const needName = [
+    ...new Set(
+      components
+        .filter((c) => !((c.shops as unknown[]) || []).length && compName(c))
+        .map((c) => compName(c)),
+    ),
+  ];
+  if (needName.length > 0) {
+    const ph2 = needName.map(() => "?").join(",");
+    const nameRows = await db
+      .prepare(
+        `SELECT lm.name AS comp_name,
+                t.shop_name_key AS location_key,
+                ROUND(COALESCE(ti.latest_buy_price, ti.base_buy_price)) AS buy_price,
+                s.display_name AS shop_name, s.location_label
+           FROM terminal_inventory ti
+           JOIN loot_map lm ON lm.uuid = ti.item_uuid
+           JOIN terminals t ON t.id = ti.terminal_id
+           LEFT JOIN shops s ON s.id = t.shop_id
+          WHERE COALESCE(ti.latest_buy_price, ti.base_buy_price) > 0
+            AND lm.name IN (${ph2})`,
+      )
+      .bind(...needName)
+      .all<{
+        comp_name: string;
+        location_key: string;
+        buy_price: number | null;
+        shop_name: string | null;
+        location_label: string | null;
+      }>();
+
+    const byName: Record<string, Array<Record<string, unknown>>> = {};
+    for (const row of nameRows.results) {
+      (byName[row.comp_name] ??= []).push({
+        location_key: row.location_key,
+        shop_name:
+          row.shop_name ||
+          (row.location_key || "").replace(/^Inv_/, "").replace(/_/g, " "),
+        location_label: row.location_label,
+        buy_price: row.buy_price,
+        via_name: true, // matched by display name, not the exact installed SKU
+      });
+    }
+    for (const c of components) {
+      const n = compName(c);
+      if (!((c.shops as unknown[]) || []).length && n && byName[n]) {
+        c.shops = byName[n];
+      }
+    }
   }
 
   return components;
