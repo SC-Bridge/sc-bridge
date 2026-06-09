@@ -28,11 +28,11 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@better-auth/passkey": "1.6.13",
+    "@better-auth/passkey": "1.6.15",
     "@hono/zod-validator": "^0.8.0",
-    "@tailwindcss/typography": "^0.5.19",
-    "better-auth": "1.6.13",
-    "hono": "^4.12.23",
+    "@tailwindcss/typography": "^0.5.20",
+    "better-auth": "1.6.15",
+    "hono": "^4.12.25",
     "kysely-d1": "^0.4.0",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
@@ -43,8 +43,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.39.1",
-    "@cloudflare/vitest-pool-workers": "^0.16.11",
+    "@cloudflare/vite-plugin": "^1.40.1",
+    "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@cloudflare/workers-types": "^4.20250214.0",
     "@playwright/test": "^1.60.0",
     "@types/react": "^18.3.12",
