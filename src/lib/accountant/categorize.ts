@@ -1,8 +1,12 @@
-import { FUEL_MANUAL_REVIEW_SHIPS, type Category } from "./constants";
+import {
+  FUEL_MANUAL_REVIEW_SHIPS,
+  type Category,
+  type DefaultTagValue,
+} from "./constants";
 
 export interface Classification {
   category: Category | null;
-  tag: string | null;
+  tag: DefaultTagValue | null;
 }
 
 /**

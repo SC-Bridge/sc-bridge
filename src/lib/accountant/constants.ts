@@ -25,17 +25,21 @@ export const SOURCES = [
 ] as const;
 export type Source = (typeof SOURCES)[number];
 
-export const DEFAULT_TAGS: Record<Category, readonly string[]> = {
-  assets: [],
+export const DEFAULT_TAGS = {
+  assets: [], // intentionally empty — assets are untagged
   running_cost: ["ship_consumables", "player_consumables"],
   financial: ["tactical"],
   production: ["general", "specified"],
   trading: ["minerals", "salvage", "harvestable", "collectibles"],
-};
+} as const satisfies Record<Category, readonly string[]>;
+export type DefaultTagValue = (typeof DEFAULT_TAGS)[Category][number];
 
 // Fuel purchases on these ships go to the Sorting List instead of auto-cat
 // (master doc §Running cost — fuel may be Trading/Production stock for them).
-// v1: case-insensitive substring match on the parser-supplied ship name.
+// v1: entries are CASE-INSENSITIVE SUBSTRING matched against the full
+// parser-supplied ship name. New entries must be unique, non-overlapping
+// substrings checked against the full ship roster (e.g. never add something
+// as short as "star").
 export const FUEL_MANUAL_REVIEW_SHIPS = [
   "starfarer",
   "pioneer",

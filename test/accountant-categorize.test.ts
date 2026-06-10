@@ -14,8 +14,16 @@ describe("accountant auto-categorizer", () => {
     expect(classifyEntry("fuel", "Avenger Titan")).toEqual({ category: "running_cost", tag: "ship_consumables" });
   });
 
+  it("classifies fuel with no ship name as running_cost / ship_consumables", () => {
+    expect(classifyEntry("fuel", undefined)).toEqual({ category: "running_cost", tag: "ship_consumables" });
+  });
+
   it("routes fuel on a fuel hauler to the sorting list (null category)", () => {
     expect(classifyEntry("fuel", "Starfarer Gemini")).toEqual({ category: null, tag: null });
+  });
+
+  it("routes fuel on an all-uppercase hauler name to the sorting list", () => {
+    expect(classifyEntry("fuel", "STARFARER GEMINI")).toEqual({ category: null, tag: null });
   });
 
   it("routes fuel on capital ships with refuel bays to the sorting list", () => {
