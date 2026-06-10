@@ -112,6 +112,11 @@ const USER_TABLES_NO_CASCADE = [
   "companion_system_events",
   // Market data — user_id NULLed on account deletion, observations kept
   "price_observations",
+  // Accountant (0258) — no FK cascade by design; explicit cleanup lands with
+  // the account-deletion coverage task in the same cycle.
+  "accountant_entries",
+  "accountant_loans",
+  "accountant_tags",
 ] as const;
 
 describe("GDPR — User Deletion Cascade", () => {
