@@ -3623,7 +3623,7 @@ CREATE TABLE accountant_entries (
     occurred_at     TEXT NOT NULL,
     amount          INTEGER NOT NULL,
     category        TEXT,
-    tag             TEXT,
+    tag             TEXT, -- denormalized label by design, NOT an FK to accountant_tags (deleted tags must not break entry history)
     source          TEXT NOT NULL,
     description     TEXT,
     location        TEXT,
@@ -4173,8 +4173,8 @@ CREATE INDEX ptu_idx_mineable_rock_entities_category
 CREATE INDEX idx_component_fuel_nozzles_cid ON component_fuel_nozzles(component_id);
 CREATE INDEX idx_accountant_loans_user_status ON accountant_loans (user_id, status);
 CREATE INDEX idx_accountant_entries_user_occurred ON accountant_entries (user_id, occurred_at DESC);
-CREATE INDEX idx_accountant_entries_user_category ON accountant_entries (user_id, category);
-CREATE INDEX idx_accountant_entries_sorting ON accountant_entries (user_id)
+CREATE INDEX idx_accountant_entries_user_category ON accountant_entries (user_id, category, occurred_at DESC);
+CREATE INDEX idx_accountant_entries_sorting ON accountant_entries (user_id, occurred_at DESC)
     WHERE category IS NULL AND source = 'parsed';
 CREATE UNIQUE INDEX idx_accountant_entries_loan_tick ON accountant_entries (loan_id, tick_index)
     WHERE tick_index IS NOT NULL;
@@ -4203,8 +4203,8 @@ INSERT INTO production_statuses VALUES(1,'flight_ready','Flight Ready');
 INSERT INTO production_statuses VALUES(2,'in_production','In Production');
 INSERT INTO production_statuses VALUES(3,'in_concept','In Concept');
 INSERT INTO production_statuses VALUES(4,'unknown','Unknown');
-INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-06-10 19:38:27','2026-06-10 19:38:27','11319298');
-INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-06-10 19:38:41','2026-06-10 19:38:41',NULL);
+INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-06-10 19:57:41','2026-06-10 19:57:41','11319298');
+INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-06-10 19:57:52','2026-06-10 19:57:52',NULL);
 INSERT INTO change_event_types VALUES(1,'provider_linked','Provider Linked','auth');
 INSERT INTO change_event_types VALUES(2,'provider_unlinked','Provider Unlinked','auth');
 INSERT INTO change_event_types VALUES(3,'password_set','Password Set','auth');
@@ -4251,4 +4251,4 @@ INSERT INTO rating_categories VALUES(1,'reliability','Reliability','Shows up on 
 INSERT INTO rating_categories VALUES(2,'skill','Skill','Competent at their role');
 INSERT INTO rating_categories VALUES(3,'communication','Communication','Responsive, clear, keeps team informed');
 INSERT INTO rating_categories VALUES(4,'fairness','Fairness','Honest, fair dealings, trustworthy with money');
-INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-06-10 19:38:39','2026-06-10 19:38:39',NULL,0,NULL,0,NULL,NULL);
+INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-06-10 19:57:50','2026-06-10 19:57:50',NULL,0,NULL,0,NULL,NULL);

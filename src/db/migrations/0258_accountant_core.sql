@@ -29,7 +29,7 @@ CREATE TABLE accountant_entries (
     occurred_at     TEXT NOT NULL,
     amount          INTEGER NOT NULL,
     category        TEXT,
-    tag             TEXT,
+    tag             TEXT, -- denormalized label by design, NOT an FK to accountant_tags (deleted tags must not break entry history)
     source          TEXT NOT NULL,
     description     TEXT,
     location        TEXT,
@@ -43,8 +43,8 @@ CREATE TABLE accountant_entries (
 );
 
 CREATE INDEX idx_accountant_entries_user_occurred ON accountant_entries (user_id, occurred_at DESC);
-CREATE INDEX idx_accountant_entries_user_category ON accountant_entries (user_id, category);
-CREATE INDEX idx_accountant_entries_sorting ON accountant_entries (user_id)
+CREATE INDEX idx_accountant_entries_user_category ON accountant_entries (user_id, category, occurred_at DESC);
+CREATE INDEX idx_accountant_entries_sorting ON accountant_entries (user_id, occurred_at DESC)
     WHERE category IS NULL AND source = 'parsed';
 CREATE UNIQUE INDEX idx_accountant_entries_loan_tick ON accountant_entries (loan_id, tick_index)
     WHERE tick_index IS NOT NULL;
