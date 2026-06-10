@@ -186,6 +186,8 @@ export function settingsRoutes() {
       // localStorage). Capped to keep the KV value sane.
       miningLoadouts: z.string().max(20000).nullable().optional(),
       accountantTier: z.enum(['easy', 'advanced', 'industrial']).optional(),
+      accountantVerifyThreshold: z.string().regex(/^\d+$/)
+        .refine((v) => parseInt(v, 10) >= 10, "minimum threshold is 10").optional(),
     }).strict()),
     async (c) => {
     const db = c.env.DB;

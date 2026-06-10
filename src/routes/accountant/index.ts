@@ -3,6 +3,7 @@ import type { HonoEnv } from "../../lib/types";
 import { ledgerRoutes } from "./ledger";
 import { ingestRoutes } from "./ingest";
 import { sortingRoutes } from "./sorting";
+import { tagsRoutes } from "./tags";
 
 /**
  * /api/accountant — SC ERP Accountant module (design: accountant-m1-m3-design.md).
@@ -23,5 +24,6 @@ export function accountantRoutes() {
   routes.route("/", ledgerRoutes());
   routes.route("/ingest", ingestRoutes());
   routes.route("/sorting", sortingRoutes());
+  routes.route("/", tagsRoutes());
   return routes;
 }
