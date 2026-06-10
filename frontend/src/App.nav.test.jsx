@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { getNavItems } from './App'
 
 describe('getNavItems — Accountant entry', () => {
-  it('N1: logged-in user sees the Accountant entry at /accountant/settings', () => {
+  it('N1: logged-in user sees the Accountant group with Settings at /accountant/settings', () => {
     const items = getNavItems('user', true, {})
-    const flat = flattenItems(items)
-    const entry = flat.find(item => item.to === '/accountant/settings')
+    const group = items.find(item => item.group === 'Accountant')
+    expect(group).toBeDefined()
+    const entry = group.items.find(item => item.to === '/accountant/settings')
     expect(entry).toBeDefined()
-    expect(entry.label).toBe('Accountant')
+    expect(entry.label).toBe('Settings')
   })
 
   it('N2: logged-out user does NOT see the Accountant entry', () => {
@@ -17,12 +18,45 @@ describe('getNavItems — Accountant entry', () => {
     expect(entry).toBeUndefined()
   })
 
-  it('N3: the Accountant entry has no submenu (top-level only in M0)', () => {
+  it('N3: Accountant group items have no submenus', () => {
     const items = getNavItems('user', true, {})
-    const flat = flattenItems(items)
-    const entry = flat.find(item => item.to === '/accountant/settings')
-    expect(entry).toBeDefined()
-    expect(entry.submenu).toBeUndefined()
+    const group = items.find(item => item.group === 'Accountant')
+    expect(group).toBeDefined()
+    for (const item of group.items) {
+      expect(item.submenu).toBeUndefined()
+    }
+  })
+})
+
+describe('Accountant nav group — tier gating', () => {
+  const features = {}
+
+  function accountantGroup(tier) {
+    return getNavItems('user', true, features, tier).find((i) => i.group === 'Accountant')
+  }
+
+  it('renders the Accountant group with Settings, Ledger, Sorting at easy tier', () => {
+    const group = accountantGroup('easy')
+    expect(group).toBeTruthy()
+    const labels = group.items.map((i) => i.label)
+    expect(labels).toEqual(['Settings', 'Ledger', 'Sorting List'])
+  })
+
+  it('defaults to easy when tier is undefined', () => {
+    const group = accountantGroup(undefined)
+    expect(group.items.map((i) => i.label)).toEqual(['Settings', 'Ledger', 'Sorting List'])
+  })
+
+  it('tier-gated items are fully absent, not greyed', () => {
+    const rank = { easy: 0, advanced: 1, industrial: 2 }
+    for (const tier of ['easy', 'advanced', 'industrial']) {
+      const group = accountantGroup(tier)
+      for (const item of group.items) {
+        if (item.minTier) {
+          expect(rank[item.minTier]).toBeLessThanOrEqual(rank[tier])
+        }
+      }
+    }
   })
 })
 

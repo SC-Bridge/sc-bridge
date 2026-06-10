@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
 import RequireFeature from './components/RequireFeature'
+import SortingNavBadge from './pages/Accountant/SortingNavBadge'
 import useFontPreference from './hooks/useFontPreference'
 import { useStatus, usePreferences, setPreferences } from './hooks/useAPI'
 import { authClient, useSession, signOut } from './lib/auth-client'
@@ -73,6 +74,8 @@ const FpsLoadout = lazy(() => import('./pages/FpsLoadout'))
 const About = lazy(() => import('./pages/About'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const AccountantSettings = lazy(() => import('./pages/Accountant'))
+const AccountantLedger = lazy(() => import('./pages/Accountant/Ledger'))
+const AccountantSorting = lazy(() => import('./pages/Accountant/Sorting'))
 
 // Game Data and Reference are public — visible to all users
 const gameDataGroup = {
@@ -158,7 +161,15 @@ const authNavItems = [
   },
   referenceGroup,
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
-  { to: '/accountant/settings', icon: Wallet, label: 'Accountant' },
+  {
+    group: 'Accountant',
+    icon: Wallet,
+    items: [
+      { to: '/accountant/settings', icon: SettingsIcon, label: 'Settings' },
+      { to: '/accountant/ledger', icon: BookMarked, label: 'Ledger', minTier: 'easy' },
+      { to: '/accountant/sorting', icon: ClipboardList, label: 'Sorting List', minTier: 'easy', badge: 'sorting' },
+    ],
+  },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
 ]
 
@@ -170,12 +181,16 @@ const superAdminNavItems = [
   { to: '/users', icon: Users, label: 'Users' },
 ]
 
-function filterNavItem(item, isLoggedIn, features, role) {
+const TIER_RANK = { easy: 0, advanced: 1, industrial: 2 }
+
+function filterNavItem(item, isLoggedIn, features, role, accountantTier) {
   if (item.auth && !isLoggedIn) return null
   if (item.featureFlag && !features?.[item.featureFlag]) return null
   // F226: adminOnly entries (e.g. Localization tooling) are hidden from
   // regular users. Visible to admin + super_admin roles only.
   if (item.adminOnly && role !== 'admin' && role !== 'super_admin') return null
+  // Accountant tier gating — locked items are fully absent, never greyed.
+  if (item.minTier && TIER_RANK[item.minTier] > TIER_RANK[accountantTier ?? 'easy']) return null
   if (item.submenu) {
     const filteredSub = item.submenu.filter(sub => !sub.auth || isLoggedIn)
     return { ...item, submenu: filteredSub.length > 0 ? filteredSub : undefined }
@@ -183,23 +198,23 @@ function filterNavItem(item, isLoggedIn, features, role) {
   return item
 }
 
-function filterNav(items, isLoggedIn, features, role) {
+function filterNav(items, isLoggedIn, features, role, accountantTier) {
   return items
     .map(item => {
       if (item.items) {
         const filtered = item.items
-          .map(child => filterNavItem(child, isLoggedIn, features, role))
+          .map(child => filterNavItem(child, isLoggedIn, features, role, accountantTier))
           .filter(Boolean)
         return filtered.length > 0 ? { ...item, items: filtered } : null
       }
-      return filterNavItem(item, isLoggedIn, features, role)
+      return filterNavItem(item, isLoggedIn, features, role, accountantTier)
     })
     .filter(Boolean)
 }
 
-export function getNavItems(role, isLoggedIn, features) {
-  if (!isLoggedIn) return filterNav([...publicNavItems], false, features, role)
-  const items = filterNav([...authNavItems], true, features, role)
+export function getNavItems(role, isLoggedIn, features, accountantTier) {
+  if (!isLoggedIn) return filterNav([...publicNavItems], false, features, role, accountantTier)
+  const items = filterNav([...authNavItems], true, features, role, accountantTier)
   if (role === 'admin' || role === 'super_admin') {
     items.push(...adminNavItems)
   }
@@ -277,6 +292,7 @@ function renderNavItem(item, location, expandedMenu, setExpandedMenu, onNavClick
     >
       <Icon className="w-4 h-4" aria-hidden="true" />
       <span className="font-display tracking-wide text-xs uppercase">{label}</span>
+      {item.badge === 'sorting' && <SortingNavBadge />}
     </NavLink>
   )
 }
@@ -289,7 +305,8 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
   const userRole = session?.user?.role || 'user'
 
   const { data: status } = useStatus()
-  const navItems = getNavItems(userRole, isLoggedIn, status?.features)
+  const { data: prefs } = usePreferences({ skip: !isLoggedIn })
+  const navItems = getNavItems(userRole, isLoggedIn, status?.features, prefs?.accountantTier)
 
   // Auto-expand the group containing the current route on initial load.
   // Includes implicit routes that aren't sidebar items but belong to a group.
@@ -471,7 +488,8 @@ function CollapsedSidebar({ onExpand }) {
   const isLoggedIn = !!session?.user
   const userRole = session?.user?.role || 'user'
   const { data: status } = useStatus()
-  const navItems = getNavItems(userRole, isLoggedIn, status?.features)
+  const { data: prefs } = usePreferences({ skip: !isLoggedIn })
+  const navItems = getNavItems(userRole, isLoggedIn, status?.features, prefs?.accountantTier)
 
   return (
     <>
@@ -759,6 +777,8 @@ export default function App() {
                       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
                       <Route path="/accountant" element={<Navigate to="/accountant/settings" replace />} />
                       <Route path="/accountant/settings" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSettings /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/ledger" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLedger /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/sorting" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSorting /></Suspense></RequireAuth>} />
                       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><Admin /></RequireRole></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><UserManagement /></RequireRole></RequireAuth>} />
