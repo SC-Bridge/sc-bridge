@@ -3,7 +3,7 @@ import { useBadges } from './hooks'
 // Self-fetching count pill for the Sorting List nav item.
 export default function SortingNavBadge() {
   const { data } = useBadges()
-  if (!data || data.sorting === 0) return null
+  if (!data || !(data.sorting > 0)) return null
   return (
     <span
       data-testid="sorting-nav-badge"

@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
 import RequireFeature from './components/RequireFeature'
 import SortingNavBadge from './pages/Accountant/SortingNavBadge'
+import { TIER_RANK } from './pages/Accountant/constants'
 import useFontPreference from './hooks/useFontPreference'
 import { useStatus, usePreferences, setPreferences } from './hooks/useAPI'
 import { authClient, useSession, signOut } from './lib/auth-client'
@@ -180,8 +181,6 @@ const adminNavItems = [
 const superAdminNavItems = [
   { to: '/users', icon: Users, label: 'Users' },
 ]
-
-const TIER_RANK = { easy: 0, advanced: 1, industrial: 2 }
 
 function filterNavItem(item, isLoggedIn, features, role, accountantTier) {
   if (item.auth && !isLoggedIn) return null
