@@ -112,8 +112,8 @@ const USER_TABLES_NO_CASCADE = [
   "companion_system_events",
   // Market data — user_id NULLed on account deletion, observations kept
   "price_observations",
-  // Accountant (0258) — no FK cascade by design; explicit cleanup lands with
-  // the account-deletion coverage task in the same cycle.
+  // Accountant (0258) — no FK cascade by design; explicit cleanup in account
+  // deletion flow (account.ts batch DELETE) added in M1-T10.
   "accountant_entries",
   "accountant_loans",
   "accountant_tags",
