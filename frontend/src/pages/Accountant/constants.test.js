@@ -4,6 +4,10 @@ import {
   ACCOUNTANT_MODULES,
   TIER_RANK,
   isModuleAvailable,
+  LEDGER_CATEGORIES,
+  CATEGORY_LABELS,
+  CATEGORY_HOTKEYS,
+  DEFAULT_TAGS,
 } from './constants';
 
 describe('accountant constants', () => {
@@ -43,5 +47,20 @@ describe('accountant constants', () => {
       expect(isModuleAvailable('advanced', 'industrial')).toBe(true);
       expect(isModuleAvailable('industrial', 'industrial')).toBe(true);
     });
+  });
+});
+
+describe('ledger category constants', () => {
+  it('exposes the five categories in master-doc order', () => {
+    expect(LEDGER_CATEGORIES).toEqual(['assets', 'running_cost', 'financial', 'production', 'trading']);
+  });
+  it('has a label and hotkey for every category', () => {
+    for (const c of LEDGER_CATEGORIES) {
+      expect(CATEGORY_LABELS[c]).toBeTruthy();
+    }
+    expect(Object.values(CATEGORY_HOTKEYS)).toEqual(LEDGER_CATEGORIES);
+  });
+  it('default trading tags match the master doc', () => {
+    expect(DEFAULT_TAGS.trading).toEqual(['minerals', 'salvage', 'harvestable', 'collectibles']);
   });
 });

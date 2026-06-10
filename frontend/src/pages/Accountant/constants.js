@@ -49,3 +49,54 @@ export const ACCOUNTANT_MODULES = [
 export function isModuleAvailable(moduleMinTier, currentTier) {
   return TIER_RANK[currentTier] >= TIER_RANK[moduleMinTier];
 }
+
+// --- M1: ledger domain (mirrors src/lib/accountant/constants.ts) ---
+
+export const LEDGER_CATEGORIES = ['assets', 'running_cost', 'financial', 'production', 'trading'];
+
+export const CATEGORY_LABELS = {
+  assets: 'Assets',
+  running_cost: 'Running cost',
+  financial: 'Financial invest.',
+  production: 'Production invest.',
+  trading: 'Trading',
+};
+
+// Sorting List keyboard shortcuts (UX doc B.1: "press 1-5 to categorize")
+export const CATEGORY_HOTKEYS = {
+  1: 'assets',
+  2: 'running_cost',
+  3: 'financial',
+  4: 'production',
+  5: 'trading',
+};
+
+export const DEFAULT_TAGS = {
+  assets: [],
+  running_cost: ['ship_consumables', 'player_consumables'],
+  financial: ['tactical'],
+  production: ['general', 'specified'],
+  trading: ['minerals', 'salvage', 'harvestable', 'collectibles'],
+};
+
+export const TAG_LABELS = {
+  ship_consumables: 'Ship consumables',
+  player_consumables: 'Player consumables',
+  tactical: 'Tactical',
+  general: 'General',
+  specified: 'Specified',
+  minerals: 'Minerals',
+  salvage: 'Salvage',
+  harvestable: 'Harvestable',
+  collectibles: 'Collectibles',
+};
+
+export const SOURCE_LABELS = {
+  parsed: 'Parsed',
+  manual: 'Manual',
+  adjustment: 'Adjustment',
+  loan_principal: 'Loan principal',
+  loan_fee: 'Loan fee',
+  loan_repayment: 'Repayment',
+  accrual_tick: 'Accrual tick',
+};
