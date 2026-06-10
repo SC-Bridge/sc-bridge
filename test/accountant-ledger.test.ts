@@ -112,4 +112,69 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe("GET /api/accountant/ledger — filters", () => {
+    async function seedEntries(sessionToken: string) {
+      const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+      const entries = [
+        { amount: -3200, category: "trading", occurred_at: "2026-06-01T10:00:00Z", description: "Laranite buy" },
+        { amount: -400, category: "running_cost", occurred_at: "2026-06-02T10:00:00Z", description: "Repair at Lorville" },
+        { amount: 5000, category: "trading", occurred_at: "2026-06-03T10:00:00Z", description: "Laranite sell" },
+      ];
+      for (const e of entries) {
+        const res = await SELF.fetch("http://localhost/api/accountant/ledger", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(e),
+        });
+        expect(res.status).toBe(200);
+      }
+    }
+
+    it("filters by category", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await seedEntries(sessionToken);
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger?category=trading", {
+        headers: await authHeaders(sessionToken),
+      });
+      const data = (await res.json()) as { total: number; balance: number };
+      expect(data.total).toBe(2);
+      // balance stays the unfiltered all-time sum
+      expect(data.balance).toBe(1400);
+    });
+
+    it("filters by date range", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await seedEntries(sessionToken);
+      const res = await SELF.fetch(
+        "http://localhost/api/accountant/ledger?from=2026-06-02T00:00:00Z&to=2026-06-02T23:59:59Z",
+        { headers: await authHeaders(sessionToken) },
+      );
+      const data = (await res.json()) as { total: number; entries: Array<{ description: string }> };
+      expect(data.total).toBe(1);
+      expect(data.entries[0].description).toBe("Repair at Lorville");
+    });
+
+    it("filters by text search across description/location/notes", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await seedEntries(sessionToken);
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger?q=laranite", {
+        headers: await authHeaders(sessionToken),
+      });
+      const data = (await res.json()) as { total: number };
+      expect(data.total).toBe(2);
+    });
+
+    it("does not leak entries across users", async () => {
+      const a = await createTestUser(env.DB);
+      const b = await createTestUser(env.DB);
+      await seedEntries(a.sessionToken);
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger", {
+        headers: await authHeaders(b.sessionToken),
+      });
+      const data = (await res.json()) as { total: number; balance: number };
+      expect(data.total).toBe(0);
+      expect(data.balance).toBe(0);
+    });
+  });
 });

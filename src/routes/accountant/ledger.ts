@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
-import { CATEGORIES } from "../../lib/accountant/constants";
+import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
 
 /**
  * /api/accountant/* — ledger, sorting list, badges, tags.
@@ -34,23 +34,53 @@ export function ledgerRoutes() {
 
   const PER_PAGE = 50;
 
-  // GET /api/accountant/ledger
+  // GET /api/accountant/ledger?from&to&category&source&q&page
+  // category/source are repeatable params. balance is ALWAYS the unfiltered sum.
   routes.get("/ledger", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
 
+    const categories = (c.req.queries("category") ?? []).filter((x) =>
+      (CATEGORIES as readonly string[]).includes(x),
+    );
+    const sources = (c.req.queries("source") ?? []).filter((x) =>
+      (SOURCES as readonly string[]).includes(x),
+    );
+
+    const where: string[] = ["user_id = ?"];
+    const binds: (string | number)[] = [userID];
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    const q = c.req.query("q");
+    if (from) { where.push("occurred_at >= ?"); binds.push(from); }
+    if (to) { where.push("occurred_at <= ?"); binds.push(to); }
+    if (categories.length > 0) {
+      where.push(`category IN (${categories.map(() => "?").join(",")})`);
+      binds.push(...categories);
+    }
+    if (sources.length > 0) {
+      where.push(`source IN (${sources.map(() => "?").join(",")})`);
+      binds.push(...sources);
+    }
+    if (q) {
+      where.push("(description LIKE ? OR location LIKE ? OR notes LIKE ?)");
+      const like = `%${q}%`;
+      binds.push(like, like, like);
+    }
+    const whereSql = where.join(" AND ");
+
     const [entries, totalRow, balanceRow] = await Promise.all([
       db
         .prepare(
-          `SELECT * FROM accountant_entries WHERE user_id = ?
+          `SELECT * FROM accountant_entries WHERE ${whereSql}
            ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?`,
         )
-        .bind(userID, PER_PAGE, (page - 1) * PER_PAGE)
+        .bind(...binds, PER_PAGE, (page - 1) * PER_PAGE)
         .all(),
       db
-        .prepare("SELECT COUNT(*) AS n FROM accountant_entries WHERE user_id = ?")
-        .bind(userID)
+        .prepare(`SELECT COUNT(*) AS n FROM accountant_entries WHERE ${whereSql}`)
+        .bind(...binds)
         .first<{ n: number }>(),
       db
         .prepare("SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE user_id = ?")
