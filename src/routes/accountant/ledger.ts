@@ -18,7 +18,7 @@ const ManualEntrySchema = z
       .refine((n) => n !== 0, "amount must be non-zero"),
     category: categoryEnum.optional(),
     tag: z.string().max(100).optional(),
-    occurred_at: z.string().min(1).max(50),
+    occurred_at: z.string().datetime({ offset: true }).max(50),
     location: z.string().max(200).optional(),
     description: z.string().max(500).optional(),
     notes: z.string().max(2000).optional(),
@@ -36,11 +36,21 @@ const UpdateEntrySchema = z
     notes: z.string().max(2000).nullable().optional(),
     amount: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999)
       .refine((n) => n !== 0, "amount must be non-zero").optional(),
-    occurred_at: z.string().min(1).max(50).optional(),
+    occurred_at: z.string().datetime({ offset: true }).max(50).optional(),
     location: z.string().max(200).nullable().optional(),
     description: z.string().max(500).nullable().optional(),
   })
   .strict();
+
+/**
+ * Strict positive-integer :id param. parseInt alone accepts "12.9"/"12abc"
+ * as 12 — reject anything that isn't all digits (404-for-garbage contract).
+ */
+function parseEntryId(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const id = parseInt(raw, 10);
+  return id > 0 ? id : null;
+}
 
 export function ledgerRoutes() {
   const routes = new Hono<HonoEnv>();
@@ -52,7 +62,8 @@ export function ledgerRoutes() {
   routes.get("/ledger", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+    // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
+    const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
     const categories = (c.req.queries("category") ?? []).filter((x) =>
       (CATEGORIES as readonly string[]).includes(x),
@@ -77,8 +88,11 @@ export function ledgerRoutes() {
       binds.push(...sources);
     }
     if (q) {
-      where.push("(description LIKE ? OR location LIKE ? OR notes LIKE ?)");
-      const like = `%${q}%`;
+      // Escape LIKE wildcards so user input matches literally ("50%" ≠ "everything with 50").
+      where.push(
+        "(description LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')",
+      );
+      const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
       binds.push(like, like, like);
     }
     const whereSql = where.join(" AND ");
@@ -145,8 +159,8 @@ export function ledgerRoutes() {
   routes.put("/ledger/:id", validate("json", UpdateEntrySchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const id = parseInt(c.req.param("id"), 10);
-    if (!Number.isInteger(id) || id <= 0) return c.json({ error: "Not found" }, 404);
+    const id = parseEntryId(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
     const body = c.req.valid("json");
 
     const row = await db
@@ -182,8 +196,8 @@ export function ledgerRoutes() {
   routes.delete("/ledger/:id", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const id = parseInt(c.req.param("id"), 10);
-    if (!Number.isInteger(id) || id <= 0) return c.json({ error: "Not found" }, 404);
+    const id = parseEntryId(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
 
     const row = await db
       .prepare("SELECT loan_id FROM accountant_entries WHERE id = ? AND user_id = ?")

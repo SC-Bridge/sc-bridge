@@ -267,4 +267,119 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(row).toBeNull();
     });
   });
+
+  describe("hardening — datetime validation, strict ids, search escaping", () => {
+    async function postEntry(
+      sessionToken: string,
+      body: Record<string, unknown>,
+    ): Promise<Response> {
+      return SELF.fetch("http://localhost/api/accountant/ledger", {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("rejects a non-ISO occurred_at with 400 and accepts a valid one", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const bad = await postEntry(sessionToken, {
+        amount: 100, category: "trading", occurred_at: "banana",
+      });
+      expect(bad.status).toBe(400);
+
+      const good = await postEntry(sessionToken, {
+        amount: 100, category: "trading", occurred_at: "2026-06-01T14:03:00Z",
+      });
+      expect(good.status).toBe(200);
+    });
+
+    it("404s a non-integer id like 12.9 even when the truncated id exists", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const created = await postEntry(sessionToken, {
+        amount: -500, category: "running_cost", occurred_at: "2026-06-01T00:00:00Z",
+      });
+      const { id } = (await created.json()) as { id: number };
+
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}.9`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: "should never land" }),
+      });
+      expect(res.status).toBe(404);
+
+      const row = await env.DB.prepare("SELECT notes FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ notes: string | null }>();
+      expect(row?.notes).toBeNull();
+    });
+
+    it("treats LIKE wildcards in q as literals", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await postEntry(sessionToken, {
+        amount: 1000, category: "trading", occurred_at: "2026-06-01T00:00:00Z",
+        description: "50% profit share",
+      });
+      await postEntry(sessionToken, {
+        amount: 2000, category: "trading", occurred_at: "2026-06-02T00:00:00Z",
+        description: "sold 50 units of gold",
+      });
+
+      const res = await SELF.fetch(
+        `http://localhost/api/accountant/ledger?q=${encodeURIComponent("50%")}`,
+        { headers: await authHeaders(sessionToken) },
+      );
+      const data = (await res.json()) as { total: number; entries: Array<{ description: string }> };
+      expect(data.total).toBe(1);
+      expect(data.entries[0].description).toBe("50% profit share");
+    });
+
+    it("filters by source=manual, excluding parsed entries", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      await postEntry(sessionToken, {
+        amount: 100, category: "trading", occurred_at: "2026-06-01T00:00:00Z",
+      });
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source) VALUES (?, '2026-06-02T00:00:00Z', -100, 'parsed')`,
+      ).bind(userId).run();
+
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger?source=manual", {
+        headers: await authHeaders(sessionToken),
+      });
+      const data = (await res.json()) as { total: number; entries: Array<{ source: string }> };
+      expect(data.total).toBe(1);
+      expect(data.entries[0].source).toBe("manual");
+    });
+
+    it("supports repeatable category params", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await postEntry(sessionToken, { amount: 100, category: "trading", occurred_at: "2026-06-01T00:00:00Z" });
+      await postEntry(sessionToken, { amount: -200, category: "running_cost", occurred_at: "2026-06-02T00:00:00Z" });
+      await postEntry(sessionToken, { amount: 300, category: "financial", occurred_at: "2026-06-03T00:00:00Z" });
+
+      const res = await SELF.fetch(
+        "http://localhost/api/accountant/ledger?category=trading&category=running_cost",
+        { headers: await authHeaders(sessionToken) },
+      );
+      const data = (await res.json()) as { total: number };
+      expect(data.total).toBe(2);
+    });
+
+    it("allows amount edits on a manual entry", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const created = await postEntry(sessionToken, {
+        amount: -500, category: "running_cost", occurred_at: "2026-06-01T00:00:00Z",
+      });
+      const { id } = (await created.json()) as { id: number };
+
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: -750 }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB.prepare("SELECT amount FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ amount: number }>();
+      expect(row?.amount).toBe(-750);
+    });
+  });
 });
