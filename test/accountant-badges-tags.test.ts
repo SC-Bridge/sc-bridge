@@ -90,6 +90,41 @@ describe("Accountant — badges + tags + threshold", () => {
     expect(del.status).toBe(200);
   });
 
+  it("tags: duplicate detection is case-insensitive", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+
+    const create = await SELF.fetch("http://localhost/api/accountant/tags", {
+      method: "POST", headers, body: JSON.stringify({ category: "trading", name: "quantanium" }),
+    });
+    expect(create.status).toBe(200);
+
+    const dupe = await SELF.fetch("http://localhost/api/accountant/tags", {
+      method: "POST", headers, body: JSON.stringify({ category: "trading", name: "Quantanium" }),
+    });
+    expect(dupe.status).toBe(409);
+  });
+
+  it("tags: cannot delete another user's tag", async () => {
+    const a = await createTestUser(env.DB);
+    const b = await createTestUser(env.DB);
+    const create = await SELF.fetch("http://localhost/api/accountant/tags", {
+      method: "POST",
+      headers: { ...(await authHeaders(a.sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ category: "trading", name: "corundum" }),
+    });
+    const created = (await create.json()) as { id: number };
+
+    const del = await SELF.fetch(`http://localhost/api/accountant/tags/${created.id}`, {
+      method: "DELETE", headers: { ...(await authHeaders(b.sessionToken)), "Content-Length": "0" },
+    });
+    expect(del.status).toBe(404);
+
+    const row = await env.DB.prepare("SELECT id FROM accountant_tags WHERE id = ?")
+      .bind(created.id).first<{ id: number }>();
+    expect(row?.id).toBe(created.id);
+  });
+
   it("tags: only the trading category is user-extensible", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const res = await SELF.fetch("http://localhost/api/accountant/tags", {

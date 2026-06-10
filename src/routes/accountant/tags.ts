@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { DEFAULT_TAGS } from "../../lib/accountant/constants";
+import { parseIdParam } from "./schemas";
 
 const TagCreateSchema = z
   .object({
@@ -12,39 +13,14 @@ const TagCreateSchema = z
   .strict();
 
 /**
- * /api/accountant — badges (nav counts) + custom trading tags.
- * Badges are derived from live queries: no notifications table (design §2).
+ * /api/accountant/tags — custom trading tags. Defaults are code constants
+ * (DEFAULT_TAGS), never DB rows; only custom trading tags live in the table.
  */
 export function tagsRoutes() {
   const routes = new Hono<HonoEnv>();
 
-  // GET /api/accountant/badges — nav badges + threshold (48h due-soon window)
-  routes.get("/badges", async (c) => {
-    const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    const [sorting, due, threshold] = await Promise.all([
-      db.prepare(
-        `SELECT COUNT(*) AS n FROM accountant_entries
-         WHERE user_id = ? AND category IS NULL AND source = 'parsed'`,
-      ).bind(userID).first<{ n: number }>(),
-      db.prepare(
-        `SELECT COUNT(*) AS n FROM accountant_loans
-         WHERE user_id = ? AND status = 'open' AND due_at IS NOT NULL
-           AND due_at <= datetime('now', '+48 hours')`,
-      ).bind(userID).first<{ n: number }>(),
-      db.prepare(
-        "SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantVerifyThreshold'",
-      ).bind(userID).first<{ value: string }>(),
-    ]);
-    return c.json({
-      sorting: sorting?.n ?? 0,
-      loansDueSoon: due?.n ?? 0,
-      sortingThreshold: threshold ? parseInt(threshold.value, 10) : 10,
-    });
-  });
-
   // GET /api/accountant/tags — defaults (constants) + the user's custom tags
-  routes.get("/tags", async (c) => {
+  routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     const custom = await db
@@ -55,7 +31,7 @@ export function tagsRoutes() {
   });
 
   // POST /api/accountant/tags
-  routes.post("/tags", validate("json", TagCreateSchema), async (c) => {
+  routes.post("/", validate("json", TagCreateSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     const { category, name } = c.req.valid("json");
@@ -69,6 +45,7 @@ export function tagsRoutes() {
         .run();
       return c.json({ ok: true, id: result.meta.last_row_id });
     } catch (e) {
+      // name is COLLATE NOCASE, so the UNIQUE fires case-insensitively too.
       if (e instanceof Error && e.message.includes("UNIQUE")) {
         return c.json({ error: "Tag already exists" }, 409);
       }
@@ -77,13 +54,11 @@ export function tagsRoutes() {
   });
 
   // DELETE /api/accountant/tags/:id — picker-only removal; entries keep the string
-  routes.delete("/tags/:id", async (c) => {
+  routes.delete("/:id", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const raw = c.req.param("id");
-    if (!/^\d+$/.test(raw)) return c.json({ error: "Not found" }, 404);
-    const id = parseInt(raw, 10);
-    if (id <= 0) return c.json({ error: "Not found" }, 404);
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
     const result = await db
       .prepare("DELETE FROM accountant_tags WHERE id = ? AND user_id = ?")
       .bind(id, userID)

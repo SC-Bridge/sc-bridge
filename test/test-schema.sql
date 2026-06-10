@@ -3639,7 +3639,7 @@ CREATE TABLE accountant_tags (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    TEXT NOT NULL,
     category   TEXT NOT NULL,
-    name       TEXT NOT NULL,
+    name       TEXT NOT NULL COLLATE NOCASE,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE (user_id, category, name)
 );
@@ -4203,8 +4203,8 @@ INSERT INTO production_statuses VALUES(1,'flight_ready','Flight Ready');
 INSERT INTO production_statuses VALUES(2,'in_production','In Production');
 INSERT INTO production_statuses VALUES(3,'in_concept','In Concept');
 INSERT INTO production_statuses VALUES(4,'unknown','Unknown');
-INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-06-10 19:57:41','2026-06-10 19:57:41','11319298');
-INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-06-10 19:57:52','2026-06-10 19:57:52',NULL);
+INSERT INTO game_versions VALUES(1,'11319298-4600-0000-0000-000000000001','4.6.0-live.11319298','LIVE',1,'2026-02-25','2026-06-10 21:19:38','2026-06-10 21:19:38','11319298');
+INSERT INTO game_versions VALUES(2,'test-0000-0000-0000-000000000001','4.0.0-test','LIVE',1,'2026-01-01','2026-06-10 21:19:47','2026-06-10 21:19:47',NULL);
 INSERT INTO change_event_types VALUES(1,'provider_linked','Provider Linked','auth');
 INSERT INTO change_event_types VALUES(2,'provider_unlinked','Provider Unlinked','auth');
 INSERT INTO change_event_types VALUES(3,'password_set','Password Set','auth');
@@ -4251,4 +4251,4 @@ INSERT INTO rating_categories VALUES(1,'reliability','Reliability','Shows up on 
 INSERT INTO rating_categories VALUES(2,'skill','Skill','Competent at their role');
 INSERT INTO rating_categories VALUES(3,'communication','Communication','Responsive, clear, keeps team informed');
 INSERT INTO rating_categories VALUES(4,'fairness','Fairness','Honest, fair dealings, trustworthy with money');
-INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-06-10 19:57:50','2026-06-10 19:57:50',NULL,0,NULL,0,NULL,NULL);
+INSERT INTO manufacturers VALUES(1,'00000000-0000-0000-0000-000000000001','Generic','generic','GENERIC',NULL,'Unbranded / commodity gear with no specific consumer manufacturer in p4k. Assigned by the extractor when tag-, AttachDef-, filename-segment, and static-prefix lookups all return None.',NULL,NULL,1,'2026-06-10 21:19:46','2026-06-10 21:19:46',NULL,0,NULL,0,NULL,NULL);

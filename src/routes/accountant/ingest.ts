@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { classifyEntry } from "../../lib/accountant/categorize";
+import { KNOWN_HINTS } from "../../lib/accountant/constants";
 import { logEvent } from "../../lib/logger";
 
 const IngestEntrySchema = z
@@ -13,8 +14,8 @@ const IngestEntrySchema = z
       .refine((n) => n !== 0, "amount must be non-zero"),
     description: z.string().max(500).optional(),
     location: z.string().max(200).optional(),
-    quantity: z.number().optional(),
-    price_per_unit: z.number().int().optional(),
+    quantity: z.number().positive().max(1_000_000_000).optional(),
+    price_per_unit: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999).optional(),
     hint: z.string().max(50).optional(),
     ship: z.string().max(200).optional(),
   })
@@ -68,11 +69,18 @@ export function ingestRoutes() {
       for (const r of results) inserted += r.meta.changes ?? 0;
     }
 
+    // Unknown hints land in the Sorting List anyway, but a rising count means
+    // the Companion parser ships hints the categorizer hasn't learned yet.
+    const unknownHints = entries.filter(
+      (e) => e.hint !== undefined && !(KNOWN_HINTS as readonly string[]).includes(e.hint),
+    ).length;
+
     logEvent("accountant_ingest", {
       user_id: userID,
       received: entries.length,
       inserted,
       duplicates: entries.length - inserted,
+      unknown_hints: unknownHints,
     });
 
     return c.json({ ok: true, inserted, duplicates: entries.length - inserted });

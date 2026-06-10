@@ -2,6 +2,7 @@ import {
   FUEL_MANUAL_REVIEW_SHIPS,
   type Category,
   type DefaultTagValue,
+  type KnownHint,
 } from "./constants";
 
 export interface Classification {
@@ -17,7 +18,9 @@ export function classifyEntry(
   hint: string | undefined,
   ship: string | undefined,
 ): Classification {
-  switch (hint) {
+  // KnownHint cast ties the case labels to KNOWN_HINTS at compile time —
+  // a label outside the const is a TS error (single source of truth).
+  switch (hint as KnownHint | undefined) {
     case "ship_purchase":
       return { category: "assets", tag: null };
     case "repair":

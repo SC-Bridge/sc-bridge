@@ -2,11 +2,11 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
-import { categoryEnum } from "./schemas";
+import { categoryEnum, SORTING_PAGE, UNSORTED_PREDICATE } from "./schemas";
 
 const BulkCategorizeSchema = z
   .object({
-    ids: z.array(z.number().int().positive()).min(1).max(200),
+    ids: z.array(z.number().int().positive()).min(1).max(SORTING_PAGE),
     category: categoryEnum,
     tag: z.string().max(100).optional(),
   })
@@ -26,15 +26,15 @@ export function sortingRoutes() {
     const entries = await db
       .prepare(
         `SELECT * FROM accountant_entries
-         WHERE user_id = ? AND category IS NULL AND source = 'parsed'
-         ORDER BY occurred_at ASC, id ASC LIMIT 200`,
+         WHERE user_id = ? AND ${UNSORTED_PREDICATE}
+         ORDER BY occurred_at ASC, id ASC LIMIT ${SORTING_PAGE}`,
       )
       .bind(userID)
       .all();
     const countRow = await db
       .prepare(
         `SELECT COUNT(*) AS n FROM accountant_entries
-         WHERE user_id = ? AND category IS NULL AND source = 'parsed'`,
+         WHERE user_id = ? AND ${UNSORTED_PREDICATE}`,
       )
       .bind(userID)
       .first<{ n: number }>();
@@ -52,7 +52,7 @@ export function sortingRoutes() {
       .prepare(
         `UPDATE accountant_entries SET category = ?, tag = ?
          WHERE id IN (${placeholders})
-           AND user_id = ? AND category IS NULL AND source = 'parsed'`,
+           AND user_id = ? AND ${UNSORTED_PREDICATE}`,
       )
       .bind(category, tag ?? null, ...ids, userID)
       .run();

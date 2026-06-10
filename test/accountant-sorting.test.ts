@@ -79,6 +79,27 @@ describe("Accountant — Sorting List", () => {
     expect(row?.category).toBeNull();
   });
 
+  it("does not re-categorize an already-categorized entry", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const r = await env.DB.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, category, source_ref)
+       VALUES (?, '2026-06-01T00:00:00Z', -100, 'parsed', 'assets', ?)`,
+    ).bind(userId, `cat-${userId}`).run();
+    const id = r.meta.last_row_id as number;
+
+    const res = await SELF.fetch("http://localhost/api/accountant/sorting/bulk", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id], category: "trading", tag: "minerals" }),
+    });
+    const body = (await res.json()) as { updated: number };
+    expect(body.updated).toBe(0);
+
+    const row = await env.DB.prepare("SELECT category FROM accountant_entries WHERE id = ?")
+      .bind(id).first<{ category: string | null }>();
+    expect(row?.category).toBe("assets");
+  });
+
   it("rejects an invalid category with 400", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     const ids = await seedUnsorted(userId, 1);

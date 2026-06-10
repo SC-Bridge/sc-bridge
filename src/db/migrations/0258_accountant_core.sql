@@ -55,7 +55,7 @@ CREATE TABLE accountant_tags (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    TEXT NOT NULL,
     category   TEXT NOT NULL,
-    name       TEXT NOT NULL,
+    name       TEXT NOT NULL COLLATE NOCASE,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE (user_id, category, name)
 );

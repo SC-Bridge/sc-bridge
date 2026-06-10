@@ -34,6 +34,12 @@ export const DEFAULT_TAGS = {
 } as const satisfies Record<Category, readonly string[]>;
 export type DefaultTagValue = (typeof DEFAULT_TAGS)[Category][number];
 
+// Companion hints the auto-categorizer understands (design §4.2). The single
+// source of truth for categorize.ts's rules AND ingest's unknown-hint metric —
+// add new hints here first, then teach classifyEntry the rule.
+export const KNOWN_HINTS = ["ship_purchase", "repair", "fuel"] as const;
+export type KnownHint = (typeof KNOWN_HINTS)[number];
+
 // Fuel purchases on these ships go to the Sorting List instead of auto-cat
 // (master doc §Running cost — fuel may be Trading/Production stock for them).
 // v1: entries are CASE-INSENSITIVE SUBSTRING matched against the full

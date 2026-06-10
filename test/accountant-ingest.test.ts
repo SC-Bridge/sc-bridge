@@ -77,6 +77,63 @@ describe("Accountant — POST /api/accountant/ingest", () => {
     }
   });
 
+  it("mixed batch — re-sent entries dedupe, new entries insert", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+
+    const first = await SELF.fetch("http://localhost/api/accountant/ingest", {
+      method: "POST", headers, body: JSON.stringify(BATCH),
+    });
+    expect(((await first.json()) as { inserted: number }).inserted).toBe(4);
+
+    const mixed = {
+      entries: [
+        BATCH.entries[0],
+        BATCH.entries[1],
+        { event_id: "evt-005", occurred_at: "2026-06-01T11:00:00Z", amount: 700, description: "Mission reward" },
+        { event_id: "evt-006", occurred_at: "2026-06-01T11:05:00Z", amount: -50, hint: "repair" },
+      ],
+    };
+    const res = await SELF.fetch("http://localhost/api/accountant/ingest", {
+      method: "POST", headers, body: JSON.stringify(mixed),
+    });
+    const body = (await res.json()) as { ok: boolean; inserted: number; duplicates: number };
+    expect(body).toEqual({ ok: true, inserted: 2, duplicates: 2 });
+  });
+
+  it("inserts a 150-entry batch across the chunk boundary", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const entries = Array.from({ length: 150 }, (_, i) => ({
+      event_id: `chunk-${i}`, occurred_at: "2026-06-01T00:00:00Z", amount: i + 1,
+    }));
+    const res = await SELF.fetch("http://localhost/api/accountant/ingest", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { inserted: number; duplicates: number };
+    expect(body.inserted).toBe(150);
+    expect(body.duplicates).toBe(0);
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM accountant_entries WHERE user_id = ?",
+    ).bind(userId).first<{ n: number }>();
+    expect(count?.n).toBe(150);
+  });
+
+  it("rejects a negative quantity with 400", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await SELF.fetch("http://localhost/api/accountant/ingest", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entries: [{ event_id: "neg-1", occurred_at: "2026-06-01T00:00:00Z", amount: 5, quantity: -3 }],
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("rejects an oversized batch with 400", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const entries = Array.from({ length: 501 }, (_, i) => ({

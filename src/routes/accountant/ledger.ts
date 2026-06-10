@@ -3,12 +3,13 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
-import { categoryEnum } from "./schemas";
+import { categoryEnum, parseIdParam } from "./schemas";
 
 /**
- * /api/accountant/* — ledger, sorting list, badges, tags.
+ * /api/accountant/ledger — list/filter, manual entries, edit, delete.
  * Single-ledger architecture: balance = SUM(amount); the Sorting List is the
- * `category IS NULL AND source='parsed'` slice of accountant_entries.
+ * `category IS NULL AND source='parsed'` slice of accountant_entries
+ * (served by sorting.ts; badges by badges.ts; custom tags by tags.ts).
  */
 
 const ManualEntrySchema = z
@@ -40,16 +41,6 @@ const UpdateEntrySchema = z
     description: z.string().max(500).nullable().optional(),
   })
   .strict();
-
-/**
- * Strict positive-integer :id param. parseInt alone accepts "12.9"/"12abc"
- * as 12 — reject anything that isn't all digits (404-for-garbage contract).
- */
-function parseEntryId(raw: string): number | null {
-  if (!/^\d+$/.test(raw)) return null;
-  const id = parseInt(raw, 10);
-  return id > 0 ? id : null;
-}
 
 export function ledgerRoutes() {
   const routes = new Hono<HonoEnv>();
@@ -158,7 +149,7 @@ export function ledgerRoutes() {
   routes.put("/ledger/:id", validate("json", UpdateEntrySchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const id = parseEntryId(c.req.param("id"));
+    const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
     const body = c.req.valid("json");
 
@@ -195,7 +186,7 @@ export function ledgerRoutes() {
   routes.delete("/ledger/:id", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const id = parseEntryId(c.req.param("id"));
+    const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
 
     const row = await db
