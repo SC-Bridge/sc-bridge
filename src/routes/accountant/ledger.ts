@@ -1,11 +1,34 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
+import { validate } from "../../lib/validation";
+import { CATEGORIES } from "../../lib/accountant/constants";
 
 /**
  * /api/accountant/* — ledger, sorting list, badges, tags.
  * Single-ledger architecture: balance = SUM(amount); the Sorting List is the
  * `category IS NULL AND source='parsed'` slice of accountant_entries.
  */
+
+const categoryEnum = z.enum(CATEGORIES);
+
+const ManualEntrySchema = z
+  .object({
+    amount: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999)
+      .refine((n) => n !== 0, "amount must be non-zero"),
+    category: categoryEnum.optional(),
+    tag: z.string().max(100).optional(),
+    occurred_at: z.string().min(1).max(50),
+    location: z.string().max(200).optional(),
+    description: z.string().max(500).optional(),
+    notes: z.string().max(2000).optional(),
+    adjustment: z.boolean().optional(),
+  })
+  .strict()
+  .refine((b) => b.adjustment === true || b.category !== undefined, {
+    message: "category is required for manual entries",
+  });
+
 export function ledgerRoutes() {
   const routes = new Hono<HonoEnv>();
 
@@ -41,6 +64,35 @@ export function ledgerRoutes() {
       balance: balanceRow?.balance ?? 0,
       page,
     });
+  });
+
+  // POST /api/accountant/ledger — manual entry or balance adjustment
+  routes.post("/ledger", validate("json", ManualEntrySchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const body = c.req.valid("json");
+
+    const isAdjustment = body.adjustment === true;
+    const result = await db
+      .prepare(
+        `INSERT INTO accountant_entries
+           (user_id, occurred_at, amount, category, tag, source, description, location, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        userID,
+        body.occurred_at,
+        body.amount,
+        isAdjustment ? null : body.category,
+        isAdjustment ? null : (body.tag ?? null),
+        isAdjustment ? "adjustment" : "manual",
+        body.description ?? null,
+        body.location ?? null,
+        body.notes ?? null,
+      )
+      .run();
+
+    return c.json({ ok: true, id: result.meta.last_row_id });
   });
 
   return routes;
