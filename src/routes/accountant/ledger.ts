@@ -3,14 +3,13 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
+import { categoryEnum } from "./schemas";
 
 /**
  * /api/accountant/* — ledger, sorting list, badges, tags.
  * Single-ledger architecture: balance = SUM(amount); the Sorting List is the
  * `category IS NULL AND source='parsed'` slice of accountant_entries.
  */
-
-const categoryEnum = z.enum(CATEGORIES);
 
 const ManualEntrySchema = z
   .object({
