@@ -177,4 +177,94 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(data.balance).toBe(0);
     });
   });
+
+  describe("PUT/DELETE /api/accountant/ledger/:id", () => {
+    async function createManual(sessionToken: string): Promise<number> {
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger", {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: -500, category: "running_cost", occurred_at: "2026-06-01T00:00:00Z" }),
+      });
+      const body = (await res.json()) as { id: number };
+      return body.id;
+    }
+
+    it("edits category/tag/notes on a manual entry", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const id = await createManual(sessionToken);
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ category: "trading", tag: "salvage", notes: "actually a salvage sale" }),
+      });
+      expect(res.status).toBe(200);
+
+      const row = await env.DB.prepare("SELECT category, tag, notes FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ category: string; tag: string; notes: string }>();
+      expect(row?.category).toBe("trading");
+      expect(row?.tag).toBe("salvage");
+      expect(row?.notes).toBe("actually a salvage sale");
+    });
+
+    it("rejects amount edits on parsed entries with 400", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source) VALUES (?, '2026-06-01T00:00:00Z', -100, 'parsed')`,
+      ).bind(userId).run();
+      const row = await env.DB.prepare("SELECT id FROM accountant_entries WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${row!.id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: -99999 }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects edits and deletes on loan-linked rows with 400", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      await env.DB.prepare(
+        `INSERT INTO accountant_loans (user_id, direction, counterparty, principal, interest_rate, interest_interval, started_at)
+         VALUES (?, 'outgoing', '@pilot42', 100000, 5, 'monthly', '2026-06-01T00:00:00Z')`,
+      ).bind(userId).run();
+      const loan = await env.DB.prepare("SELECT id FROM accountant_loans WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, loan_id)
+         VALUES (?, '2026-06-01T00:00:00Z', 100000, 'loan_principal', ?)`,
+      ).bind(userId, loan!.id).run();
+      const entry = await env.DB.prepare("SELECT id FROM accountant_entries WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+
+      const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+      const put = await SELF.fetch(`http://localhost/api/accountant/ledger/${entry!.id}`, {
+        method: "PUT", headers, body: JSON.stringify({ notes: "tamper" }),
+      });
+      expect(put.status).toBe(400);
+      // "Content-Length": "0" required by the global M-01 mutation middleware (see blueprints.test.ts)
+      const del = await SELF.fetch(`http://localhost/api/accountant/ledger/${entry!.id}`, {
+        method: "DELETE", headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(del.status).toBe(400);
+    });
+
+    it("deletes a manual entry and 404s another user's entry", async () => {
+      const a = await createTestUser(env.DB);
+      const b = await createTestUser(env.DB);
+      const id = await createManual(a.sessionToken);
+
+      const foreign = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "DELETE", headers: { ...(await authHeaders(b.sessionToken)), "Content-Length": "0" },
+      });
+      expect(foreign.status).toBe(404);
+
+      const own = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "DELETE", headers: { ...(await authHeaders(a.sessionToken)), "Content-Length": "0" },
+      });
+      expect(own.status).toBe(200);
+      const row = await env.DB.prepare("SELECT id FROM accountant_entries WHERE id = ?").bind(id).first();
+      expect(row).toBeNull();
+    });
+  });
 });

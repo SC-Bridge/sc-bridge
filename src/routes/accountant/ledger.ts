@@ -29,6 +29,19 @@ const ManualEntrySchema = z
     message: "category is required for manual entries",
   });
 
+const UpdateEntrySchema = z
+  .object({
+    category: categoryEnum.nullable().optional(),
+    tag: z.string().max(100).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    amount: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999)
+      .refine((n) => n !== 0, "amount must be non-zero").optional(),
+    occurred_at: z.string().min(1).max(50).optional(),
+    location: z.string().max(200).nullable().optional(),
+    description: z.string().max(500).nullable().optional(),
+  })
+  .strict();
+
 export function ledgerRoutes() {
   const routes = new Hono<HonoEnv>();
 
@@ -123,6 +136,69 @@ export function ledgerRoutes() {
       .run();
 
     return c.json({ ok: true, id: result.meta.last_row_id });
+  });
+
+  // Fields only editable on user-authored rows (manual/adjustment).
+  const RESTRICTED_FIELDS = ["amount", "occurred_at", "location", "description"] as const;
+
+  // PUT /api/accountant/ledger/:id
+  routes.put("/ledger/:id", validate("json", UpdateEntrySchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseInt(c.req.param("id"), 10);
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: "Not found" }, 404);
+    const body = c.req.valid("json");
+
+    const row = await db
+      .prepare("SELECT source, loan_id FROM accountant_entries WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{ source: string; loan_id: number | null }>();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    if (row.loan_id !== null) {
+      return c.json({ error: "Loan-linked entries are managed via the loan" }, 400);
+    }
+    const isUserAuthored = row.source === "manual" || row.source === "adjustment";
+    if (!isUserAuthored && RESTRICTED_FIELDS.some((f) => body[f] !== undefined)) {
+      return c.json({ error: "Only category, tag, and notes are editable on imported entries" }, 400);
+    }
+
+    const sets: string[] = [];
+    const binds: (string | number | null)[] = [];
+    for (const [key, value] of Object.entries(body)) {
+      if (value === undefined) continue;
+      sets.push(`${key} = ?`);
+      binds.push(value as string | number | null);
+    }
+    if (sets.length === 0) return c.json({ ok: true });
+    binds.push(id, userID);
+    await db
+      .prepare(`UPDATE accountant_entries SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
+      .bind(...binds)
+      .run();
+    return c.json({ ok: true });
+  });
+
+  // DELETE /api/accountant/ledger/:id
+  routes.delete("/ledger/:id", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseInt(c.req.param("id"), 10);
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: "Not found" }, 404);
+
+    const row = await db
+      .prepare("SELECT loan_id FROM accountant_entries WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{ loan_id: number | null }>();
+    if (!row) return c.json({ error: "Not found" }, 404);
+    if (row.loan_id !== null) {
+      return c.json({ error: "Loan-linked entries are managed via the loan" }, 400);
+    }
+
+    await db
+      .prepare("DELETE FROM accountant_entries WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .run();
+    return c.json({ ok: true });
   });
 
   return routes;
