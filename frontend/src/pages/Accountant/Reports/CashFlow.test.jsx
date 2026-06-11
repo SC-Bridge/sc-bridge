@@ -21,4 +21,12 @@ describe('Cash Flow page', () => {
     expect(screen.getByText('2026-06-02')).toBeInTheDocument()
     expect(screen.getByText('70,000 aUEC')).toBeInTheDocument()
   })
+
+  it('shows empty state when series is empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => ({ ...BODY, series: [] }),
+    }))
+    render(<MemoryRouter><CashFlow /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText(/no cash flow data for this period/i)).toBeInTheDocument())
+  })
 })

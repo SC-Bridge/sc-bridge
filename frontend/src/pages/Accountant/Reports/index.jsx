@@ -17,8 +17,8 @@ export default function ReportsLanding() {
 
   const tiles = [
     { to: '/accountant/reports/pl', icon: TrendingUp, label: 'Profit & Loss', figure: pl.data ? formatAUEC(pl.data.net, { short: true }) : '—' },
-    { to: '/accountant/reports/balance', icon: Scale, label: 'Balance Sheet', figure: bal.data ? formatAUEC(bal.data.netWorth, { short: true }) : '—' },
-    { to: '/accountant/reports/net-worth', icon: Wallet, label: 'Net Worth', figure: bal.data ? formatAUEC(bal.data.equity ?? bal.data.netWorth, { short: true }) : '—' },
+    { to: '/accountant/reports/balance', icon: Scale, label: 'Balance Sheet', figure: bal.data ? formatAUEC(bal.data.equity, { short: true }) : '—' },
+    { to: '/accountant/reports/net-worth', icon: Wallet, label: 'Net Worth', figure: bal.data ? formatAUEC(bal.data.equity, { short: true }) : '—' },
     { to: '/accountant/reports/cash-flow', icon: ArrowRightLeft, label: 'Cash Flow', figure: cf.data ? formatAUEC(cashNet, { short: true }) : '—' },
   ]
   return (

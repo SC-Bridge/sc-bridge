@@ -25,4 +25,21 @@ describe('Net Worth page', () => {
     expect(screen.getByText('2026-06-02')).toBeInTheDocument()
     expect(screen.getAllByText('1,100,000 aUEC').length).toBeGreaterThan(0)
   })
+
+  it('shows empty state when series is empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => ({ ...BODY, series: [] }),
+    }))
+    render(<MemoryRouter><NetWorth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText(/no net worth data for this period/i)).toBeInTheDocument())
+  })
+
+  it('shows retry button and error message on fetch failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: false, status: 500, json: async () => ({ error: 'server error' }),
+    }))
+    render(<MemoryRouter><NetWorth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
 })

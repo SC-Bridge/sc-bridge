@@ -53,26 +53,50 @@ async function balance(sessionToken: string, at = AT) {
 describe("Accountant — GET /reports/balance", () => {
   beforeAll(async () => { await setupTestDatabase(env.DB); });
 
-  it("computes assets, liabilities, equity, and net worth at a timestamp", async () => {
+  // ── Cost-basis semantics (owner decision 2026-06-11) ────────────────────
+  // Ship purchase −1.5M (assets) + income +2M (trading):
+  //   cash     = −1.5M + 2M = 500k
+  //   holdings = −(−1.5M) = 1.5M  (cost basis)
+  //   assets   = cash + holdings = 2M
+  //   liabilities = 0; equity = 2M
+  it("cost-basis: ship purchase + trading income → cash=500k, holdings=1.5M, assets=2M, equity=2M", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
-    await seed(userId, 1200000, "assets");                                                     // asset
-    await seedLoan(userId, { direction: "incoming", principal: 300000 });                     // incoming loan — liability 300k
-    await seed(userId, 50000, "trading");                                                      // income (in net worth, not assets/liab line)
+    await seed(userId, -1500000, "assets");    // ship purchase — NEGATIVE asset entry
+    await seed(userId, 2000000, "trading");    // income
     const res = await balance(sessionToken);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { assets: number; liabilities: number; equity: number; netWorth: number; at: string };
-    expect(body.assets).toBe(1200000);
-    expect(body.liabilities).toBe(300000);          // reported as positive magnitude
-    expect(body.equity).toBe(1200000 - 300000);     // 900,000
-    expect(body.netWorth).toBe(1200000 - 300000 + 50000); // total balance as of `at`
+    const body = (await res.json()) as { cash: number; holdings: number; assets: number; liabilities: number; equity: number };
+    expect(body.cash).toBe(500000);            // net ledger: −1.5M + 2M
+    expect(body.holdings).toBe(1500000);       // cost basis = −SUM(asset entries) = −(−1.5M)
+    expect(body.assets).toBe(2000000);         // cash + holdings
+    expect(body.liabilities).toBe(0);
+    expect(body.equity).toBe(2000000);
+    // Verify netWorth field is gone (old field dropped).
+    expect((body as Record<string, unknown>).netWorth).toBeUndefined();
+  });
+
+  // Incoming loan only (no other entries):
+  // seedLoan direction=incoming → entry amount = −100k (you receive debt, owe it back).
+  // cash = −100k; holdings = 0; assets = −100k; liabilities = 100k (net = −100k < 0 → ABS = 100k); equity = −200k.
+  it("incoming loan only → liabilities=100k, equity reflects negative position", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await seedLoan(userId, { direction: "incoming", principal: 100000 });
+    const res = await balance(sessionToken);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { cash: number; holdings: number; assets: number; liabilities: number; equity: number };
+    expect(body.cash).toBe(-100000);
+    expect(body.holdings).toBe(0);
+    expect(body.assets).toBe(-100000);
+    expect(body.liabilities).toBe(100000);
+    expect(body.equity).toBe(-200000);  // assets(−100k) − liabilities(100k)
   });
 
   it("excludes entries at or after `at` (snapshot is strictly before)", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
-    await seed(userId, 100000, "assets", "manual", "2026-06-15T00:00:00Z");
-    await seed(userId, 999999, "assets", "manual", AT);  // exactly at — excluded
-    const body = (await (await balance(sessionToken)).json()) as { assets: number };
-    expect(body.assets).toBe(100000);
+    await seed(userId, -500000, "assets", "manual", "2026-06-15T00:00:00Z");
+    await seed(userId, -999999, "assets", "manual", AT);  // exactly at — excluded
+    const body = (await (await balance(sessionToken)).json()) as { holdings: number };
+    expect(body.holdings).toBe(500000);
   });
 
   it("rejects a missing/invalid `at` with 400", async () => {
@@ -86,12 +110,13 @@ describe("Accountant — GET /reports/balance", () => {
     // Incoming loan: borrow 100k → entry −100k (loan_id set).
     // Repayment: pay back 40k → entry +40k (loan_id set, same loan).
     // Net on this loan = −100k + 40k = −60k → liabilities = 60k.
+    // cash = −60k; holdings = 0; assets = −60k; equity = −60k − 60k = −120k.
     const { userId, sessionToken } = await createTestUser(env.DB);
     const loanId = await seedLoan(userId, { direction: "incoming", principal: 100000 });
     await seedRepayment(userId, loanId, 40000); // positive repayment reduces liability
     const body = (await (await balance(sessionToken)).json()) as { liabilities: number; equity: number };
     expect(body.liabilities).toBe(60000);
-    expect(body.equity).toBe(-60000); // no assets, just a net obligation
+    expect(body.equity).toBe(-120000); // assets(−60k) − liabilities(60k)
   });
 
   it("outgoing loan (lent money): contributes 0 to liabilities regardless of repayments", async () => {

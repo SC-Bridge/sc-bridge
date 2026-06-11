@@ -101,7 +101,13 @@ export function reportsRoutes() {
     });
   });
 
-  // GET /reports/balance?at= — assets vs liabilities snapshot (design §4.5).
+  // GET /reports/balance?at= — cost-basis snapshot (owner decision 2026-06-11).
+  // Semantics:
+  //   cash     = SUM(amount) over ALL entries (ledger balance).
+  //   holdings = −SUM(amount) over category='assets' entries (purchase −X → holding +X at cost).
+  //   assets   = cash + holdings  [identity: equals SUM(amount) over non-asset entries].
+  //   liabilities = per-loan net obligations (unchanged).
+  //   equity   = assets − liabilities  (replaces the old `netWorth` field).
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -112,21 +118,18 @@ export function reportsRoutes() {
     if (!ok) return c.json({ error: "at must be an ISO timestamp" }, 400);
 
     // Snapshot is strictly before `at` (same half-open convention applied to the upper bound).
-    // Assets: SUM where category='assets'.
-    // Liabilities: per-loan net obligations. Group loan-linked entries by loan_id, sum amounts;
-    //   loans whose net is negative are obligations — sum their absolute values.
-    //   Non-loan financial entries (tactical, no loan_id) are P&L expenses, not balance-sheet liabilities.
-    const [assetRow, liabRow] = await Promise.all([
+    // Non-loan financial entries (tactical, no loan_id) are P&L expenses, not balance-sheet liabilities.
+    const [holdingRow, liabRow] = await Promise.all([
       db
         .prepare(
           `SELECT
-             COALESCE(SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS assets,
-             COALESCE(SUM(amount), 0) AS net_worth
+             COALESCE(SUM(amount), 0)                                              AS cash,
+             COALESCE(-SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS holdings
            FROM accountant_entries
            WHERE user_id = ? AND occurred_at < ?`,
         )
         .bind(userID, at)
-        .first<{ assets: number; net_worth: number }>(),
+        .first<{ cash: number; holdings: number }>(),
       db
         .prepare(
           `SELECT COALESCE(SUM(ABS(net)), 0) AS liabilities
@@ -141,14 +144,17 @@ export function reportsRoutes() {
         .first<{ liabilities: number }>(),
     ]);
 
-    const assets = assetRow?.assets ?? 0;
+    const cash = holdingRow?.cash ?? 0;
+    const holdings = holdingRow?.holdings ?? 0;
+    const assets = cash + holdings;
     const liabilities = liabRow?.liabilities ?? 0;
     return c.json({
       at,
+      cash,
+      holdings,
       assets,
       liabilities,
       equity: assets - liabilities,
-      netWorth: assetRow?.net_worth ?? 0,
     });
   });
 
@@ -199,6 +205,8 @@ export function reportsRoutes() {
   });
 
   // GET /reports/net-worth?from&to&interval — cumulative equity per bucket.
+  // Owner decision 2026-06-11: series tracks equity (non-asset entries − liabilities), not raw ledger sum.
+  // Asset purchases cancel against holdings: equity is unchanged by a pure buy; income/expenses move it.
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -209,32 +217,71 @@ export function reportsRoutes() {
     const iv = resolveInterval(c, period.from, period.to);
     if ("error" in iv) return c.json({ error: iv.error }, 400);
     const fmt = BUCKET_FORMAT[iv.interval];
+    const { from, to } = period;
 
-    // Opening equity = everything strictly before `from` (cumulative carry-in).
+    // Opening equity = SUM of non-asset entries strictly before `from`.
     const opening = await db
-      .prepare(`SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE user_id = ? AND occurred_at < ?`)
-      .bind(userID, period.from)
+      .prepare(
+        `SELECT COALESCE(SUM(amount),0) AS bal
+         FROM accountant_entries
+         WHERE user_id = ? AND occurred_at < ?
+           AND (category IS NULL OR category != 'assets')`,
+      )
+      .bind(userID, from)
       .first<{ bal: number }>();
 
-    // Per-bucket net change within the window.
+    // Per-bucket non-asset deltas within the window.
     const rows = await db
       .prepare(
         `SELECT strftime('${fmt}', occurred_at) AS bucket, COALESCE(SUM(amount),0) AS delta
          FROM accountant_entries
          WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+           AND (category IS NULL OR category != 'assets')
          GROUP BY bucket ORDER BY bucket ASC`,
       )
-      .bind(userID, period.from, period.to)
+      .bind(userID, from, to)
       .all<{ bucket: string; delta: number }>();
 
+    // Fetch all loan-linked entries once; compute per-loan net liabilities at each bucket cutoff in memory.
+    // This mirrors the /balance liabilities computation, applied per-bucket.
+    const loanEntries = await db
+      .prepare(
+        `SELECT loan_id, amount, occurred_at
+         FROM accountant_entries
+         WHERE user_id = ? AND loan_id IS NOT NULL`,
+      )
+      .bind(userID)
+      .all<{ loan_id: number; amount: number; occurred_at: string }>();
+
+    // liabilitiesAt: per-loan net computed from all loan entries with occurred_at < cutoff.
+    // Loans whose net is negative are obligations — sum their absolute values.
+    const liabilitiesAt = (cutoff: string): number => {
+      const loanNets = new Map<number, number>();
+      for (const e of loanEntries.results) {
+        if (e.occurred_at < cutoff) {
+          loanNets.set(e.loan_id, (loanNets.get(e.loan_id) ?? 0) + e.amount);
+        }
+      }
+      let liab = 0;
+      for (const net of loanNets.values()) {
+        if (net < 0) liab += Math.abs(net);
+      }
+      return liab;
+    };
+
+    // Cutoff for bucket[i] = next bucket's label (if it exists) else period.to.
+    // SQLite TEXT comparison: "2026-06-02" < "2026-06-02T..." is TRUE, so the next bucket label
+    // as a bare date string correctly excludes all entries whose occurred_at falls in that bucket.
+    const bucketLabels = rows.results.map((r) => r.bucket);
+    const bucketCutoff = (idx: number): string =>
+      idx + 1 < bucketLabels.length ? bucketLabels[idx + 1] : to;
+
     let running = opening?.bal ?? 0;
-    const series = rows.results.map((r) => {
+    const series = rows.results.map((r, idx) => {
       running += r.delta;
-      // Field is `netWorth` (cumulative balance of all entries), not `equity` (assets−liabilities
-      // from /balance). Different quantities must not share a name — renamed per Finding 4.
-      return { bucket: r.bucket, netWorth: running };
+      return { bucket: r.bucket, netWorth: running - liabilitiesAt(bucketCutoff(idx)) };
     });
-    return c.json({ from: period.from, to: period.to, interval: iv.interval, opening: opening?.bal ?? 0, series });
+    return c.json({ from, to, interval: iv.interval, opening: opening?.bal ?? 0, series });
   });
 
   // First/last instant of the calendar month containing nowMs (UTC).

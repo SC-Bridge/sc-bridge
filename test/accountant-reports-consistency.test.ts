@@ -23,12 +23,10 @@ describe("Reports — cross-report consistency invariants", () => {
     await seed(userId, 500000, "trading");
     await seed(userId, -80000, "running_cost", "manual", "2026-06-16T00:00:00Z");
     await seed(userId, 45000, "mission_income", "manual", "2026-06-17T00:00:00Z");
-    await seed(userId, 1200000, "assets"); // excluded from P&L, present in ledger sums
+    await seed(userId, -1200000, "assets"); // cost-basis asset purchase — excluded from P&L
 
     const pl = (await get(sessionToken, `/api/accountant/reports/pl?from=${FROM}&to=${TO}`)) as { net: number; revenue: { total: number }; expenses: { total: number } };
-    // P&L excludes assets; ledger sum_income/sum_expense include EVERYTHING. So the
-    // invariant is scoped to NON-asset, non-excluded rows: assert P&L net equals the
-    // signed sum of exactly the rows the mapping includes (here: trading + mission − running).
+    // P&L excludes assets; the invariant is scoped to rows the mapping includes (trading + mission − running).
     expect(pl.net).toBe(500000 + 45000 - 80000); // 465,000 — assets correctly excluded
   });
 
@@ -42,18 +40,20 @@ describe("Reports — cross-report consistency invariants", () => {
     expect(cfTotal).toBe(500000 - 80000); // adjustment excluded
   });
 
-  // POST-PLAN RECONCILIATION: /net-worth series field is `netWorth` (not `equity`).
-  // The plan's original test referenced `point.equity` — corrected to `point.netWorth`.
-  // /balance liabilities are per-loan NET obligations; source=loan_principal is excluded
-  // from P&L but IS included in net-worth cumulative balance (all entries sum).
-  it("balance-sheet netWorth == net-worth series last point (same as-of instant)", async () => {
+  // POST-PLAN RECONCILIATION (cost-basis amendment, owner decision 2026-06-11):
+  // The consistency invariant is now: balance.equity == net-worth series last point.netWorth (same instant).
+  // balance.equity = (SUM(non-asset entries) − liabilities) which equals SUM(non-asset entries) when no loans.
+  // net-worth series last point.netWorth = cumulative SUM(non-asset entries) − liabilities at bucket cutoff.
+  // Both compute the same equity quantity at the same instant `at`.
+  it("balance.equity == net-worth series last point.netWorth (same as-of instant)", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
-    await seed(userId, 1200000, "assets", "manual", "2026-06-01T00:00:00Z");
-    await seed(userId, -300000, "financial", "loan_principal", "2026-06-02T00:00:00Z");
+    await seed(userId, -1200000, "assets", "manual", "2026-06-01T00:00:00Z");   // asset purchase — excluded from series
+    await seed(userId, -300000, "financial", "loan_principal", "2026-06-02T00:00:00Z"); // loan principal — included in both
     await seed(userId, 50000, "trading", "manual", "2026-06-03T00:00:00Z");
     const nw = (await get(sessionToken, `/api/accountant/reports/net-worth?from=${FROM}&to=${TO}&interval=monthly`)) as { series: Array<{ netWorth: number }> };
-    const bal = (await get(sessionToken, `/api/accountant/reports/balance?at=${AT}`)) as { netWorth: number };
-    // Both endpoints compute the same quantity: SUM(amount) over all entries up to `at`.
-    expect(nw.series[nw.series.length - 1].netWorth).toBe(bal.netWorth);
+    const bal = (await get(sessionToken, `/api/accountant/reports/balance?at=${AT}`)) as { equity: number };
+    // net-worth series last point: non-asset sum = −300k + 50k = −250k; liabilities = 0 (no loan_id set); netWorth = −250k
+    // balance equity: cash = −1.2M − 300k + 50k = −1.45M; holdings = 1.2M; assets = −0.25M; liabilities = 0; equity = −250k
+    expect(nw.series[nw.series.length - 1].netWorth).toBe(bal.equity);
   });
 });

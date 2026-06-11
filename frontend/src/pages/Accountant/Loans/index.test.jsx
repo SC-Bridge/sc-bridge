@@ -51,4 +51,19 @@ describe('Loans page', () => {
     await waitFor(() => expect(screen.getByText(/no loans yet/i)).toBeInTheDocument())
   })
 
+  it('investment-option banner renders when surplus is positive', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => ({
+      ok: true, status: 200,
+      json: async () => {
+        const s = String(url)
+        if (s.includes('/api/accountant/loans')) return { loans: LOANS }
+        if (s.includes('/api/accountant/reports/investment-option'))
+          return { surplus: 250000, cashFlowNet: 250000, positive: true }
+        return {}
+      },
+    }))
+    renderLoans()
+    await waitFor(() => expect(screen.getByText(/available for reinvestment/i)).toBeInTheDocument())
+    expect(screen.getByText(/250,000 aUEC/)).toBeInTheDocument()
+  })
 })
