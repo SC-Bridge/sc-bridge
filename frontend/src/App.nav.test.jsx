@@ -60,6 +60,36 @@ describe('Accountant nav group — tier gating', () => {
   })
 })
 
+describe('Accountant nav — M2 Finance items', () => {
+  const features = {}
+
+  function accountantGroup(tier) {
+    return getNavItems('user', true, features, tier).find((i) => i.group === 'Accountant')
+  }
+
+  it('hides Loans + Tactical below industrial tier', () => {
+    const group = accountantGroup('advanced')
+    const labels = group.items.map((i) => i.label)
+    expect(labels).not.toContain('Loans')
+    expect(labels).not.toContain('Tactical')
+  })
+
+  it('shows Loans + Tactical at industrial tier', () => {
+    const group = accountantGroup('industrial')
+    const labels = group.items.map((i) => i.label)
+    expect(labels).toContain('Loans')
+    expect(labels).toContain('Tactical')
+  })
+
+  it('Loans item carries a loans badge and correct route', () => {
+    const group = accountantGroup('industrial')
+    const loansItem = group.items.find((i) => i.label === 'Loans')
+    expect(loansItem).toBeDefined()
+    expect(loansItem.badge).toBe('loans')
+    expect(loansItem.to).toBe('/accountant/loans')
+  })
+})
+
 /**
  * Recursively flatten nav items and group children into a single array.
  * Handles both flat items ({ to, label, icon }) and group objects ({ group, items }).

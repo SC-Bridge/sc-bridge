@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, HandCoins } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
 import RequireFeature from './components/RequireFeature'
 import SortingNavBadge from './pages/Accountant/SortingNavBadge'
+import LoansNavBadge from './pages/Accountant/LoansNavBadge'
 import { TIER_RANK } from './pages/Accountant/constants'
 import useFontPreference from './hooks/useFontPreference'
 import { useStatus, usePreferences, setPreferences } from './hooks/useAPI'
@@ -77,6 +78,9 @@ const NotFound = lazy(() => import('./pages/NotFound'))
 const AccountantSettings = lazy(() => import('./pages/Accountant'))
 const AccountantLedger = lazy(() => import('./pages/Accountant/Ledger'))
 const AccountantSorting = lazy(() => import('./pages/Accountant/Sorting'))
+const AccountantLoans = lazy(() => import('./pages/Accountant/Loans'))
+const AccountantLoanDetail = lazy(() => import('./pages/Accountant/Loans/LoanDetail'))
+const AccountantTactical = lazy(() => import('./pages/Accountant/Tactical'))
 
 // Game Data and Reference are public — visible to all users
 const gameDataGroup = {
@@ -169,6 +173,8 @@ const authNavItems = [
       { to: '/accountant/settings', icon: SettingsIcon, label: 'Settings' },
       { to: '/accountant/ledger', icon: BookMarked, label: 'Ledger', minTier: 'easy' },
       { to: '/accountant/sorting', icon: ClipboardList, label: 'Sorting List', minTier: 'easy', badge: 'sorting' },
+      { to: '/accountant/loans', icon: HandCoins, label: 'Loans', minTier: 'industrial', badge: 'loans' },
+      { to: '/accountant/tactical', icon: Target, label: 'Tactical', minTier: 'industrial' },
     ],
   },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
@@ -292,6 +298,7 @@ function renderNavItem(item, location, expandedMenu, setExpandedMenu, onNavClick
       <Icon className="w-4 h-4" aria-hidden="true" />
       <span className="font-display tracking-wide text-xs uppercase">{label}</span>
       {item.badge === 'sorting' && <SortingNavBadge />}
+      {item.badge === 'loans' && <LoansNavBadge />}
     </NavLink>
   )
 }
@@ -778,6 +785,9 @@ export default function App() {
                       <Route path="/accountant/settings" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSettings /></Suspense></RequireAuth>} />
                       <Route path="/accountant/ledger" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLedger /></Suspense></RequireAuth>} />
                       <Route path="/accountant/sorting" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSorting /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/loans" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLoans /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/loans/:id" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLoanDetail /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/tactical" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantTactical /></Suspense></RequireAuth>} />
                       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><Admin /></RequireRole></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><UserManagement /></RequireRole></RequireAuth>} />
