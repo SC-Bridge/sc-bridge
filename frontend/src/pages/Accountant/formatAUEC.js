@@ -1,5 +1,9 @@
 // Integer aUEC formatting — amounts are always whole numbers end-to-end.
-export function formatAUEC(amount) {
+export function formatAUEC(amount, { short } = {}) {
+  if (short && Math.abs(amount) >= 1_000_000) {
+    const millions = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '')
+    return `${millions}M aUEC`
+  }
   return `${amount.toLocaleString('en-US')} aUEC`
 }
 
