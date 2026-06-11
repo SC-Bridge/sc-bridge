@@ -87,7 +87,7 @@ export function ledgerRoutes() {
     }
     const whereSql = where.join(" AND ");
 
-    const [entries, totalRow, balanceRow] = await Promise.all([
+    const [entries, totalRow, balanceRow, aggregatesRow] = await Promise.all([
       db
         .prepare(
           `SELECT * FROM accountant_entries WHERE ${whereSql}
@@ -103,12 +103,22 @@ export function ledgerRoutes() {
         .prepare("SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE user_id = ?")
         .bind(userID)
         .first<{ balance: number }>(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS sum_income,
+                  COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS sum_expense
+           FROM accountant_entries WHERE ${whereSql}`,
+        )
+        .bind(...binds)
+        .first<{ sum_income: number; sum_expense: number }>(),
     ]);
 
     return c.json({
       entries: entries.results,
       total: totalRow?.n ?? 0,
       balance: balanceRow?.balance ?? 0,
+      sum_income: aggregatesRow?.sum_income ?? 0,
+      sum_expense: aggregatesRow?.sum_expense ?? 0,
       page,
     });
   });
