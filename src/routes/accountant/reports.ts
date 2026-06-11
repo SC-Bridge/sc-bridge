@@ -216,5 +216,38 @@ export function reportsRoutes() {
     return c.json({ from: period.from, to: period.to, interval: iv.interval, opening: opening?.bal ?? 0, series });
   });
 
+  // First/last instant of the calendar month containing nowMs (UTC).
+  function currentMonthWindow(nowMs: number = Date.now()): { from: string; to: string } {
+    const d = new Date(nowMs);
+    const from = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+    const to = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString();
+    return { from, to };
+  }
+
+  // GET /reports/investment-option?from&to — advisory surplus (Module3; hidden when ≤ 0).
+  routes.get("/investment-option", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    await catchUpAccruals(db, userID);
+
+    // Default window = current calendar month (owner decision 2026-06-11). Explicit from&to override.
+    const explicit = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
+    const hasAny = c.req.query("from") !== undefined || c.req.query("to") !== undefined;
+    if (hasAny && !explicit) return c.json({ error: "from and to must both be valid ISO timestamps" }, 400);
+    const { from, to } = explicit ?? currentMonthWindow();
+
+    const row = await db
+      .prepare(
+        `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
+         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? AND source != 'adjustment'`,
+      )
+      .bind(userID, from, to)
+      .first<{ net: number }>();
+
+    const cashFlowNet = row?.net ?? 0;
+    const positive = cashFlowNet > 0;
+    return c.json({ from, to, cashFlowNet, surplus: positive ? cashFlowNet : 0, positive });
+  });
+
   return routes;
 }
