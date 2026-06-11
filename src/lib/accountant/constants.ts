@@ -28,7 +28,7 @@ export type Source = (typeof SOURCES)[number];
 
 export const DEFAULT_TAGS = {
   assets: [], // intentionally empty — assets are untagged
-  running_cost: ["ship_consumables", "player_consumables"],
+  running_cost: ["ship_consumables", "player_consumables", "location_invest"],
   financial: ["tactical"],
   production: ["general", "specified"],
   trading: ["minerals", "salvage", "harvestable", "collectibles"],

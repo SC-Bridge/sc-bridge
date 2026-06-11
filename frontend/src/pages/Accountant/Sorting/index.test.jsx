@@ -58,7 +58,7 @@ describe('Sorting List page', () => {
     })
   })
 
-  it('categorizing into running_cost opens the tag picker with its default tags', async () => {
+  it('categorizing into running_cost opens the tag picker with its default tags including Location invest', async () => {
     render(<Sorting />)
     await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
     await userEvent.click(screen.getByText('Fuel purchase'))
@@ -66,11 +66,40 @@ describe('Sorting List page', () => {
     expect(screen.getByTestId('tag-picker')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^ship consumables$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^player consumables$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^location invest$/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^ship consumables$/i }))
     await waitFor(() => {
       const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
       expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'running_cost', tag: 'ship_consumables' })
     })
+  })
+
+  it('categorizing running_cost with a note sends note in the bulk request body', async () => {
+    render(<Sorting />)
+    await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Fuel purchase'))
+    await userEvent.click(screen.getByRole('button', { name: /running cost/i }))
+    expect(screen.getByTestId('tag-picker')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText(/ship \/ player \/ location/i), 'Carrack')
+    await userEvent.click(screen.getByRole('button', { name: /^ship consumables$/i }))
+    await waitFor(() => {
+      const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
+      expect(JSON.parse(bulk[1].body)).toMatchObject({
+        ids: [11],
+        category: 'running_cost',
+        tag: 'ship_consumables',
+        note: 'Carrack',
+      })
+    })
+  })
+
+  it('trading picker does NOT show the note input', async () => {
+    render(<Sorting />)
+    await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Fuel purchase'))
+    await userEvent.click(screen.getByRole('button', { name: /\btrading\b/i }))
+    expect(screen.getByTestId('tag-picker')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/ship \/ player \/ location/i)).not.toBeInTheDocument()
   })
 
   it('categorizing into assets does NOT open the tag picker — categorizes immediately', async () => {

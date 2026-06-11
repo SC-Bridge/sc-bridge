@@ -9,6 +9,7 @@ const BulkCategorizeSchema = z
     ids: z.array(z.number().int().positive()).min(1).max(SORTING_PAGE),
     category: categoryEnum,
     tag: z.string().max(100).optional(),
+    note: z.string().trim().max(2000).optional(),
   })
   .strict();
 
@@ -45,17 +46,21 @@ export function sortingRoutes() {
   routes.put("/bulk", validate("json", BulkCategorizeSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    const { ids, category, tag } = c.req.valid("json");
+    const { ids, category, tag, note } = c.req.valid("json");
 
     const placeholders = ids.map(() => "?").join(",");
-    const result = await db
-      .prepare(
-        `UPDATE accountant_entries SET category = ?, tag = ?
+    const hasNote = note !== undefined && note !== "";
+    const sql = hasNote
+      ? `UPDATE accountant_entries SET category = ?, tag = ?, notes = ?
          WHERE id IN (${placeholders})
-           AND user_id = ? AND ${UNSORTED_PREDICATE}`,
-      )
-      .bind(category, tag ?? null, ...ids, userID)
-      .run();
+           AND user_id = ? AND ${UNSORTED_PREDICATE}`
+      : `UPDATE accountant_entries SET category = ?, tag = ?
+         WHERE id IN (${placeholders})
+           AND user_id = ? AND ${UNSORTED_PREDICATE}`;
+    const binds = hasNote
+      ? [category, tag ?? null, note, ...ids, userID]
+      : [category, tag ?? null, ...ids, userID];
+    const result = await db.prepare(sql).bind(...binds).run();
 
     return c.json({ ok: true, updated: result.meta.changes ?? 0 });
   });

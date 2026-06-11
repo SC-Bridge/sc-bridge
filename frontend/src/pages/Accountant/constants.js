@@ -75,7 +75,7 @@ export const CATEGORY_HOTKEYS = {
 
 export const DEFAULT_TAGS = {
   assets: [],
-  running_cost: ['ship_consumables', 'player_consumables'],
+  running_cost: ['ship_consumables', 'player_consumables', 'location_invest'],
   financial: ['tactical'],
   production: ['general', 'specified'],
   trading: ['minerals', 'salvage', 'harvestable', 'collectibles'],
@@ -85,6 +85,7 @@ export const DEFAULT_TAGS = {
 export const TAG_LABELS = {
   ship_consumables: 'Ship consumables',
   player_consumables: 'Player consumables',
+  location_invest: 'Location invest',
   tactical: 'Tactical',
   general: 'General',
   specified: 'Specified',

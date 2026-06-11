@@ -128,4 +128,54 @@ describe("Accountant — Sorting List", () => {
       .bind(ids[0]).first<{ category: string }>();
     expect(row?.category).toBe("mission_income");
   });
+
+  it("bulk with note sets notes on all affected rows", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const ids = await seedUnsorted(userId, 3);
+
+    const res = await SELF.fetch("http://localhost/api/accountant/sorting/bulk", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids: [ids[0], ids[1]],
+        category: "running_cost",
+        tag: "ship_consumables",
+        note: "Carrack fuel run",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; updated: number };
+    expect(body).toEqual({ ok: true, updated: 2 });
+
+    for (const id of [ids[0], ids[1]]) {
+      const row = await env.DB.prepare("SELECT notes FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ notes: string | null }>();
+      expect(row?.notes).toBe("Carrack fuel run");
+    }
+    // third row (not in the bulk) must be untouched
+    const third = await env.DB.prepare("SELECT notes FROM accountant_entries WHERE id = ?")
+      .bind(ids[2]).first<{ notes: string | null }>();
+    expect(third?.notes).toBeNull();
+  });
+
+  it("bulk without note leaves existing notes untouched", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    // seed one row with a pre-existing note
+    const r = await env.DB.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, notes, source_ref)
+       VALUES (?, '2026-06-01T00:00:00Z', -100, 'parsed', 'pre-existing note', ?)`,
+    ).bind(userId, `pre-note-${userId}`).run();
+    const id = r.meta.last_row_id as number;
+
+    const res = await SELF.fetch("http://localhost/api/accountant/sorting/bulk", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id], category: "running_cost" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT notes FROM accountant_entries WHERE id = ?")
+      .bind(id).first<{ notes: string | null }>();
+    expect(row?.notes).toBe("pre-existing note");
+  });
 });

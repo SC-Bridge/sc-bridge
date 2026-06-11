@@ -13,11 +13,11 @@ export default function Sorting() {
   const [pendingCategory, setPendingCategory] = useState(null) // tagged category awaiting TagPicker
   const [actionError, setActionError] = useState(null)
 
-  async function categorize(category, tag) {
+  async function categorize(category, tag, note) {
     if (selected.length === 0) return
     setActionError(null)
     try {
-      await categorizeEntries(selected, category, tag)
+      await categorizeEntries(selected, category, tag, note)
       setSelected([])
       setPendingCategory(null)
       refetch()
@@ -127,8 +127,8 @@ export default function Sorting() {
       {pendingCategory && (
         <TagPicker
           category={pendingCategory}
-          onPick={(tag) => categorize(pendingCategory, tag)}
-          onSkip={() => categorize(pendingCategory, undefined)}
+          onPick={(tag, note) => categorize(pendingCategory, tag, note)}
+          onSkip={(note) => categorize(pendingCategory, undefined, note)}
           onCancel={() => setPendingCategory(null)}
         />
       )}
