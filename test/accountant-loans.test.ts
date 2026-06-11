@@ -238,4 +238,31 @@ describe("Accountant — loan creation + list", () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe("accrual visibility in ledger + badges", () => {
+    it("GET /ledger shows accrual ticks once catch-up has run (when source filter includes them)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily" });
+      // hitting /ledger triggers catch-up; request accrual_tick explicitly
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger?source=accrual_tick", {
+        headers: await authHeaders(sessionToken),
+      });
+      const body = (await res.json()) as { entries: Array<{ source: string }>; total: number };
+      expect(body.total).toBeGreaterThan(0);
+      expect(body.entries.every((e) => e.source === "accrual_tick")).toBe(true);
+    });
+
+    it("GET /badges counts a loan due within 48h as loansDueSoon", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      await newLoan(sessionToken, {
+        ...BASE,
+        due_at: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+      });
+      const res = await SELF.fetch("http://localhost/api/accountant/badges", {
+        headers: await authHeaders(sessionToken),
+      });
+      const body = (await res.json()) as { loansDueSoon: number };
+      expect(body.loansDueSoon).toBe(1);
+    });
+  });
 });

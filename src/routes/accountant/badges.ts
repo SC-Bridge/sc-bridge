@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { UNSORTED_PREDICATE } from "./schemas";
+import { catchUpAccruals } from "../../lib/accountant/accrual";
 
 /**
  * /api/accountant/badges — nav badge counts + the user's verify threshold.
@@ -13,6 +14,10 @@ export function badgesRoutes() {
   routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    // Design §4.4: catch-up runs at the top of every badges read.
+    // No try/catch — catchUpAccruals throws on logic errors; Hono returns 500
+    // ("fail rather than serve stale numbers", design §6).
+    await catchUpAccruals(db, userID);
     const [sorting, due, threshold] = await Promise.all([
       db.prepare(
         `SELECT COUNT(*) AS n FROM accountant_entries
