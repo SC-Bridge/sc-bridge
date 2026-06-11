@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../../lib/types";
 import { ledgerRoutes } from "./ledger";
 import { ingestRoutes } from "./ingest";
+import { loansRoutes } from "./loans";
 import { sortingRoutes } from "./sorting";
 import { badgesRoutes } from "./badges";
 import { tagsRoutes } from "./tags";
@@ -24,6 +25,7 @@ export function accountantRoutes() {
 
   routes.route("/", ledgerRoutes());
   routes.route("/ingest", ingestRoutes());
+  routes.route("/loans", loansRoutes());
   routes.route("/sorting", sortingRoutes());
   routes.route("/badges", badgesRoutes());
   routes.route("/tags", tagsRoutes());
