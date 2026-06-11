@@ -12,7 +12,12 @@ const LOANS = [
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => ({
     ok: true, status: 200,
-    json: async () => (String(url).includes('/api/accountant/loans') ? { loans: LOANS } : {}),
+    json: async () => {
+      const s = String(url)
+      if (s.includes('/api/accountant/loans')) return { loans: LOANS }
+      if (s.includes('/api/accountant/reports/investment-option')) return { surplus: 0, cashFlowNet: 0, positive: false }
+      return {}
+    },
   }))
 })
 

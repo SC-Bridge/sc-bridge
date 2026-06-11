@@ -6,6 +6,7 @@ import LoadingState from '../../../components/LoadingState'
 import { useLoans } from '../hooks'
 import LoanTable from './LoanTable'
 import NewLoanModal from './NewLoanModal'
+import InvestmentBanner from '../Reports/InvestmentBanner'
 
 export default function Loans() {
   const [params, setParams] = useSearchParams()
@@ -36,7 +37,7 @@ export default function Loans() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      {/* M3: Investment Option Sum banner mounts here */}
+      <InvestmentBanner />
       <PageHeader
         title="LOANS"
         subtitle="Outgoing receivables and incoming liabilities, with live interest accrual"
