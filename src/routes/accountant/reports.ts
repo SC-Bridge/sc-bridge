@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { catchUpAccruals } from "../../lib/accountant/accrual";
 import { STATEMENT_LINES } from "../../lib/accountant/constants";
-import { parsePeriod } from "./report-period";
+import { parsePeriod, defaultInterval, IntervalSchema } from "./report-period";
 
 /**
  * /api/accountant/reports — read-only derived views (design §4.5).
@@ -131,6 +131,89 @@ export function reportsRoutes() {
       equity: assets - liabilities,
       netWorth: row?.net_worth ?? 0,
     });
+  });
+
+  // Map an interval label → the strftime format string for bucketing occurred_at.
+  const BUCKET_FORMAT: Record<string, string> = {
+    hourly: "%Y-%m-%dT%H:00",
+    daily: "%Y-%m-%d",
+    weekly: "%Y-W%W",
+    monthly: "%Y-%m",
+  };
+
+  function resolveInterval(c: { req: { query: (k: string) => string | undefined } }, from: string, to: string):
+    { interval: string } | { error: string } {
+    const raw = c.req.query("interval");
+    if (raw === undefined) return { interval: defaultInterval(from, to) };
+    const r = IntervalSchema.safeParse(raw);
+    return r.success ? { interval: r.data } : { error: "invalid interval" };
+  }
+
+  // GET /reports/cash-flow?from&to&interval — in/out/net liquidity per bucket.
+  routes.get("/cash-flow", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    await catchUpAccruals(db, userID);
+
+    const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
+    if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
+    const iv = resolveInterval(c, period.from, period.to);
+    if ("error" in iv) return c.json({ error: iv.error }, 400);
+    const fmt = BUCKET_FORMAT[iv.interval];
+
+    const rows = await db
+      .prepare(
+        `SELECT strftime('${fmt}', occurred_at) AS bucket,
+                COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS in_sum,
+                COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS out_sum
+         FROM accountant_entries
+         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? AND source != 'adjustment'
+         GROUP BY bucket ORDER BY bucket ASC`,
+      )
+      .bind(userID, period.from, period.to)
+      .all<{ bucket: string; in_sum: number; out_sum: number }>();
+
+    return c.json({
+      from: period.from, to: period.to, interval: iv.interval,
+      series: rows.results.map((r) => ({ bucket: r.bucket, in: r.in_sum, out: r.out_sum, net: r.in_sum + r.out_sum })),
+    });
+  });
+
+  // GET /reports/net-worth?from&to&interval — cumulative equity per bucket.
+  routes.get("/net-worth", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    await catchUpAccruals(db, userID);
+
+    const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
+    if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
+    const iv = resolveInterval(c, period.from, period.to);
+    if ("error" in iv) return c.json({ error: iv.error }, 400);
+    const fmt = BUCKET_FORMAT[iv.interval];
+
+    // Opening equity = everything strictly before `from` (cumulative carry-in).
+    const opening = await db
+      .prepare(`SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE user_id = ? AND occurred_at < ?`)
+      .bind(userID, period.from)
+      .first<{ bal: number }>();
+
+    // Per-bucket net change within the window.
+    const rows = await db
+      .prepare(
+        `SELECT strftime('${fmt}', occurred_at) AS bucket, COALESCE(SUM(amount),0) AS delta
+         FROM accountant_entries
+         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+         GROUP BY bucket ORDER BY bucket ASC`,
+      )
+      .bind(userID, period.from, period.to)
+      .all<{ bucket: string; delta: number }>();
+
+    let running = opening?.bal ?? 0;
+    const series = rows.results.map((r) => {
+      running += r.delta;
+      return { bucket: r.bucket, equity: running };
+    });
+    return c.json({ from: period.from, to: period.to, interval: iv.interval, opening: opening?.bal ?? 0, series });
   });
 
   return routes;
