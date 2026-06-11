@@ -5,6 +5,21 @@ import { validate } from "../../lib/validation";
 import { INTERVAL_SECONDS, catchUpAccruals, nextTickAt } from "../../lib/accountant/accrual";
 import { parseIdParam } from "./schemas";
 
+const RepaymentSchema = z
+  .object({
+    amount: z.number().int().positive().max(9_999_999_999_999),
+    occurred_at: z.string().datetime({ offset: true }).max(50),
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
+
+const UpdateLoanSchema = z
+  .object({
+    notes: z.string().max(2000).nullable().optional(),
+    due_at: z.string().datetime({ offset: true }).max(50).nullable().optional(),
+  })
+  .strict();
+
 const CreateLoanSchema = z
   .object({
     direction: z.enum(["outgoing", "incoming"]),
@@ -169,6 +184,109 @@ export function loansRoutes() {
         paybackTotal: outstanding + projectedAmount,
       },
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Private helper: run accruals, fetch loan row (user-scoped), compute outstanding.
+  // ---------------------------------------------------------------------------
+  async function loadLoan(db: D1Database, userID: string, id: number) {
+    await catchUpAccruals(db, userID);
+    const loan = await db
+      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{ id: number; status: string; user_id: string }>();
+    if (!loan) return null;
+    const outRow = await db
+      .prepare(
+        "SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?",
+      )
+      .bind(id, userID)
+      .first<{ bal: number }>();
+    return { loan, signedOutstanding: outRow?.bal ?? 0 };
+  }
+
+  // POST /loans/:id/repayments — reduces outstanding; auto-settles at exactly 0.
+  routes.post("/:id/repayments", validate("json", RepaymentSchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const { amount, occurred_at, notes } = c.req.valid("json");
+
+    const loaded = await loadLoan(db, userID, id);
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (loaded.loan.status === "settled") {
+      return c.json({ error: "Loan already settled" }, 400);
+    }
+    const outstanding = Math.abs(loaded.signedOutstanding);
+    if (amount > outstanding) {
+      // Design §6: echo current outstanding for inline UI display.
+      return c.json({ error: "Repayment exceeds outstanding", outstanding }, 400);
+    }
+
+    // Repayment carries the OPPOSITE sign of the obligation (reduces it).
+    const sign = loaded.signedOutstanding < 0 ? 1 : -1;
+    const stmts: D1PreparedStatement[] = [
+      db
+        .prepare(
+          `INSERT INTO accountant_entries
+             (user_id, occurred_at, amount, category, source, loan_id, notes, description)
+           VALUES (?, ?, ?, 'financial', 'loan_repayment', ?, ?, 'Loan repayment')`,
+        )
+        .bind(userID, occurred_at, sign * amount, id, notes ?? null),
+    ];
+    const settled = amount === outstanding;
+    if (settled) {
+      stmts.push(
+        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?").bind(id, userID),
+      );
+    }
+    await db.batch(stmts);
+    return c.json({ ok: true, settled, outstanding: outstanding - amount });
+  });
+
+  // POST /loans/:id/settle — manual close; remainder is an explicit write-off (no entry).
+  routes.post("/:id/settle", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const loaded = await loadLoan(db, userID, id);
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+
+    await db
+      .prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .run();
+    return c.json({ ok: true, writeOff: Math.abs(loaded.signedOutstanding) });
+  });
+
+  // PUT /loans/:id — notes + due_at only (financial terms locked at creation).
+  routes.put("/:id", validate("json", UpdateLoanSchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const body = c.req.valid("json");
+
+    const exists = await db
+      .prepare("SELECT id FROM accountant_loans WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{ id: number }>();
+    if (!exists) return c.json({ error: "Not found" }, 404);
+
+    const sets: string[] = [];
+    const binds: (string | null)[] = [];
+    for (const key of ["notes", "due_at"] as const) {
+      if (body[key] !== undefined) { sets.push(`${key} = ?`); binds.push(body[key] ?? null); }
+    }
+    if (sets.length === 0) return c.json({ ok: true });
+    binds.push(String(id), userID);
+    await db
+      .prepare(`UPDATE accountant_loans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
+      .bind(...binds)
+      .run();
+    return c.json({ ok: true });
   });
 
   return routes;

@@ -146,4 +146,96 @@ describe("Accountant — loan creation + list", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe("loan repayment, settle, update", () => {
+    async function repay(sessionToken: string, id: number, body: Record<string, unknown>) {
+      return SELF.fetch(`http://localhost/api/accountant/loans/${id}/repayments`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("posts a partial repayment and reduces outstanding", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      // no interest, far-future-proof: rate 0 so outstanding == principal exactly
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+
+      const res = await repay(sessionToken, id, { amount: 40000, occurred_at: "2026-06-10T00:00:00Z" });
+      expect(res.status).toBe(200);
+
+      const detail = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, { headers: await authHeaders(sessionToken) });
+      const body = (await detail.json()) as { outstanding: number; repayments: unknown[] };
+      expect(body.outstanding).toBe(60000);
+      expect(body.repayments).toHaveLength(1);
+    });
+
+    it("auto-settles the loan at exactly zero outstanding", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      const res = await repay(sessionToken, id, { amount: 100000, occurred_at: "2026-06-10T00:00:00Z" });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; settled: boolean; outstanding: number };
+      expect(body.outstanding).toBe(0);
+      expect(body.settled).toBe(true);
+      const loan = await env.DB.prepare("SELECT status FROM accountant_loans WHERE id = ?").bind(id).first<{ status: string }>();
+      expect(loan?.status).toBe("settled");
+    });
+
+    it("rejects a repayment greater than outstanding with 400 echoing outstanding", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      const res = await repay(sessionToken, id, { amount: 100001, occurred_at: "2026-06-10T00:00:00Z" });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; outstanding: number };
+      expect(body.outstanding).toBe(100000); // echoed for inline display (design §6)
+    });
+
+    it("POST /settle closes the loan with the remainder as a write-off (no synthetic entry)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM accountant_entries WHERE loan_id = ?").bind(id).first<{ n: number }>();
+      const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}/settle`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(res.status).toBe(200);
+      const loan = await env.DB.prepare("SELECT status FROM accountant_loans WHERE id = ?").bind(id).first<{ status: string }>();
+      expect(loan?.status).toBe("settled");
+      const after = await env.DB.prepare("SELECT COUNT(*) AS n FROM accountant_entries WHERE loan_id = ?").bind(id).first<{ n: number }>();
+      expect(after?.n).toBe(before?.n); // remainder is a write-off, NOT a synthetic entry
+    });
+
+    it("PUT /loans/:id edits notes + due_at only (financial terms locked)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, BASE);
+      const { id } = (await create.json()) as { id: number };
+      const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: "Renegotiated verbally", due_at: "2026-09-01T00:00:00Z" }),
+      });
+      expect(res.status).toBe(200);
+      const loan = await env.DB.prepare("SELECT notes, due_at, interest_rate FROM accountant_loans WHERE id = ?")
+        .bind(id).first<{ notes: string; due_at: string; interest_rate: number }>();
+      expect(loan?.notes).toBe("Renegotiated verbally");
+      expect(loan?.interest_rate).toBe(5); // unchanged — terms locked
+    });
+
+    it("PUT /loans/:id rejects an attempt to change interest_rate (strict schema → 400)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, BASE);
+      const { id } = (await create.json()) as { id: number };
+      const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ interest_rate: 99 }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
 });
