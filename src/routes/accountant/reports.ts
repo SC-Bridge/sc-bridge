@@ -82,7 +82,9 @@ export function reportsRoutes() {
         const drill: Record<string, string> = { from, to };
         if (spec.categories?.length) drill.category = spec.categories.join(",");
         if (spec.line === "interest_income" || spec.line === "interest_expense") drill.source = "accrual_tick,loan_fee";
-        if (spec.line === "tactical") { drill.category = "financial"; drill.tag = "tactical"; }
+        // tactical drill: category=financial only (no tag — over-show is correct; non-tactical
+        // financial expenses are an accepted over-show per drill contract ruling).
+        if (spec.line === "tactical") { drill.category = "financial"; }
         if (tag) drill.tag = tag;
         const row = { line: spec.line, label: spec.label, value, ...(tag ? { tag } : {}), drill };
         (spec.section === "revenue" ? revenue : expenses).push(row);
@@ -110,26 +112,43 @@ export function reportsRoutes() {
     if (!ok) return c.json({ error: "at must be an ISO timestamp" }, 400);
 
     // Snapshot is strictly before `at` (same half-open convention applied to the upper bound).
-    const row = await db
-      .prepare(
-        `SELECT
-           COALESCE(SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS assets,
-           COALESCE(SUM(CASE WHEN category = 'financial' AND amount < 0 THEN amount ELSE 0 END), 0) AS liabilities_signed,
-           COALESCE(SUM(amount), 0) AS net_worth
-         FROM accountant_entries
-         WHERE user_id = ? AND occurred_at < ?`,
-      )
-      .bind(userID, at)
-      .first<{ assets: number; liabilities_signed: number; net_worth: number }>();
+    // Assets: SUM where category='assets'.
+    // Liabilities: per-loan net obligations. Group loan-linked entries by loan_id, sum amounts;
+    //   loans whose net is negative are obligations — sum their absolute values.
+    //   Non-loan financial entries (tactical, no loan_id) are P&L expenses, not balance-sheet liabilities.
+    const [assetRow, liabRow] = await Promise.all([
+      db
+        .prepare(
+          `SELECT
+             COALESCE(SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS assets,
+             COALESCE(SUM(amount), 0) AS net_worth
+           FROM accountant_entries
+           WHERE user_id = ? AND occurred_at < ?`,
+        )
+        .bind(userID, at)
+        .first<{ assets: number; net_worth: number }>(),
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(ABS(net)), 0) AS liabilities
+           FROM (
+             SELECT SUM(amount) AS net
+             FROM accountant_entries
+             WHERE user_id = ? AND loan_id IS NOT NULL AND occurred_at < ?
+             GROUP BY loan_id
+           ) WHERE net < 0`,
+        )
+        .bind(userID, at)
+        .first<{ liabilities: number }>(),
+    ]);
 
-    const assets = row?.assets ?? 0;
-    const liabilities = Math.abs(row?.liabilities_signed ?? 0);
+    const assets = assetRow?.assets ?? 0;
+    const liabilities = liabRow?.liabilities ?? 0;
     return c.json({
       at,
       assets,
       liabilities,
       equity: assets - liabilities,
-      netWorth: row?.net_worth ?? 0,
+      netWorth: assetRow?.net_worth ?? 0,
     });
   });
 
@@ -211,7 +230,9 @@ export function reportsRoutes() {
     let running = opening?.bal ?? 0;
     const series = rows.results.map((r) => {
       running += r.delta;
-      return { bucket: r.bucket, equity: running };
+      // Field is `netWorth` (cumulative balance of all entries), not `equity` (assets−liabilities
+      // from /balance). Different quantities must not share a name — renamed per Finding 4.
+      return { bucket: r.bucket, netWorth: running };
     });
     return c.json({ from: period.from, to: period.to, interval: iv.interval, opening: opening?.bal ?? 0, series });
   });

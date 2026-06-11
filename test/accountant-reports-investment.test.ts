@@ -44,4 +44,12 @@ describe("Accountant — GET /reports/investment-option", () => {
     expect(typeof body.from).toBe("string");
     expect(typeof body.to).toBe("string");
   });
+
+  // ── Finding 5: partial param → 400 ───────────────────────────────────────
+
+  it("?from without ?to returns 400", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await io(sessionToken, `from=${FROM}`);
+    expect(res.status).toBe(400);
+  });
 });
