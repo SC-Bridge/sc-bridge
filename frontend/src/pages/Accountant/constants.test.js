@@ -51,8 +51,8 @@ describe('accountant constants', () => {
 });
 
 describe('ledger category constants', () => {
-  it('exposes the five categories in master-doc order', () => {
-    expect(LEDGER_CATEGORIES).toEqual(['assets', 'running_cost', 'financial', 'production', 'trading']);
+  it('exposes the six categories in master-doc order', () => {
+    expect(LEDGER_CATEGORIES).toEqual(['assets', 'running_cost', 'financial', 'production', 'trading', 'mission_income']);
   });
   it('has a label and hotkey for every category', () => {
     for (const c of LEDGER_CATEGORIES) {
@@ -62,5 +62,11 @@ describe('ledger category constants', () => {
   });
   it('default trading tags match the master doc', () => {
     expect(DEFAULT_TAGS.trading).toEqual(['minerals', 'salvage', 'harvestable', 'collectibles']);
+  });
+  it('mission_income has no default tags', () => {
+    expect(DEFAULT_TAGS.mission_income).toEqual([]);
+  });
+  it('hotkey 6 maps to mission_income', () => {
+    expect(CATEGORY_HOTKEYS[6]).toBe('mission_income');
   });
 });

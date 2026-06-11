@@ -85,6 +85,18 @@ describe('Sorting List page', () => {
     })
   })
 
+  it('categorizing into mission_income does NOT open the tag picker — categorizes immediately', async () => {
+    render(<Sorting />)
+    await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Fuel purchase'))
+    await userEvent.click(screen.getByRole('button', { name: /mission income/i }))
+    expect(screen.queryByTestId('tag-picker')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
+      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'mission_income' })
+    })
+  })
+
   it('keyboard 1-5 categorizes the selected row', async () => {
     render(<Sorting />)
     await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())

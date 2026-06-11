@@ -11,6 +11,7 @@ export const CATEGORIES = [
   "financial",
   "production",
   "trading",
+  "mission_income",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
@@ -31,6 +32,7 @@ export const DEFAULT_TAGS = {
   financial: ["tactical"],
   production: ["general", "specified"],
   trading: ["minerals", "salvage", "harvestable", "collectibles"],
+  mission_income: [], // intentionally empty — mission income is untagged
 } as const satisfies Record<Category, readonly string[]>;
 export type DefaultTagValue = (typeof DEFAULT_TAGS)[Category][number];
 

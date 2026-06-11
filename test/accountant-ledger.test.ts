@@ -111,6 +111,32 @@ describe("Accountant — /api/accountant/ledger", () => {
       });
       expect(res.status).toBe(400);
     });
+
+    it("accepts category mission_income and reflects it in the ledger", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          amount: 50000,
+          category: "mission_income",
+          occurred_at: "2026-06-01T14:00:00Z",
+          description: "Bounty mission payout",
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; id: number };
+      expect(body.ok).toBe(true);
+      expect(body.id).toBeGreaterThan(0);
+
+      const ledger = await SELF.fetch("http://localhost/api/accountant/ledger", {
+        headers: await authHeaders(sessionToken),
+      });
+      const data = (await ledger.json()) as { entries: Array<{ category: string }> };
+      expect(data.entries[0].category).toBe("mission_income");
+    });
   });
 
   describe("GET /api/accountant/ledger — filters", () => {

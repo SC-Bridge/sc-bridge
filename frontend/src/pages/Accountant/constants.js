@@ -52,7 +52,7 @@ export function isModuleAvailable(moduleMinTier, currentTier) {
 
 // --- M1: ledger domain (mirrors src/lib/accountant/constants.ts) ---
 
-export const LEDGER_CATEGORIES = ['assets', 'running_cost', 'financial', 'production', 'trading'];
+export const LEDGER_CATEGORIES = ['assets', 'running_cost', 'financial', 'production', 'trading', 'mission_income'];
 
 export const CATEGORY_LABELS = {
   assets: 'Assets',
@@ -60,15 +60,17 @@ export const CATEGORY_LABELS = {
   financial: 'Financial invest.',
   production: 'Production invest.',
   trading: 'Trading',
+  mission_income: 'Mission income',
 };
 
-// Sorting List keyboard shortcuts (UX doc B.1: "press 1-5 to categorize")
+// Sorting List keyboard shortcuts (UX doc B.1: "press 1-6 to categorize")
 export const CATEGORY_HOTKEYS = {
   1: 'assets',
   2: 'running_cost',
   3: 'financial',
   4: 'production',
   5: 'trading',
+  6: 'mission_income',
 };
 
 export const DEFAULT_TAGS = {
@@ -77,6 +79,7 @@ export const DEFAULT_TAGS = {
   financial: ['tactical'],
   production: ['general', 'specified'],
   trading: ['minerals', 'salvage', 'harvestable', 'collectibles'],
+  mission_income: [],
 };
 
 export const TAG_LABELS = {

@@ -33,7 +33,7 @@ export default function Sorting() {
     else categorize(category, undefined)
   }
 
-  // Keyboard 1-5 (UX doc B.1)
+  // Keyboard 1-6 (UX doc B.1)
   // No dependency array is intentional: re-binds every render so onKey always
   // closes over the current `selected` and `pendingCategory` state without going stale.
   useEffect(() => {
@@ -119,7 +119,7 @@ export default function Sorting() {
                 {CATEGORY_LABELS[c]}
               </button>
             ))}
-            <p className="text-xs text-gray-600 pt-1">Select rows, then click a category or press 1–5.</p>
+            <p className="text-xs text-gray-600 pt-1">Select rows, then click a category or press 1–6.</p>
           </aside>
         </div>
       )}

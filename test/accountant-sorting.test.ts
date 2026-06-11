@@ -110,4 +110,22 @@ describe("Accountant — Sorting List", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("PUT /sorting/bulk accepts mission_income and stores it", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const ids = await seedUnsorted(userId, 2);
+
+    const res = await SELF.fetch("http://localhost/api/accountant/sorting/bulk", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [ids[0]], category: "mission_income" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; updated: number };
+    expect(body).toEqual({ ok: true, updated: 1 });
+
+    const row = await env.DB.prepare("SELECT category FROM accountant_entries WHERE id = ?")
+      .bind(ids[0]).first<{ category: string }>();
+    expect(row?.category).toBe("mission_income");
+  });
 });
