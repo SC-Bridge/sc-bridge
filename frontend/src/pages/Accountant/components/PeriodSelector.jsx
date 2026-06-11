@@ -134,23 +134,18 @@ export default function PeriodSelector({ params, onChange }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-1">
-        {PRESETS.map((preset) => {
-          const active = selected === preset
-          return (
-            <button
-              key={preset}
-              onClick={() => selectPreset(preset)}
-              className={`px-3 py-1 text-sm rounded border transition-colors ${
-                active
-                  ? 'border-sc-accent bg-sc-accent/10 text-sc-accent'
-                  : 'border-sc-border text-gray-400 hover:border-sc-accent/40'
-              }`}
-            >
-              {PRESET_LABELS[preset]}
-            </button>
-          )
-        })}
+      <div>
+        {PRESETS.map((preset) => (
+          <label key={preset} className="flex items-center gap-2 text-sm text-gray-300 py-0.5">
+            <input
+              type="radio"
+              name="ledger-period"
+              checked={selected === preset}
+              onChange={() => selectPreset(preset)}
+            />
+            {PRESET_LABELS[preset]}
+          </label>
+        ))}
       </div>
 
       {showCustomInputs && (

@@ -24,22 +24,21 @@ function captureonChange() {
 
 describe('PeriodSelector', () => {
   describe('All time preset', () => {
-    it('renders All time button', () => {
+    it('renders All time radio', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      expect(screen.getByRole('button', { name: /all time/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /all time/i })).toBeInTheDocument()
     })
 
-    it('All time is active when no from/to params', () => {
+    it('All time is checked when no from/to params', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      const btn = screen.getByRole('button', { name: /all time/i })
-      expect(btn.className).toContain('border-sc-accent')
+      expect(screen.getByRole('radio', { name: /all time/i })).toBeChecked()
     })
 
     it('clicking All time removes from and to params', async () => {
       const { onChange, calls } = captureonChange()
       const params = makeParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-31T23:59:59.999Z' })
       render(<PeriodSelector params={params} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /all time/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /all time/i }))
       expect(calls.length).toBeGreaterThan(0)
       const last = calls[calls.length - 1]
       expect(last.has('from')).toBe(false)
@@ -48,15 +47,15 @@ describe('PeriodSelector', () => {
   })
 
   describe('Today preset', () => {
-    it('renders Today button', () => {
+    it('renders Today radio', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      expect(screen.getByRole('button', { name: /^today$/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /^today$/i })).toBeInTheDocument()
     })
 
     it('Today writes from ≤ to', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /^today$/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       expect(calls.length).toBeGreaterThan(0)
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
@@ -67,7 +66,7 @@ describe('PeriodSelector', () => {
     it('Today from has today\'s local date', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /^today$/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
       const now = new Date()
@@ -79,7 +78,7 @@ describe('PeriodSelector', () => {
     it('Today to is end of day (23:59:59.999 local)', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /^today$/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       const last = calls[calls.length - 1]
       const to = new Date(last.get('to'))
       expect(to.getHours()).toBe(23)
@@ -90,15 +89,15 @@ describe('PeriodSelector', () => {
   })
 
   describe('This week preset', () => {
-    it('renders This week button', () => {
+    it('renders This week radio', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      expect(screen.getByRole('button', { name: /this week/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /this week/i })).toBeInTheDocument()
     })
 
     it('This week from is Monday local (or today if today is Monday)', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /this week/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /this week/i }))
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
       const localFrom = new Date(from)
@@ -109,22 +108,22 @@ describe('PeriodSelector', () => {
     it('This week from ≤ to', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /this week/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /this week/i }))
       const last = calls[calls.length - 1]
       expect(new Date(last.get('from')).getTime()).toBeLessThanOrEqual(new Date(last.get('to')).getTime())
     })
   })
 
   describe('This month preset', () => {
-    it('renders This month button', () => {
+    it('renders This month radio', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      expect(screen.getByRole('button', { name: /this month/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /this month/i })).toBeInTheDocument()
     })
 
     it('This month from is the first of the current month', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /this month/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /this month/i }))
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
       const now = new Date()
@@ -136,23 +135,30 @@ describe('PeriodSelector', () => {
     it('This month from ≤ to', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /this month/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /this month/i }))
       const last = calls[calls.length - 1]
       expect(new Date(last.get('from')).getTime()).toBeLessThanOrEqual(new Date(last.get('to')).getTime())
     })
   })
 
   describe('Custom preset', () => {
-    it('renders Custom button', () => {
+    it('renders Custom radio', () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      expect(screen.getByRole('button', { name: /custom/i })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /custom/i })).toBeInTheDocument()
     })
 
-    it('Custom is active on deep-link with from/to params', () => {
+    it('all preset radios share the same name group (single-select)', () => {
+      render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
+      const radios = screen.getAllByRole('radio')
+      const names = radios.map((r) => r.name)
+      expect(new Set(names).size).toBe(1)
+      expect(radios).toHaveLength(5)
+    })
+
+    it('Custom is checked on deep-link with from/to params', () => {
       const params = makeParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-31T23:59:59.999Z' })
       render(<PeriodSelector params={params} onChange={() => {}} />)
-      const btn = screen.getByRole('button', { name: /custom/i })
-      expect(btn.className).toContain('border-sc-accent')
+      expect(screen.getByRole('radio', { name: /custom/i })).toBeChecked()
     })
 
     it('Custom inputs are shown when Custom is active on mount (deep-link)', () => {
@@ -178,7 +184,7 @@ describe('PeriodSelector', () => {
 
     it('clicking Custom shows the date inputs', async () => {
       render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
-      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       expect(screen.getByLabelText(/^from$/i)).toBeInTheDocument()
       expect(screen.getByLabelText(/^to$/i)).toBeInTheDocument()
     })
@@ -186,7 +192,7 @@ describe('PeriodSelector', () => {
     it('changing the From date input writes from param', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const fromInput = screen.getByLabelText(/^from$/i)
       await userEvent.type(fromInput, '2026-03-01')
       // At least one onChange call with a from param
@@ -197,7 +203,7 @@ describe('PeriodSelector', () => {
     it('changing the To date input writes to param', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const toInput = screen.getByLabelText(/^to$/i)
       await userEvent.type(toInput, '2026-03-31')
       const withTo = calls.find((p) => p.has('to'))
@@ -211,7 +217,7 @@ describe('PeriodSelector', () => {
       // timezone (the UTC-midnight parse shifts one day back when setHours applies locally).
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const fromInput = screen.getByLabelText(/^from$/i)
       await userEvent.type(fromInput, '2026-07-15')
       const withFrom = calls.find((p) => p.has('from'))
@@ -229,7 +235,7 @@ describe('PeriodSelector', () => {
     it('custom To date round-trip preserves local calendar day and sets local 23:59:59.999', async () => {
       const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const toInput = screen.getByLabelText(/^to$/i)
       await userEvent.type(toInput, '2026-07-15')
       const withTo = calls.find((p) => p.has('to'))
