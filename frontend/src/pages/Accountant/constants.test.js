@@ -59,6 +59,9 @@ describe('ledger category constants', () => {
       expect(CATEGORY_LABELS[c]).toBeTruthy();
     }
     expect(Object.values(CATEGORY_HOTKEYS)).toEqual(LEDGER_CATEGORIES);
+    // hotkey numbers must align with array position — the Sorting page renders
+    // the displayed number from the array index ({i + 1})
+    LEDGER_CATEGORIES.forEach((c, i) => expect(CATEGORY_HOTKEYS[i + 1]).toBe(c));
   });
   it('default trading tags match the master doc', () => {
     expect(DEFAULT_TAGS.trading).toEqual(['minerals', 'salvage', 'harvestable', 'collectibles']);

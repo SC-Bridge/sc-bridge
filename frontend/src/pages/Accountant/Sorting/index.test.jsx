@@ -97,14 +97,14 @@ describe('Sorting List page', () => {
     })
   })
 
-  it('keyboard 1-5 categorizes the selected row', async () => {
+  it('keyboard hotkey (6) categorizes the selected row', async () => {
     render(<Sorting />)
     await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
     await userEvent.click(screen.getByText('Fuel purchase'))
-    await userEvent.keyboard('1')
+    await userEvent.keyboard('6')
     await waitFor(() => {
       const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
-      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'assets' })
+      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'mission_income' })
     })
   })
 
