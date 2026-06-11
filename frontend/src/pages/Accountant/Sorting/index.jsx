@@ -29,8 +29,7 @@ export default function Sorting() {
 
   function onCategoryClick(category) {
     if (selected.length === 0) return
-    // Only trading requires tag selection at sorting time (UX doc B.1)
-    if (category === 'trading') setPendingCategory(category)
+    if ((DEFAULT_TAGS[category] ?? []).length > 0) setPendingCategory(category)
     else categorize(category, undefined)
   }
 

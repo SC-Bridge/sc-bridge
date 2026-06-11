@@ -37,11 +37,11 @@ describe('Sorting List page', () => {
     render(<Sorting />)
     await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
     await userEvent.click(screen.getByText('Fuel purchase'))
-    await userEvent.click(screen.getByRole('button', { name: /running cost/i }))
+    await userEvent.click(screen.getByRole('button', { name: /\bassets\b/i }))
     await waitFor(() => {
       const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
       expect(bulk).toBeTruthy()
-      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'running_cost' })
+      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'assets' })
     })
   })
 
@@ -49,12 +49,39 @@ describe('Sorting List page', () => {
     render(<Sorting />)
     await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
     await userEvent.click(screen.getByText('Fuel purchase'))
-    await userEvent.click(screen.getByRole('button', { name: /trading/i }))
+    await userEvent.click(screen.getByRole('button', { name: /\btrading\b/i }))
     expect(screen.getByTestId('tag-picker')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /minerals/i }))
     await waitFor(() => {
       const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
       expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'trading', tag: 'minerals' })
+    })
+  })
+
+  it('categorizing into running_cost opens the tag picker with its default tags', async () => {
+    render(<Sorting />)
+    await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Fuel purchase'))
+    await userEvent.click(screen.getByRole('button', { name: /running cost/i }))
+    expect(screen.getByTestId('tag-picker')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^ship consumables$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^player consumables$/i })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^ship consumables$/i }))
+    await waitFor(() => {
+      const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
+      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'running_cost', tag: 'ship_consumables' })
+    })
+  })
+
+  it('categorizing into assets does NOT open the tag picker — categorizes immediately', async () => {
+    render(<Sorting />)
+    await waitFor(() => expect(screen.getByText('Fuel purchase')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Fuel purchase'))
+    await userEvent.click(screen.getByRole('button', { name: /\bassets\b/i }))
+    expect(screen.queryByTestId('tag-picker')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const bulk = globalThis.fetch.mock.calls.find(([u]) => String(u).includes('/sorting/bulk'))
+      expect(JSON.parse(bulk[1].body)).toMatchObject({ ids: [11], category: 'assets' })
     })
   })
 
