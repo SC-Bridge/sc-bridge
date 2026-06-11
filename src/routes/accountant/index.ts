@@ -6,6 +6,7 @@ import { loansRoutes } from "./loans";
 import { sortingRoutes } from "./sorting";
 import { badgesRoutes } from "./badges";
 import { tagsRoutes } from "./tags";
+import { reportsRoutes } from "./reports";
 
 /**
  * /api/accountant — SC ERP Accountant module (design: accountant-m1-m3-design.md).
@@ -29,5 +30,6 @@ export function accountantRoutes() {
   routes.route("/sorting", sortingRoutes());
   routes.route("/badges", badgesRoutes());
   routes.route("/tags", tagsRoutes());
+  routes.route("/reports", reportsRoutes());
   return routes;
 }
