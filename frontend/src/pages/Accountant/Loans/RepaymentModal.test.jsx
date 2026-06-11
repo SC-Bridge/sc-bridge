@@ -21,13 +21,16 @@ describe('RepaymentModal', () => {
   })
 
   it('shows the echoed outstanding when the API rejects an over-payment', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: 'Repayment exceeds outstanding', outstanding: 100000 }) })
+    // Echo 98,500 from server (differs from loan.outstanding=100,000) to pin the real guarantee:
+    // the UI must show the server-echoed value, not the stale prop.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: 'Repayment exceeds outstanding', outstanding: 98500 }) })
     const onSaved = vi.fn()
     render(<RepaymentModal loan={LOAN} onClose={() => {}} onSaved={onSaved} />)
     await userEvent.type(screen.getByLabelText(/amount/i), '150000')
     await userEvent.click(screen.getByRole('button', { name: /record repayment/i }))
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
-    expect(screen.getByRole('alert')).toHaveTextContent(/100,000/)
+    // Must show the echoed value (98,500) not the prop (100,000)
+    expect(screen.getByRole('alert')).toHaveTextContent(/98,500/)
     expect(onSaved).not.toHaveBeenCalled()
   })
 })

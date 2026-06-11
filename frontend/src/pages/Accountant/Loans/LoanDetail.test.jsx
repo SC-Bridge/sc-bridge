@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import LoanDetail from './LoanDetail'
 
@@ -12,16 +13,31 @@ const DETAIL = {
   preview: { nextTickAt: '2026-07-01T00:00:00Z', projectedAmount: 2125, paybackTotal: 44625 },
 }
 
+// Settled loan with remainder (manual write-off scenario): entries still sum to 45000
+// because POST /settle does NOT add a zero-ing entry — it just flips status.
+const SETTLED_WITH_REMAINDER = {
+  loan: { id: 15, direction: 'outgoing', counterparty: '@deadbeat', principal: 50000, interest_rate: 5, interest_interval: 'monthly', started_at: '2026-06-01T00:00:00Z', status: 'settled' },
+  outstanding: 45000,
+  accrued: 0,
+  fee: 0,
+  repayments: [],
+  preview: { nextTickAt: '2026-07-01T00:00:00Z', projectedAmount: 0, paybackTotal: 0 },
+}
+
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => ({
     ok: true, status: 200,
-    json: async () => (String(url).includes('/api/accountant/loans/14') ? DETAIL : {}),
+    json: async () => {
+      if (String(url).includes('/api/accountant/loans/14')) return DETAIL
+      if (String(url).includes('/api/accountant/loans/15')) return SETTLED_WITH_REMAINDER
+      return {}
+    },
   }))
 })
 
-function renderDetail() {
+function renderDetail(id = '14') {
   return render(
-    <MemoryRouter initialEntries={['/accountant/loans/14']}>
+    <MemoryRouter initialEntries={[`/accountant/loans/${id}`]}>
       <Routes><Route path="/accountant/loans/:id" element={<LoanDetail />} /></Routes>
     </MemoryRouter>,
   )
@@ -46,7 +62,34 @@ describe('LoanDetail', () => {
   it('opens the RepaymentModal from Record repayment', async () => {
     renderDetail()
     await waitFor(() => expect(screen.getByText('@pilot42')).toBeInTheDocument())
-    const btn = screen.getByRole('button', { name: /record repayment/i })
-    expect(btn).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: /record repayment/i }))
+    expect(screen.getByRole('heading', { name: /record repayment · @pilot42/i })).toBeInTheDocument()
+  })
+
+  it('shows an actionError alert when settle fails', async () => {
+    // First call (GET) succeeds; subsequent POST /settle returns 500.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts) => {
+      if (opts?.method === 'POST') {
+        return { ok: false, status: 500, json: async () => ({ error: 'boom' }) }
+      }
+      return { ok: true, status: 200, json: async () => DETAIL }
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderDetail()
+    await waitFor(() => expect(screen.getByText('@pilot42')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /close loan/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent(/boom/)
+  })
+
+  it('settled loan with remainder shows Outstanding: 0 aUEC and Written off line', async () => {
+    renderDetail('15')
+    await waitFor(() => expect(screen.getByText('@deadbeat')).toBeInTheDocument())
+    // Outstanding paragraph must show 0 for settled loans
+    expect(screen.getByText(/^outstanding:/i).closest('p')).toHaveTextContent('0 aUEC')
+    // Written-off line only when API outstanding > 0
+    const writtenOff = screen.getByText(/written off/i)
+    expect(writtenOff).toBeInTheDocument()
+    expect(writtenOff.closest('p')).toHaveTextContent('45,000 aUEC')
   })
 })

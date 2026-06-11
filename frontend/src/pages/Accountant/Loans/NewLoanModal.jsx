@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LOAN_INTERVALS, LOAN_DIRECTIONS } from '../constants'
 import { INTERVAL_LABELS } from '../loanMath'
 import { createLoan } from '../hooks'
+import { localDatetimeNow } from '../datetime'
 
 // Loan terms (direction, counterparty, principal, rate, interval, fee, started_at) are
 // locked at creation — only notes and due_at are editable afterwards (design §4.2).
@@ -12,11 +13,7 @@ export default function NewLoanModal({ onClose, onSaved }) {
   const [interestRate, setInterestRate] = useState('')
   const [interestInterval, setInterestInterval] = useState('monthly')
   const [feeMultiplier, setFeeMultiplier] = useState('0')
-  const [startedAt, setStartedAt] = useState(() => {
-    const now = new Date()
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-    return now.toISOString().slice(0, 16)
-  })
+  const [startedAt, setStartedAt] = useState(localDatetimeNow)
   const [dueAt, setDueAt] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState(null)

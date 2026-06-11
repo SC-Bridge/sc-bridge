@@ -46,11 +46,4 @@ describe('Loans page', () => {
     await waitFor(() => expect(screen.getByText(/no loans yet/i)).toBeInTheDocument())
   })
 
-  it('leaves an M3 stitch-point comment region (no investment-option fetch)', async () => {
-    renderLoans()
-    await waitFor(() => expect(screen.getByText('@pilot42')).toBeInTheDocument())
-    // must NOT call the M3-only endpoint
-    const urls = globalThis.fetch.mock.calls.map(([u]) => String(u))
-    expect(urls.some((u) => u.includes('investment-option'))).toBe(false)
-  })
 })

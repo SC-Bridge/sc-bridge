@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { LEDGER_CATEGORIES, CATEGORY_LABELS, DEFAULT_TAGS, TAG_LABELS } from '../constants'
 import { addEntry } from '../hooks'
+import { localDatetimeNow } from '../datetime'
 
 // Manual entry per UX doc B.1; "Balance adjustment" mode posts a category-less
 // source='adjustment' row (the opening-balance mechanism, design §3.1).
@@ -10,11 +11,7 @@ export default function AddEntryModal({ onClose, onSaved, preset = {} }) {
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState(preset.category ?? '')
   const [tag, setTag] = useState(preset.tag ?? '')
-  const [occurredAt, setOccurredAt] = useState(() => {
-    const now = new Date()
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-    return now.toISOString().slice(0, 16)
-  })
+  const [occurredAt, setOccurredAt] = useState(localDatetimeNow)
   const [location, setLocation] = useState('')
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')

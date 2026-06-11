@@ -9,11 +9,15 @@ async function api(method, path, body) {
   })
   if (!res.ok) {
     let message = `${method} ${path} failed: ${res.status}`
+    let details
     try {
       const data = await res.json()
       if (data.error) message = data.error
+      details = data
     } catch { /* keep status message */ }
-    throw new Error(message)
+    const err = new Error(message)
+    err.details = details
+    throw err
   }
   return res.json()
 }

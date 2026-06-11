@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { recordRepayment } from '../hooks'
 import { formatAUEC } from '../formatAUEC'
+import { localDatetimeNow } from '../datetime'
 
 export default function RepaymentModal({ loan, onClose, onSaved }) {
   const [amount, setAmount] = useState('')
-  const [occurredAt, setOccurredAt] = useState(() => {
-    const now = new Date()
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-    return now.toISOString().slice(0, 16)
-  })
+  const [occurredAt, setOccurredAt] = useState(localDatetimeNow)
   const [notes, setNotes] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -30,7 +27,7 @@ export default function RepaymentModal({ loan, onClose, onSaved }) {
       })
       onSaved()
     } catch (err) {
-      setError(`${err.message} — outstanding is ${formatAUEC(loan.outstanding)}`)
+      setError(`${err.message} — outstanding is ${formatAUEC(err.details?.outstanding ?? loan.outstanding)}`)
       setSaving(false)
     }
   }

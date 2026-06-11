@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { formatAUEC } from '../formatAUEC'
 import { INTERVAL_SHORT } from '../loanMath'
 
-export default function LoanTable({ loans, onSelect }) {
+export default function LoanTable({ loans }) {
   const navigate = useNavigate()
   return (
     <table className="w-full text-sm" data-testid="loan-table">
@@ -18,7 +18,7 @@ export default function LoanTable({ loans, onSelect }) {
       <tbody>
         {loans.map((l) => (
           <tr key={l.id}
-            onClick={() => (onSelect ? onSelect(l) : navigate(`/accountant/loans/${l.id}`))}
+            onClick={() => navigate(`/accountant/loans/${l.id}`)}
             className="border-b border-sc-border/40 hover:bg-white/5 cursor-pointer">
             <td className="py-2 pr-3 text-gray-400">L-{String(l.id).padStart(4, '0')}</td>
             <td className="py-2 pr-3 text-white">{l.counterparty}</td>

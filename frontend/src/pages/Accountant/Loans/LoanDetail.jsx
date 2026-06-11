@@ -13,6 +13,7 @@ export default function LoanDetail() {
   const navigate = useNavigate()
   const { data, error, loading, refetch } = useLoan(id)
   const [repaying, setRepaying] = useState(false)
+  const [actionError, setActionError] = useState(null)
 
   if (loading && !data) return <LoadingState />
   if (error) {
@@ -29,8 +30,13 @@ export default function LoanDetail() {
 
   async function doSettle() {
     if (!window.confirm('Close this loan? Any remaining outstanding becomes a write-off.')) return
-    await settleLoan(loan.id)
-    refetch()
+    setActionError(null)
+    try {
+      await settleLoan(loan.id)
+      refetch()
+    } catch (err) {
+      setActionError(err.message)
+    }
   }
 
   return (
@@ -73,7 +79,12 @@ export default function LoanDetail() {
         )}
       </div>
 
+      {actionError && <div role="alert" className="panel p-4 text-sc-danger text-sm">{actionError}</div>}
+
       <p className="text-lg">Outstanding: <span className="text-white tabular-nums">{settled ? formatAUEC(0) : formatAUEC(outstanding)}</span></p>
+      {settled && outstanding > 0 && (
+        <p className="text-sm text-gray-500">Written off: {formatAUEC(outstanding)}</p>
+      )}
 
       {!settled && (
         <div className="flex gap-2">

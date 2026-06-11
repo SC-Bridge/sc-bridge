@@ -35,6 +35,8 @@ describe('Tactical page', () => {
     expect(screen.getByText('Add Entry')).toBeInTheDocument()
     // category preset to financial (Financial invest.)
     expect(screen.getByLabelText(/category/i)).toHaveValue('financial')
+    // tag preset to tactical
+    expect(screen.getByLabelText(/tag/i)).toHaveValue('tactical')
   })
 
   it('shows the empty state with no tactical investments', async () => {
