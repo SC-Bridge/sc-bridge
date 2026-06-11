@@ -82,19 +82,10 @@ describe('PeriodSelector', () => {
       await userEvent.click(screen.getByRole('button', { name: /^today$/i }))
       const last = calls[calls.length - 1]
       const to = new Date(last.get('to'))
-      // Convert to local so we can inspect local time components
-      const localTo = new Date(to.getTime())
-      // End of day in local: hours=23, minutes=59, seconds=59, ms=999
-      // We check by verifying the local date's time is 23:59:59.999
-      const localDateStr = to.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false })
-      // Simpler: verify milliseconds component is 999 and seconds+minutes+hours are end-of-day
-      // We'll just verify from <= to and that to is same date as now or later
-      expect(to.getTime()).toBeGreaterThanOrEqual(new Date(last.get('from')).getTime())
-      // to should be < tomorrow 00:00:00 local
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(0, 0, 0, 0)
-      expect(to.getTime()).toBeLessThan(tomorrow.getTime())
+      expect(to.getHours()).toBe(23)
+      expect(to.getMinutes()).toBe(59)
+      expect(to.getSeconds()).toBe(59)
+      expect(to.getMilliseconds()).toBe(999)
     })
   })
 
@@ -105,22 +96,18 @@ describe('PeriodSelector', () => {
     })
 
     it('This week from is Monday local (or today if today is Monday)', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /this week/i }))
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
-      // Day of week for Monday = 1 in getDay() (0=Sun)
-      // from should be Monday of the current calendar week
-      // We verify from <= now and from's local weekday is Monday (1)
-      // Since jsdom runs in local time, getDay() returns local day of week
       const localFrom = new Date(from)
-      expect([0, 1, 2, 3, 4, 5, 6]).toContain(localFrom.getDay()) // sanity
+      expect(localFrom.getDay()).toBe(1)
       expect(from.getTime()).toBeLessThanOrEqual(Date.now())
     })
 
     it('This week from ≤ to', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /this week/i }))
       const last = calls[calls.length - 1]
@@ -135,7 +122,7 @@ describe('PeriodSelector', () => {
     })
 
     it('This month from is the first of the current month', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /this month/i }))
       const last = calls[calls.length - 1]
@@ -147,7 +134,7 @@ describe('PeriodSelector', () => {
     })
 
     it('This month from ≤ to', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /this month/i }))
       const last = calls[calls.length - 1]
@@ -197,7 +184,7 @@ describe('PeriodSelector', () => {
     })
 
     it('changing the From date input writes from param', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /custom/i }))
       const fromInput = screen.getByLabelText(/^from$/i)
@@ -208,7 +195,7 @@ describe('PeriodSelector', () => {
     })
 
     it('changing the To date input writes to param', async () => {
-      const { onChange, calls } = captureChanged()
+      const { onChange, calls } = captureonChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('button', { name: /custom/i }))
       const toInput = screen.getByLabelText(/^to$/i)
@@ -216,11 +203,45 @@ describe('PeriodSelector', () => {
       const withTo = calls.find((p) => p.has('to'))
       expect(withTo).toBeTruthy()
     })
+
+    it('custom From date round-trip preserves local calendar day and sets local 00:00:00.000', async () => {
+      // This test pins that handleCustomDate('from', '2026-07-15') emits a `from`
+      // param whose local date components equal 2026-07-15 and whose local time is
+      // 00:00:00.000. It would fail against `new Date('2026-07-15')` in any UTC-negative
+      // timezone (the UTC-midnight parse shifts one day back when setHours applies locally).
+      const { onChange, calls } = captureonChange()
+      render(<PeriodSelector params={makeParams()} onChange={onChange} />)
+      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      const fromInput = screen.getByLabelText(/^from$/i)
+      await userEvent.type(fromInput, '2026-07-15')
+      const withFrom = calls.find((p) => p.has('from'))
+      expect(withFrom).toBeTruthy()
+      const emitted = new Date(withFrom.get('from'))
+      expect(emitted.getFullYear()).toBe(2026)
+      expect(emitted.getMonth()).toBe(6) // July = index 6
+      expect(emitted.getDate()).toBe(15)
+      expect(emitted.getHours()).toBe(0)
+      expect(emitted.getMinutes()).toBe(0)
+      expect(emitted.getSeconds()).toBe(0)
+      expect(emitted.getMilliseconds()).toBe(0)
+    })
+
+    it('custom To date round-trip preserves local calendar day and sets local 23:59:59.999', async () => {
+      const { onChange, calls } = captureonChange()
+      render(<PeriodSelector params={makeParams()} onChange={onChange} />)
+      await userEvent.click(screen.getByRole('button', { name: /custom/i }))
+      const toInput = screen.getByLabelText(/^to$/i)
+      await userEvent.type(toInput, '2026-07-15')
+      const withTo = calls.find((p) => p.has('to'))
+      expect(withTo).toBeTruthy()
+      const emitted = new Date(withTo.get('to'))
+      expect(emitted.getFullYear()).toBe(2026)
+      expect(emitted.getMonth()).toBe(6) // July = index 6
+      expect(emitted.getDate()).toBe(15)
+      expect(emitted.getHours()).toBe(23)
+      expect(emitted.getMinutes()).toBe(59)
+      expect(emitted.getSeconds()).toBe(59)
+      expect(emitted.getMilliseconds()).toBe(999)
+    })
   })
 })
-
-// Fix typo helper (used above, aliased to avoid test noise)
-function captureChanged() {
-  const calls = []
-  return { onChange: (p) => calls.push(p), calls }
-}

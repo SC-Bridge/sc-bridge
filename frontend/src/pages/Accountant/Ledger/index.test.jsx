@@ -116,4 +116,25 @@ describe('Ledger page', () => {
     await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
     expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
   })
+
+  it('clicking All time after Today removes from= and to= from fetch URL', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Today')).toBeInTheDocument())
+    // Establish a period filter first so there are params to clear.
+    await userEvent.click(screen.getByText('Today'))
+    await waitFor(() => {
+      const calls = globalThis.fetch.mock.calls
+      const lastUrl = String(calls[calls.length - 1][0])
+      expect(lastUrl).toContain('from=')
+      expect(lastUrl).toContain('to=')
+    })
+    // Now click All time and assert params are gone.
+    await userEvent.click(screen.getByText('All time'))
+    await waitFor(() => {
+      const calls = globalThis.fetch.mock.calls
+      const lastUrl = String(calls[calls.length - 1][0])
+      expect(lastUrl).not.toContain('from=')
+      expect(lastUrl).not.toContain('to=')
+    })
+  })
 })

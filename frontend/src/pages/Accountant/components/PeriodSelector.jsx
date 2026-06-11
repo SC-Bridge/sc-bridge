@@ -113,15 +113,19 @@ export default function PeriodSelector({ params, onChange }) {
   function handleCustomDate(key, dateValue) {
     // dateValue is YYYY-MM-DD from the <input type="date">
     if (!dateValue) return
+    // Parse parts and construct locally to avoid UTC-midnight off-by-one in
+    // UTC-negative timezones (new Date('YYYY-MM-DD') parses as UTC midnight,
+    // then setHours applies local time — one day early west of Greenwich).
+    const [y, m, d] = dateValue.split('-').map(Number)
     const next = new URLSearchParams(params)
     if (key === 'from') {
-      const d = new Date(dateValue)
-      d.setHours(0, 0, 0, 0)
-      next.set('from', d.toISOString())
+      const date = new Date(y, m - 1, d)
+      date.setHours(0, 0, 0, 0)
+      next.set('from', date.toISOString())
     } else {
-      const d = new Date(dateValue)
-      d.setHours(23, 59, 59, 999)
-      next.set('to', d.toISOString())
+      const date = new Date(y, m - 1, d)
+      date.setHours(23, 59, 59, 999)
+      next.set('to', date.toISOString())
     }
     onChange(next)
   }
