@@ -93,3 +93,10 @@ export const createLoan = (body) => mutate('POST', '/api/accountant/loans', body
 export const updateLoan = (id, body) => mutate('PUT', `/api/accountant/loans/${id}`, body)
 export const recordRepayment = (id, body) => mutate('POST', `/api/accountant/loans/${id}/repayments`, body)
 export const settleLoan = (id) => mutate('POST', `/api/accountant/loans/${id}/settle`)
+
+// M3 reports — read-only; query string is pre-encoded (URLSearchParams.toString()).
+export const useReportPL = (qs) => useGet(`/api/accountant/reports/pl${qs ? `?${qs}` : ''}`)
+export const useReportBalance = (qs) => useGet(`/api/accountant/reports/balance${qs ? `?${qs}` : ''}`)
+export const useReportNetWorth = (qs) => useGet(`/api/accountant/reports/net-worth${qs ? `?${qs}` : ''}`)
+export const useReportCashFlow = (qs) => useGet(`/api/accountant/reports/cash-flow${qs ? `?${qs}` : ''}`)
+export const useInvestmentOption = (qs) => useGet(`/api/accountant/reports/investment-option${qs ? `?${qs}` : ''}`)
