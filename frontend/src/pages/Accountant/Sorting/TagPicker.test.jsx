@@ -55,4 +55,24 @@ describe('TagPicker', () => {
     await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
     expect(onCancel).toHaveBeenCalled()
   })
+
+  it('trading shows "Player Trading" and "NPC Trading" buttons', () => {
+    render(<TagPicker category="trading" onPick={() => {}} onSkip={() => {}} onCancel={() => {}} />)
+    expect(screen.getByRole('button', { name: /^player trading$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^npc trading$/i })).toBeInTheDocument()
+  })
+
+  it('picking "Player Trading" sends tag: player_trading with no note', async () => {
+    const onPick = vi.fn()
+    render(<TagPicker category="trading" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: /^player trading$/i }))
+    expect(onPick).toHaveBeenCalledWith('player_trading', undefined)
+  })
+
+  it('picking "NPC Trading" sends tag: npc_trading with no note', async () => {
+    const onPick = vi.fn()
+    render(<TagPicker category="trading" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: /^npc trading$/i }))
+    expect(onPick).toHaveBeenCalledWith('npc_trading', undefined)
+  })
 })

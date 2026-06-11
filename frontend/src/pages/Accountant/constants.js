@@ -78,7 +78,7 @@ export const DEFAULT_TAGS = {
   running_cost: ['ship_consumables', 'player_consumables', 'location_invest'],
   financial: ['tactical'],
   production: ['general', 'specified'],
-  trading: ['minerals', 'salvage', 'harvestable', 'collectibles'],
+  trading: ['minerals', 'salvage', 'harvestable', 'collectibles', 'player_trading', 'npc_trading'],
   mission_income: [],
 };
 
@@ -93,6 +93,8 @@ export const TAG_LABELS = {
   salvage: 'Salvage',
   harvestable: 'Harvestable',
   collectibles: 'Collectibles',
+  player_trading: 'Player Trading',
+  npc_trading: 'NPC Trading',
 };
 
 export const SOURCE_LABELS = {

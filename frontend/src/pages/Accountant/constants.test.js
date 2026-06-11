@@ -64,7 +64,7 @@ describe('ledger category constants', () => {
     LEDGER_CATEGORIES.forEach((c, i) => expect(CATEGORY_HOTKEYS[i + 1]).toBe(c));
   });
   it('default trading tags match the master doc', () => {
-    expect(DEFAULT_TAGS.trading).toEqual(['minerals', 'salvage', 'harvestable', 'collectibles']);
+    expect(DEFAULT_TAGS.trading).toEqual(['minerals', 'salvage', 'harvestable', 'collectibles', 'player_trading', 'npc_trading']);
   });
   it('mission_income has no default tags', () => {
     expect(DEFAULT_TAGS.mission_income).toEqual([]);

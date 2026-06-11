@@ -31,7 +31,7 @@ export const DEFAULT_TAGS = {
   running_cost: ["ship_consumables", "player_consumables", "location_invest"],
   financial: ["tactical"],
   production: ["general", "specified"],
-  trading: ["minerals", "salvage", "harvestable", "collectibles"],
+  trading: ["minerals", "salvage", "harvestable", "collectibles", "player_trading", "npc_trading"],
   mission_income: [], // intentionally empty — mission income is untagged
 } as const satisfies Record<Category, readonly string[]>;
 export type DefaultTagValue = (typeof DEFAULT_TAGS)[Category][number];
