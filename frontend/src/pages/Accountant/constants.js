@@ -106,3 +106,11 @@ export const SOURCE_LABELS = {
   loan_repayment: 'Repayment',
   accrual_tick: 'Accrual tick',
 };
+
+// --- M2: loan domain ---
+export const LOAN_INTERVALS = ['hourly', 'daily', 'weekly', 'monthly'];
+
+export const LOAN_DIRECTIONS = [
+  { value: 'outgoing', label: 'Outgoing (I am the lender)' },
+  { value: 'incoming', label: 'Incoming (I am the borrower)' },
+];
