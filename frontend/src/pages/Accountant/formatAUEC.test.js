@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatAUEC, signClass } from './formatAUEC'
+import { formatAUEC, signClass, toneBySign } from './formatAUEC'
 
 describe('formatAUEC', () => {
   it('formats with thousands separators', () => {
@@ -15,6 +15,11 @@ describe('formatAUEC', () => {
     expect(signClass(5)).toBe('text-sc-success')
     expect(signClass(-5)).toBe('text-sc-danger')
     expect(signClass(0)).toBe('text-gray-400')
+  })
+  it('toneBySign maps positive/negative/zero to tone strings', () => {
+    expect(toneBySign(100)).toBe('positive')
+    expect(toneBySign(-100)).toBe('negative')
+    expect(toneBySign(0)).toBe('neutral')
   })
 })
 

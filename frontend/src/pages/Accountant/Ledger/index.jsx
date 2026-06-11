@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react'
 import PageHeader from '../../../components/PageHeader'
 import LoadingState from '../../../components/LoadingState'
 import { useLedger } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, toneBySign } from '../formatAUEC'
 import FilterPanel, { DEFAULT_SOURCES } from './FilterPanel'
 import EntryTable from './EntryTable'
 import EntryDetail from './EntryDetail'
@@ -19,12 +19,6 @@ function buildQuery(params) {
     for (const s of DEFAULT_SOURCES) query.append('source', s)
   }
   return query.toString()
-}
-
-function toneBySign(amount) {
-  if (amount > 0) return 'positive'
-  if (amount < 0) return 'negative'
-  return 'neutral'
 }
 
 export default function Ledger() {

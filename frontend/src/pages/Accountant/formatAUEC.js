@@ -12,3 +12,9 @@ export function signClass(amount) {
   if (amount < 0) return 'text-sc-danger'
   return 'text-gray-400'
 }
+
+export function toneBySign(amount) {
+  if (amount > 0) return 'positive'
+  if (amount < 0) return 'negative'
+  return 'neutral'
+}

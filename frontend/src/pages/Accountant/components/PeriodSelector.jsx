@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useId } from 'react'
 
 // ---------------------------------------------------------------------------
 // Date boundary helpers — all boundaries in local time, emitted as UTC ISO.
@@ -86,6 +86,7 @@ function deriveInitialPreset(params) {
 // FilterPanel contract: params (URLSearchParams) in; construct new URLSearchParams,
 // mutate, call onChange(next).
 export default function PeriodSelector({ params, onChange }) {
+  const groupId = useId()
   const [selected, setSelected] = useState(() => deriveInitialPreset(params))
 
   function selectPreset(preset) {
@@ -117,13 +118,12 @@ export default function PeriodSelector({ params, onChange }) {
     // UTC-negative timezones (new Date('YYYY-MM-DD') parses as UTC midnight,
     // then setHours applies local time — one day early west of Greenwich).
     const [y, m, d] = dateValue.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
     const next = new URLSearchParams(params)
     if (key === 'from') {
-      const date = new Date(y, m - 1, d)
-      date.setHours(0, 0, 0, 0)
+      // new Date(y, m-1, d) already yields local midnight — no setHours needed
       next.set('from', date.toISOString())
     } else {
-      const date = new Date(y, m - 1, d)
       date.setHours(23, 59, 59, 999)
       next.set('to', date.toISOString())
     }
@@ -139,7 +139,7 @@ export default function PeriodSelector({ params, onChange }) {
           <label key={preset} className="flex items-center gap-2 text-sm text-gray-300 py-0.5">
             <input
               type="radio"
-              name="ledger-period"
+              name={groupId}
               checked={selected === preset}
               onChange={() => selectPreset(preset)}
             />

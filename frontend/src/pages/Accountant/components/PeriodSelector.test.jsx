@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import PeriodSelector from './PeriodSelector'
@@ -13,7 +13,7 @@ function makeParams(obj = {}) {
   return p
 }
 
-function captureonChange() {
+function captureOnChange() {
   const calls = []
   return { onChange: (p) => calls.push(p), calls }
 }
@@ -35,7 +35,7 @@ describe('PeriodSelector', () => {
     })
 
     it('clicking All time removes from and to params', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       const params = makeParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-31T23:59:59.999Z' })
       render(<PeriodSelector params={params} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /all time/i }))
@@ -53,7 +53,7 @@ describe('PeriodSelector', () => {
     })
 
     it('Today writes from ≤ to', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       expect(calls.length).toBeGreaterThan(0)
@@ -64,7 +64,7 @@ describe('PeriodSelector', () => {
     })
 
     it('Today from has today\'s local date', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       const last = calls[calls.length - 1]
@@ -76,7 +76,7 @@ describe('PeriodSelector', () => {
     })
 
     it('Today to is end of day (23:59:59.999 local)', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       const last = calls[calls.length - 1]
@@ -95,18 +95,17 @@ describe('PeriodSelector', () => {
     })
 
     it('This week from is Monday local (or today if today is Monday)', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /this week/i }))
       const last = calls[calls.length - 1]
       const from = new Date(last.get('from'))
-      const localFrom = new Date(from)
-      expect(localFrom.getDay()).toBe(1)
+      expect(from.getDay()).toBe(1)
       expect(from.getTime()).toBeLessThanOrEqual(Date.now())
     })
 
     it('This week from ≤ to', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /this week/i }))
       const last = calls[calls.length - 1]
@@ -121,7 +120,7 @@ describe('PeriodSelector', () => {
     })
 
     it('This month from is the first of the current month', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /this month/i }))
       const last = calls[calls.length - 1]
@@ -133,7 +132,7 @@ describe('PeriodSelector', () => {
     })
 
     it('This month from ≤ to', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /this month/i }))
       const last = calls[calls.length - 1]
@@ -170,16 +169,22 @@ describe('PeriodSelector', () => {
 
     it('Custom date inputs are prefilled from URL params on mount', () => {
       // from=2026-01-05 (local midnight), to=2026-01-20 (end of day)
-      const params = makeParams({
-        from: '2026-01-05T00:00:00.000Z',
-        to: '2026-01-20T23:59:59.999Z',
-      })
+      const fromIso = '2026-01-05T00:00:00.000Z'
+      const toIso = '2026-01-20T23:59:59.999Z'
+      const params = makeParams({ from: fromIso, to: toIso })
       render(<PeriodSelector params={params} onChange={() => {}} />)
       const fromInput = screen.getByLabelText(/^from$/i)
       const toInput = screen.getByLabelText(/^to$/i)
-      // The input value is a date string derived from the URL param — we just check it's non-empty
-      expect(fromInput.value).toBeTruthy()
-      expect(toInput.value).toBeTruthy()
+      // Derive the expected input values using the same local-date logic as the component.
+      function isoToDateInput(iso) {
+        const d = new Date(iso)
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
+      }
+      expect(fromInput.value).toBe(isoToDateInput(fromIso))
+      expect(toInput.value).toBe(isoToDateInput(toIso))
     })
 
     it('clicking Custom shows the date inputs', async () => {
@@ -189,33 +194,12 @@ describe('PeriodSelector', () => {
       expect(screen.getByLabelText(/^to$/i)).toBeInTheDocument()
     })
 
-    it('changing the From date input writes from param', async () => {
-      const { onChange, calls } = captureonChange()
-      render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
-      const fromInput = screen.getByLabelText(/^from$/i)
-      await userEvent.type(fromInput, '2026-03-01')
-      // At least one onChange call with a from param
-      const withFrom = calls.find((p) => p.has('from'))
-      expect(withFrom).toBeTruthy()
-    })
-
-    it('changing the To date input writes to param', async () => {
-      const { onChange, calls } = captureonChange()
-      render(<PeriodSelector params={makeParams()} onChange={onChange} />)
-      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
-      const toInput = screen.getByLabelText(/^to$/i)
-      await userEvent.type(toInput, '2026-03-31')
-      const withTo = calls.find((p) => p.has('to'))
-      expect(withTo).toBeTruthy()
-    })
-
     it('custom From date round-trip preserves local calendar day and sets local 00:00:00.000', async () => {
       // This test pins that handleCustomDate('from', '2026-07-15') emits a `from`
       // param whose local date components equal 2026-07-15 and whose local time is
       // 00:00:00.000. It would fail against `new Date('2026-07-15')` in any UTC-negative
       // timezone (the UTC-midnight parse shifts one day back when setHours applies locally).
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const fromInput = screen.getByLabelText(/^from$/i)
@@ -233,7 +217,7 @@ describe('PeriodSelector', () => {
     })
 
     it('custom To date round-trip preserves local calendar day and sets local 23:59:59.999', async () => {
-      const { onChange, calls } = captureonChange()
+      const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
       const toInput = screen.getByLabelText(/^to$/i)
