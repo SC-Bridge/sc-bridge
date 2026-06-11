@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, HandCoins } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, Coins } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -173,7 +173,7 @@ const authNavItems = [
       { to: '/accountant/settings', icon: SettingsIcon, label: 'Settings' },
       { to: '/accountant/ledger', icon: BookMarked, label: 'Ledger', minTier: 'easy' },
       { to: '/accountant/sorting', icon: ClipboardList, label: 'Sorting List', minTier: 'easy', badge: 'sorting' },
-      { to: '/accountant/loans', icon: HandCoins, label: 'Loans', minTier: 'industrial', badge: 'loans' },
+      { to: '/accountant/loans', icon: Coins, label: 'Loans', minTier: 'industrial', badge: 'loans' },
       { to: '/accountant/tactical', icon: Target, label: 'Tactical', minTier: 'industrial' },
     ],
   },
