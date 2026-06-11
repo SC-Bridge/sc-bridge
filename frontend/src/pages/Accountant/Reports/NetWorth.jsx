@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import LoadingState from '../../../components/LoadingState'
 import PeriodSelector from '../components/PeriodSelector'
+import IntervalSelector from '../components/IntervalSelector'
 import SummaryCards from '../components/SummaryCards'
 import { GradientArea } from './ReportChart'
 import { useReportNetWorth } from '../hooks'
@@ -16,6 +17,7 @@ export default function NetWorth() {
   const { data, error, loading, refetch } = useReportNetWorth(qs)
 
   function onPeriod(next) { setParams(next) }
+  function onInterval(next) { setParams(next) }
 
   // Current equity = last point in series; delta vs period start (opening).
   const lastPoint = data?.series?.at(-1)
@@ -35,7 +37,13 @@ export default function NetWorth() {
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader title="NET WORTH" subtitle="Cumulative equity over time" />
-      <div className="panel p-4"><PeriodSelector params={params} onChange={onPeriod} /></div>
+      <div className="panel p-4 space-y-3">
+        <PeriodSelector params={params} onChange={onPeriod} />
+        <div className="border-t border-sc-border pt-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider mr-2">Interval</span>
+          <IntervalSelector params={params} onChange={onInterval} />
+        </div>
+      </div>
       {loading && !data ? <LoadingState /> : data && (
         <>
           <SummaryCards cards={[

@@ -19,6 +19,13 @@ describe('reportWindow helpers', () => {
       expect(a.to).toBe(b.to)
       expect(a.qs).toBe(b.qs)
     })
+
+    it('returns identical strings on two calls with interval param', () => {
+      const p = new URLSearchParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-07-01T00:00:00.000Z', interval: 'daily' })
+      const a = reportWindowFromParams(p)
+      const b = reportWindowFromParams(p)
+      expect(a.qs).toBe(b.qs)
+    })
   })
 
   describe('params override defaults', () => {
@@ -33,6 +40,25 @@ describe('reportWindow helpers', () => {
       const { from, to } = reportWindowFromParams(new URLSearchParams())
       expect(from).toBe(DEFAULT_FROM)
       expect(to).toBe(DEFAULT_TO)
+    })
+  })
+
+  describe('interval passthrough', () => {
+    it('includes interval in qs when interval param is present', () => {
+      const p = new URLSearchParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-07-01T00:00:00.000Z', interval: 'daily' })
+      const { qs } = reportWindowFromParams(p)
+      expect(qs).toContain('interval=daily')
+    })
+
+    it('omits interval from qs when interval param is absent', () => {
+      const p = new URLSearchParams({ from: '2026-01-01T00:00:00.000Z', to: '2026-07-01T00:00:00.000Z' })
+      const { qs } = reportWindowFromParams(p)
+      expect(qs).not.toContain('interval')
+    })
+
+    it('always omits interval from qs when no params at all', () => {
+      const { qs } = reportWindowFromParams(new URLSearchParams())
+      expect(qs).not.toContain('interval')
     })
   })
 

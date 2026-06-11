@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import LoadingState from '../../../components/LoadingState'
 import PeriodSelector from '../components/PeriodSelector'
+import IntervalSelector from '../components/IntervalSelector'
 import SummaryCards from '../components/SummaryCards'
 import { PairedBarsLine } from './ReportChart'
 import { useReportCashFlow } from '../hooks'
@@ -16,6 +17,7 @@ export default function CashFlow() {
   const { data, error, loading, refetch } = useReportCashFlow(qs)
 
   function onPeriod(next) { setParams(next) }
+  function onInterval(next) { setParams(next) }
 
   // Aggregate summary totals from the series.
   const totalIn = data?.series?.reduce((s, r) => s + r.in, 0) ?? 0
@@ -35,7 +37,13 @@ export default function CashFlow() {
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader title="CASH FLOW" subtitle="In, out, and net liquidity over a period" />
-      <div className="panel p-4"><PeriodSelector params={params} onChange={onPeriod} /></div>
+      <div className="panel p-4 space-y-3">
+        <PeriodSelector params={params} onChange={onPeriod} />
+        <div className="border-t border-sc-border pt-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider mr-2">Interval</span>
+          <IntervalSelector params={params} onChange={onInterval} />
+        </div>
+      </div>
       {loading && !data ? <LoadingState /> : data && (
         <>
           <SummaryCards cards={[

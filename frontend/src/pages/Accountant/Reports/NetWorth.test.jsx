@@ -57,4 +57,30 @@ describe('Net Worth page', () => {
     expect(url).toContain('from=')
     expect(url).toContain('to=')
   })
+
+  it('includes interval=daily in fetch URL when interval=daily param is set', async () => {
+    const fetched = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      fetched.push(String(url))
+      return { ok: true, status: 200, json: async () => BODY }
+    })
+    render(<MemoryRouter initialEntries={['/?interval=daily']}><NetWorth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const nwUrls = fetched.filter((u) => u.includes('/reports/net-worth'))
+    expect(nwUrls.length).toBeGreaterThan(0)
+    expect(nwUrls.some((u) => u.includes('interval=daily'))).toBe(true)
+  })
+
+  it('omits interval from fetch URL when no interval param is set (default)', async () => {
+    const fetched = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      fetched.push(String(url))
+      return { ok: true, status: 200, json: async () => BODY }
+    })
+    render(<MemoryRouter><NetWorth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const nwUrls = fetched.filter((u) => u.includes('/reports/net-worth'))
+    expect(nwUrls.length).toBeGreaterThan(0)
+    expect(nwUrls.every((u) => !u.includes('interval='))).toBe(true)
+  })
 })

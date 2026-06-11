@@ -44,4 +44,30 @@ describe('Cash Flow page', () => {
     expect(url).toContain('from=')
     expect(url).toContain('to=')
   })
+
+  it('includes interval=daily in fetch URL when interval=daily param is set', async () => {
+    const fetched = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      fetched.push(String(url))
+      return { ok: true, status: 200, json: async () => BODY }
+    })
+    render(<MemoryRouter initialEntries={['/?interval=daily']}><CashFlow /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const cfUrls = fetched.filter((u) => u.includes('/reports/cash-flow'))
+    expect(cfUrls.length).toBeGreaterThan(0)
+    expect(cfUrls.some((u) => u.includes('interval=daily'))).toBe(true)
+  })
+
+  it('omits interval from fetch URL when no interval param is set (default)', async () => {
+    const fetched = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      fetched.push(String(url))
+      return { ok: true, status: 200, json: async () => BODY }
+    })
+    render(<MemoryRouter><CashFlow /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const cfUrls = fetched.filter((u) => u.includes('/reports/cash-flow'))
+    expect(cfUrls.length).toBeGreaterThan(0)
+    expect(cfUrls.every((u) => !u.includes('interval='))).toBe(true)
+  })
 })
