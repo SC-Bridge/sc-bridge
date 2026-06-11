@@ -101,13 +101,17 @@ export function reportsRoutes() {
     });
   });
 
-  // GET /reports/balance?at= — cost-basis snapshot (owner decision 2026-06-11).
+  // GET /reports/balance?at= — cost-basis snapshot (owner decision 2026-06-11;
+  // controller ruling on equity 2026-06-11).
   // Semantics:
   //   cash     = SUM(amount) over ALL entries (ledger balance).
   //   holdings = −SUM(amount) over category='assets' entries (purchase −X → holding +X at cost).
-  //   assets   = cash + holdings  [identity: equals SUM(amount) over non-asset entries].
-  //   liabilities = per-loan net obligations (unchanged).
-  //   equity   = assets − liabilities  (replaces the old `netWorth` field).
+  //   equity   = cash + holdings — deliberately NO liabilities subtraction. Loans are booked
+  //              obligation-style: an incoming principal is a NEGATIVE entry, so the debt is
+  //              already inside cash. Subtracting liabilities on top would count the same debt
+  //              twice (equity −200k for a 100k loan). Do not "fix" this by reintroducing it.
+  //   liabilities = per-loan negative nets (display figure, unchanged).
+  //   assets   = equity + liabilities — so Assets − Liabilities = Equity holds by construction.
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -146,15 +150,15 @@ export function reportsRoutes() {
 
     const cash = holdingRow?.cash ?? 0;
     const holdings = holdingRow?.holdings ?? 0;
-    const assets = cash + holdings;
+    const equity = cash + holdings; // obligation entries self-net in cash — see semantics above
     const liabilities = liabRow?.liabilities ?? 0;
     return c.json({
       at,
       cash,
       holdings,
-      assets,
+      assets: equity + liabilities,
       liabilities,
-      equity: assets - liabilities,
+      equity,
     });
   });
 
@@ -205,8 +209,11 @@ export function reportsRoutes() {
   });
 
   // GET /reports/net-worth?from&to&interval — cumulative equity per bucket.
-  // Owner decision 2026-06-11: series tracks equity (non-asset entries − liabilities), not raw ledger sum.
+  // Owner decision 2026-06-11: series tracks equity = cumulative SUM(non-asset entries).
   // Asset purchases cancel against holdings: equity is unchanged by a pure buy; income/expenses move it.
+  // Controller ruling: NO per-bucket liabilities subtraction — obligation-style loan entries
+  // self-net inside the cumulative sum; subtracting liabilities would double-count the debt.
+  // This matches /balance equity (cash + holdings = SUM(non-asset)) at every bucket cutoff.
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -242,44 +249,10 @@ export function reportsRoutes() {
       .bind(userID, from, to)
       .all<{ bucket: string; delta: number }>();
 
-    // Fetch all loan-linked entries once; compute per-loan net liabilities at each bucket cutoff in memory.
-    // This mirrors the /balance liabilities computation, applied per-bucket.
-    const loanEntries = await db
-      .prepare(
-        `SELECT loan_id, amount, occurred_at
-         FROM accountant_entries
-         WHERE user_id = ? AND loan_id IS NOT NULL`,
-      )
-      .bind(userID)
-      .all<{ loan_id: number; amount: number; occurred_at: string }>();
-
-    // liabilitiesAt: per-loan net computed from all loan entries with occurred_at < cutoff.
-    // Loans whose net is negative are obligations — sum their absolute values.
-    const liabilitiesAt = (cutoff: string): number => {
-      const loanNets = new Map<number, number>();
-      for (const e of loanEntries.results) {
-        if (e.occurred_at < cutoff) {
-          loanNets.set(e.loan_id, (loanNets.get(e.loan_id) ?? 0) + e.amount);
-        }
-      }
-      let liab = 0;
-      for (const net of loanNets.values()) {
-        if (net < 0) liab += Math.abs(net);
-      }
-      return liab;
-    };
-
-    // Cutoff for bucket[i] = next bucket's label (if it exists) else period.to.
-    // SQLite TEXT comparison: "2026-06-02" < "2026-06-02T..." is TRUE, so the next bucket label
-    // as a bare date string correctly excludes all entries whose occurred_at falls in that bucket.
-    const bucketLabels = rows.results.map((r) => r.bucket);
-    const bucketCutoff = (idx: number): string =>
-      idx + 1 < bucketLabels.length ? bucketLabels[idx + 1] : to;
-
     let running = opening?.bal ?? 0;
-    const series = rows.results.map((r, idx) => {
+    const series = rows.results.map((r) => {
       running += r.delta;
-      return { bucket: r.bucket, netWorth: running - liabilitiesAt(bucketCutoff(idx)) };
+      return { bucket: r.bucket, netWorth: running };
     });
     return c.json({ from, to, interval: iv.interval, opening: opening?.bal ?? 0, series });
   });
