@@ -6,10 +6,14 @@ import SummaryCards from '../components/SummaryCards'
 import { PairedBarsLine } from './ReportChart'
 import { useReportCashFlow } from '../hooks'
 import { formatAUEC, toneBySign } from '../formatAUEC'
+import { reportWindowFromParams } from './reportWindow'
 
 export default function CashFlow() {
   const [params, setParams] = useSearchParams()
-  const { data, error, loading, refetch } = useReportCashFlow(params.toString())
+  // Always send from & to — fall back to the wide default when no params are set
+  // so the API never sees an empty query string ("from and to are required" fix).
+  const { qs } = reportWindowFromParams(params)
+  const { data, error, loading, refetch } = useReportCashFlow(qs)
 
   function onPeriod(next) { setParams(next) }
 

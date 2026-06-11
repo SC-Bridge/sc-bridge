@@ -26,4 +26,19 @@ describe('P&L page', () => {
     expect(link.getAttribute('href')).toContain('/accountant/ledger?')
     expect(link.getAttribute('href')).toContain('category=trading')
   })
+
+  // Default-load test: with no URL params the page must pass from & to to the API
+  // (empty query string → "from and to are required" server error on real API).
+  it('includes from= and to= in the fetch URL on default load with no URL params', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => PL_BODY,
+    }))
+    render(<MemoryRouter initialEntries={['/accountant/reports/pl']}><PL /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Trading income')).toBeInTheDocument())
+    const plCalls = spy.mock.calls.filter(([url]) => String(url).includes('/reports/pl'))
+    expect(plCalls.length).toBeGreaterThan(0)
+    const url = String(plCalls[0][0])
+    expect(url).toContain('from=')
+    expect(url).toContain('to=')
+  })
 })

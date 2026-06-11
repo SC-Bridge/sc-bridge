@@ -29,4 +29,19 @@ describe('Cash Flow page', () => {
     render(<MemoryRouter><CashFlow /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText(/no cash flow data for this period/i)).toBeInTheDocument())
   })
+
+  // Default-load test: with no URL params the page must pass from & to to the API
+  // (empty query string → "from and to are required" server error on real API).
+  it('includes from= and to= in the fetch URL on default load with no URL params', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => BODY,
+    }))
+    render(<MemoryRouter><CashFlow /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const cfCalls = spy.mock.calls.filter(([url]) => String(url).includes('/reports/cash-flow'))
+    expect(cfCalls.length).toBeGreaterThan(0)
+    const url = String(cfCalls[0][0])
+    expect(url).toContain('from=')
+    expect(url).toContain('to=')
+  })
 })

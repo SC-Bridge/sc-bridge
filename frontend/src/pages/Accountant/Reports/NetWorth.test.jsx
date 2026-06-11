@@ -42,4 +42,19 @@ describe('Net Worth page', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
+
+  // Default-load test: with no URL params the page must pass from & to to the API
+  // (empty query string → "from and to are required" server error on real API).
+  it('includes from= and to= in the fetch URL on default load with no URL params', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => BODY,
+    }))
+    render(<MemoryRouter><NetWorth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('2026-06-01')).toBeInTheDocument())
+    const nwCalls = spy.mock.calls.filter(([url]) => String(url).includes('/reports/net-worth'))
+    expect(nwCalls.length).toBeGreaterThan(0)
+    const url = String(nwCalls[0][0])
+    expect(url).toContain('from=')
+    expect(url).toContain('to=')
+  })
 })

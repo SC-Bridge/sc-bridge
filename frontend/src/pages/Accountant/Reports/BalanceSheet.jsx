@@ -7,19 +7,13 @@ import { StatementSection } from './StatementSection'
 import { CategoryDonut } from './ReportChart'
 import { useReportBalance } from '../hooks'
 import { formatAUEC } from '../formatAUEC'
-
-// Derive the `at` query parameter from the period selector's `to` param, or now+1day as fallback.
-function atFromPeriod(params) {
-  const to = params.get('to')
-  if (to) return to
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return d.toISOString()
-}
+import { reportWindowFromParams } from './reportWindow'
 
 export default function BalanceSheet() {
   const [params, setParams] = useSearchParams()
-  const at = atFromPeriod(params)
+  // Derive `at` from the stable window helper — same URL params → same string →
+  // useGet does not fire a new fetch → no infinite loop.
+  const { to: at } = reportWindowFromParams(params)
   const { data, error, loading, refetch } = useReportBalance(`at=${encodeURIComponent(at)}`)
 
   function onPeriod(next) { setParams(next) }

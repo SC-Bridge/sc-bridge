@@ -6,10 +6,14 @@ import SummaryCards from '../components/SummaryCards'
 import { GradientArea } from './ReportChart'
 import { useReportNetWorth } from '../hooks'
 import { formatAUEC, toneBySign } from '../formatAUEC'
+import { reportWindowFromParams } from './reportWindow'
 
 export default function NetWorth() {
   const [params, setParams] = useSearchParams()
-  const { data, error, loading, refetch } = useReportNetWorth(params.toString())
+  // Always send from & to — fall back to the wide default when no params are set
+  // so the API never sees an empty query string ("from and to are required" fix).
+  const { qs } = reportWindowFromParams(params)
+  const { data, error, loading, refetch } = useReportNetWorth(qs)
 
   function onPeriod(next) { setParams(next) }
 

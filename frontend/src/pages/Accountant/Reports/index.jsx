@@ -3,11 +3,12 @@ import { TrendingUp, Scale, Wallet, ArrowRightLeft } from 'lucide-react'
 import PageHeader from '../../../components/PageHeader'
 import { formatAUEC } from '../formatAUEC'
 import { useReportPL, useReportBalance, useReportCashFlow } from '../hooks'
+import { DEFAULT_FROM, DEFAULT_TO } from './reportWindow'
 
-// All-time window: epoch start → tomorrow. Computed once at module load.
-const _to = new Date(Date.now() + 86_400_000).toISOString()
-const WIDE_QS = new URLSearchParams({ from: '1970-01-01T00:00:00Z', to: _to }).toString()
-const BAL_QS = new URLSearchParams({ at: _to }).toString()
+// All-time window: epoch start → tomorrow. Shared with the report pages via
+// reportWindow.js so there is exactly one source of truth for this constant.
+const WIDE_QS = new URLSearchParams({ from: DEFAULT_FROM, to: DEFAULT_TO }).toString()
+const BAL_QS = new URLSearchParams({ at: DEFAULT_TO }).toString()
 
 export default function ReportsLanding() {
   const pl = useReportPL(WIDE_QS)
