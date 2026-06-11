@@ -38,7 +38,7 @@ describe('accountant hooks', () => {
 
   it('categorizeEntries PUTs ids + category', async () => {
     const spy = mockFetch({ ok: true, updated: 2 })
-    await categorizeEntries([1, 2], 'trading', 'minerals')
+    await categorizeEntries([1, 2], 'trading', { tag: 'minerals' })
     expect(spy).toHaveBeenCalledWith('/api/accountant/sorting/bulk', expect.objectContaining({ method: 'PUT' }))
   })
 
@@ -78,7 +78,7 @@ describe('accountant hooks', () => {
     const heard = vi.fn()
     window.addEventListener('accountant:changed', heard)
     try {
-      await categorizeEntries([1, 2], 'trading', 'minerals')
+      await categorizeEntries([1, 2], 'trading', { tag: 'minerals' })
       expect(heard).toHaveBeenCalledTimes(1)
     } finally {
       window.removeEventListener('accountant:changed', heard)

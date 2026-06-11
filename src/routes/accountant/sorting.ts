@@ -50,17 +50,18 @@ export function sortingRoutes() {
 
     const placeholders = ids.map(() => "?").join(",");
     const hasNote = note !== undefined && note !== "";
-    const sql = hasNote
-      ? `UPDATE accountant_entries SET category = ?, tag = ?, notes = ?
+    const sets: string[] = ["category = ?", "tag = ?"];
+    const binds: (string | number | null)[] = [category, tag ?? null];
+    if (hasNote) { sets.push("notes = ?"); binds.push(note!); }
+    binds.push(...ids, userID);
+    const result = await db
+      .prepare(
+        `UPDATE accountant_entries SET ${sets.join(", ")}
          WHERE id IN (${placeholders})
-           AND user_id = ? AND ${UNSORTED_PREDICATE}`
-      : `UPDATE accountant_entries SET category = ?, tag = ?
-         WHERE id IN (${placeholders})
-           AND user_id = ? AND ${UNSORTED_PREDICATE}`;
-    const binds = hasNote
-      ? [category, tag ?? null, note, ...ids, userID]
-      : [category, tag ?? null, ...ids, userID];
-    const result = await db.prepare(sql).bind(...binds).run();
+           AND user_id = ? AND ${UNSORTED_PREDICATE}`,
+      )
+      .bind(...binds)
+      .run();
 
     return c.json({ ok: true, updated: result.meta.changes ?? 0 });
   });

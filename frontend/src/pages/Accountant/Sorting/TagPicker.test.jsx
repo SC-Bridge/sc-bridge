@@ -31,7 +31,7 @@ describe('TagPicker', () => {
     render(<TagPicker category="running_cost" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
     await userEvent.type(screen.getByLabelText(/ship \/ player \/ location/i), 'Carrack')
     await userEvent.click(screen.getByRole('button', { name: /^ship consumables$/i }))
-    expect(onPick).toHaveBeenCalledWith('ship_consumables', 'Carrack')
+    expect(onPick).toHaveBeenCalledWith({ tag: 'ship_consumables', note: 'Carrack' })
   })
 
   it('"No tag" forwards the note to onSkip', async () => {
@@ -39,14 +39,14 @@ describe('TagPicker', () => {
     render(<TagPicker category="running_cost" onPick={() => {}} onSkip={onSkip} onCancel={() => {}} />)
     await userEvent.type(screen.getByLabelText(/ship \/ player \/ location/i), 'Jean-Luc')
     await userEvent.click(screen.getByRole('button', { name: /no tag/i }))
-    expect(onSkip).toHaveBeenCalledWith('Jean-Luc')
+    expect(onSkip).toHaveBeenCalledWith({ note: 'Jean-Luc' })
   })
 
   it('trading tag pick does NOT pass a note argument', async () => {
     const onPick = vi.fn()
     render(<TagPicker category="trading" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: /^minerals$/i }))
-    expect(onPick).toHaveBeenCalledWith('minerals', undefined)
+    expect(onPick).toHaveBeenCalledWith({ tag: 'minerals', note: undefined })
   })
 
   it('Cancel calls onCancel', async () => {
@@ -66,13 +66,13 @@ describe('TagPicker', () => {
     const onPick = vi.fn()
     render(<TagPicker category="trading" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: /^player trading$/i }))
-    expect(onPick).toHaveBeenCalledWith('player_trading', undefined)
+    expect(onPick).toHaveBeenCalledWith({ tag: 'player_trading', note: undefined })
   })
 
   it('picking "NPC Trading" sends tag: npc_trading with no note', async () => {
     const onPick = vi.fn()
     render(<TagPicker category="trading" onPick={onPick} onSkip={() => {}} onCancel={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: /^npc trading$/i }))
-    expect(onPick).toHaveBeenCalledWith('npc_trading', undefined)
+    expect(onPick).toHaveBeenCalledWith({ tag: 'npc_trading', note: undefined })
   })
 })

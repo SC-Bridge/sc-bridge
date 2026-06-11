@@ -72,7 +72,7 @@ export const useTags = () => useGet('/api/accountant/tags')
 export const addEntry = (body) => mutate('POST', '/api/accountant/ledger', body)
 export const updateEntry = (id, body) => mutate('PUT', `/api/accountant/ledger/${id}`, body)
 export const deleteEntry = (id) => mutate('DELETE', `/api/accountant/ledger/${id}`)
-export const categorizeEntries = (ids, category, tag, note) =>
+export const categorizeEntries = (ids, category, { tag, note } = {}) =>
   mutate('PUT', '/api/accountant/sorting/bulk', {
     ids,
     category,

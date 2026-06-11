@@ -20,7 +20,7 @@ export default function TagPicker({ category, onPick, onSkip, onCancel }) {
           {tags.map((t) => (
             <button
               key={t}
-              onClick={() => onPick(t, showNote ? note : undefined)}
+              onClick={() => onPick({ tag: t, note: showNote ? note : undefined })}
               className="border border-sc-border rounded px-3 py-1.5 text-sm text-gray-300 hover:border-sc-accent/60"
             >
               {TAG_LABELS[t] ?? t}
@@ -44,7 +44,7 @@ export default function TagPicker({ category, onPick, onSkip, onCancel }) {
         )}
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onCancel} className="text-sm text-gray-500 px-2 py-1">Cancel</button>
-          <button onClick={() => onSkip(showNote ? note : undefined)} className="text-sm text-gray-300 px-2 py-1">No tag</button>
+          <button onClick={() => onSkip({ note: showNote ? note : undefined })} className="text-sm text-gray-300 px-2 py-1">No tag</button>
         </div>
       </div>
     </div>

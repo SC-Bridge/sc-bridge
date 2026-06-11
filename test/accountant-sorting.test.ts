@@ -178,4 +178,25 @@ describe("Accountant — Sorting List", () => {
       .bind(id).first<{ notes: string | null }>();
     expect(row?.notes).toBe("pre-existing note");
   });
+
+  it("bulk with whitespace-only note leaves existing notes untouched", async () => {
+    // Pins the zod .trim() + hasNote interaction: "   ".trim() === "" → hasNote false → notes column untouched.
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const r = await env.DB.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, notes, source_ref)
+       VALUES (?, '2026-06-01T00:00:00Z', -100, 'parsed', 'keep this note', ?)`,
+    ).bind(userId, `ws-note-${userId}`).run();
+    const id = r.meta.last_row_id as number;
+
+    const res = await SELF.fetch("http://localhost/api/accountant/sorting/bulk", {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id], category: "running_cost", note: "   " }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT notes FROM accountant_entries WHERE id = ?")
+      .bind(id).first<{ notes: string | null }>();
+    expect(row?.notes).toBe("keep this note");
+  });
 });
