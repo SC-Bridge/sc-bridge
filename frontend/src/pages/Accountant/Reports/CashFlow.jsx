@@ -4,7 +4,7 @@ import LoadingState from '../../../components/LoadingState'
 import PeriodSelector from '../components/PeriodSelector'
 import IntervalSelector from '../components/IntervalSelector'
 import SummaryCards from '../components/SummaryCards'
-import { PairedBarsLine } from './ReportChart'
+import { NetLine } from './ReportChart'
 import { useReportCashFlow } from '../hooks'
 import { formatAUEC, toneBySign } from '../formatAUEC'
 import { reportWindowFromParams } from './reportWindow'
@@ -58,7 +58,7 @@ export default function CashFlow() {
           ) : (
             <>
               <div className="panel p-4">
-                <PairedBarsLine data={data.series} />
+                <NetLine data={data.series} />
               </div>
               <div className="panel p-4 overflow-x-auto">
                 <table className="w-full text-sm">

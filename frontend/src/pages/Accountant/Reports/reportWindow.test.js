@@ -67,11 +67,10 @@ describe('reportWindow helpers', () => {
       expect(DEFAULT_FROM).toBe('1970-01-01T00:00:00.000Z')
     })
 
-    it('DEFAULT_TO is in the future (now + 1 day)', () => {
-      const tomorrow = new Date(Date.now() + 86_400_000)
-      // Allow a 5-second window around module load time
-      const diff = Math.abs(new Date(DEFAULT_TO).getTime() - tomorrow.getTime())
-      expect(diff).toBeLessThan(5_000)
+    it('DEFAULT_TO is the far-future sentinel (2999-01-01)', () => {
+      // Fixed constant — never computed at runtime so tabs open for days never
+      // go stale and silently drop new entries from all-time reports.
+      expect(DEFAULT_TO).toBe('2999-01-01T00:00:00.000Z')
     })
   })
 })

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/react'
-import { GroupedBars, CategoryDonut, GradientArea } from './ReportChart'
+import { GroupedBars, CategoryDonut, GradientArea, NetLine } from './ReportChart'
 
 // ResponsiveContainer measures the real DOM (zero-size in jsdom) and renders
 // nothing — mock it with fixed dimensions so charts actually draw and dataKey
@@ -28,6 +28,17 @@ describe('ReportChart wrappers', () => {
     const data = [{ name: 'Trading', value: 4200000 }, { name: 'Mission', value: 45000 }]
     const { container } = render(<div style={{ width: 400, height: 300 }}><CategoryDonut data={data} /></div>)
     expect(container.querySelector('.recharts-responsive-container')).toBeTruthy()
+  })
+  it('NetLine renders the net series field as a line path', () => {
+    const data = [
+      { bucket: '2026-06-01', net: 1050000 },
+      { bucket: '2026-06-02', net: -30000 },
+    ]
+    const { container } = render(<div style={{ width: 600, height: 300 }}><NetLine data={data} /></div>)
+    expect(container.querySelector('.recharts-responsive-container')).toBeTruthy()
+    const path = container.querySelector('.recharts-line-curve')
+    expect(path).toBeTruthy()
+    expect(path.getAttribute('d')).toBeTruthy()
   })
   it('GradientArea binds the netWorth series field (regression: /net-worth renamed equity → netWorth)', () => {
     const data = [

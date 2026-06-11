@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
 import PanelSection from '../../components/PanelSection'
 import { setPreferences } from '../../hooks/useAPI'
 import {
@@ -195,10 +194,3 @@ export function AccountantSettingsSection() {
   )
 }
 
-/**
- * Default export: redirect to /settings where AccountantSettingsSection is now mounted.
- * Preserves deep-link compatibility for any bookmarked /accountant or /accountant/settings URLs.
- */
-export default function AccountantSettings() {
-  return <Navigate to="/settings" replace />
-}

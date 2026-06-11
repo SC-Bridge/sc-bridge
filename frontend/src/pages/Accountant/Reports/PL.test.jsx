@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import PL from './PL'
@@ -14,6 +14,10 @@ beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ ok: true, status: 200, json: async () => PL_BODY }))
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('P&L page', () => {
   it('renders summary cards, statement sections, and a drill link to the ledger', async () => {
     render(<MemoryRouter initialEntries={['/accountant/reports/pl']}><PL /></MemoryRouter>)
@@ -25,6 +29,15 @@ describe('P&L page', () => {
     const link = screen.getByRole('link', { name: /trading income/i })
     expect(link.getAttribute('href')).toContain('/accountant/ledger?')
     expect(link.getAttribute('href')).toContain('category=trading')
+  })
+
+  it('shows error alert and Retry button on fetch failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: false, status: 500, json: async () => ({ error: 'server error' }),
+    }))
+    render(<MemoryRouter initialEntries={['/accountant/reports/pl']}><PL /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
 
   // Default-load test: with no URL params the page must pass from & to to the API

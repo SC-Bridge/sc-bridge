@@ -1,9 +1,11 @@
-// Stable, module-level default window: epoch start → now + 1 day.
-// Computed ONCE at module load — never inside a render — so the strings are
-// referentially stable and useGet (keyed on URL) never re-fires due to a new
-// timestamp on each render (the BalanceSheet infinite-fetch-loop fix).
+// Stable, module-level default window: epoch start → far future.
+// Both are fixed constants (not computed at runtime) so useGet URL keys are
+// referentially stable forever — tabs open for days never silently drop new
+// entries from "all-time" reports (the now+1d staleness fix).
+// The backend accepts any future timestamp; defaultInterval resolves monthly
+// regardless of how far out DEFAULT_TO is.
 export const DEFAULT_FROM = '1970-01-01T00:00:00.000Z'
-export const DEFAULT_TO = new Date(Date.now() + 86_400_000).toISOString()
+export const DEFAULT_TO = '2999-01-01T00:00:00.000Z'
 
 /**
  * Return { from, to, qs } for a report page.

@@ -54,7 +54,8 @@ export function GradientArea({ data }) {
   )
 }
 
-export function PairedBarsLine({ data }) {
+// NetLine — single net-value line chart (no bars; named for what it renders).
+export function NetLine({ data }) {
   return (
     <ResponsiveContainer width="100%" height={280}>
       <LineChart data={data}>

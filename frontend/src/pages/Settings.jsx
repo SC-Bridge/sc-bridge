@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useLLMConfig, setLLMConfig, testLLMConnection, usePreferences, setPreferences } from '../hooks/useAPI'
-import { Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe, Shield, FlaskConical, Wallet } from 'lucide-react'
+import { Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe, Shield, FlaskConical } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
@@ -434,11 +434,8 @@ export default function Settings() {
         variant={confirmDialog.variant}
       />
 
-      <PanelSection title="Accountant" icon={Wallet}>
-        <div className="p-5">
-          <AccountantSettingsSection />
-        </div>
-      </PanelSection>
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-500 px-1 pt-2">Accountant</h2>
+      <AccountantSettingsSection />
     </div>
   )
 }

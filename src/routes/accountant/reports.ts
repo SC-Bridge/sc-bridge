@@ -77,7 +77,6 @@ export function reportsRoutes() {
     for (const spec of STATEMENT_LINES) {
       const matches = [...lineValues.entries()].filter(([k]) => k === spec.line || k.startsWith(`${spec.line}|`));
       for (const [key, value] of matches) {
-        if (value === 0 && !["interest_income", "interest_expense"].includes(spec.line)) continue;
         const tag = lineTags.get(key) ?? null;
         const drill: Record<string, string> = { from, to };
         if (spec.categories?.length) drill.category = spec.categories.join(",");

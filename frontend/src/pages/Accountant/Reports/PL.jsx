@@ -15,15 +15,24 @@ export default function PL() {
   // Always send from & to — fall back to the wide default when no params are set
   // so the API never sees an empty query string ("from and to are required" fix).
   const { qs } = reportWindowFromParams(params)
-  const { data, error, loading } = useReportPL(qs)
+  const { data, error, loading, refetch } = useReportPL(qs)
 
   function onPeriod(next) { setParams(next) }
+
+  if (error) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        <PageHeader title="PROFIT & LOSS" subtitle="Revenue vs expenses over a period" />
+        <div role="alert" className="panel p-4 text-sc-danger text-sm">{error.message}</div>
+        <button onClick={refetch} className="text-sm text-sc-accent">Retry</button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader title="PROFIT & LOSS" subtitle="Revenue vs expenses over a period" />
       <div className="panel p-4"><PeriodSelector params={params} onChange={onPeriod} /></div>
-      {error && <div role="alert" className="panel p-4 text-sc-danger text-sm">{error.message}</div>}
       {loading && !data ? <LoadingState /> : data && (
         <>
           <SummaryCards cards={[
