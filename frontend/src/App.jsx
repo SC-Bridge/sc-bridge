@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, Coins } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, Coins, LineChart, ArrowRightLeft } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -81,6 +81,11 @@ const AccountantSorting = lazy(() => import('./pages/Accountant/Sorting'))
 const AccountantLoans = lazy(() => import('./pages/Accountant/Loans'))
 const AccountantLoanDetail = lazy(() => import('./pages/Accountant/Loans/LoanDetail'))
 const AccountantTactical = lazy(() => import('./pages/Accountant/Tactical'))
+const AccountantReports = lazy(() => import('./pages/Accountant/Reports'))
+const AccountantReportPL = lazy(() => import('./pages/Accountant/Reports/PL'))
+const AccountantReportBalance = lazy(() => import('./pages/Accountant/Reports/BalanceSheet'))
+const AccountantReportNetWorth = lazy(() => import('./pages/Accountant/Reports/NetWorth'))
+const AccountantReportCashFlow = lazy(() => import('./pages/Accountant/Reports/CashFlow'))
 
 // Game Data and Reference are public — visible to all users
 const gameDataGroup = {
@@ -171,10 +176,39 @@ const authNavItems = [
     icon: Wallet,
     items: [
       { to: '/accountant/settings', icon: SettingsIcon, label: 'Settings' },
-      { to: '/accountant/ledger', icon: BookMarked, label: 'Ledger', minTier: 'easy' },
-      { to: '/accountant/sorting', icon: ClipboardList, label: 'Sorting List', minTier: 'easy', badge: 'sorting' },
-      { to: '/accountant/loans', icon: Coins, label: 'Loans', minTier: 'industrial', badge: 'loans' },
-      { to: '/accountant/tactical', icon: Target, label: 'Tactical', minTier: 'industrial' },
+      {
+        to: '/accountant/ledger',
+        icon: BookMarked,
+        label: 'Core Financials',
+        minTier: 'easy',
+        submenu: [
+          { to: '/accountant/ledger', icon: BookMarked, label: 'Ledger' },
+          { to: '/accountant/sorting', icon: ClipboardList, label: 'Sorting List', badge: 'sorting' },
+        ],
+      },
+      {
+        to: '/accountant/loans',
+        icon: Briefcase,
+        label: 'Finance',
+        minTier: 'industrial',
+        submenu: [
+          { to: '/accountant/loans', icon: Coins, label: 'Loans', badge: 'loans' },
+          { to: '/accountant/tactical', icon: Target, label: 'Tactical' },
+        ],
+      },
+      {
+        to: '/accountant/reports',
+        icon: BarChart3,
+        label: 'Reports',
+        minTier: 'industrial',
+        submenu: [
+          { to: '/accountant/reports', icon: BarChart3, label: 'Overview' },
+          { to: '/accountant/reports/pl', icon: TrendingUp, label: 'P&L' },
+          { to: '/accountant/reports/balance', icon: Scale, label: 'Balance Sheet' },
+          { to: '/accountant/reports/net-worth', icon: LineChart, label: 'Net Worth' },
+          { to: '/accountant/reports/cash-flow', icon: ArrowRightLeft, label: 'Cash Flow' },
+        ],
+      },
     ],
   },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
@@ -271,7 +305,9 @@ function renderNavItem(item, location, expandedMenu, setExpandedMenu, onNavClick
                 }
               >
                 <sub.icon className="w-3.5 h-3.5" aria-hidden="true" />
-                <span className="font-display tracking-wide uppercase">{sub.label}</span>
+                <span className="font-display tracking-wide uppercase flex-1">{sub.label}</span>
+                {sub.badge === 'sorting' && <SortingNavBadge />}
+                {sub.badge === 'loans' && <LoansNavBadge />}
               </NavLink>
             ))}
           </div>
@@ -788,6 +824,11 @@ export default function App() {
                       <Route path="/accountant/loans" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLoans /></Suspense></RequireAuth>} />
                       <Route path="/accountant/loans/:id" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLoanDetail /></Suspense></RequireAuth>} />
                       <Route path="/accountant/tactical" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantTactical /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/reports" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReports /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/reports/pl" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportPL /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/reports/balance" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportBalance /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/reports/net-worth" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportNetWorth /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/reports/cash-flow" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportCashFlow /></Suspense></RequireAuth>} />
                       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><Admin /></RequireRole></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><UserManagement /></RequireRole></RequireAuth>} />

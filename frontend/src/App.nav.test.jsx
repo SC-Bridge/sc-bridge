@@ -17,15 +17,6 @@ describe('getNavItems — Accountant entry', () => {
     const entry = flat.find(item => item.to === '/accountant/settings')
     expect(entry).toBeUndefined()
   })
-
-  it('N3: Accountant group items have no submenus', () => {
-    const items = getNavItems('user', true, {})
-    const group = items.find(item => item.group === 'Accountant')
-    expect(group).toBeDefined()
-    for (const item of group.items) {
-      expect(item.submenu).toBeUndefined()
-    }
-  })
 })
 
 describe('Accountant nav group — tier gating', () => {
@@ -35,19 +26,19 @@ describe('Accountant nav group — tier gating', () => {
     return getNavItems('user', true, features, tier).find((i) => i.group === 'Accountant')
   }
 
-  it('renders the Accountant group with Settings, Ledger, Sorting at easy tier', () => {
+  it('renders the Accountant group with Settings and Core Financials at easy tier', () => {
     const group = accountantGroup('easy')
     expect(group).toBeTruthy()
     const labels = group.items.map((i) => i.label)
-    expect(labels).toEqual(['Settings', 'Ledger', 'Sorting List'])
+    expect(labels).toEqual(['Settings', 'Core Financials'])
   })
 
   it('defaults to easy when tier is undefined', () => {
     const group = accountantGroup(undefined)
-    expect(group.items.map((i) => i.label)).toEqual(['Settings', 'Ledger', 'Sorting List'])
+    expect(group.items.map((i) => i.label)).toEqual(['Settings', 'Core Financials'])
   })
 
-  it('tier-gated items are fully absent, not greyed', () => {
+  it('tier-gated sub-group parents are fully absent, not greyed', () => {
     const rank = { easy: 0, advanced: 1, industrial: 2 }
     for (const tier of ['easy', 'advanced', 'industrial']) {
       const group = accountantGroup(tier)
@@ -60,33 +51,44 @@ describe('Accountant nav group — tier gating', () => {
   })
 })
 
-describe('Accountant nav — M2 Finance items', () => {
-  const features = {}
-
+describe('Accountant nav — nested sub-groups (M3 nav pass, owner decision 2026-06-11)', () => {
   function accountantGroup(tier) {
-    return getNavItems('user', true, features, tier).find((i) => i.group === 'Accountant')
+    return getNavItems('user', true, {}, tier).find((i) => i.group === 'Accountant')
   }
 
-  it('hides Loans + Tactical below industrial tier', () => {
-    const group = accountantGroup('advanced')
-    const labels = group.items.map((i) => i.label)
-    expect(labels).not.toContain('Loans')
-    expect(labels).not.toContain('Tactical')
+  it('structures the group as Settings + Core Financials / Finance / Reports', () => {
+    const labels = accountantGroup('industrial').items.map((i) => i.label)
+    expect(labels).toEqual(['Settings', 'Core Financials', 'Finance', 'Reports'])
   })
 
-  it('shows Loans + Tactical at industrial tier', () => {
-    const group = accountantGroup('industrial')
-    const labels = group.items.map((i) => i.label)
-    expect(labels).toContain('Loans')
-    expect(labels).toContain('Tactical')
+  it('Core Financials (all tiers) nests Ledger + Sorting List; sorting badge survives nesting', () => {
+    const core = accountantGroup('easy').items.find((i) => i.label === 'Core Financials')
+    expect(core.submenu.map((s) => s.to)).toEqual(['/accountant/ledger', '/accountant/sorting'])
+    expect(core.submenu.find((s) => s.label === 'Sorting List').badge).toBe('sorting')
   })
 
-  it('Loans item carries a loans badge and correct route', () => {
-    const group = accountantGroup('industrial')
-    const loansItem = group.items.find((i) => i.label === 'Loans')
-    expect(loansItem).toBeDefined()
-    expect(loansItem.badge).toBe('loans')
-    expect(loansItem.to).toBe('/accountant/loans')
+  it('hides the Finance and Reports sub-groups below industrial tier (fully absent, not greyed)', () => {
+    const labels = accountantGroup('advanced').items.map((i) => i.label)
+    expect(labels).not.toContain('Finance')
+    expect(labels).not.toContain('Reports')
+    expect(accountantGroup('easy').items.map((i) => i.label)).not.toContain('Finance')
+  })
+
+  it('Finance nests Loans (loans badge survives nesting) + Tactical at UNCHANGED routes', () => {
+    const fin = accountantGroup('industrial').items.find((i) => i.label === 'Finance')
+    expect(fin.submenu.map((s) => s.to)).toEqual(['/accountant/loans', '/accountant/tactical'])
+    expect(fin.submenu.find((s) => s.label === 'Loans').badge).toBe('loans')
+  })
+
+  it('Reports nests Overview + the four report pages at the M3 routes', () => {
+    const rep = accountantGroup('industrial').items.find((i) => i.label === 'Reports')
+    expect(rep.submenu.map((s) => s.to)).toEqual([
+      '/accountant/reports',
+      '/accountant/reports/pl',
+      '/accountant/reports/balance',
+      '/accountant/reports/net-worth',
+      '/accountant/reports/cash-flow',
+    ])
   })
 })
 
