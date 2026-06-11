@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AddEntryModal from './AddEntryModal'
 
@@ -60,5 +60,18 @@ describe('AddEntryModal', () => {
     await userEvent.click(screen.getByRole('button', { name: /record/i }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('amount must be non-zero'))
     expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('shows a client-side error and makes no POST when amount is zero', async () => {
+    const onSaved = vi.fn()
+    const { container } = render(<AddEntryModal onClose={() => {}} onSaved={onSaved} />)
+    // Set amount to '0' via React state (fireEvent bypasses HTML min constraint validation)
+    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '0' } })
+    await userEvent.selectOptions(screen.getByLabelText(/category/i), 'trading')
+    // Use fireEvent.submit to bypass HTML constraint validation so our JS guard runs
+    fireEvent.submit(container.querySelector('form'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/at least 1/i))
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 })

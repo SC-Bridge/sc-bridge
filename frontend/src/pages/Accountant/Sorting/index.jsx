@@ -34,6 +34,8 @@ export default function Sorting() {
   }
 
   // Keyboard 1-5 (UX doc B.1)
+  // No dependency array is intentional: re-binds every render so onKey always
+  // closes over the current `selected` and `pendingCategory` state without going stale.
   useEffect(() => {
     function onKey(e) {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return

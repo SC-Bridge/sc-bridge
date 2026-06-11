@@ -65,7 +65,7 @@ function useGet(path, { refreshOn } = {}) {
 // queryString must be pre-encoded (e.g. URLSearchParams.toString()) — it is appended verbatim.
 export const useLedger = (queryString) =>
   useGet(`/api/accountant/ledger${queryString ? `?${queryString}` : ''}`)
-export const useSorting = () => useGet('/api/accountant/sorting')
+export const useSorting = () => useGet('/api/accountant/sorting', { refreshOn: 'accountant:changed' })
 export const useBadges = () => useGet('/api/accountant/badges', { refreshOn: 'accountant:changed' })
 export const useTags = () => useGet('/api/accountant/tags')
 

@@ -46,47 +46,53 @@ export default function EntryDetail({ entry, onClose, onSaved }) {
 
       <p className={`text-lg tabular-nums mb-4 ${signClass(entry.amount)}`}>{formatAUEC(entry.amount)}</p>
 
-      {error && <div role="alert" className="text-sm text-sc-danger mb-3">{error}</div>}
-
-      <label className="block text-sm text-gray-400 mb-1">Category</label>
-      <select
-        value={category}
-        onChange={(e) => { setCategory(e.target.value); setTag('') }}
-        className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-3"
-      >
-        <option value="">Uncategorized</option>
-        {LEDGER_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
-      </select>
-
-      {tags.length > 0 && (
+      {entry.loan_id != null ? (
+        <p className="text-sm text-gray-400">This entry is managed via its loan.</p>
+      ) : (
         <>
-          <label className="block text-sm text-gray-400 mb-1">Tag</label>
+          {error && <div role="alert" className="text-sm text-sc-danger mb-3">{error}</div>}
+
+          <label className="block text-sm text-gray-400 mb-1">Category</label>
           <select
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
+            value={category}
+            onChange={(e) => { setCategory(e.target.value); setTag('') }}
             className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-3"
           >
-            <option value="">No tag</option>
-            {tags.map((t) => <option key={t} value={t}>{TAG_LABELS[t] ?? t}</option>)}
+            <option value="">Uncategorized</option>
+            {LEDGER_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
           </select>
+
+          {tags.length > 0 && (
+            <>
+              <label className="block text-sm text-gray-400 mb-1">Tag</label>
+              <select
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-3"
+              >
+                <option value="">No tag</option>
+                {tags.map((t) => <option key={t} value={t}>{TAG_LABELS[t] ?? t}</option>)}
+              </select>
+            </>
+          )}
+
+          <label className="block text-sm text-gray-400 mb-1">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-4"
+          />
+
+          <button
+            onClick={save}
+            disabled={saving}
+            className="w-full bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded py-2 text-sm hover:bg-sc-accent/30 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
         </>
       )}
-
-      <label className="block text-sm text-gray-400 mb-1">Notes</label>
-      <textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        rows={3}
-        className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-4"
-      />
-
-      <button
-        onClick={save}
-        disabled={saving}
-        className="w-full bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded py-2 text-sm hover:bg-sc-accent/30 disabled:opacity-50"
-      >
-        {saving ? 'Saving…' : 'Save changes'}
-      </button>
     </div>
   )
 }

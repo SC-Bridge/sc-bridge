@@ -23,9 +23,13 @@ export default function AddEntryModal({ onClose, onSaved }) {
 
   async function submit(e) {
     e.preventDefault()
+    const magnitude = Math.abs(parseInt(amount, 10) || 0)
+    if (magnitude === 0) {
+      setError('Amount must be at least 1')
+      return
+    }
     setSaving(true)
     setError(null)
-    const magnitude = Math.abs(parseInt(amount, 10) || 0)
     const signed = direction === 'expense' && !adjustment ? -magnitude : magnitude
     const body = {
       amount: signed,

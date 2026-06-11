@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useLedger, useBadges, addEntry, categorizeEntries } from './hooks'
+import { useLedger, useBadges, useSorting, addEntry, categorizeEntries } from './hooks'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -83,5 +83,15 @@ describe('accountant hooks', () => {
     } finally {
       window.removeEventListener('accountant:changed', heard)
     }
+  })
+
+  it('useSorting refetches when accountant:changed fires', async () => {
+    const spy = mockFetch({ entries: [], count: 5 })
+    const { result } = renderHook(() => useSorting())
+    await waitFor(() => expect(result.current.data?.count).toBe(5))
+    spy.mockResolvedValue({ ok: true, status: 200, json: async () => ({ entries: [], count: 2 }) })
+    window.dispatchEvent(new Event('accountant:changed'))
+    await waitFor(() => expect(result.current.data?.count).toBe(2))
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 })
