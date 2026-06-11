@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { catchUpAccruals } from "../../lib/accountant/accrual";
 import { STATEMENT_LINES } from "../../lib/accountant/constants";
@@ -95,6 +96,40 @@ export function reportsRoutes() {
       revenue: { lines: revenue, total: revenueTotal },
       expenses: { lines: expenses, total: expensesTotal },
       net: revenueTotal + expensesTotal,
+    });
+  });
+
+  // GET /reports/balance?at= — assets vs liabilities snapshot (design §4.5).
+  routes.get("/balance", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    await catchUpAccruals(db, userID);
+
+    const at = c.req.query("at");
+    const ok = at && z.string().datetime({ offset: true }).safeParse(at).success;
+    if (!ok) return c.json({ error: "at must be an ISO timestamp" }, 400);
+
+    // Snapshot is strictly before `at` (same half-open convention applied to the upper bound).
+    const row = await db
+      .prepare(
+        `SELECT
+           COALESCE(SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS assets,
+           COALESCE(SUM(CASE WHEN category = 'financial' AND amount < 0 THEN amount ELSE 0 END), 0) AS liabilities_signed,
+           COALESCE(SUM(amount), 0) AS net_worth
+         FROM accountant_entries
+         WHERE user_id = ? AND occurred_at < ?`,
+      )
+      .bind(userID, at)
+      .first<{ assets: number; liabilities_signed: number; net_worth: number }>();
+
+    const assets = row?.assets ?? 0;
+    const liabilities = Math.abs(row?.liabilities_signed ?? 0);
+    return c.json({
+      at,
+      assets,
+      liabilities,
+      equity: assets - liabilities,
+      netWorth: row?.net_worth ?? 0,
     });
   });
 
