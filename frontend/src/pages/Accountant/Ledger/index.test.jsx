@@ -15,7 +15,7 @@ beforeEach(() => {
     status: 200,
     json: async () => {
       if (String(url).includes('/api/accountant/ledger')) {
-        return { entries: ENTRIES, total: 2, balance: 4600, page: 1 }
+        return { entries: ENTRIES, total: 2, balance: 4600, sum_income: 50000, sum_expense: -20000, page: 1 }
       }
       return {}
     },
@@ -41,7 +41,7 @@ describe('Ledger page', () => {
   it('shows the empty state when there are no entries', async () => {
     globalThis.fetch.mockImplementation(async () => ({
       ok: true, status: 200,
-      json: async () => ({ entries: [], total: 0, balance: 0, page: 1 }),
+      json: async () => ({ entries: [], total: 0, balance: 0, sum_income: 0, sum_expense: 0, page: 1 }),
     }))
     renderLedger()
     await waitFor(() =>
@@ -72,5 +72,48 @@ describe('Ledger page', () => {
     const calledUrl = String(globalThis.fetch.mock.calls[0][0])
     expect(calledUrl).toContain('source=parsed')
     expect(calledUrl).not.toContain('accrual_tick')
+  })
+
+  it('renders summary cards with balance, income, expenses, and net', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByTestId('summary-cards')).toBeInTheDocument())
+    // Balance card — all-time 4,600 aUEC
+    expect(screen.getByText('Balance')).toBeInTheDocument()
+    // Income card — 50,000 aUEC
+    expect(screen.getByText('Income')).toBeInTheDocument()
+    // Expenses card — -20,000 aUEC
+    expect(screen.getByText('Expenses')).toBeInTheDocument()
+    // Net card — 30,000 aUEC (50000 + -20000)
+    expect(screen.getByText('Net')).toBeInTheDocument()
+    expect(screen.getByText('30,000 aUEC')).toBeInTheDocument()
+  })
+
+  it('applies correct tone classes: income positive, expenses negative', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByTestId('summary-cards')).toBeInTheDocument())
+    // Income value should have text-sc-success class
+    const incomeValue = screen.getByText('50,000 aUEC')
+    expect(incomeValue).toHaveClass('text-sc-success')
+    // Expenses value should have text-sc-danger class
+    const expensesValue = screen.getByText('-20,000 aUEC')
+    expect(expensesValue).toHaveClass('text-sc-danger')
+  })
+
+  it('clicking Today preset makes subsequent fetch contain from= and to=', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Today')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Today'))
+    await waitFor(() => {
+      const calls = globalThis.fetch.mock.calls
+      const lastUrl = String(calls[calls.length - 1][0])
+      expect(lastUrl).toContain('from=')
+      expect(lastUrl).toContain('to=')
+    })
+  })
+
+  it('footer line does not contain Balance:', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
   })
 })

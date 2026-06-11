@@ -1,4 +1,5 @@
 import { LEDGER_CATEGORIES, CATEGORY_LABELS, SOURCE_LABELS } from '../constants'
+import PeriodSelector from '../components/PeriodSelector'
 
 // Visible sources toggle set; accrual_tick is OFF by default (locked UX decision).
 export const DEFAULT_SOURCES = ['parsed', 'manual', 'adjustment', 'loan_principal', 'loan_fee', 'loan_repayment']
@@ -25,6 +26,10 @@ export default function FilterPanel({ params, onChange }) {
 
   return (
     <aside className="w-56 shrink-0 space-y-4" data-testid="ledger-filters">
+      <div>
+        <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Period</h3>
+        <PeriodSelector params={params} onChange={onChange} />
+      </div>
       <div>
         <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Category</h3>
         {LEDGER_CATEGORIES.map((cat) => {

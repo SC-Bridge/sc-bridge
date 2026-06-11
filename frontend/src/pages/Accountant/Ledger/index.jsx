@@ -9,6 +9,7 @@ import FilterPanel, { DEFAULT_SOURCES } from './FilterPanel'
 import EntryTable from './EntryTable'
 import EntryDetail from './EntryDetail'
 import AddEntryModal from './AddEntryModal'
+import SummaryCards from '../components/SummaryCards'
 
 function buildQuery(params) {
   const query = new URLSearchParams(params)
@@ -18,6 +19,12 @@ function buildQuery(params) {
     for (const s of DEFAULT_SOURCES) query.append('source', s)
   }
   return query.toString()
+}
+
+function toneBySign(amount) {
+  if (amount > 0) return 'positive'
+  if (amount < 0) return 'negative'
+  return 'neutral'
 }
 
 export default function Ledger() {
@@ -36,7 +43,33 @@ export default function Ledger() {
     )
   }
 
-  const { entries, total, balance } = data
+  const { entries, total, balance, sum_income = 0, sum_expense = 0 } = data
+  const net = sum_income + sum_expense
+
+  const summaryCards = [
+    {
+      label: 'Balance',
+      value: formatAUEC(balance, { short: true }),
+      sub: 'all time',
+      tone: toneBySign(balance),
+    },
+    {
+      label: 'Income',
+      value: formatAUEC(sum_income, { short: true }),
+      tone: 'positive',
+    },
+    {
+      label: 'Expenses',
+      value: formatAUEC(sum_expense, { short: true }),
+      tone: 'negative',
+    },
+    {
+      label: 'Net',
+      value: formatAUEC(net, { short: true }),
+      sub: 'current filters',
+      tone: toneBySign(net),
+    },
+  ]
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -53,6 +86,8 @@ export default function Ledger() {
         }
       />
 
+      <SummaryCards cards={summaryCards} />
+
       <div className="flex gap-6">
         <FilterPanel params={params} onChange={setParams} />
         <div className="flex-1 min-w-0">
@@ -67,7 +102,7 @@ export default function Ledger() {
             <EntryTable entries={entries} onSelect={setSelected} />
           )}
           <p className="mt-3 text-sm text-gray-500">
-            Showing {entries.length} of {total} entries · Balance: <span className="text-white">{formatAUEC(balance)}</span>
+            Showing {entries.length} of {total} entries
           </p>
         </div>
       </div>
