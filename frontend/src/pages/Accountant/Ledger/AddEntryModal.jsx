@@ -4,12 +4,12 @@ import { addEntry } from '../hooks'
 
 // Manual entry per UX doc B.1; "Balance adjustment" mode posts a category-less
 // source='adjustment' row (the opening-balance mechanism, design §3.1).
-export default function AddEntryModal({ onClose, onSaved }) {
-  const [direction, setDirection] = useState('expense')
+export default function AddEntryModal({ onClose, onSaved, preset = {} }) {
+  const [direction, setDirection] = useState(preset.direction ?? 'expense')
   const [adjustment, setAdjustment] = useState(false)
   const [amount, setAmount] = useState('')
-  const [category, setCategory] = useState('')
-  const [tag, setTag] = useState('')
+  const [category, setCategory] = useState(preset.category ?? '')
+  const [tag, setTag] = useState(preset.tag ?? '')
   const [occurredAt, setOccurredAt] = useState(() => {
     const now = new Date()
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
