@@ -28,7 +28,7 @@ export default function NewLoanModal({ onClose, onSaved }) {
     setError(null)
     const body = {
       direction,
-      counterparty,
+      counterparty: counterparty.trim(),
       principal: parseInt(principal, 10),
       interest_rate: parseFloat(interestRate),
       interest_interval: interestInterval,
