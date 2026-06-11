@@ -48,7 +48,7 @@ export function GradientArea({ data }) {
         <XAxis dataKey="bucket" {...AXIS} />
         <YAxis {...AXIS} />
         <Tooltip {...TOOLTIP_STYLE} />
-        <Area type="monotone" dataKey="equity" stroke={CHART_COLORS[0]} fill="url(#nwfill)" />
+        <Area type="monotone" dataKey="netWorth" stroke={CHART_COLORS[0]} fill="url(#nwfill)" />
       </AreaChart>
     </ResponsiveContainer>
   )
