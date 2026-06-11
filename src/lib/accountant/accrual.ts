@@ -17,12 +17,12 @@ import { logEvent } from "../logger";
 // ─── interval constants ────────────────────────────────────────────────────────
 
 /** Fixed-duration seconds per interval label. Monthly = 30 days flat. */
-export const INTERVAL_SECONDS: Record<string, number> = {
+export const INTERVAL_SECONDS = {
   hourly: 3600,
   daily: 86400,
   weekly: 604800,
   monthly: 2592000, // 30 * 86400 — no calendar math, by design (§4.4)
-};
+} as const;
 
 // ─── pure math helpers ─────────────────────────────────────────────────────────
 
@@ -41,7 +41,9 @@ interface LoanWithBookmark extends LoanBase {
  */
 export function elapsedTicks(loan: LoanBase, nowMs: number): number {
   const startMs = new Date(loan.started_at).getTime();
-  const intervalMs = (INTERVAL_SECONDS[loan.interest_interval] ?? INTERVAL_SECONDS.daily) * 1000;
+  const seconds = INTERVAL_SECONDS[loan.interest_interval as keyof typeof INTERVAL_SECONDS];
+  if (seconds === undefined) throw new Error(`Unknown interest_interval: ${loan.interest_interval}`);
+  const intervalMs = seconds * 1000;
   const elapsed = (nowMs - startMs) / intervalMs;
   return elapsed <= 0 ? 0 : Math.floor(elapsed);
 }
@@ -60,7 +62,9 @@ export function nextTickAt(loan: LoanWithBookmark): string {
  */
 function tickTimestamp(started_at: string, interval: string, index: number): string {
   const startMs = new Date(started_at).getTime();
-  const intervalMs = (INTERVAL_SECONDS[interval] ?? INTERVAL_SECONDS.daily) * 1000;
+  const seconds = INTERVAL_SECONDS[interval as keyof typeof INTERVAL_SECONDS];
+  if (seconds === undefined) throw new Error(`Unknown interest_interval: ${interval}`);
+  const intervalMs = seconds * 1000;
   return new Date(startMs + index * intervalMs).toISOString();
 }
 
@@ -68,8 +72,6 @@ function tickTimestamp(started_at: string, interval: string, index: number): str
 
 interface LoanRow {
   id: number;
-  direction: string;
-  principal: number;
   interest_rate: number;
   interest_interval: string;
   started_at: string;
@@ -101,13 +103,16 @@ export async function catchUpAccruals(
   // Only open loans accrue interest.
   const loans = await db
     .prepare(
-      `SELECT id, direction, principal, interest_rate, interest_interval,
+      `SELECT id, interest_rate, interest_interval,
               started_at, last_accrued_tick
        FROM accountant_loans
        WHERE user_id = ? AND status = 'open'`,
     )
     .bind(userId)
     .all<LoanRow>();
+
+  // Accumulate statements across ALL loans — one db.batch() per catchUpAccruals call.
+  const allStmts: D1PreparedStatement[] = [];
 
   for (const loan of loans.results) {
     const due = elapsedTicks(loan, nowMs);
@@ -119,21 +124,21 @@ export async function catchUpAccruals(
     // Required for correct compounding — see flaw-fix comment above.
     let queuedSum = 0;
 
-    const stmts: D1PreparedStatement[] = [];
-
     for (let i = from; i <= due; i++) {
       const ts = tickTimestamp(loan.started_at, loan.interest_interval, i);
 
       // Committed outstanding as of this tick's timestamp.
       // Includes: principal entry + any repayments with occurred_at <= ts.
       // Does NOT yet include the in-batch ticks (they are uncommitted).
+      // user_id filter is defense-in-depth: loan_id already scopes to one user,
+      // but explicit scoping prevents data bleed if loan_id ever leaks across users.
       const committedRow = await db
         .prepare(
           `SELECT COALESCE(SUM(amount), 0) AS s
            FROM accountant_entries
-           WHERE loan_id = ? AND occurred_at <= ?`,
+           WHERE loan_id = ? AND user_id = ? AND occurred_at <= ?`,
         )
-        .bind(loan.id, ts)
+        .bind(loan.id, userId, ts)
         .first<{ s: number }>();
 
       const committedSum = committedRow?.s ?? 0;
@@ -142,15 +147,15 @@ export async function catchUpAccruals(
       // For tick 1 queuedSum is 0; for tick 2 it includes tick 1's amount, etc.
       const outstanding = committedSum + queuedSum;
 
-      // Amount: positive for outgoing loans (we are owed more), negative for
-      // incoming (we owe more). Match the sign of the principal entry.
-      const rawAmount = outstanding * (loan.interest_rate / 100);
-      const amount = Math.round(rawAmount) * (loan.direction === "incoming" ? -1 : 1);
+      // Amount: the signed outstanding already carries the correct sign (negative
+      // for incoming/liability, positive for outgoing/receivable). Applying the
+      // interest rate directly preserves that sign — no direction multiplier needed.
+      const amount = Math.round(outstanding * (loan.interest_rate / 100));
 
       // Advance the in-memory accumulator BEFORE next tick computes its base.
       queuedSum += amount;
 
-      stmts.push(
+      allStmts.push(
         db.prepare(
           `INSERT INTO accountant_entries
              (user_id, occurred_at, amount, category, source, loan_id, tick_index, description)
@@ -166,15 +171,12 @@ export async function catchUpAccruals(
       );
     }
 
-    // Advance the bookmark.
-    stmts.push(
+    // Advance the bookmark for this loan. user_id filter is defense-in-depth.
+    allStmts.push(
       db.prepare(
-        `UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ?`,
-      ).bind(due, loan.id),
+        `UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ? AND user_id = ?`,
+      ).bind(due, loan.id, userId),
     );
-
-    // One atomic batch per loan: all ticks + bookmark update together.
-    await db.batch(stmts);
 
     logEvent("accrual.catchUp", {
       loanId: loan.id,
@@ -183,5 +185,10 @@ export async function catchUpAccruals(
       to: due,
       ticksWritten: due - from + 1,
     });
+  }
+
+  // One atomic batch for the entire catch-up call (all loans combined).
+  if (allStmts.length > 0) {
+    await db.batch(allStmts);
   }
 }

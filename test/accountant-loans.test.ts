@@ -237,6 +237,31 @@ describe("Accountant — loan creation + list", () => {
       });
       expect(res.status).toBe(400);
     });
+
+    it("repaying a settled loan returns 400", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      // Create with 0 interest so outstanding == principal exactly.
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      // Fully repay → auto-settles.
+      const first = await SELF.fetch(`http://localhost/api/accountant/loans/${id}/repayments`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: 100000, occurred_at: "2026-06-10T00:00:00Z" }),
+      });
+      expect(first.status).toBe(200);
+      const firstBody = (await first.json()) as { settled: boolean };
+      expect(firstBody.settled).toBe(true);
+      // Second repayment on an already-settled loan must return 400.
+      const second = await SELF.fetch(`http://localhost/api/accountant/loans/${id}/repayments`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: 1, occurred_at: "2026-06-11T00:00:00Z" }),
+      });
+      expect(second.status).toBe(400);
+      const secondBody = (await second.json()) as { error: string };
+      expect(secondBody.error).toBe("Loan already settled");
+    });
   });
 
   describe("accrual visibility in ledger + badges", () => {

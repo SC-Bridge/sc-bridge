@@ -152,4 +152,23 @@ describe("accrual engine — pure tick math", () => {
     await catchUpAccruals(env.DB, userId, new Date("2026-07-01T00:00:00Z").getTime());
     expect((await ticks(userId, loanId)).results.length).toBe(0);
   });
+
+  it("compounds an incoming loan with NEGATIVE ticks: −100000 @10%/day → [−10000, −11000]", async () => {
+    const { userId } = await createTestUser(env.DB);
+    // seedLoan writes o.principal as-is into accountant_entries; for incoming the principal
+    // must be negative (liability) — loans.ts does sign * principal where sign = -1 for incoming.
+    const loanId = await seedLoan(userId, {
+      direction: "incoming",
+      principal: -100000, // negative principal entry matches what loans.ts writes for incoming
+      interest_rate: 10,
+      interest_interval: "daily",
+    });
+    // 2 full days elapsed since start.
+    const now = new Date("2026-06-03T00:00:01Z").getTime();
+    await catchUpAccruals(env.DB, userId, now);
+    const rows = (await ticks(userId, loanId)).results;
+    // Outstanding starts at −100000; 10% → −10000 (tick 1); −110000 * 10% → −11000 (tick 2).
+    expect(rows.map((r) => r.amount)).toEqual([-10000, -11000]);
+    expect(rows.map((r) => r.tick_index)).toEqual([1, 2]);
+  });
 });
