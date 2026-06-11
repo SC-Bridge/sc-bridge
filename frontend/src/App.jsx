@@ -75,7 +75,6 @@ const Components = lazy(() => import('./pages/Components'))
 const FpsLoadout = lazy(() => import('./pages/FpsLoadout'))
 const About = lazy(() => import('./pages/About'))
 const NotFound = lazy(() => import('./pages/NotFound'))
-const AccountantSettings = lazy(() => import('./pages/Accountant'))
 const AccountantLedger = lazy(() => import('./pages/Accountant/Ledger'))
 const AccountantSorting = lazy(() => import('./pages/Accountant/Sorting'))
 const AccountantLoans = lazy(() => import('./pages/Accountant/Loans'))
@@ -175,7 +174,19 @@ const authNavItems = [
     group: 'Accountant',
     icon: Wallet,
     items: [
-      { to: '/accountant/settings', icon: SettingsIcon, label: 'Settings' },
+      {
+        to: '/accountant/reports',
+        icon: BarChart3,
+        label: 'Reports',
+        minTier: 'industrial',
+        submenu: [
+          { to: '/accountant/reports', icon: BarChart3, label: 'Overview' },
+          { to: '/accountant/reports/pl', icon: TrendingUp, label: 'P&L' },
+          { to: '/accountant/reports/balance', icon: Scale, label: 'Balance Sheet' },
+          { to: '/accountant/reports/net-worth', icon: LineChart, label: 'Net Worth' },
+          { to: '/accountant/reports/cash-flow', icon: ArrowRightLeft, label: 'Cash Flow' },
+        ],
+      },
       {
         to: '/accountant/ledger',
         icon: BookMarked,
@@ -194,19 +205,6 @@ const authNavItems = [
         submenu: [
           { to: '/accountant/loans', icon: Coins, label: 'Loans', badge: 'loans' },
           { to: '/accountant/tactical', icon: Target, label: 'Tactical' },
-        ],
-      },
-      {
-        to: '/accountant/reports',
-        icon: BarChart3,
-        label: 'Reports',
-        minTier: 'industrial',
-        submenu: [
-          { to: '/accountant/reports', icon: BarChart3, label: 'Overview' },
-          { to: '/accountant/reports/pl', icon: TrendingUp, label: 'P&L' },
-          { to: '/accountant/reports/balance', icon: Scale, label: 'Balance Sheet' },
-          { to: '/accountant/reports/net-worth', icon: LineChart, label: 'Net Worth' },
-          { to: '/accountant/reports/cash-flow', icon: ArrowRightLeft, label: 'Cash Flow' },
         ],
       },
     ],
@@ -817,8 +815,8 @@ export default function App() {
                       <Route path="/sync-import" element={<RequireAuth><Import /></RequireAuth>} />
                       <Route path="/localization" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><LocalizationBuilder /></Suspense></RequireAuth>} />
                       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-                      <Route path="/accountant" element={<Navigate to="/accountant/settings" replace />} />
-                      <Route path="/accountant/settings" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSettings /></Suspense></RequireAuth>} />
+                      <Route path="/accountant" element={<Navigate to="/settings" replace />} />
+                      <Route path="/accountant/settings" element={<Navigate to="/settings" replace />} />
                       <Route path="/accountant/ledger" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLedger /></Suspense></RequireAuth>} />
                       <Route path="/accountant/sorting" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantSorting /></Suspense></RequireAuth>} />
                       <Route path="/accountant/loans" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantLoans /></Suspense></RequireAuth>} />

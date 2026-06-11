@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import PageHeader from '../../components/PageHeader'
+import { Navigate } from 'react-router-dom'
 import PanelSection from '../../components/PanelSection'
 import { setPreferences } from '../../hooks/useAPI'
 import {
@@ -18,7 +18,12 @@ async function fetchPreferences() {
   return res.json()
 }
 
-export default function AccountantSettings() {
+/**
+ * AccountantSettingsSection — standalone content block (no PageHeader).
+ * Consumed by the site Settings page at the bottom of the page.
+ * Manages its own preferences fetch so it is self-contained.
+ */
+export function AccountantSettingsSection() {
   const [tier, setTier] = useState(null) // null while loading
   const [verifyThreshold, setVerifyThreshold] = useState(10)
   const [savingError, setSavingError] = useState(null)
@@ -78,12 +83,7 @@ export default function AccountantSettings() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <PageHeader
-        title="ACCOUNTANT"
-        subtitle="Configure your accounting tier and module access"
-      />
-
+    <div className="space-y-6">
       {savingError && (
         <div
           role="alert"
@@ -193,4 +193,12 @@ export default function AccountantSettings() {
       </PanelSection>
     </div>
   )
+}
+
+/**
+ * Default export: redirect to /settings where AccountantSettingsSection is now mounted.
+ * Preserves deep-link compatibility for any bookmarked /accountant or /accountant/settings URLs.
+ */
+export default function AccountantSettings() {
+  return <Navigate to="/settings" replace />
 }

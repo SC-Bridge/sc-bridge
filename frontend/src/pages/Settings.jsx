@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useLLMConfig, setLLMConfig, testLLMConnection, usePreferences, setPreferences } from '../hooks/useAPI'
-import { Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe, Shield, FlaskConical } from 'lucide-react'
+import { Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe, Shield, FlaskConical, Wallet } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
@@ -9,6 +9,7 @@ import useFontPreference from '../hooks/useFontPreference'
 import useTimezone from '../hooks/useTimezone'
 import usePrivacyMode from '../hooks/usePrivacyMode'
 import { formatDate } from '../lib/dates'
+import { AccountantSettingsSection } from './Accountant'
 
 const FONT_OPTIONS = [
   { key: 'default', label: 'Default', desc: 'Inter body + Electrolize headings', preview: '"Inter", "Segoe UI"' },
@@ -432,6 +433,12 @@ export default function Settings() {
         confirmLabel={confirmDialog.confirmLabel}
         variant={confirmDialog.variant}
       />
+
+      <PanelSection title="Accountant" icon={Wallet}>
+        <div className="p-5">
+          <AccountantSettingsSection />
+        </div>
+      </PanelSection>
     </div>
   )
 }
