@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useLedger, useBadges, useSorting, addEntry, categorizeEntries } from './hooks'
+import { useLedger, useBadges, useSorting, addEntry, categorizeEntries, useLoans, useLoan, createLoan, updateLoan, recordRepayment, settleLoan } from './hooks'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -93,5 +93,34 @@ describe('accountant hooks', () => {
     window.dispatchEvent(new Event('accountant:changed'))
     await waitFor(() => expect(result.current.data?.count).toBe(2))
     expect(spy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('loan hooks', () => {
+  it('useLoans GETs /api/accountant/loans', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ loans: [] }),
+    })
+    const { result } = renderHook(() => useLoans())
+    await waitFor(() => expect(result.current.data).toEqual({ loans: [] }))
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/accountant/loans'),
+      expect.any(Object),
+    )
+  })
+
+  it('createLoan POSTs and announces accountant:changed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, id: 1 }) })
+    const spy = vi.fn()
+    window.addEventListener('accountant:changed', spy)
+    await createLoan({ direction: 'outgoing', counterparty: '@x', principal: 1000, interest_rate: 5, interest_interval: 'monthly', started_at: '2026-06-01T00:00:00Z' })
+    expect(spy).toHaveBeenCalled()
+    window.removeEventListener('accountant:changed', spy)
+  })
+
+  it('recordRepayment POSTs to /loans/:id/repayments', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, settled: false, outstanding: 60000 }) })
+    await recordRepayment(7, { amount: 40000, occurred_at: '2026-06-10T00:00:00Z' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/accountant/loans/7/repayments', expect.objectContaining({ method: 'POST' }))
   })
 })

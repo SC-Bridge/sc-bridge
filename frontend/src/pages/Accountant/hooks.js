@@ -81,3 +81,11 @@ export const categorizeEntries = (ids, category, { tag, note } = {}) =>
   })
 export const createTradingTag = (name) => mutate('POST', '/api/accountant/tags', { category: 'trading', name })
 export const removeTag = (id) => mutate('DELETE', `/api/accountant/tags/${id}`)
+
+export const useLoans = () => useGet('/api/accountant/loans', { refreshOn: 'accountant:changed' })
+export const useLoan = (id) => useGet(`/api/accountant/loans/${id}`, { refreshOn: 'accountant:changed' })
+
+export const createLoan = (body) => mutate('POST', '/api/accountant/loans', body)
+export const updateLoan = (id, body) => mutate('PUT', `/api/accountant/loans/${id}`, body)
+export const recordRepayment = (id, body) => mutate('POST', `/api/accountant/loans/${id}/repayments`, body)
+export const settleLoan = (id) => mutate('POST', `/api/accountant/loans/${id}/settle`)
