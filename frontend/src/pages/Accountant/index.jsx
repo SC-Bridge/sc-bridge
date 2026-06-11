@@ -20,6 +20,7 @@ async function fetchPreferences() {
 
 export default function AccountantSettings() {
   const [tier, setTier] = useState(null) // null while loading
+  const [verifyThreshold, setVerifyThreshold] = useState(10)
   const [savingError, setSavingError] = useState(null)
 
   useEffect(() => {
@@ -28,15 +29,28 @@ export default function AccountantSettings() {
       .then((prefs) => {
         if (cancelled) return
         setTier(prefs.accountantTier ?? 'easy')
+        setVerifyThreshold(parseInt(prefs.accountantVerifyThreshold ?? '10', 10))
       })
       .catch(() => {
         if (cancelled) return
         setTier('easy') // graceful default on fetch failure
+        setVerifyThreshold(10)
       })
     return () => {
       cancelled = true
     }
   }, [])
+
+  async function handleThresholdChange(raw) {
+    const value = Math.max(10, parseInt(raw, 10) || 10)
+    setVerifyThreshold(value)
+    setSavingError(null)
+    try {
+      await setPreferences({ accountantVerifyThreshold: String(value) })
+    } catch (err) {
+      setSavingError(err.message ?? 'Failed to save threshold')
+    }
+  }
 
   async function handleTierChange(nextTier) {
     const previous = tier
@@ -116,6 +130,27 @@ export default function AccountantSettings() {
               </label>
             ))}
           </div>
+        </div>
+      </PanelSection>
+
+      <PanelSection title="Notifications">
+        <div className="p-5 space-y-2">
+          <label htmlFor="verifyThreshold" className="block text-sm text-gray-400">
+            Verification threshold
+          </label>
+          <input
+            id="verifyThreshold"
+            aria-label="Verification threshold"
+            type="number"
+            min="10"
+            key={verifyThreshold}
+            defaultValue={verifyThreshold}
+            onBlur={(e) => handleThresholdChange(e.target.value)}
+            className="w-32 bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm"
+          />
+          <p className="text-xs text-gray-600">
+            Remind me when the Sorting List reaches this many unsorted entries (minimum 10).
+          </p>
         </div>
       </PanelSection>
 

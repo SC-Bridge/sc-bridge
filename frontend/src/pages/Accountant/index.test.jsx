@@ -114,6 +114,32 @@ describe('AccountantSettings — render', () => {
   });
 });
 
+describe('AccountantSettings — notifications', () => {
+  it('saves the verification threshold (min 10) via preferences', async () => {
+    mockPreferences({ accountantTier: 'easy', accountantVerifyThreshold: '10' });
+    renderPage();
+
+    const input = await screen.findByLabelText(/verification threshold/i);
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveAttribute('min', '10');
+
+    await userEvent.clear(input);
+    await userEvent.type(input, '25');
+    await userEvent.tab(); // blur triggers save
+
+    await waitFor(() => {
+      const putCall = global.fetch.mock.calls.find(
+        ([u, init]) =>
+          typeof u === 'string' &&
+          u.includes('/api/settings/preferences') &&
+          init?.method === 'PUT',
+      );
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(putCall[1].body)).toMatchObject({ accountantVerifyThreshold: '25' });
+    });
+  });
+});
+
 describe('AccountantSettings — interaction', () => {
   it('selecting industrial fires PUT with accountantTier=industrial', async () => {
     const fetchSpy = vi.fn(async (url, init) => {
