@@ -42,9 +42,8 @@ export default function Loans() {
         subtitle="Outgoing receivables and incoming liabilities, with live interest accrual"
         actions={
           <button onClick={() => setAdding(true)}
-            aria-label="New Loan"
             className="flex items-center gap-1.5 bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded px-3 py-1.5 text-sm hover:bg-sc-accent/30">
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" /> New Loan
           </button>
         }
       />

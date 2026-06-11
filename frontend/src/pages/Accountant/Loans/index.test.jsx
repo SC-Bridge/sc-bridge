@@ -37,7 +37,7 @@ describe('Loans page', () => {
     renderLoans()
     await waitFor(() => expect(screen.getByText('@pilot42')).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: /new loan/i }))
-    expect(screen.getByText('New Loan')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /new loan/i })).toBeInTheDocument()
   })
 
   it('shows the empty state with no loans', async () => {
