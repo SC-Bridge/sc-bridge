@@ -74,6 +74,8 @@ export function ledgerRoutes() {
     const q = c.req.query("q");
     if (from) { where.push("occurred_at >= ?"); binds.push(from); }
     if (to) { where.push("occurred_at <= ?"); binds.push(to); }
+    const tag = c.req.query("tag");
+    if (tag) { where.push("tag = ?"); binds.push(tag); }
     if (categories.length > 0) {
       where.push(`category IN (${categories.map(() => "?").join(",")})`);
       binds.push(...categories);

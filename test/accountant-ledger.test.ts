@@ -407,5 +407,19 @@ describe("Accountant — /api/accountant/ledger", () => {
         .bind(id).first<{ amount: number }>();
       expect(row?.amount).toBe(-750);
     });
+
+    it("filters by tag", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+      for (const e of [
+        { amount: -80000, category: "financial", tag: "tactical", occurred_at: "2026-06-01T00:00:00Z", description: "headhunter" },
+        { amount: 5000, category: "financial", occurred_at: "2026-06-02T00:00:00Z", description: "other" },
+      ]) {
+        await SELF.fetch("http://localhost/api/accountant/ledger", { method: "POST", headers, body: JSON.stringify(e) });
+      }
+      const res = await SELF.fetch("http://localhost/api/accountant/ledger?category=financial&tag=tactical", { headers: await authHeaders(sessionToken) });
+      const data = (await res.json()) as { total: number };
+      expect(data.total).toBe(1);
+    });
   });
 });
