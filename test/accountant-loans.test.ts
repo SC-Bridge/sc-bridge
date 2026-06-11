@@ -100,4 +100,50 @@ describe("Accountant — loan creation + list", () => {
     const body = (await res.json()) as { loans: unknown[] };
     expect(body.loans).toHaveLength(0);
   });
+
+  describe("GET /loans/:id — detail", () => {
+    it("returns params, repayments, outstanding, and the next-tick preview", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily" });
+      const { id } = (await create.json()) as { id: number };
+
+      const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
+        headers: await authHeaders(sessionToken),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        loan: { id: number; counterparty: string; interest_rate: number };
+        outstanding: number;
+        accrued: number;
+        repayments: Array<{ amount: number; occurred_at: string }>;
+        preview: { nextTickAt: string; projectedAmount: number; paybackTotal: number };
+      };
+      expect(body.loan.id).toBe(id);
+      expect(body.loan.counterparty).toBe("@pilot42");
+      expect(Array.isArray(body.repayments)).toBe(true);
+      // preview is the UPCOMING tick only (UX §B.2): projected = round(outstanding * rate/100)
+      expect(body.preview.projectedAmount).toBe(Math.round((body.outstanding * 10) / 100));
+      expect(body.preview.paybackTotal).toBe(body.outstanding + body.preview.projectedAmount);
+      expect(typeof body.preview.nextTickAt).toBe("string");
+    });
+
+    it("404s for another user's loan", async () => {
+      const a = await createTestUser(env.DB);
+      const b = await createTestUser(env.DB);
+      const create = await newLoan(a.sessionToken, BASE);
+      const { id } = (await create.json()) as { id: number };
+      const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
+        headers: await authHeaders(b.sessionToken),
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("404s for a non-numeric id", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const res = await SELF.fetch("http://localhost/api/accountant/loans/abc", {
+        headers: await authHeaders(sessionToken),
+      });
+      expect(res.status).toBe(404);
+    });
+  });
 });

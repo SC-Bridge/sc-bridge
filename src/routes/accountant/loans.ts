@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { INTERVAL_SECONDS, catchUpAccruals, nextTickAt } from "../../lib/accountant/accrual";
+import { parseIdParam } from "./schemas";
 
 const CreateLoanSchema = z
   .object({
@@ -120,6 +121,54 @@ export function loansRoutes() {
       nextTickAt: nextTickAt(l as never),
     }));
     return c.json({ loans: shaped });
+  });
+
+  // GET /loans/:id — detail with repayment history + upcoming-tick preview.
+  routes.get("/:id", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    await catchUpAccruals(db, userID);
+
+    const loan = await db
+      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{
+        id: number; principal: number; interest_rate: number;
+        interest_interval: string; started_at: string; last_accrued_tick: number;
+      }>();
+    if (!loan) return c.json({ error: "Not found" }, 404);
+
+    const [outRow, accRow, feeRow, repayments] = await Promise.all([
+      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?")
+        .bind(id, userID).first<{ bal: number }>(),
+      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'accrual_tick'")
+        .bind(id, userID).first<{ bal: number }>(),
+      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'loan_fee'")
+        .bind(id, userID).first<{ bal: number }>(),
+      db.prepare(
+        `SELECT id, amount, occurred_at, notes FROM accountant_entries
+         WHERE loan_id = ? AND user_id = ? AND source = 'loan_repayment'
+         ORDER BY occurred_at ASC`,
+      ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string }>(),
+    ]);
+
+    const outstanding = Math.abs(outRow?.bal ?? 0);
+    const projectedAmount = Math.round((outstanding * loan.interest_rate) / 100);
+
+    return c.json({
+      loan,
+      outstanding,
+      accrued: Math.abs(accRow?.bal ?? 0),
+      fee: Math.abs(feeRow?.bal ?? 0),
+      repayments: repayments.results.map((r) => ({ ...r, amount: Math.abs(r.amount) })),
+      preview: {
+        nextTickAt: nextTickAt(loan),
+        projectedAmount,
+        paybackTotal: outstanding + projectedAmount,
+      },
+    });
   });
 
   return routes;
