@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
-import { INTERVAL_SECONDS, catchUpAccruals, nextTickAt } from "../../lib/accountant/accrual";
+import { INTERVALS, catchUpAccruals, nextTickAt } from "../../lib/accountant/accrual";
 import { parseIdParam } from "./schemas";
 
 const RepaymentSchema = z
@@ -26,7 +26,7 @@ const CreateLoanSchema = z
     counterparty: z.string().min(1).max(100),
     principal: z.number().int().positive().max(9_999_999_999_999),
     interest_rate: z.number().min(0).max(1000),
-    interest_interval: z.enum(["hourly", "daily", "weekly", "monthly"]),
+    interest_interval: z.enum(INTERVALS),
     fee_multiplier: z.number().min(0).max(1000).default(0),
     started_at: z.string().datetime({ offset: true }).max(50),
     due_at: z.string().datetime({ offset: true }).max(50).optional(),
@@ -34,11 +34,18 @@ const CreateLoanSchema = z
   })
   .strict();
 
-// Verify the enum keys stay in sync with INTERVAL_SECONDS at import time.
-// This is a compile-time + runtime guard: if accrual.ts ever adds/removes an
-// interval label the type system (and the assertion below) will catch it.
-const _: Record<"hourly" | "daily" | "weekly" | "monthly", number> = INTERVAL_SECONDS as never;
-void _;
+/** Row shape returned by `SELECT l.*` on accountant_loans. */
+interface LoanListRow {
+  id: number;
+  user_id: string;
+  status: string;
+  principal: number;
+  interest_rate: number;
+  interest_interval: string;
+  started_at: string;
+  last_accrued_tick: number;
+  [key: string]: unknown;
+}
 
 /**
  * /api/accountant/loans — loan lifecycle (design §4.3). Loans are agreement state;
@@ -47,6 +54,25 @@ void _;
  */
 export function loansRoutes() {
   const routes = new Hono<HonoEnv>();
+
+  // ---------------------------------------------------------------------------
+  // Private helper: run accruals, fetch loan row (user-scoped), compute outstanding.
+  // ---------------------------------------------------------------------------
+  async function loadLoan(db: D1Database, userID: string, id: number) {
+    await catchUpAccruals(db, userID);
+    const loan = await db
+      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<LoanListRow>();
+    if (!loan) return null;
+    const outRow = await db
+      .prepare(
+        "SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?",
+      )
+      .bind(id, userID)
+      .first<{ bal: number }>();
+    return { loan, signedOutstanding: outRow?.bal ?? 0 };
+  }
 
   // POST /loans — atomic: loan row + principal entry (± by direction) + fee entry.
   routes.post("/", validate("json", CreateLoanSchema), async (c) => {
@@ -104,7 +130,19 @@ export function loansRoutes() {
           .bind(userID, b.started_at, sign * fee, loanId, "Loan creation fee"),
       );
     }
-    await db.batch(stmts);
+
+    try {
+      await db.batch(stmts);
+    } catch (err) {
+      // Compensate: the loan row was inserted before the batch; remove it so we
+      // don't leave an orphan loan with no entries. Then rethrow so the caller
+      // sees a 500 rather than a silently broken loan.
+      await db
+        .prepare("DELETE FROM accountant_loans WHERE id = ? AND user_id = ?")
+        .bind(loanId, userID)
+        .run();
+      throw err;
+    }
 
     return c.json({ ok: true, id: loanId });
   });
@@ -127,13 +165,13 @@ export function loansRoutes() {
          ORDER BY l.status ASC, l.created_at DESC`,
       )
       .bind(userID)
-      .all<Record<string, unknown> & { signed_outstanding: number; signed_accrued: number }>();
+      .all<LoanListRow & { signed_outstanding: number; signed_accrued: number }>();
 
     const shaped = loans.results.map((l) => ({
       ...l,
       outstanding: Math.abs(l.signed_outstanding),
       accrued: Math.abs(l.signed_accrued),
-      nextTickAt: nextTickAt(l as never),
+      nextTickAt: nextTickAt(l),
     }));
     return c.json({ loans: shaped });
   });
@@ -144,20 +182,12 @@ export function loansRoutes() {
     const userID = getAuthUser(c).id;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUpAccruals(db, userID);
 
-    const loan = await db
-      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{
-        id: number; principal: number; interest_rate: number;
-        interest_interval: string; started_at: string; last_accrued_tick: number;
-      }>();
-    if (!loan) return c.json({ error: "Not found" }, 404);
+    const loaded = await loadLoan(db, userID, id);
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const { loan } = loaded;
 
-    const [outRow, accRow, feeRow, repayments] = await Promise.all([
-      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?")
-        .bind(id, userID).first<{ bal: number }>(),
+    const [accRow, feeRow, repayments] = await Promise.all([
       db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'accrual_tick'")
         .bind(id, userID).first<{ bal: number }>(),
       db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'loan_fee'")
@@ -169,7 +199,7 @@ export function loansRoutes() {
       ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string }>(),
     ]);
 
-    const outstanding = Math.abs(outRow?.bal ?? 0);
+    const outstanding = Math.abs(loaded.signedOutstanding);
     const projectedAmount = Math.round((outstanding * loan.interest_rate) / 100);
 
     return c.json({
@@ -185,25 +215,6 @@ export function loansRoutes() {
       },
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Private helper: run accruals, fetch loan row (user-scoped), compute outstanding.
-  // ---------------------------------------------------------------------------
-  async function loadLoan(db: D1Database, userID: string, id: number) {
-    await catchUpAccruals(db, userID);
-    const loan = await db
-      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{ id: number; status: string; user_id: string }>();
-    if (!loan) return null;
-    const outRow = await db
-      .prepare(
-        "SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?",
-      )
-      .bind(id, userID)
-      .first<{ bal: number }>();
-    return { loan, signedOutstanding: outRow?.bal ?? 0 };
-  }
 
   // POST /loans/:id/repayments — reduces outstanding; auto-settles at exactly 0.
   routes.post("/:id/repayments", validate("json", RepaymentSchema), async (c) => {
@@ -253,6 +264,10 @@ export function loansRoutes() {
     if (id === null) return c.json({ error: "Not found" }, 404);
     const loaded = await loadLoan(db, userID, id);
     if (!loaded) return c.json({ error: "Not found" }, 404);
+
+    if (loaded.loan.status === "settled") {
+      return c.json({ error: "Loan already settled" }, 400);
+    }
 
     await db
       .prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?")

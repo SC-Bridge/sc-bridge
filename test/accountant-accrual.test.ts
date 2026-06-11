@@ -9,7 +9,9 @@ import {
   catchUpAccruals,
 } from "../src/lib/accountant/accrual";
 
-// Insert a loan row directly (loans.ts endpoints come in Task 2). Returns its id.
+// Insert a loan row + principal entry directly. Returns the loan id.
+// The loan row always stores the absolute principal (production shape).
+// The entry carries the sign: positive for outgoing (receivable), negative for incoming (liability).
 async function seedLoan(
   userId: string,
   overrides: Partial<{
@@ -22,18 +24,19 @@ async function seedLoan(
     interest_interval: "daily", fee_multiplier: 0,
     started_at: "2026-06-01T00:00:00Z", ...overrides,
   };
+  const absPrincipal = Math.abs(o.principal);
+  const entrySign = o.direction === "incoming" ? -1 : 1;
   const res = await env.DB.prepare(
     `INSERT INTO accountant_loans
        (user_id, direction, counterparty, principal, interest_rate, interest_interval, fee_multiplier, started_at)
      VALUES (?, ?, '@cp', ?, ?, ?, ?, ?)`,
-  ).bind(userId, o.direction, o.principal, o.interest_rate, o.interest_interval, o.fee_multiplier, o.started_at).run();
+  ).bind(userId, o.direction, absPrincipal, o.interest_rate, o.interest_interval, o.fee_multiplier, o.started_at).run();
   const id = res.meta.last_row_id as number;
-  // The principal entry is what outstanding is computed from. Same sign as a
-  // receivable for an outgoing loan (positive). loan_id links it; no tick_index.
+  // Entry carries the sign: positive for outgoing (receivable), negative for incoming (liability).
   await env.DB.prepare(
     `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, loan_id)
      VALUES (?, ?, ?, 'financial', 'loan_principal', ?)`,
-  ).bind(userId, o.started_at, o.principal, id).run();
+  ).bind(userId, o.started_at, entrySign * absPrincipal, id).run();
   return id;
 }
 
@@ -155,11 +158,12 @@ describe("accrual engine — pure tick math", () => {
 
   it("compounds an incoming loan with NEGATIVE ticks: −100000 @10%/day → [−10000, −11000]", async () => {
     const { userId } = await createTestUser(env.DB);
-    // seedLoan writes o.principal as-is into accountant_entries; for incoming the principal
-    // must be negative (liability) — loans.ts does sign * principal where sign = -1 for incoming.
+    // direction "incoming" → seedLoan writes the entry as -100000 (liability), matching
+    // what loans.ts writes (sign = -1 for incoming, entry = sign * principal).
+    // The loan row principal column stores the absolute value (100000), matching production shape.
     const loanId = await seedLoan(userId, {
       direction: "incoming",
-      principal: -100000, // negative principal entry matches what loans.ts writes for incoming
+      principal: 100000,
       interest_rate: 10,
       interest_interval: "daily",
     });

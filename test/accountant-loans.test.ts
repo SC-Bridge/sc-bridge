@@ -74,7 +74,9 @@ describe("Accountant — loan creation + list", () => {
 
   it("GET /loans lists with computed outstanding, accrued, nextTickAt", async () => {
     const { sessionToken } = await createTestUser(env.DB);
-    await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily" });
+    // started_at 2 days ago → always exactly 2 daily ticks due regardless of run date.
+    const started_at = new Date(Date.now() - 2 * 86400_000).toISOString();
+    await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily", started_at });
     const res = await SELF.fetch("http://localhost/api/accountant/loans", {
       headers: await authHeaders(sessionToken),
     });
@@ -83,8 +85,7 @@ describe("Accountant — loan creation + list", () => {
       loans: Array<{ outstanding: number; accrued: number; nextTickAt: string; status: string }>;
     };
     expect(body.loans).toHaveLength(1);
-    // accrual catch-up runs in the read; with a 2026-06-01 start and "now" well past,
-    // outstanding has grown beyond principal and accrued > 0.
+    // 2 ticks at 10%/day: tick1=10000, tick2=11000 → accrued=21000, outstanding=121000.
     expect(body.loans[0].outstanding).toBeGreaterThanOrEqual(100000);
     expect(body.loans[0].accrued).toBeGreaterThan(0);
     expect(typeof body.loans[0].nextTickAt).toBe("string");
@@ -104,7 +105,9 @@ describe("Accountant — loan creation + list", () => {
   describe("GET /loans/:id — detail", () => {
     it("returns params, repayments, outstanding, and the next-tick preview", async () => {
       const { sessionToken } = await createTestUser(env.DB);
-      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily" });
+      // started_at 2 days ago → always exactly 2 daily ticks due regardless of run date.
+      const started_at = new Date(Date.now() - 2 * 86400_000).toISOString();
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily", started_at });
       const { id } = (await create.json()) as { id: number };
 
       const res = await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
@@ -194,6 +197,26 @@ describe("Accountant — loan creation + list", () => {
       expect(body.outstanding).toBe(100000); // echoed for inline display (design §6)
     });
 
+    it("POST /settle on an already-settled loan returns 400 with 'Loan already settled'", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      // First settle — should succeed.
+      const first = await SELF.fetch(`http://localhost/api/accountant/loans/${id}/settle`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(first.status).toBe(200);
+      // Second settle — must be rejected.
+      const second = await SELF.fetch(`http://localhost/api/accountant/loans/${id}/settle`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(second.status).toBe(400);
+      const secondBody = (await second.json()) as { error: string };
+      expect(secondBody.error).toBe("Loan already settled");
+    });
+
     it("POST /settle closes the loan with the remainder as a write-off (no synthetic entry)", async () => {
       const { sessionToken } = await createTestUser(env.DB);
       const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
@@ -267,7 +290,9 @@ describe("Accountant — loan creation + list", () => {
   describe("accrual visibility in ledger + badges", () => {
     it("GET /ledger shows accrual ticks once catch-up has run (when source filter includes them)", async () => {
       const { sessionToken } = await createTestUser(env.DB);
-      await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily" });
+      // started_at 2 days ago → always exactly 2 daily ticks due regardless of run date.
+      const started_at = new Date(Date.now() - 2 * 86400_000).toISOString();
+      await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 10, interest_interval: "daily", started_at });
       // hitting /ledger triggers catch-up; request accrual_tick explicitly
       const res = await SELF.fetch("http://localhost/api/accountant/ledger?source=accrual_tick", {
         headers: await authHeaders(sessionToken),

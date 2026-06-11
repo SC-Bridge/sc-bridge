@@ -16,13 +16,16 @@ import { logEvent } from "../logger";
 
 // ─── interval constants ────────────────────────────────────────────────────────
 
+/** Canonical ordered list of interval labels. Single source of truth for Zod enums. */
+export const INTERVALS = ["hourly", "daily", "weekly", "monthly"] as const;
+
 /** Fixed-duration seconds per interval label. Monthly = 30 days flat. */
-export const INTERVAL_SECONDS = {
+export const INTERVAL_SECONDS: Record<(typeof INTERVALS)[number], number> = {
   hourly: 3600,
   daily: 86400,
   weekly: 604800,
   monthly: 2592000, // 30 * 86400 — no calendar math, by design (§4.4)
-} as const;
+};
 
 // ─── pure math helpers ─────────────────────────────────────────────────────────
 
@@ -80,20 +83,26 @@ interface LoanRow {
 
 /**
  * Advance all open loans for userId to nowMs, inserting accrual_tick entries and
- * updating last_accrued_tick in a single atomic db.batch() per loan group.
+ * updating last_accrued_tick in a single atomic db.batch() per call.
  *
  * Compounding flaw fix:
  *   The naive approach (SELECT SUM(amount) WHERE occurred_at <= tickTs per tick)
  *   misses in-batch ticks because they are not yet committed when later ticks
- *   query the DB. Fix: query committed rows once per tick cutoff (respecting
- *   interleaved repayments at their own timestamps), then add a running in-memory
- *   accumulator of tick amounts queued so far in this batch. Each tick's base is:
+ *   query the DB. Fix: fetch all committed entries for the loan ONCE, then for
+ *   each tick compute the cutoff sum in memory (entries with occurred_at epoch <=
+ *   tick timestamp epoch), plus a running accumulator of tick amounts queued so far.
+ *   Each tick's base is:
  *     base_N = committedSumAsOf(ts_N) + Σ(queuedTickAmounts[0..N-1])
  *   The committed sum covers all entries committed before this catch-up call
  *   (principal + any repayments); the accumulator covers ticks 1..N-1 of the
  *   current batch. This preserves interleaved-repayment correctness while
  *   producing byte-identical rows whether we advance one tick at a time or all
- *   at once.
+ *   at once. One query per loan regardless of tick count.
+ *
+ *   Timestamp comparison uses epoch ms (new Date(s).getTime()) rather than string
+ *   comparison because seeds use "2026-06-02T06:00:00Z" (no millis) while entries
+ *   written by the engine use new Date().toISOString() (with .000Z millis). String
+ *   comparison across these formats is not reliable.
  */
 export async function catchUpAccruals(
   db: D1Database,
@@ -114,11 +123,25 @@ export async function catchUpAccruals(
   // Accumulate statements across ALL loans — one db.batch() per catchUpAccruals call.
   const allStmts: D1PreparedStatement[] = [];
 
+  // Accumulate log payloads; emit after batch succeeds to avoid logging phantom events.
+  const logPayloads: Array<{ loanId: number; userId: string; from: number; to: number; ticksWritten: number }> = [];
+
   for (const loan of loans.results) {
     const due = elapsedTicks(loan, nowMs);
     const from = loan.last_accrued_tick + 1;
 
     if (from > due) continue; // nothing to do for this loan
+
+    // Fetch ALL committed entries for this loan once (principal + repayments).
+    // Avoids N sequential queries for catch-up batches with many ticks.
+    // user_id filter is defense-in-depth: loan_id already scopes to one user.
+    const committedEntries = await db
+      .prepare(
+        `SELECT amount, occurred_at FROM accountant_entries
+         WHERE loan_id = ? AND user_id = ?`,
+      )
+      .bind(loan.id, userId)
+      .all<{ amount: number; occurred_at: string }>();
 
     // Running accumulator: sum of tick amounts queued in this batch so far.
     // Required for correct compounding — see flaw-fix comment above.
@@ -126,22 +149,19 @@ export async function catchUpAccruals(
 
     for (let i = from; i <= due; i++) {
       const ts = tickTimestamp(loan.started_at, loan.interest_interval, i);
+      const tsMs = new Date(ts).getTime();
 
       // Committed outstanding as of this tick's timestamp.
-      // Includes: principal entry + any repayments with occurred_at <= ts.
+      // Includes: principal entry + any repayments with occurred_at <= tsMs.
       // Does NOT yet include the in-batch ticks (they are uncommitted).
-      // user_id filter is defense-in-depth: loan_id already scopes to one user,
-      // but explicit scoping prevents data bleed if loan_id ever leaks across users.
-      const committedRow = await db
-        .prepare(
-          `SELECT COALESCE(SUM(amount), 0) AS s
-           FROM accountant_entries
-           WHERE loan_id = ? AND user_id = ? AND occurred_at <= ?`,
-        )
-        .bind(loan.id, userId, ts)
-        .first<{ s: number }>();
-
-      const committedSum = committedRow?.s ?? 0;
+      // Use epoch ms comparison — string comparison is unreliable across ISO formats
+      // that differ in millisecond precision (.000Z vs no-millis Z).
+      let committedSum = 0;
+      for (const entry of committedEntries.results) {
+        if (new Date(entry.occurred_at).getTime() <= tsMs) {
+          committedSum += entry.amount;
+        }
+      }
 
       // True outstanding = committed rows + ticks queued in this batch.
       // For tick 1 queuedSum is 0; for tick 2 it includes tick 1's amount, etc.
@@ -178,17 +198,15 @@ export async function catchUpAccruals(
       ).bind(due, loan.id, userId),
     );
 
-    logEvent("accrual.catchUp", {
-      loanId: loan.id,
-      userId,
-      from,
-      to: due,
-      ticksWritten: due - from + 1,
-    });
+    logPayloads.push({ loanId: loan.id, userId, from, to: due, ticksWritten: due - from + 1 });
   }
 
   // One atomic batch for the entire catch-up call (all loans combined).
   if (allStmts.length > 0) {
     await db.batch(allStmts);
+    // Emit telemetry only after the batch commits — no phantom events on failure.
+    for (const payload of logPayloads) {
+      logEvent("accrual.catchUp", payload);
+    }
   }
 }
