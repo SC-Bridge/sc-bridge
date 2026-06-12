@@ -1,9 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
-import PageHeader from '../../../components/PageHeader'
-import LoadingState from '../../../components/LoadingState'
-import PeriodSelector from '../components/PeriodSelector'
-import IntervalSelector from '../components/IntervalSelector'
 import SummaryCards from '../components/SummaryCards'
+import ReportShell from './ReportShell'
 import { NetLine } from './ReportChart'
 import { useReportCashFlow } from '../hooks'
 import { formatAUEC, toneBySign } from '../formatAUEC'
@@ -14,78 +11,65 @@ export default function CashFlow() {
   // Always send from & to — fall back to the wide default when no params are set
   // so the API never sees an empty query string ("from and to are required" fix).
   const { qs } = reportWindowFromParams(params)
-  const { data, error, loading, refetch } = useReportCashFlow(qs)
-
-  function onPeriod(next) { setParams(next) }
-  function onInterval(next) { setParams(next) }
-
-  // Aggregate summary totals from the series.
-  const totalIn = data?.series?.reduce((s, r) => s + r.in, 0) ?? 0
-  const totalOut = data?.series?.reduce((s, r) => s + r.out, 0) ?? 0
-  const totalNet = totalIn + totalOut
-
-  if (error) {
-    return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader title="CASH FLOW" subtitle="In, out, and net liquidity over a period" />
-        <div role="alert" className="panel p-4 text-sc-danger text-sm">{error.message}</div>
-        <button onClick={refetch} className="text-sm text-sc-accent">Retry</button>
-      </div>
-    )
-  }
+  const query = useReportCashFlow(qs)
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <PageHeader title="CASH FLOW" subtitle="In, out, and net liquidity over a period" />
-      <div className="panel p-4 space-y-3">
-        <PeriodSelector params={params} onChange={onPeriod} />
-        <div className="border-t border-sc-border pt-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider mr-2">Interval</span>
-          <IntervalSelector params={params} onChange={onInterval} />
-        </div>
-      </div>
-      {loading && !data ? <LoadingState /> : data && (
-        <>
-          <SummaryCards cards={[
-            { label: 'In', value: formatAUEC(totalIn, { short: true }), tone: 'positive' },
-            { label: 'Out', value: formatAUEC(totalOut, { short: true }), tone: 'negative' },
-            { label: 'Net', value: formatAUEC(totalNet), tone: toneBySign(totalNet) },
-          ]} />
-          {data.series.length === 0 ? (
-            <div className="panel p-10 text-center text-gray-400">
-              <p>No cash flow data for this period.</p>
-            </div>
-          ) : (
-            <>
-              <div className="panel p-4">
-                <NetLine data={data.series} />
+    <ReportShell
+      title="CASH FLOW"
+      subtitle="In, out, and net liquidity over a period"
+      query={query}
+      params={params}
+      onParams={setParams}
+      withInterval
+    >
+      {(data) => {
+        // Aggregate summary totals from the series.
+        const totalIn = data.series.reduce((s, r) => s + r.in, 0)
+        const totalOut = data.series.reduce((s, r) => s + r.out, 0)
+        const totalNet = totalIn + totalOut
+        return (
+          <>
+            <SummaryCards cards={[
+              { label: 'In', value: formatAUEC(totalIn, { short: true }), tone: 'positive' },
+              { label: 'Out', value: formatAUEC(totalOut, { short: true }), tone: 'negative' },
+              { label: 'Net', value: formatAUEC(totalNet), tone: toneBySign(totalNet) },
+            ]} />
+            {data.series.length === 0 ? (
+              <div className="panel p-10 text-center text-gray-400">
+                <p>No cash flow data for this period.</p>
               </div>
-              <div className="panel p-4 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs uppercase tracking-wider text-gray-500 border-b border-sc-border">
-                      <th className="text-left py-2 pr-4">Bucket</th>
-                      <th className="text-right py-2 pr-4">In</th>
-                      <th className="text-right py-2 pr-4">Out</th>
-                      <th className="text-right py-2">Net</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.series.map((row) => (
-                      <tr key={row.bucket} className="border-b border-sc-border/50">
-                        <td className="py-1 pr-4 text-gray-300">{row.bucket}</td>
-                        <td className="py-1 pr-4 text-right tabular-nums text-sc-success">{formatAUEC(row.in)}</td>
-                        <td className="py-1 pr-4 text-right tabular-nums text-sc-danger">{formatAUEC(row.out)}</td>
-                        <td className="py-1 text-right tabular-nums text-gray-200">{formatAUEC(row.net)}</td>
+            ) : (
+              <>
+                <div className="panel p-4">
+                  <NetLine data={data.series} />
+                </div>
+                <div className="panel p-4 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wider text-gray-500 border-b border-sc-border">
+                        <th className="text-left py-2 pr-4">Bucket</th>
+                        <th className="text-right py-2 pr-4">In</th>
+                        <th className="text-right py-2 pr-4">Out</th>
+                        <th className="text-right py-2">Net</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
+                    </thead>
+                    <tbody>
+                      {data.series.map((row) => (
+                        <tr key={row.bucket} className="border-b border-sc-border/50">
+                          <td className="py-1 pr-4 text-gray-300">{row.bucket}</td>
+                          <td className="py-1 pr-4 text-right tabular-nums text-sc-success">{formatAUEC(row.in)}</td>
+                          <td className="py-1 pr-4 text-right tabular-nums text-sc-danger">{formatAUEC(row.out)}</td>
+                          <td className="py-1 text-right tabular-nums text-gray-200">{formatAUEC(row.net)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )
+      }}
+    </ReportShell>
   )
 }

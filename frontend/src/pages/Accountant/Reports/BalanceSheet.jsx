@@ -1,8 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
-import PageHeader from '../../../components/PageHeader'
-import LoadingState from '../../../components/LoadingState'
-import PeriodSelector from '../components/PeriodSelector'
 import SummaryCards from '../components/SummaryCards'
+import ReportShell from './ReportShell'
 import { StatementSection } from './StatementSection'
 import { CategoryDonut } from './ReportChart'
 import { useReportBalance } from '../hooks'
@@ -14,25 +12,17 @@ export default function BalanceSheet() {
   // Derive `at` from the stable window helper — same URL params → same string →
   // useGet does not fire a new fetch → no infinite loop.
   const { to: at } = reportWindowFromParams(params)
-  const { data, error, loading, refetch } = useReportBalance(`at=${encodeURIComponent(at)}`)
-
-  function onPeriod(next) { setParams(next) }
-
-  if (error) {
-    return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader title="BALANCE SHEET" subtitle="Assets, liabilities, and equity at a point in time" />
-        <div role="alert" className="panel p-4 text-sc-danger text-sm">{error.message}</div>
-        <button onClick={refetch} className="text-sm text-sc-accent">Retry</button>
-      </div>
-    )
-  }
+  const query = useReportBalance(`at=${encodeURIComponent(at)}`)
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <PageHeader title="BALANCE SHEET" subtitle="Assets, liabilities, and equity at a point in time" />
-      <div className="panel p-4"><PeriodSelector params={params} onChange={onPeriod} /></div>
-      {loading && !data ? <LoadingState /> : data && (
+    <ReportShell
+      title="BALANCE SHEET"
+      subtitle="Assets, liabilities, and equity at a point in time"
+      query={query}
+      params={params}
+      onParams={setParams}
+    >
+      {(data) => (
         <>
           <SummaryCards cards={[
             { label: 'Net Worth', value: formatAUEC(data.equity), tone: 'neutral' },
@@ -58,6 +48,6 @@ export default function BalanceSheet() {
           ]} />
         </>
       )}
-    </div>
+    </ReportShell>
   )
 }

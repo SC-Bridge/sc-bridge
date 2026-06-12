@@ -1,8 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
-import PageHeader from '../../../components/PageHeader'
-import LoadingState from '../../../components/LoadingState'
-import PeriodSelector from '../components/PeriodSelector'
 import SummaryCards from '../components/SummaryCards'
+import ReportShell from './ReportShell'
 import { StatementSection } from './StatementSection'
 import { GroupedBars, CategoryDonut } from './ReportChart'
 import { drillToLedger } from './drill'
@@ -15,25 +13,17 @@ export default function PL() {
   // Always send from & to — fall back to the wide default when no params are set
   // so the API never sees an empty query string ("from and to are required" fix).
   const { qs } = reportWindowFromParams(params)
-  const { data, error, loading, refetch } = useReportPL(qs)
-
-  function onPeriod(next) { setParams(next) }
-
-  if (error) {
-    return (
-      <div className="space-y-6 animate-fade-in-up">
-        <PageHeader title="PROFIT & LOSS" subtitle="Revenue vs expenses over a period" />
-        <div role="alert" className="panel p-4 text-sc-danger text-sm">{error.message}</div>
-        <button onClick={refetch} className="text-sm text-sc-accent">Retry</button>
-      </div>
-    )
-  }
+  const query = useReportPL(qs)
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <PageHeader title="PROFIT & LOSS" subtitle="Revenue vs expenses over a period" />
-      <div className="panel p-4"><PeriodSelector params={params} onChange={onPeriod} /></div>
-      {loading && !data ? <LoadingState /> : data && (
+    <ReportShell
+      title="PROFIT & LOSS"
+      subtitle="Revenue vs expenses over a period"
+      query={query}
+      params={params}
+      onParams={setParams}
+    >
+      {(data) => (
         <>
           <SummaryCards cards={[
             { label: 'Revenue', value: formatAUEC(data.revenue.total, { short: true }), tone: 'positive' },
@@ -60,6 +50,6 @@ export default function PL() {
           ]} />
         </>
       )}
-    </div>
+    </ReportShell>
   )
 }
