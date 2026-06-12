@@ -397,12 +397,13 @@ describe("M5 — workorder lifecycle", () => {
     await createWO(a.sessionToken, { title: "Empty draft" });
 
     const list = (await (await get(a.sessionToken, "/workorders")).json()) as {
-      workorders: Array<{ id: number; status: string; componentCount: number; netTotal: number }>;
+      workorders: Array<{ id: number; status: string; componentCount: number; completedCount: number; netTotal: number }>;
       total: number;
     };
     expect(list.total).toBe(2);
     const row = list.workorders.find((w) => w.id === woId)!;
     expect(row.componentCount).toBe(2);
+    expect(row.completedCount).toBe(0);         // PO only partially fulfilled (40/100)
     expect(row.netTotal).toBe(540000);          // sale 640,000 − purchase 100,000
     expect(row.status).toBe("in_progress");
     const drafts = (await (await get(a.sessionToken, "/workorders?status=draft")).json()) as { total: number };
@@ -421,6 +422,16 @@ describe("M5 — workorder lifecycle", () => {
     expect(sale).toMatchObject({ fulfilledQty: 0, remaining: 200, incurred: 0 });
     expect(detail.summaryPreview).toEqual({ netFulfilled: -40000 });   // only the purchase fulfilment posted
     expect(detail.settlementPreview).toEqual({ suggestion: 40000 });   // full-scope incurred sum
+
+    // Closing the PO (remaining 60) flips the list's completedCount — the
+    // Workorders page renders this as "1/2" component progress.
+    expect((await fulfil(a.sessionToken, poId, { quantity: 60, occurred_at: "2026-06-12T01:00:00Z" })).status).toBe(200);
+    const after = (await (await get(a.sessionToken, "/workorders")).json()) as {
+      workorders: Array<{ id: number; componentCount: number; completedCount: number }>;
+    };
+    const afterRow = after.workorders.find((w) => w.id === woId)!;
+    expect(afterRow.componentCount).toBe(2);
+    expect(afterRow.completedCount).toBe(1);
 
     // cross-user isolation: list empty, foreign detail 404
     expect(((await (await get(b.sessionToken, "/workorders")).json()) as { total: number }).total).toBe(0);

@@ -73,6 +73,7 @@ interface WorkorderRow {
 /** List row: `SELECT w.*` + the correlated component subselects. */
 interface WorkorderListRow extends WorkorderRow {
   component_count: number;
+  completed_count: number;
   net_total: number;
 }
 
@@ -203,6 +204,9 @@ export function workordersRoutes() {
         `SELECT w.*,
            (SELECT COUNT(*) FROM accountant_orders o
             WHERE o.workorder_id = w.id AND o.user_id = w.user_id) AS component_count,
+           (SELECT COUNT(*) FROM accountant_orders o
+            WHERE o.workorder_id = w.id AND o.user_id = w.user_id
+              AND o.status = 'complete') AS completed_count,
            COALESCE((SELECT SUM(CASE WHEN o.type = 'sale' THEN o.total ELSE -o.total END)
                      FROM accountant_orders o
                      WHERE o.workorder_id = w.id AND o.user_id = w.user_id), 0) AS net_total
@@ -218,6 +222,7 @@ export function workordersRoutes() {
       workorders: workorders.results.map((w) => ({
         ...w,
         componentCount: w.component_count,
+        completedCount: w.completed_count,
         netTotal: w.net_total,
       })),
       total: totalRow?.n ?? 0,
