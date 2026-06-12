@@ -447,4 +447,66 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(data.total).toBe(1);
     });
   });
+
+  describe("order/workorder-linked entry immutability (M5)", () => {
+    async function attemptMutations(sessionToken: string, entryId: number): Promise<[Response, Response]> {
+      const put = await SELF.fetch(`http://localhost/api/accountant/ledger/${entryId}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: "x" }),
+      });
+      // "Content-Length": "0" required by the global M-01 mutation middleware (see blueprints.test.ts)
+      const del = await SELF.fetch(`http://localhost/api/accountant/ledger/${entryId}`, {
+        method: "DELETE", headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      return [put, del];
+    }
+
+    it("PUT and DELETE on an order-linked entry → 400 'managed via its order'", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      await env.DB.prepare(
+        `INSERT INTO accountant_orders (user_id, type, category, item, quantity, price_per_unit, total, start_at)
+         VALUES (?, 'purchase', 'production', 'Laranite', 100, 1000, 100000, '2026-06-01T00:00:00Z')`,
+      ).bind(userId).run();
+      const order = await env.DB.prepare("SELECT id FROM accountant_orders WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, order_id)
+         VALUES (?, '2026-06-01T00:00:00Z', -100000, 'po_reserve', ?)`,
+      ).bind(userId, order!.id).run();
+      const entry = await env.DB.prepare("SELECT id FROM accountant_entries WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+
+      const [put, del] = await attemptMutations(sessionToken, entry!.id);
+      expect(put.status).toBe(400);
+      expect(((await put.json()) as { error: string }).error)
+        .toBe("Order-linked entries are managed via the order");
+      expect(del.status).toBe(400);
+      expect(((await del.json()) as { error: string }).error)
+        .toBe("Order-linked entries are managed via the order");
+    });
+
+    it("PUT and DELETE on a workorder-linked entry → 400 'managed via its workorder'", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      await env.DB.prepare(
+        "INSERT INTO accountant_workorders (user_id, title) VALUES (?, 'Mining run')",
+      ).bind(userId).run();
+      const wo = await env.DB.prepare("SELECT id FROM accountant_workorders WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, workorder_id)
+         VALUES (?, '2026-06-01T00:00:00Z', -50000, 'wo_settlement', ?)`,
+      ).bind(userId, wo!.id).run();
+      const entry = await env.DB.prepare("SELECT id FROM accountant_entries WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+
+      const [put, del] = await attemptMutations(sessionToken, entry!.id);
+      expect(put.status).toBe(400);
+      expect(((await put.json()) as { error: string }).error)
+        .toBe("Workorder-linked entries are managed via the workorder");
+      expect(del.status).toBe(400);
+      expect(((await del.json()) as { error: string }).error)
+        .toBe("Workorder-linked entries are managed via the workorder");
+    });
+  });
 });

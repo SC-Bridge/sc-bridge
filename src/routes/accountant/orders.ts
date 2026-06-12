@@ -10,7 +10,7 @@ import {
   ORDER_TYPES,
   RATE_CHANGE_CONDITIONS,
 } from "../../lib/accountant/constants";
-import { QTY_EPSILON, completionStatements, effectiveRate, insertOrder, lockedInPOs } from "./order-helpers";
+import { QTY_EPSILON, completionStatements, effectiveRate, insertOrder, lockedInPOs, openReserve } from "./order-helpers";
 import { parseIdParam } from "./schemas";
 
 // .strict() doubles as the private-market enforcement: vis_corp/vis_public are
@@ -32,6 +32,13 @@ const CreateOrderSchema = z.object({
   rate_change_pct: z.number().min(0).max(1000).default(0),
   termination_clause: z.string().max(500).default("standard"),
   notes: z.string().max(2000).optional(),
+}).strict();
+
+// Contract terms are hard-locked at creation ("no modifications after
+// agreement", master doc; owner ruling 10) — notes is the ONLY editable field;
+// .strict() rejects every contract key with 400. Mirrors UpdateLoanSchema.
+const UpdateOrderSchema = z.object({
+  notes: z.string().max(2000).nullable().optional(),
 }).strict();
 
 // `{ quantity, occurred_at?, location?, amount? }` — server computes the effective
@@ -301,6 +308,72 @@ export function ordersRoutes() {
 
     await db.batch(stmts);
     return c.json({ ok: true, amount, ...(release !== undefined ? { release } : {}), status });
+  });
+
+  // POST /orders/:id/cancel — release the remaining reserve and close the order.
+  // Fines stop automatically: tick eligibility excludes closed statuses.
+  routes.post("/:id/cancel", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+
+    // Fines accrued while open must land before the close stops the clock
+    // (Task 6 swaps to combined catchUp).
+    await catchUpAccruals(db, userID);
+
+    const order = await db
+      .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<OrderRow>();
+    if (!order) return c.json({ error: "Not found" }, 404);
+    if (order.status === "complete" || order.status === "cancelled") {
+      return c.json({ error: "Order already closed" }, 400);
+    }
+
+    const stmts: D1PreparedStatement[] = [];
+    const open = await openReserve(db, userID, id);
+    if (open > 0) {
+      stmts.push(
+        db.prepare(
+          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+           VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
+        ).bind(userID, new Date().toISOString(), open, id, `PO reserve release · O-${id}`),
+      );
+    }
+    stmts.push(
+      db.prepare("UPDATE accountant_orders SET status = 'cancelled' WHERE id = ? AND user_id = ?").bind(id, userID),
+    );
+    // Finding 18: cancelling the last open component must advance the parent
+    // workorder — same completion check the fulfilment path runs (Task 8 fills it).
+    if (order.workorder_id !== null) {
+      stmts.push(...(await completionStatements(db, userID, order.workorder_id)));
+    }
+
+    await db.batch(stmts);
+    return c.json({ ok: true, released: open });
+  });
+
+  // PUT /orders/:id — notes only (UpdateOrderSchema hard-locks the contract).
+  routes.put("/:id", validate("json", UpdateOrderSchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const body = c.req.valid("json");
+
+    const exists = await db
+      .prepare("SELECT id FROM accountant_orders WHERE id = ? AND user_id = ?")
+      .bind(id, userID)
+      .first<{ id: number }>();
+    if (!exists) return c.json({ error: "Not found" }, 404);
+
+    if (body.notes === undefined) return c.json({ ok: true });
+    await db
+      .prepare("UPDATE accountant_orders SET notes = ? WHERE id = ? AND user_id = ?")
+      .bind(body.notes ?? null, id, userID)
+      .run();
+    return c.json({ ok: true });
   });
 
   return routes;

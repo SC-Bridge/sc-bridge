@@ -281,3 +281,93 @@ describe("M5 — fulfilments, rate change, reserve lifecycle", () => {
     expect((await get(b.sessionToken, `/orders/${id}`)).status).toBe(404);
   });
 });
+
+describe("M5 — cancel + notes-only PUT", () => {
+  async function cancel(token: string, id: number) {
+    // "Content-Length": "0" required by the global M-01 mutation middleware.
+    return SELF.fetch(`http://localhost/api/accountant/orders/${id}/cancel`, {
+      method: "POST",
+      headers: { ...(await authHeaders(token)), "Content-Length": "0" },
+    });
+  }
+  async function put(token: string, id: number, body: Record<string, unknown>) {
+    return SELF.fetch(`http://localhost/api/accountant/orders/${id}`, {
+      method: "PUT",
+      headers: { ...(await authHeaders(token)), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("cancel releases the remaining reserve; partial fulfilments keep their entries", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    const res = await post(sessionToken, "/orders", PO);          // 100,000 reserved
+    const { id } = (await res.json()) as { id: number };
+    const f = await post(sessionToken, `/orders/${id}/fulfillments`, {
+      quantity: 40, occurred_at: "2026-06-12T00:00:00Z",          // releases 40,000
+    });
+    expect(f.status).toBe(200);
+
+    const c = await cancel(sessionToken, id);
+    expect(c.status).toBe(200);
+    expect(((await c.json()) as { ok: boolean }).ok).toBe(true);
+
+    const rows = (await env.DB.prepare(
+      "SELECT amount, source FROM accountant_entries WHERE order_id = ? ORDER BY id",
+    ).bind(id).all<{ amount: number; source: string }>()).results;
+    const reserveNet = rows
+      .filter((r) => r.source.startsWith("po_reserve"))
+      .reduce((s, r) => s + r.amount, 0);
+    expect(reserveNet).toBe(0);                                   // −100,000 + 40,000 + 60,000
+    const releases = rows.filter((r) => r.source === "po_reserve_release").map((r) => r.amount);
+    expect(releases).toEqual([40000, 60000]);                     // proportional then remaining-on-cancel
+    const fulfilment = rows.find((r) => r.source === "order_fulfillment");
+    expect(fulfilment?.amount).toBe(-40000);                      // partial fulfilment entry survives
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("cancelled");
+  });
+
+  it("cancel on a complete order → 400; cancel a sale order with no reserve just closes it", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    const po = await post(sessionToken, "/orders", PO);
+    const { id: poId } = (await po.json()) as { id: number };
+    const fullFulfil = await post(sessionToken, `/orders/${poId}/fulfillments`, {
+      quantity: 100, occurred_at: "2026-06-12T00:00:00Z",         // closes the order → complete
+    });
+    expect(fullFulfil.status).toBe(200);
+    const closed = await cancel(sessionToken, poId);
+    expect(closed.status).toBe(400);
+    expect(((await closed.json()) as { error: string }).error).toBe("Order already closed");
+
+    // Sale order: zero ledger effect at creation → cancel writes NO entries, only the status flips.
+    const sale = await post(sessionToken, "/orders", SALE);
+    const { id: saleId } = (await sale.json()) as { id: number };
+    const c = await cancel(sessionToken, saleId);
+    expect(c.status).toBe(200);
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM accountant_entries WHERE order_id = ?")
+      .bind(saleId).first<{ n: number }>();
+    expect(n?.n).toBe(0);
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(saleId).first<{ status: string }>();
+    expect(o?.status).toBe("cancelled");
+  });
+
+  it("PUT /orders/:id edits notes only; contract terms locked (strict schema → 400 on fine_rate)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", SALE);
+    const { id } = (await res.json()) as { id: number };
+
+    const ok = await put(sessionToken, id, { notes: "renegotiated" });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { ok: boolean }).ok).toBe(true);
+    const row = await env.DB.prepare("SELECT notes, fine_rate FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ notes: string; fine_rate: number }>();
+    expect(row?.notes).toBe("renegotiated");
+    expect(row?.fine_rate).toBe(0.5);                             // contract term untouched
+
+    const locked = await put(sessionToken, id, { fine_rate: 9 });
+    expect(locked.status).toBe(400);                              // hard-locked at creation (owner ruling 10)
+  });
+});

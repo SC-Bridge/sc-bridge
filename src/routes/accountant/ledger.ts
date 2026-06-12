@@ -173,12 +173,18 @@ export function ledgerRoutes() {
     const body = c.req.valid("json");
 
     const row = await db
-      .prepare("SELECT source, loan_id FROM accountant_entries WHERE id = ? AND user_id = ?")
+      .prepare("SELECT source, loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND user_id = ?")
       .bind(id, userID)
-      .first<{ source: string; loan_id: number | null }>();
+      .first<{ source: string; loan_id: number | null; order_id: number | null; workorder_id: number | null }>();
     if (!row) return c.json({ error: "Not found" }, 404);
     if (row.loan_id !== null) {
       return c.json({ error: "Loan-linked entries are managed via the loan" }, 400);
+    }
+    if (row.order_id !== null) {
+      return c.json({ error: "Order-linked entries are managed via the order" }, 400);
+    }
+    if (row.workorder_id !== null) {
+      return c.json({ error: "Workorder-linked entries are managed via the workorder" }, 400);
     }
     const isUserAuthored = row.source === "manual" || row.source === "adjustment";
     if (!isUserAuthored && RESTRICTED_FIELDS.some((f) => body[f] !== undefined)) {
@@ -209,12 +215,18 @@ export function ledgerRoutes() {
     if (id === null) return c.json({ error: "Not found" }, 404);
 
     const row = await db
-      .prepare("SELECT loan_id FROM accountant_entries WHERE id = ? AND user_id = ?")
+      .prepare("SELECT loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND user_id = ?")
       .bind(id, userID)
-      .first<{ loan_id: number | null }>();
+      .first<{ loan_id: number | null; order_id: number | null; workorder_id: number | null }>();
     if (!row) return c.json({ error: "Not found" }, 404);
     if (row.loan_id !== null) {
       return c.json({ error: "Loan-linked entries are managed via the loan" }, 400);
+    }
+    if (row.order_id !== null) {
+      return c.json({ error: "Order-linked entries are managed via the order" }, 400);
+    }
+    if (row.workorder_id !== null) {
+      return c.json({ error: "Workorder-linked entries are managed via the workorder" }, 400);
     }
 
     await db
