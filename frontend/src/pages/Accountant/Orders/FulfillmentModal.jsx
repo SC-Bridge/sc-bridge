@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { recordFulfillment } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 import { effectiveRate, fulfillmentPreview, orderRef } from '../orderMath'
 
@@ -29,6 +29,12 @@ export default function FulfillmentModal({ order, onClose, onSaved }) {
       setError('Quantity must be greater than 0')
       return
     }
+    // Strict money parse on the override — never book a truncated value.
+    const override = amount.trim() === '' ? undefined : parseAUEC(amount)
+    if (override === null || (override !== undefined && override < 1)) {
+      setError('Amount override must be a whole number of aUEC (1 or more)')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -36,7 +42,7 @@ export default function FulfillmentModal({ order, onClose, onSaved }) {
         quantity: qty,
         occurred_at: new Date(occurredAt).toISOString(),
         ...(location ? { location } : {}),
-        ...(amount ? { amount: parseInt(amount, 10) } : {}),
+        ...(override !== undefined ? { amount: override } : {}),
       })
       onSaved()
     } catch (err) {

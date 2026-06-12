@@ -34,6 +34,18 @@ describe('ForgiveModal', () => {
     expect(onSaved).not.toHaveBeenCalled()
   })
 
+  it('plain failures (no server echo) show the message without the outstanding decoration', async () => {
+    // A 500/network error carries no `outstanding` — decorating it would imply
+    // an over-forgiveness rejection that never happened.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'forgive exploded' }) })
+    render(<ForgiveModal loan={LOAN} onClose={() => {}} onSaved={() => {}} />)
+    await userEvent.type(screen.getByLabelText(/forgive amount/i), '40000')
+    await userEvent.click(screen.getByRole('button', { name: /^forgive$/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent('forgive exploded')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/outstanding is/i)
+  })
+
   it('explains the P&L direction: outgoing loan → absorbed loss', () => {
     render(<ForgiveModal loan={LOAN} onClose={() => {}} onSaved={() => {}} />)
     expect(screen.getByText(/you absorb this as a loss \(P&L expense\)/i)).toBeInTheDocument()

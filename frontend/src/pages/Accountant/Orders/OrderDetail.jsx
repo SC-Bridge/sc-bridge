@@ -32,10 +32,16 @@ function SectionTitle({ children }) {
 function NotesEditor({ order }) {
   const [notes, setNotes] = useState(order.notes ?? '')
   const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
 
+  // Still optimistic (typing is never blocked) — saving only dedupes a
+  // double-clicked button while the PUT is in flight.
   function save() {
     setError(null)
-    updateOrder(order.id, { notes: notes || null }).catch((e) => setError(e.message))
+    setSaving(true)
+    updateOrder(order.id, { notes: notes || null })
+      .catch((e) => setError(e.message))
+      .finally(() => setSaving(false))
   }
 
   return (
@@ -51,8 +57,8 @@ function NotesEditor({ order }) {
         rows={3}
         className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm mb-2"
       />
-      <button onClick={save}
-        className="w-full border border-sc-border text-gray-300 rounded py-1.5 text-sm hover:bg-white/5">
+      <button onClick={save} disabled={saving}
+        className="w-full border border-sc-border text-gray-300 rounded py-1.5 text-sm hover:bg-white/5 disabled:opacity-50">
         Save notes
       </button>
     </>
@@ -63,14 +69,18 @@ export default function OrderDetail({ id, onClose }) {
   const { data, error, loading, refetch } = useOrder(id)
   const [fulfilling, setFulfilling] = useState(false)
   const [actionError, setActionError] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   async function doCancel(orderId) {
     if (!window.confirm('Cancel this order? Any open reserve is released.')) return
     setActionError(null)
+    setBusy(true)
     try {
       await cancelOrder(orderId)
     } catch (e) {
       setActionError(e.message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -93,12 +103,12 @@ export default function OrderDetail({ id, onClose }) {
       )}
 
       {data && <OrderBody data={data} fulfilling={fulfilling} setFulfilling={setFulfilling}
-        actionError={actionError} onCancel={doCancel} />}
+        actionError={actionError} busy={busy} onCancel={doCancel} />}
     </div>
   )
 }
 
-function OrderBody({ data, fulfilling, setFulfilling, actionError, onCancel }) {
+function OrderBody({ data, fulfilling, setFulfilling, actionError, busy, onCancel }) {
   const { order, fulfillments, fines, reserve, computed } = data
   const active = order.status === 'open' || order.status === 'in_progress'
 
@@ -180,8 +190,8 @@ function OrderBody({ data, fulfilling, setFulfilling, actionError, onCancel }) {
             className="bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded px-3 py-1.5 text-sm hover:bg-sc-accent/30">
             Record fulfilment
           </button>
-          <button onClick={() => onCancel(order.id)}
-            className="border border-sc-border text-gray-300 rounded px-3 py-1.5 text-sm hover:bg-white/5">
+          <button onClick={() => onCancel(order.id)} disabled={busy}
+            className="border border-sc-border text-gray-300 rounded px-3 py-1.5 text-sm hover:bg-white/5 disabled:opacity-50">
             Cancel order
           </button>
         </div>

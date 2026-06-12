@@ -83,6 +83,10 @@ export default function Workorders() {
   }
 
   const { workorders, total } = data
+  // Distinguish "nothing matches the active filters" from a truly empty
+  // account — the CTA hero only makes sense for the latter (Market's
+  // filtered-empty heuristic, mirrored).
+  const filtered = params.getAll('status').length > 0
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -99,7 +103,11 @@ export default function Workorders() {
 
       <StatusFilter params={params} onChange={setParams} />
 
-      {total === 0 ? (
+      {total === 0 && filtered ? (
+        <div className="panel p-10 text-center text-gray-400">
+          <p>No workorders match these filters.</p>
+        </div>
+      ) : total === 0 ? (
         <div className="panel p-10 text-center text-gray-400">
           <p className="mb-3">No workorders yet.</p>
           <Link to="/accountant/orders/workorders/new" className="text-sc-accent text-sm">

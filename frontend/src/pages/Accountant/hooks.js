@@ -58,9 +58,20 @@ function useGet(path, { refreshOn } = {}) {
 
   useEffect(() => {
     if (!refreshOn) return undefined
-    const handler = () => refetch()
+    // Keep the cancel from event-triggered refetches: when the path changes
+    // (refetch identity changes) this effect re-runs and the cleanup cancels
+    // any in-flight event refetch, so its late response can never overwrite
+    // newer data fetched for the new path.
+    let cancel
+    const handler = () => {
+      cancel?.()
+      cancel = refetch()
+    }
     window.addEventListener(refreshOn, handler)
-    return () => window.removeEventListener(refreshOn, handler)
+    return () => {
+      cancel?.()
+      window.removeEventListener(refreshOn, handler)
+    }
   }, [refreshOn, refetch])
 
   return { data, error, loading, refetch }

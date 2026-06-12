@@ -116,6 +116,24 @@ describe('NewWorkorder composition route', () => {
     expect(sent).not.toHaveProperty('order_ids')
   })
 
+  it('Enter inside the inline-order sub-form adds the order — never the page-level implicit submit', async () => {
+    renderPage()
+    // Title already filled — the dangerous case: implicit submission would
+    // create the draft and discard the half-composed inline order.
+    await userEvent.type(screen.getByLabelText(/title/i), 'Laranite hauling run')
+    const form = within(screen.getByTestId('inline-order-form'))
+    await userEvent.selectOptions(form.getByLabelText(/category/i), 'trading')
+    await userEvent.type(form.getByLabelText(/item/i), 'Refined quantanium')
+    await userEvent.type(form.getByLabelText(/quantity/i), '10')
+    await userEvent.type(form.getByLabelText(/price/i), '5000{Enter}')
+
+    // Enter routed to add(): the component lands in the list…
+    expect(within(screen.getByTestId('component-list')).getByText('Refined quantanium')).toBeInTheDocument()
+    // …and the page did NOT create the draft.
+    expect(postedBody()).toBeNull()
+    expect(screen.queryByTestId('wo-detail-route')).not.toBeInTheDocument()
+  })
+
   it('fund rejection from an inline purchase bubbles the rejection panel', async () => {
     mockApi({
       create: {

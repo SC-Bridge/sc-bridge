@@ -164,4 +164,37 @@ describe('order + workorder hooks (M5)', () => {
     await forgiveLoan(7, { amount: 10000 })
     expect(fetchMock).toHaveBeenCalledWith('/api/accountant/loans/7/forgive', expect.objectContaining({ method: 'POST' }))
   })
+
+  it('a late event-triggered refetch for a superseded path cannot overwrite newer data', async () => {
+    // Race: mutation fires accountant:changed → refetch for query A starts →
+    // user switches filters → query B resolves → A resolves LATE. A's stale
+    // payload must be discarded, not painted over B.
+    let releaseStale
+    const stale = new Promise((resolve) => { releaseStale = resolve })
+    let saleCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const s = String(url)
+      if (s.includes('type=sale')) {
+        saleCalls += 1
+        // Mount fetch resolves immediately; the event refetch hangs until
+        // released AFTER the filter switch.
+        const stalePayload = saleCalls > 1
+        if (stalePayload) await stale
+        return { ok: true, status: 200, json: async () => ({ total: stalePayload ? 99 : 1 }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ total: 2 }) }
+    })
+
+    const { result, rerender } = renderHook(({ qs }) => useOrders(qs), { initialProps: { qs: 'type=sale' } })
+    await waitFor(() => expect(result.current.data?.total).toBe(1))
+
+    window.dispatchEvent(new Event('accountant:changed')) // orphan for type=sale starts
+    await waitFor(() => expect(saleCalls).toBe(2))
+    rerender({ qs: 'type=purchase' })                      // user switches filters
+    await waitFor(() => expect(result.current.data?.total).toBe(2))
+
+    releaseStale()                                         // stale response lands late
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current.data.total).toBe(2)              // never 99
+  })
 })

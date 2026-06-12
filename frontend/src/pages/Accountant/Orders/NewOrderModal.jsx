@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createOrder } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 import { modifiedContractFields, orderTotal } from '../orderMath'
 import {
@@ -20,13 +20,17 @@ export default function NewOrderModal({ onClose, onSaved }) {
   const modified = modifiedContractFields(contract)
 
   const qty = parseFloat(core.quantity)
-  const price = parseFloat(core.pricePerUnit)
+  // Strict money parse: the preview and the posted body share one value, so
+  // '1e5' (which parseInt would truncate to 1) is rejected, never booked.
+  const price = parseAUEC(core.pricePerUnit)
   const total = qty > 0 && price > 0 ? orderTotal(qty, price) : null
 
   async function submit(e) {
     e.preventDefault()
     if (!(qty > 0) || !(price > 0)) {
-      setError('Quantity and price must be greater than 0')
+      setError(price === null && core.pricePerUnit.trim() !== ''
+        ? 'Price must be a whole number of aUEC (digits only)'
+        : 'Quantity and price must be greater than 0')
       return
     }
     setSaving(true)

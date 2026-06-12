@@ -18,19 +18,22 @@ import OrderTable from './OrderTable'
 import TerminateModal from './TerminateModal'
 
 const accentBtn = 'bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded px-3 py-1.5 text-sm hover:bg-sc-accent/30 disabled:opacity-50'
-const ghostBtn = 'border border-sc-border text-gray-300 rounded px-3 py-1.5 text-sm hover:bg-white/5'
+const ghostBtn = 'border border-sc-border text-gray-300 rounded px-3 py-1.5 text-sm hover:bg-white/5 disabled:opacity-50'
 
-function ActionBar({ wo, openCount, onPublish, onCancel, onTerminate }) {
+// busy disables the mutation buttons while a POST is in flight — a double
+// click must never fire twice (the second 400 would paint a spurious error
+// over a success).
+function ActionBar({ wo, openCount, busy, onPublish, onCancel, onTerminate }) {
   if (wo.status === 'draft') {
     return (
       <div className="flex gap-2">
-        <button onClick={onPublish} disabled={openCount < 2} className={accentBtn}>Publish</button>
-        <button onClick={onCancel} className={ghostBtn}>Cancel workorder</button>
+        <button onClick={onPublish} disabled={openCount < 2 || busy} className={accentBtn}>Publish</button>
+        <button onClick={onCancel} disabled={busy} className={ghostBtn}>Cancel workorder</button>
       </div>
     )
   }
   if (wo.status === 'open') {
-    return <button onClick={onCancel} className={ghostBtn}>Cancel workorder</button>
+    return <button onClick={onCancel} disabled={busy} className={ghostBtn}>Cancel workorder</button>
   }
   if (wo.status === 'in_progress') {
     return <button onClick={onTerminate} className={accentBtn}>Terminate…</button>
@@ -104,6 +107,7 @@ export default function WorkorderDetail() {
   const { data, error, loading, refetch } = useWorkorder(id)
   const [terminating, setTerminating] = useState(false)
   const [actionError, setActionError] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   if (loading && !data) return <LoadingState />
   if (error) {
@@ -122,10 +126,13 @@ export default function WorkorderDetail() {
 
   async function run(action) {
     setActionError(null)
+    setBusy(true)
     try {
       await action()
     } catch (e) {
       setActionError(e.message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -144,7 +151,7 @@ export default function WorkorderDetail() {
         title={`${woRef(wo.id)} · ${wo.title}`}
         subtitle={`${STATUS_LABELS[wo.status]}${wo.counterparty ? ` · ${wo.counterparty}` : ''}`}
         actions={
-          <ActionBar wo={wo} openCount={openCount}
+          <ActionBar wo={wo} openCount={openCount} busy={busy}
             onPublish={publish} onCancel={cancel} onTerminate={() => setTerminating(true)} />
         }
       />

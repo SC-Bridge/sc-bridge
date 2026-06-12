@@ -78,12 +78,23 @@ describe('Workorders list page', () => {
     expect(link).toHaveAttribute('href', '/accountant/orders/workorders/new')
   })
 
-  it('empty state renders the CTA hero linking to the composition route', async () => {
+  it('truly-unfiltered empty state renders the CTA hero linking to the composition route', async () => {
     mockApi({ workorders: [], total: 0 })
     renderPage()
     await waitFor(() => expect(screen.getByText(/no workorders yet/i)).toBeInTheDocument())
     expect(screen.getByRole('link', { name: /create your first workorder/i }))
       .toHaveAttribute('href', '/accountant/orders/workorders/new')
+    expect(screen.queryByText(/no workorders match these filters/i)).not.toBeInTheDocument()
+  })
+
+  it('filtered empty state says no workorders match — no CTA hero', async () => {
+    mockApi({ workorders: [], total: 0 })
+    renderPage('/accountant/orders/workorders?status=terminated')
+    await waitFor(() =>
+      expect(screen.getByText(/no workorders match these filters/i)).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('link', { name: /create your first workorder/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/no workorders yet/i)).not.toBeInTheDocument()
   })
 
   it('loading renders the loading state', () => {

@@ -128,7 +128,9 @@ export default function Market() {
         </div>
       </div>
 
-      {selectedId && <OrderDetail id={selectedId} onClose={() => setOrderParam(null)} />}
+      {/* key remounts the slide-over per order — action errors and note
+          drafts from one order never bleed into the next. */}
+      {selectedId && <OrderDetail key={selectedId} id={selectedId} onClose={() => setOrderParam(null)} />}
 
       {adding && <NewOrderModal onClose={() => setAdding(false)} onSaved={() => setAdding(false)} />}
     </div>

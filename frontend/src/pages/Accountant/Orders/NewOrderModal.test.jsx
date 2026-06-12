@@ -69,6 +69,26 @@ describe('NewOrderModal', () => {
     expect(within(screen.getByTestId('contract-termination_clause')).queryByTestId('modified-marker')).not.toBeInTheDocument()
   })
 
+  it('rejects scientific-notation price input — 1e5 can never post as price_per_unit 1', async () => {
+    // HTML number inputs accept '1e5' (a valid float string), but
+    // parseInt('1e5') === 1: the preview would show 100,000/unit while the
+    // body books 1/unit. parseAUEC's strict contract rejects it outright.
+    const onSaved = vi.fn()
+    render(<NewOrderModal onClose={() => {}} onSaved={onSaved} />)
+    await userEvent.selectOptions(screen.getByLabelText(/category/i), 'trading')
+    await userEvent.type(screen.getByLabelText(/item/i), 'Laranite')
+    await userEvent.type(screen.getByLabelText(/quantity/i), '200')
+    // fireEvent.change: jsdom sanitizes the invalid '1e' intermediate away
+    // under char-by-char typing; '1e5' is a valid FINAL float string that a
+    // real browser's number input will happily hold.
+    fireEvent.change(screen.getByLabelText(/price/i), { target: { value: '1e5' } })
+
+    await userEvent.click(screen.getByRole('button', { name: /post order/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
   it('insufficient-funds 400 renders the rejection panel from err.details', async () => {
     globalThis.fetch.mockResolvedValue({
       ok: false,

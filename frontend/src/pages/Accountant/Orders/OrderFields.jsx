@@ -6,7 +6,7 @@ import {
   ORDER_CATEGORIES, ORDER_TEMPLATE, ORDER_TYPES, RATE_CHANGE_CONDITIONS, TAG_LABELS,
 } from '../constants'
 import { INTERVAL_LABELS } from '../loanMath'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 
 export const inputClass = 'w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm'
 
@@ -51,7 +51,9 @@ export const ORDER_CORE_INITIAL = {
   type: 'sale', category: '', tag: '', item: '', quantity: '', pricePerUnit: '',
 }
 
-// POST-body fragment for the core fields (CreateOrderSchema shape).
+// POST-body fragment for the core fields (CreateOrderSchema shape). Callers
+// validate price via parseAUEC before submitting — its strict contract keeps
+// the live total preview and the posted price_per_unit identical.
 export function orderCoreBody(form) {
   return {
     type: form.type,
@@ -59,7 +61,7 @@ export function orderCoreBody(form) {
     ...(form.tag ? { tag: form.tag } : {}),
     item: form.item.trim(),
     quantity: parseFloat(form.quantity),
-    price_per_unit: parseInt(form.pricePerUnit, 10),
+    price_per_unit: parseAUEC(form.pricePerUnit),
   }
 }
 

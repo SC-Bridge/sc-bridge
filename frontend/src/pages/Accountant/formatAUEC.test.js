@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatAUEC, signClass, toneBySign } from './formatAUEC'
+import { formatAUEC, parseAUEC, signClass, toneBySign } from './formatAUEC'
 
 describe('formatAUEC', () => {
   it('formats with thousands separators', () => {
@@ -20,6 +20,31 @@ describe('formatAUEC', () => {
     expect(toneBySign(100)).toBe('positive')
     expect(toneBySign(-100)).toBe('negative')
     expect(toneBySign(0)).toBe('neutral')
+  })
+})
+
+describe('parseAUEC', () => {
+  it('parses plain digit strings', () => {
+    expect(parseAUEC('3200')).toBe(3200)
+    expect(parseAUEC('0')).toBe(0)
+  })
+  it('accepts comma/space group separators', () => {
+    expect(parseAUEC('1,084,999')).toBe(1084999)
+    expect(parseAUEC('1 084 999')).toBe(1084999)
+  })
+  it('accepts a leading minus', () => {
+    expect(parseAUEC('-45000')).toBe(-45000)
+  })
+  it('rejects scientific notation — parseInt would silently truncate 1e5 to 1', () => {
+    expect(parseAUEC('1e5')).toBeNull()
+    expect(parseAUEC('1E5')).toBeNull()
+  })
+  it('rejects decimals, garbage and blanks', () => {
+    expect(parseAUEC('12.5')).toBeNull()
+    expect(parseAUEC('12abc')).toBeNull()
+    expect(parseAUEC('')).toBeNull()
+    expect(parseAUEC('   ')).toBeNull()
+    expect(parseAUEC('-')).toBeNull()
   })
 })
 

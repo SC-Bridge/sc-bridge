@@ -21,11 +21,14 @@ function ok(body) {
   return { ok: true, status: 200, json: async () => body }
 }
 
-function mockApi({ orders = ORDERS, total = orders.length, balance = 8240000, lockedInPOs = 4240293, badges = { ordersOverdue: 0 } } = {}) {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+function mockApi({ orders = ORDERS, total = orders.length, balance = 8240000, lockedInPOs = 4240293, badges = { ordersOverdue: 0 }, mutation = ok({ ok: true }) } = {}) {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts = {}) => {
     const s = String(url)
+    if (opts.method && opts.method !== 'GET') return mutation
     if (s.includes('/api/accountant/badges')) return ok(badges)
-    if (/\/api\/accountant\/orders\/\d+/.test(s)) return ok(DETAIL)
+    const detail = s.match(/\/api\/accountant\/orders\/(\d+)/)
+    // Detail echoes the requested id so order-switch tests can tell them apart.
+    if (detail) return ok({ ...DETAIL, order: { ...DETAIL.order, id: Number(detail[1]) } })
     if (s.includes('/api/accountant/orders')) return ok({ orders, total, balance, lockedInPOs, page: 1 })
     return ok({})
   })
@@ -137,6 +140,26 @@ describe('Market page', () => {
     await userEvent.click(screen.getByText('O-82'))
     expect(screen.getByTestId('location-search').textContent).toContain('order=82')
     expect(screen.getByTestId('order-detail')).toBeInTheDocument()
+  })
+
+  it('switching ?order= remounts the detail — stale action errors never bleed across orders', async () => {
+    mockApi({ mutation: { ok: false, status: 400, json: async () => ({ error: 'cancel exploded' }) } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderMarket()
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('O-82'))
+    await screen.findByText(/O-82 ·/)
+
+    // Fail a cancel on order 82 → its error renders; draft some notes.
+    await userEvent.click(screen.getByRole('button', { name: /cancel order/i }))
+    await waitFor(() => expect(screen.getByText('cancel exploded')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText(/notes/i), ' renegotiating')
+
+    // Switch to order 79: fresh detail state, nothing bleeds across.
+    await userEvent.click(screen.getByText('O-79'))
+    await waitFor(() => expect(screen.getByText(/O-79 ·/)).toBeInTheDocument())
+    expect(screen.queryByText('cancel exploded')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/notes/i)).toHaveValue('')
   })
 
   it('[+ New Order] button opens the NewOrderModal stub', async () => {

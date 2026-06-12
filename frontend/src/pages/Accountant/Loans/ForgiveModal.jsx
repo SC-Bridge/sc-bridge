@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { forgiveLoan } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 
 // RepaymentModal twin (design §5.6). No date field by design: the forgiveness
 // entry posts at server now, and the API auto-settles the loan at exactly 0.
@@ -12,7 +12,8 @@ export default function ForgiveModal({ loan, onClose, onSaved }) {
 
   async function submit(e) {
     e.preventDefault()
-    const parsed = parseInt(amount, 10)
+    // Strict money parse — parseAUEC nulls anything parseInt would truncate.
+    const parsed = parseAUEC(amount)
     if (!parsed || parsed < 1) {
       setError('Amount must be at least 1')
       return
@@ -26,7 +27,11 @@ export default function ForgiveModal({ loan, onClose, onSaved }) {
       })
       onSaved()
     } catch (err) {
-      setError(`${err.message} — outstanding is ${formatAUEC(err.details?.outstanding ?? loan.outstanding)}`)
+      // Only the over-forgiveness 400 echoes `outstanding` — decorating other
+      // failures would imply a rejection that never happened.
+      setError(err.details?.outstanding !== undefined
+        ? `${err.message} — outstanding is ${formatAUEC(err.details.outstanding)}`
+        : err.message)
       setSaving(false)
     }
   }

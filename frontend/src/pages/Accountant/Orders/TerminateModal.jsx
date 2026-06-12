@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 import { terminateWorkorder } from '../hooks'
 import { orderRef, woRef } from '../orderMath'
 
@@ -52,8 +52,9 @@ export default function TerminateModal({ workorder, orders, suggestion, onClose,
       return
     }
     const blank = String(amountValue).trim() === ''
-    const amount = blank && amountOptional ? undefined : parseInt(amountValue, 10)
-    if (amount !== undefined && (!Number.isInteger(amount) || amount < 0)) {
+    // Strict money parse — parseAUEC nulls anything parseInt would truncate.
+    const amount = blank && amountOptional ? undefined : parseAUEC(amountValue)
+    if (amount !== undefined && (amount === null || amount < 0)) {
       setError(terminatedBy === 'you'
         ? 'Settlement amount is required when you terminate'
         : 'Settlement amount must be 0 or more')

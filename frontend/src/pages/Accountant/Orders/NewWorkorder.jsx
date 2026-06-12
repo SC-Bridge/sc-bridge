@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import PageHeader from '../../../components/PageHeader'
 import { CATEGORY_LABELS, STATUS_LABELS } from '../constants'
 import { createWorkorder, useOrders } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 import { modifiedContractFields, orderRef, orderTotal } from '../orderMath'
 import {
@@ -51,7 +51,8 @@ function InlineOrderForm({ onAdd }) {
   const [error, setError] = useState(null)
 
   const qty = parseFloat(form.quantity)
-  const price = parseFloat(form.pricePerUnit)
+  // Strict money parse — preview and orderCoreBody share one value.
+  const price = parseAUEC(form.pricePerUnit)
 
   function add() {
     if (!form.category || !form.item.trim() || !(qty > 0) || !(price > 0)) {
@@ -63,8 +64,18 @@ function InlineOrderForm({ onAdd }) {
     setForm(ORDER_CORE_INITIAL)
   }
 
+  // This sub-form sits INSIDE the page <form>: HTML implicit submission would
+  // route Enter in any of these inputs to "Create draft", discarding the
+  // half-composed component order. Enter here means "Add order".
+  function trapEnter(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      add()
+    }
+  }
+
   return (
-    <div className="space-y-3" data-testid="inline-order-form">
+    <div className="space-y-3" data-testid="inline-order-form" onKeyDown={trapEnter}>
       {error && <p role="alert" className="text-sm text-sc-danger">{error}</p>}
       <OrderCoreFields form={form} onChange={setForm} required={false} />
       {qty > 0 && price > 0 && (

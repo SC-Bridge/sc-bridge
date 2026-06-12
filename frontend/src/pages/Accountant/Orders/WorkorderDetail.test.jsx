@@ -239,6 +239,23 @@ describe('WorkorderDetail route page', () => {
     await waitFor(() => expect(mutationCalled('/api/accountant/workorders/7/cancel', 'POST')).toBe(true))
   })
 
+  it('publish is disabled while its POST is in flight — a double-click sends one request', async () => {
+    // Mutation never resolves: the second click happens mid-flight.
+    mockApi({ wo: workorder({ status: 'draft' }), components: TWO_OPEN, mutation: new Promise(() => {}) })
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/W-0007/)).toBeInTheDocument())
+
+    const publish = screen.getByRole('button', { name: /publish/i })
+    await userEvent.click(publish)
+    expect(publish).toBeDisabled()
+    await userEvent.click(publish) // no-op while busy
+
+    const posts = globalThis.fetch.mock.calls.filter(
+      ([u, o]) => String(u).endsWith('/api/accountant/workorders/7/publish') && o?.method === 'POST',
+    )
+    expect(posts).toHaveLength(1)
+  })
+
   it('loading renders the loading state', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => {}))
     // Unique id: hooks.js dedupes in-flight GETs by path, so a never-resolving
