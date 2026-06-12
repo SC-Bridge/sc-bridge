@@ -169,7 +169,6 @@ const authNavItems = [
     ],
   },
   referenceGroup,
-  { to: '/settings', icon: SettingsIcon, label: 'Settings' },
   {
     group: 'Accountant',
     icon: Wallet,
@@ -210,6 +209,8 @@ const authNavItems = [
     ],
   },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
+  // Owner decision 2026-06-12: Settings sits at the bottom of the menu.
+  { to: '/settings', icon: SettingsIcon, label: 'Settings' },
 ]
 
 const adminNavItems = [

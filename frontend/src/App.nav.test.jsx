@@ -17,6 +17,22 @@ describe('getNavItems — Accountant entry', () => {
   })
 })
 
+describe('Settings nav placement (owner decision 2026-06-12: bottom of menu)', () => {
+  it('Settings is the LAST item for a regular logged-in user', () => {
+    const items = getNavItems('user', true, {}, 'industrial')
+    expect(items[items.length - 1].to).toBe('/settings')
+  })
+
+  it('admin entries append below Settings for admin roles', () => {
+    const items = getNavItems('super_admin', true, {}, 'industrial')
+    const labels = items.map((i) => i.label ?? i.group)
+    const settingsIdx = labels.indexOf('Settings')
+    expect(settingsIdx).toBeGreaterThan(labels.indexOf('Orgs'))
+    expect(labels.indexOf('Admin')).toBeGreaterThan(settingsIdx)
+    expect(labels.indexOf('Users')).toBeGreaterThan(settingsIdx)
+  })
+})
+
 describe('Accountant nav group — tier gating', () => {
   const features = {}
 
