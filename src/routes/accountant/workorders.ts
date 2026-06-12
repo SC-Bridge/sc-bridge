@@ -9,7 +9,14 @@ import {
   RATE_CHANGE_CONDITIONS,
   WORKORDER_STATUSES,
 } from "../../lib/accountant/constants";
-import { incurredCosts, insertOrder, modifiedFields, openReserve } from "./order-helpers";
+import {
+  closeComponentStatements,
+  completionStatements,
+  incurredCosts,
+  insertOrder,
+  modifiedFields,
+  openReserve,
+} from "./order-helpers";
 import { CreateOrderSchema } from "./orders";
 import { parseIdParam } from "./schemas";
 
@@ -40,6 +47,15 @@ const AttachOrderSchema = z.object({
   { message: "Provide exactly one of order_id or order" },
 );
 
+// POST /:id/terminate (§5.4). The note is MANDATORY — dispute history (master
+// doc); order_ids absent → FULL termination, present → PARTIAL (that subset only).
+const TerminateSchema = z.object({
+  note: z.string().trim().min(1).max(2000),
+  terminated_by: z.enum(["you", "counterparty"]),
+  settlement_amount: z.number().int().min(0).max(9_999_999_999_999).optional(),
+  order_ids: z.array(z.number().int().positive()).min(1).max(50).optional(),
+}).strict();
+
 /** Bare `SELECT *` row from accountant_workorders. */
 interface WorkorderRow {
   id: number;
@@ -66,6 +82,15 @@ interface ComponentRow {
   fulfilled_qty: number;
   fulfilled_net: number;
   [key: string]: unknown;
+}
+
+/** Workorder status for the :id routes — null when missing/foreign (→ 404). */
+async function woStatus(db: D1Database, userID: string, id: number): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
+    .bind(id, userID)
+    .first<{ status: string }>();
+  return row?.status ?? null;
 }
 
 /**
@@ -263,12 +288,9 @@ export function workordersRoutes() {
     if (id === null) return c.json({ error: "Not found" }, 404);
     const b = c.req.valid("json");
 
-    const workorder = await db
-      .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{ status: string }>();
-    if (!workorder) return c.json({ error: "Not found" }, 404);
-    if (workorder.status !== "draft" && workorder.status !== "open") {
+    const status = await woStatus(db, userID, id);
+    if (status === null) return c.json({ error: "Not found" }, 404);
+    if (status !== "draft" && status !== "open") {
       return c.json({ error: "Components can only be added to a draft or open workorder" }, 400);
     }
 
@@ -297,12 +319,9 @@ export function workordersRoutes() {
     const orderId = parseIdParam(c.req.param("orderId"));
     if (id === null || orderId === null) return c.json({ error: "Not found" }, 404);
 
-    const workorder = await db
-      .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{ status: string }>();
-    if (!workorder) return c.json({ error: "Not found" }, 404);
-    if (workorder.status !== "draft") {
+    const status = await woStatus(db, userID, id);
+    if (status === null) return c.json({ error: "Not found" }, 404);
+    if (status !== "draft") {
       return c.json({ error: "Components can only be detached from a draft workorder" }, 400);
     }
 
@@ -325,12 +344,9 @@ export function workordersRoutes() {
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
 
-    const workorder = await db
-      .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{ status: string }>();
-    if (!workorder) return c.json({ error: "Not found" }, 404);
-    if (workorder.status !== "draft") {
+    const status = await woStatus(db, userID, id);
+    if (status === null) return c.json({ error: "Not found" }, 404);
+    if (status !== "draft") {
       return c.json({ error: "Only a draft workorder can be published" }, 400);
     }
     const count = await db
@@ -359,14 +375,11 @@ export function workordersRoutes() {
     // Fines accrued while open must land before the close stops the clock.
     await catchUp(db, userID);
 
-    const workorder = await db
-      .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
-      .first<{ status: string }>();
-    if (!workorder) return c.json({ error: "Not found" }, 404);
-    if (workorder.status !== "draft" && workorder.status !== "open") {
+    const status = await woStatus(db, userID, id);
+    if (status === null) return c.json({ error: "Not found" }, 404);
+    if (status !== "draft" && status !== "open") {
       return c.json({
-        error: workorder.status === "in_progress"
+        error: status === "in_progress"
           ? "Work has started — terminate the workorder instead"
           : "Workorder already closed",
       }, 400);
@@ -402,6 +415,83 @@ export function workordersRoutes() {
 
     await db.batch(stmts);
     return c.json({ ok: true });
+  });
+
+  // POST /workorders/:id/terminate — full + partial settlement (§5.4). The
+  // terminator always forfeits: counterparty → +amount (you are refunded),
+  // you → −amount (you compensate).
+  routes.post("/:id/terminate", validate("json", TerminateSchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const b = c.req.valid("json");
+
+    // Fines accrued while open must land before the close stops the clock.
+    await catchUp(db, userID);
+
+    const status = await woStatus(db, userID, id);
+    if (status === null) return c.json({ error: "Not found" }, 404);
+    if (status !== "in_progress") {
+      return c.json({ error: "Only an in-progress workorder can be terminated" }, 400);
+    }
+
+    const comps = await db.prepare(
+      "SELECT id, status FROM accountant_orders WHERE workorder_id = ? AND user_id = ? ORDER BY id",
+    ).bind(id, userID).all<{ id: number; status: string }>();
+    const isOpen = (o: { status: string }) => o.status === "open" || o.status === "in_progress";
+
+    // order_ids absent → FULL (all components; only open ones close); present →
+    // PARTIAL: each target must be MY still-open component — 400 before any write.
+    const full = b.order_ids === undefined;
+    const byId = new Map(comps.results.map((o) => [o.id, o]));
+    for (const oid of b.order_ids ?? []) {
+      const comp = byId.get(oid);
+      if (!comp) return c.json({ error: `Order ${oid} is not a component of this workorder` }, 400);
+      if (!isOpen(comp)) return c.json({ error: `Order ${oid} is already closed` }, 400);
+    }
+    const targets = full ? comps.results.filter(isOpen) : b.order_ids!.map((oid) => byId.get(oid)!);
+
+    // Advisory suggestion = Σ incurred over the WHOLE terminated scope —
+    // including already-complete components on a full termination.
+    const scopeIds = full ? comps.results.map((o) => o.id) : b.order_ids!;
+    let suggestion: number | null = null;
+    if (b.terminated_by === "counterparty") {
+      const incurred = await incurredCosts(db, userID, scopeIds);
+      suggestion = scopeIds.reduce((s, oid) => s + (incurred.get(oid) ?? 0), 0);
+    } else if (b.settlement_amount === undefined) {
+      // Counterparty's costs aren't on your books — no suggestion possible.
+      return c.json({ error: "settlement_amount required when you terminate" }, 400);
+    }
+    const amount = b.settlement_amount ?? suggestion!;  // overridable; 0 legal
+    const signed = b.terminated_by === "counterparty" ? amount : -amount;
+
+    const now = new Date().toISOString();
+    const stmts = await closeComponentStatements(db, userID, targets, now);
+    stmts.push(
+      // ONE wo_settlement per event — the entry sequence IS the audit trail.
+      db.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, notes, description)
+         VALUES (?, ?, ?, 'financial', 'wo_settlement', ?, ?, ?)`,
+      ).bind(userID, now, signed, id, b.note, `Termination settlement · ${b.terminated_by}`),
+    );
+    if (full) {
+      stmts.push(
+        db.prepare(
+          `UPDATE accountant_workorders SET status = 'terminated', terminated_by = ?, termination_note = ?
+           WHERE id = ? AND user_id = ?`,
+        ).bind(b.terminated_by, b.note, id, userID),
+      );
+    } else {
+      // A partial that closed the LAST open component completes the workorder
+      // NORMALLY ('terminated' is reserved for full) — SQL guards self-arbitrate.
+      stmts.push(...(await completionStatements(db, userID, id)));
+    }
+
+    await db.batch(stmts);
+    // Partial may have closed the last open component (→ 'complete') — requery.
+    const after = full ? "terminated" : await woStatus(db, userID, id);
+    return c.json({ ok: true, settlement: amount, suggestion, scope: scopeIds, workorderStatus: after });
   });
 
   return routes;

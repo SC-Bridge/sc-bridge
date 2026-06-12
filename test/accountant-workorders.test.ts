@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
+import { catchUp } from "../src/lib/accountant/catchup";
 
 async function post(token: string, path: string, body: Record<string, unknown>) {
   return SELF.fetch(`http://localhost/api/accountant${path}`, {
@@ -294,5 +295,316 @@ describe("M5 — workorder lifecycle", () => {
     // cross-user isolation: list empty, foreign detail 404
     expect(((await (await get(b.sessionToken, "/workorders")).json()) as { total: number }).total).toBe(0);
     expect((await get(b.sessionToken, `/workorders/${woId}`)).status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 9 — termination settlement (design §5.4)
+// ---------------------------------------------------------------------------
+
+// Route-time catchUp runs at REAL now, so the fined sale's deliver_by must be
+// relative: ~2.5 days ago → exactly 2 daily flat ticks of −2,500 (you paid 5,000).
+const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+
+function settlements(woId: number) {
+  return env.DB.prepare(
+    `SELECT amount, category, source, workorder_id, notes, description FROM accountant_entries
+     WHERE workorder_id = ? AND source = 'wo_settlement' ORDER BY id`,
+  ).bind(woId).all<{
+    amount: number; category: string | null; workorder_id: number; notes: string; description: string;
+  }>();
+}
+function fineTicks(userId: string, orderId: number) {
+  return env.DB.prepare(
+    `SELECT tick_index, amount FROM accountant_entries
+     WHERE user_id = ? AND order_id = ? AND source = 'contract_fine' ORDER BY tick_index`,
+  ).bind(userId, orderId).all<{ tick_index: number; amount: number }>();
+}
+function woTermRow(id: number) {
+  return env.DB.prepare(
+    `SELECT status, terminated_by, termination_note, completed_at
+     FROM accountant_workorders WHERE id = ?`,
+  ).bind(id).first<{
+    status: string; terminated_by: string | null; termination_note: string | null; completed_at: string | null;
+  }>();
+}
+
+// Golden fixture (plan Task 9): in_progress WO with
+//   purchase: qty 80 × 1,000 = 80,000 — fulfilled twice (40 + 40) → −40,000 ×2, reserve net 0, complete
+//   sale:     qty 10 × 5,000, deliver_by ~2.5 days ago, FLAT 2,500 daily → 2 ticks of −2,500
+// Incurred costs on YOUR books = 80,000 + 5,000 = 85,000.
+const FINED_SALE = {
+  type: "sale", category: "trading", item: "Laranite", quantity: 10, price_per_unit: 5000,
+  start_at: daysAgo(5), deliver_by: daysAgo(2.5), fine_rate_type: "flat", fine_rate: 2500,
+};
+async function goldenFixture() {
+  const { userId, sessionToken: token } = await createTestUser(env.DB);
+  await seedBalance(token, 80000);
+  const purchase = {
+    type: "purchase", category: "production", item: "Ore", quantity: 80, price_per_unit: 1000,
+    start_at: daysAgo(5),
+  };
+  const woId = await createWO(token, { title: "Doomed contract", orders: [purchase, FINED_SALE] });
+  expect((await post(token, `/workorders/${woId}/publish`, {})).status).toBe(200);
+  const comps = (await components(woId)).results;
+  const purchaseId = comps.find((o) => o.type === "purchase")!.id;
+  const saleId = comps.find((o) => o.type === "sale")!.id;
+  expect((await fulfil(token, purchaseId, { quantity: 40, occurred_at: daysAgo(2) })).status).toBe(200);
+  expect((await fulfil(token, purchaseId, { quantity: 40, occurred_at: daysAgo(1) })).status).toBe(200);
+  expect((await woRow(woId))?.status).toBe("in_progress");
+  return { userId, token, woId, purchaseId, saleId };
+}
+
+// Cheap in_progress WO: two plain sales, first one partially fulfilled.
+async function plainInProgressWO(token: string, extraSales = 0) {
+  const sale = { ...SALE, quantity: 10, price_per_unit: 1000 };
+  const woId = await createWO(token, {
+    title: "Plain run", orders: Array.from({ length: 2 + extraSales }, () => sale),
+  });
+  expect((await post(token, `/workorders/${woId}/publish`, {})).status).toBe(200);
+  const comps = (await components(woId)).results.map((o) => o.id);
+  expect((await fulfil(token, comps[0], { quantity: 4, occurred_at: daysAgo(1) })).status).toBe(200);
+  expect((await woRow(woId))?.status).toBe("in_progress");
+  return { woId, comps };
+}
+
+describe("M5 — termination settlement (full + partial)", () => {
+  beforeAll(async () => { await setupTestDatabase(env.DB); });
+
+  it("mandatory note: missing/empty/whitespace note → 400; nothing changes", async () => {
+    const { token, woId, saleId } = await goldenFixture();
+    for (const body of [
+      { terminated_by: "counterparty" },                          // missing
+      { note: "", terminated_by: "counterparty" },                // empty
+      { note: "   ", terminated_by: "counterparty" },             // whitespace-only
+    ]) {
+      expect((await post(token, `/workorders/${woId}/terminate`, body)).status).toBe(400);
+    }
+    expect((await woRow(woId))?.status).toBe("in_progress");      // untouched
+    expect((await settlements(woId)).results).toHaveLength(0);
+    const sale = (await components(woId)).results.find((o) => o.id === saleId)!;
+    expect(sale.status).toBe("open");
+  });
+
+  it("terminate only from in_progress (draft/open/complete/cancelled → 400)", async () => {
+    const { sessionToken: token } = await createTestUser(env.DB);
+    const body = { note: "valid note", terminated_by: "counterparty" };
+
+    const draftId = await createWO(token, { title: "Draft" });
+    expect((await post(token, `/workorders/${draftId}/terminate`, body)).status).toBe(400);
+
+    const openId = await createWO(token, { title: "Open", orders: [SALE, SALE] });
+    expect((await post(token, `/workorders/${openId}/publish`, {})).status).toBe(200);
+    expect((await post(token, `/workorders/${openId}/terminate`, body)).status).toBe(400);
+
+    const cancelledId = await createWO(token, { title: "Cancelled" });
+    expect((await post(token, `/workorders/${cancelledId}/cancel`, {})).status).toBe(200);
+    expect((await post(token, `/workorders/${cancelledId}/terminate`, body)).status).toBe(400);
+
+    const small = { ...SALE, quantity: 5 };
+    const completeId = await createWO(token, { title: "Complete", orders: [small, small] });
+    expect((await post(token, `/workorders/${completeId}/publish`, {})).status).toBe(200);
+    for (const o of (await components(completeId)).results) {
+      expect((await fulfil(token, o.id, { quantity: 5, occurred_at: daysAgo(1) })).status).toBe(200);
+    }
+    expect((await woRow(completeId))?.status).toBe("complete");
+    expect((await post(token, `/workorders/${completeId}/terminate`, body)).status).toBe(400);
+  });
+
+  it("FULL termination by counterparty: suggestion 85,000; +85,000 wo_settlement; WO 'terminated' with stamped note + terminated_by", async () => {
+    const { token, woId, saleId } = await goldenFixture();
+
+    // The detail preview already carries the suggestion (Task 8).
+    const detail = (await (await get(token, `/workorders/${woId}`)).json()) as {
+      settlementPreview: { suggestion: number };
+    };
+    expect(detail.settlementPreview.suggestion).toBe(85000);
+
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      note: "they pulled out", terminated_by: "counterparty",     // settlement_amount omitted → suggestion
+    });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as {
+      ok: boolean; settlement: number; suggestion: number; scope: number[]; workorderStatus: string;
+    };
+    expect(out).toMatchObject({ ok: true, settlement: 85000, suggestion: 85000, workorderStatus: "terminated" });
+
+    const rows = (await settlements(woId)).results;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      amount: 85000, category: "financial", source: "wo_settlement",
+      workorder_id: woId, notes: "they pulled out",
+      description: "Termination settlement · counterparty",
+    });
+    const sale = (await components(woId)).results.find((o) => o.id === saleId)!;
+    expect(sale.status).toBe("cancelled");                        // open → cancelled
+    expect(await woTermRow(woId)).toMatchObject({
+      status: "terminated", terminated_by: "counterparty", termination_note: "they pulled out",
+    });
+  });
+
+  it("FULL termination by you: settlement_amount REQUIRED (400 without); −30,000 entry when given", async () => {
+    const { token, woId } = await goldenFixture();
+
+    const missing = await post(token, `/workorders/${woId}/terminate`, {
+      note: "I bailed", terminated_by: "you",
+    });
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { error: string }).error).toMatch(/settlement_amount/);
+    expect((await woRow(woId))?.status).toBe("in_progress");      // nothing changed
+
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      note: "I bailed", terminated_by: "you", settlement_amount: 30000,
+    });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as { settlement: number; suggestion: number | null; workorderStatus: string };
+    expect(out.settlement).toBe(30000);
+    expect(out.suggestion).toBeNull();                            // counterparty costs aren't on your books
+    expect(out.workorderStatus).toBe("terminated");
+    const rows = (await settlements(woId)).results;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amount: -30000, notes: "I bailed" });  // you compensate → −
+    expect(await woTermRow(woId)).toMatchObject({ status: "terminated", terminated_by: "you" });
+  });
+
+  it("settlement override wins for counterparty too; 0 is legal and still posts the noted entry", async () => {
+    const { token, woId } = await goldenFixture();
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      note: "settled amicably", terminated_by: "counterparty", settlement_amount: 0,
+    });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as { settlement: number; suggestion: number };
+    expect(out.settlement).toBe(0);                               // the override wins...
+    expect(out.suggestion).toBe(85000);                           // ...over the still-reported suggestion
+    const rows = (await settlements(woId)).results;
+    expect(rows).toHaveLength(1);                                 // 0-amount entry still posts the note
+    expect(rows[0]).toMatchObject({ amount: 0, notes: "settled amicably" });
+  });
+
+  it("PARTIAL termination closes ONLY the selected components; WO stays in_progress; suggestion scoped to the subset", async () => {
+    // 3 components: the purchase (complete), the fined sale (open), a second sale (open).
+    const { userId, sessionToken: token } = await createTestUser(env.DB);
+    await seedBalance(token, 80000);
+    const purchase = {
+      type: "purchase", category: "production", item: "Ore", quantity: 80, price_per_unit: 1000,
+      start_at: daysAgo(5),
+    };
+    const woId = await createWO(token, { title: "Three legs", orders: [purchase, FINED_SALE, SALE] });
+    expect((await post(token, `/workorders/${woId}/publish`, {})).status).toBe(200);
+    const comps = (await components(woId)).results;
+    const purchaseId = comps.find((o) => o.type === "purchase")!.id;
+    const [finedSaleId, secondSaleId] = comps.filter((o) => o.type === "sale").map((o) => o.id);
+    expect((await fulfil(token, purchaseId, { quantity: 80, occurred_at: daysAgo(2) })).status).toBe(200);
+    expect((await woRow(woId))?.status).toBe("in_progress");
+
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      order_ids: [finedSaleId], terminated_by: "counterparty", note: "dropped this leg",
+    });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as {
+      settlement: number; suggestion: number; scope: number[]; workorderStatus: string;
+    };
+    // Scope suggestion = the fined sale's paid fines only (5,000) — NOT the purchase's 80,000.
+    expect(out).toMatchObject({
+      settlement: 5000, suggestion: 5000, scope: [finedSaleId], workorderStatus: "in_progress",
+    });
+    const rows = (await settlements(woId)).results;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amount: 5000, notes: "dropped this leg" });
+
+    const after = (await components(woId)).results;
+    expect(after.find((o) => o.id === finedSaleId)?.status).toBe("cancelled");
+    expect(after.find((o) => o.id === secondSaleId)?.status).toBe("open");     // untouched
+    expect((await woTermRow(woId))).toMatchObject({ status: "in_progress", terminated_by: null });
+    expect((await fineTicks(userId, finedSaleId)).results).toHaveLength(2);    // accrued fines survive
+
+    // Test variant: partially-fulfilled targets close as 'complete' (§5.4) —
+    // separate WO so the main one's in_progress assertion stays clean.
+    const { woId: vWoId, comps: vComps } = await plainInProgressWO(token, 1);  // 3 sales, first partially fulfilled
+    const vRes = await post(token, `/workorders/${vWoId}/terminate`, {
+      order_ids: [vComps[0]], terminated_by: "you", settlement_amount: 1000, note: "half done is done",
+    });
+    expect(vRes.status).toBe(200);
+    const vAfter = (await components(vWoId)).results;
+    expect(vAfter.find((o) => o.id === vComps[0])?.status).toBe("complete");   // complete-as-is, NOT cancelled
+    expect((await woRow(vWoId))?.status).toBe("in_progress");                  // two sales still open
+  });
+
+  it("multiple partial terminations each post their OWN noted wo_settlement (audit trail = the entry sequence)", async () => {
+    const { sessionToken: token } = await createTestUser(env.DB);
+    const { woId, comps } = await plainInProgressWO(token, 2);    // 4 sales: comps[0] in_progress, rest open
+    const first = await post(token, `/workorders/${woId}/terminate`, {
+      order_ids: [comps[1]], terminated_by: "you", settlement_amount: 1000, note: "first leg dropped",
+    });
+    expect(first.status).toBe(200);
+    const second = await post(token, `/workorders/${woId}/terminate`, {
+      order_ids: [comps[2]], terminated_by: "you", settlement_amount: 2000, note: "second leg dropped",
+    });
+    expect(second.status).toBe(200);
+
+    const rows = (await settlements(woId)).results;
+    expect(rows).toHaveLength(2);                                 // one entry PER event, in sequence
+    expect(rows.map((r) => [r.amount, r.notes])).toEqual([
+      [-1000, "first leg dropped"],
+      [-2000, "second leg dropped"],
+    ]);
+    expect((await woRow(woId))?.status).toBe("in_progress");      // comps[0] and comps[3] still running
+  });
+
+  it("partial termination of the LAST open component completes the WO normally — summary entry, NOT 'terminated'", async () => {
+    const { sessionToken: token } = await createTestUser(env.DB);
+    const { woId, comps } = await plainInProgressWO(token);       // 2 sales
+    // Close the first component normally; the second stays the last open one.
+    expect((await fulfil(token, comps[0], { quantity: 6, occurred_at: daysAgo(0.5) })).status).toBe(200);
+    expect((await woRow(woId))?.status).toBe("in_progress");
+
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      order_ids: [comps[1]], terminated_by: "counterparty", note: "last leg forgiven",
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { workorderStatus: string }).workorderStatus).toBe("complete");
+
+    const wo = await woTermRow(woId);
+    expect(wo?.status).toBe("complete");                          // 'terminated' is reserved for FULL termination
+    expect(wo?.terminated_by).toBeNull();
+    expect(wo?.completed_at).toBeTruthy();
+    expect((await summaries(woId)).results).toHaveLength(1);      // the normal completion summary posted
+    expect((await settlements(woId)).results).toHaveLength(1);    // alongside the event's settlement entry
+  });
+
+  it("order_ids validation: not in this WO / already closed / unknown → 400", async () => {
+    const { sessionToken: token } = await createTestUser(env.DB);
+    const { woId, comps } = await plainInProgressWO(token);
+    const standaloneId = await createOrder(token, SALE);          // mine, but NOT in this WO
+    const body = { terminated_by: "counterparty", note: "scope check" };
+
+    expect((await post(token, `/workorders/${woId}/terminate`, { ...body, order_ids: [standaloneId] })).status).toBe(400);
+    expect((await post(token, `/workorders/${woId}/terminate`, { ...body, order_ids: [999999] })).status).toBe(400);
+
+    // Close comps[0], then target it → already closed → 400.
+    expect((await fulfil(token, comps[0], { quantity: 6, occurred_at: daysAgo(0.5) })).status).toBe(200);
+    expect((await post(token, `/workorders/${woId}/terminate`, { ...body, order_ids: [comps[0]] })).status).toBe(400);
+
+    expect((await settlements(woId)).results).toHaveLength(0);    // nothing posted
+    expect((await woRow(woId))?.status).toBe("in_progress");
+  });
+
+  it("terminated components stop accruing fines (eligibility excludes closed statuses)", async () => {
+    const { userId, sessionToken: token } = await createTestUser(env.DB);
+    const woId = await createWO(token, { title: "Fined run", orders: [FINED_SALE, SALE] });
+    expect((await post(token, `/workorders/${woId}/publish`, {})).status).toBe(200);
+    const comps = (await components(woId)).results;
+    const finedId = comps[0].id;
+    expect((await fulfil(token, comps[1].id, { quantity: 20, occurred_at: daysAgo(1) })).status).toBe(200);
+
+    const res = await post(token, `/workorders/${woId}/terminate`, {
+      order_ids: [finedId], terminated_by: "counterparty", note: "stop the bleeding",
+    });
+    expect(res.status).toBe(200);
+    expect((await fineTicks(userId, finedId)).results).toHaveLength(2);  // accrued while open
+
+    // Ten days later the closed component must NOT tick (injectable-clock idiom).
+    await catchUp(env.DB, userId, Date.now() + 10 * 86_400_000);
+    expect((await fineTicks(userId, finedId)).results).toHaveLength(2);
   });
 });

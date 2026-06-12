@@ -178,6 +178,33 @@ export async function completionStatements(
 }
 
 /**
+ * Closing statements for the components a termination event targets (§5.4):
+ * release each component's remaining reserve, then close the row — open →
+ * 'cancelled'; partially-fulfilled (in_progress) closes 'complete'-as-is.
+ */
+export async function closeComponentStatements(
+  db: D1Database, userID: string, targets: { id: number; status: string }[], now: string,
+): Promise<D1PreparedStatement[]> {
+  const stmts: D1PreparedStatement[] = [];
+  for (const o of targets) {
+    const reserve = await openReserve(db, userID, o.id);
+    if (reserve > 0) {
+      stmts.push(
+        db.prepare(
+          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+           VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
+        ).bind(userID, now, reserve, o.id, `PO reserve release · O-${o.id}`),
+      );
+    }
+    stmts.push(
+      db.prepare("UPDATE accountant_orders SET status = ? WHERE id = ? AND user_id = ?")
+        .bind(o.status === "in_progress" ? "complete" : "cancelled", o.id, userID),
+    );
+  }
+  return stmts;
+}
+
+/**
  * Your incurred costs per component (design §5.4; Task 9's settlement
  * suggestion reuses this scope-agnostic helper): what you paid out on purchase
  * fulfilments plus fines you paid (negative `contract_fine` rows — those live
