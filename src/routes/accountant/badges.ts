@@ -18,7 +18,7 @@ export function badgesRoutes() {
     // No try/catch — catchUp throws on logic errors; Hono returns 500
     // ("fail rather than serve stale numbers", design §6).
     await catchUp(db, userID);
-    const [sorting, due, threshold] = await Promise.all([
+    const [sorting, due, overdue, threshold] = await Promise.all([
       db.prepare(
         `SELECT COUNT(*) AS n FROM accountant_entries
          WHERE user_id = ? AND ${UNSORTED_PREDICATE}`,
@@ -29,12 +29,18 @@ export function badgesRoutes() {
            AND due_at <= datetime('now', '+48 hours')`,
       ).bind(userID).first<{ n: number }>(),
       db.prepare(
+        `SELECT COUNT(*) AS n FROM accountant_orders
+         WHERE user_id = ? AND status IN ('open', 'in_progress')
+           AND deliver_by IS NOT NULL AND deliver_by < datetime('now')`,
+      ).bind(userID).first<{ n: number }>(),
+      db.prepare(
         "SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantVerifyThreshold'",
       ).bind(userID).first<{ value: string }>(),
     ]);
     return c.json({
       sorting: sorting?.n ?? 0,
       loansDueSoon: due?.n ?? 0,
+      ordersOverdue: overdue?.n ?? 0,
       sortingThreshold: threshold ? parseInt(threshold.value, 10) : 10,
     });
   });

@@ -7,6 +7,7 @@ import {
   SOURCES,
   ORDER_CATEGORIES,
   ORDER_TEMPLATE,
+  type Source,
 } from "../src/lib/accountant/constants";
 
 describe("STATEMENT_LINES — P&L mapping completeness", () => {
@@ -76,5 +77,21 @@ describe("M5 order domain constants", () => {
       deliver_by: null, fine_interval: "daily", fine_rate_type: "percent", fine_rate: 0.5,
       rate_change_condition: null, rate_change_pct: 0, termination_clause: "standard",
     });
+  });
+
+  // Finding 3: positive financial rows would otherwise vanish from the P&L —
+  // fines and settlements are source-keyed by sign (the Task 7 pattern).
+  it("contract_fine classifies by sign into contract_fines_income / contract_fines_expense", () => {
+    expect(classifyPLLine({ category: "financial", amount: 500, source: "contract_fine" })?.line).toBe("contract_fines_income");
+    expect(classifyPLLine({ category: "financial", amount: -2500, source: "contract_fine" })?.line).toBe("contract_fines_expense");
+  });
+  it("wo_settlement classifies by sign into settlement_income / settlement_expense", () => {
+    expect(classifyPLLine({ category: "financial", amount: 85000, source: "wo_settlement" })?.line).toBe("settlement_income");
+    expect(classifyPLLine({ category: "financial", amount: -30000, source: "wo_settlement" })?.line).toBe("settlement_expense");
+  });
+  it("po_reserve, po_reserve_release, workorder_summary are P&L-excluded", () => {
+    for (const source of ["po_reserve", "po_reserve_release", "workorder_summary"]) {
+      expect(classifyPLLine({ category: null, amount: -100000, source: source as Source })).toBeNull();
+    }
   });
 });

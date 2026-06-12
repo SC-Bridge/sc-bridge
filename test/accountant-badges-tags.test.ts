@@ -35,6 +35,24 @@ describe("Accountant — badges + tags + threshold", () => {
     expect(body.sortingThreshold).toBe(10);
   });
 
+  it("GET /badges counts open/in_progress orders past deliver_by as ordersOverdue", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const insertOrder = (status: string, deliverBySql: string) => env.DB.prepare(
+      `INSERT INTO accountant_orders
+         (user_id, type, category, item, quantity, price_per_unit, total, status, start_at, deliver_by)
+       VALUES (?, 'sale', 'trading', 'Laranite', 10, 1000, 10000, ?, '2026-06-01T00:00:00Z', ${deliverBySql})`,
+    ).bind(userId, status).run();
+    await insertOrder("open", "'2026-06-02T00:00:00Z'");            // overdue + open → counts
+    await insertOrder("complete", "'2026-06-02T00:00:00Z'");        // overdue but closed → no
+    await insertOrder("open", "datetime('now', '+5 days')");        // future deliver_by → no
+
+    const res = await SELF.fetch("http://localhost/api/accountant/badges", {
+      headers: await authHeaders(sessionToken),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ordersOverdue: number }).ordersOverdue).toBe(1);
+  });
+
   it("threshold preference round-trips through settings and into /badges", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const put = await SELF.fetch("http://localhost/api/settings/preferences", {

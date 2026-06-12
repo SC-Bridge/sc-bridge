@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { catchUp } from "../../lib/accountant/catchup";
 import {
+  RESERVE_NEUTRAL_SQL,
   STATEMENT_LINES,
   classifyPLLine,
   type Category,
@@ -101,16 +102,24 @@ export function reportsRoutes() {
   });
 
   // GET /reports/balance?at= — cost-basis snapshot (owner decision 2026-06-11;
-  // controller ruling on equity 2026-06-11).
+  // controller ruling on equity 2026-06-11; reserve add-back amendment 2026-06-12).
   // Semantics:
-  //   cash     = SUM(amount) over ALL entries (ledger balance).
-  //   holdings = −SUM(amount) over category='assets' entries (purchase −X → holding +X at cost).
-  //   equity   = cash + holdings — deliberately NO liabilities subtraction. Loans are booked
-  //              obligation-style: an incoming principal is a NEGATIVE entry, so the debt is
-  //              already inside cash. Subtracting liabilities on top would count the same debt
-  //              twice (equity −200k for a 100k loan). Do not "fix" this by reintroducing it.
+  //   cash        = SUM(amount) over ALL entries (ledger balance — reserves are real
+  //                 negative rows inside it, so available balance ≡ ledger balance, §6).
+  //   holdings    = −SUM(amount) over category='assets' entries (purchase −X → holding +X at cost).
+  //   lockedInPOs = −SUM(po_reserve + po_reserve_release) — open-reserve memo, same
+  //                 `occurred_at < at` cutoff as cash so equity is consistent at every instant.
+  //   equity      = cash + holdings + lockedInPOs — deliberately NO liabilities subtraction.
+  //                 Loans are booked obligation-style: an incoming principal is a NEGATIVE
+  //                 entry, so the debt is already inside cash. Subtracting liabilities on top
+  //                 would count the same debt twice (equity −200k for a 100k loan). Do not
+  //                 "fix" this by reintroducing it. Reserves are earmarks already inside cash
+  //                 (M5): adding the locked sum back keeps equity from dipping on a mere lock —
+  //                 same decision class as the loan self-netting ruling. By construction
+  //                 equity = SUM(non-asset, non-reserve-neutral), which is exactly what
+  //                 /net-worth computes, so balance.equity == net-worth last point holds.
   //   liabilities = per-loan negative nets (display figure, unchanged).
-  //   assets   = equity + liabilities — so Assets − Liabilities = Equity holds by construction.
+  //   assets      = equity + liabilities — so Assets − Liabilities = Equity holds by construction.
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -127,12 +136,13 @@ export function reportsRoutes() {
         .prepare(
           `SELECT
              COALESCE(SUM(amount), 0)                                              AS cash,
-             COALESCE(-SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS holdings
+             COALESCE(-SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS holdings,
+             COALESCE(-SUM(CASE WHEN source IN ('po_reserve', 'po_reserve_release') THEN amount ELSE 0 END), 0) AS locked
            FROM accountant_entries
            WHERE user_id = ? AND occurred_at < ?`,
         )
         .bind(userID, at)
-        .first<{ cash: number; holdings: number }>(),
+        .first<{ cash: number; holdings: number; locked: number }>(),
       db
         .prepare(
           `SELECT COALESCE(SUM(ABS(net)), 0) AS liabilities
@@ -149,12 +159,14 @@ export function reportsRoutes() {
 
     const cash = holdingRow?.cash ?? 0;
     const holdings = holdingRow?.holdings ?? 0;
-    const equity = cash + holdings; // obligation entries self-net in cash — see semantics above
+    const lockedInPOs = holdingRow?.locked ?? 0;
+    const equity = cash + holdings + lockedInPOs; // see semantics above
     const liabilities = liabRow?.liabilities ?? 0;
     return c.json({
       at,
       cash,
       holdings,
+      lockedInPOs,
       assets: equity + liabilities,
       liabilities,
       equity,
@@ -195,7 +207,8 @@ export function reportsRoutes() {
                 COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS in_sum,
                 COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS out_sum
          FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? AND source != 'adjustment'
+         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+           AND source != 'adjustment' AND ${RESERVE_NEUTRAL_SQL}
          GROUP BY bucket ORDER BY bucket ASC`,
       )
       .bind(userID, period.from, period.to)
@@ -212,7 +225,10 @@ export function reportsRoutes() {
   // Asset purchases cancel against holdings: equity is unchanged by a pure buy; income/expenses move it.
   // Controller ruling: NO per-bucket liabilities subtraction — obligation-style loan entries
   // self-net inside the cumulative sum; subtracting liabilities would double-count the debt.
-  // This matches /balance equity (cash + holdings = SUM(non-asset)) at every bucket cutoff.
+  // M5 (design §6): reserve-class sources are excluded too — a PO lock is an earmark, not an
+  // economic event, so the series must not dip on it. This keeps the cumulative sum equal to
+  // /balance equity (cash + holdings + lockedInPOs = SUM(non-asset, non-reserve-neutral)) at
+  // every bucket cutoff.
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -225,24 +241,24 @@ export function reportsRoutes() {
     const fmt = BUCKET_FORMAT[iv.interval];
     const { from, to } = period;
 
-    // Opening equity = SUM of non-asset entries strictly before `from`.
+    // Opening equity = SUM of non-asset, non-reserve entries strictly before `from`.
     const opening = await db
       .prepare(
         `SELECT COALESCE(SUM(amount),0) AS bal
          FROM accountant_entries
          WHERE user_id = ? AND occurred_at < ?
-           AND (category IS NULL OR category != 'assets')`,
+           AND (category IS NULL OR category != 'assets') AND ${RESERVE_NEUTRAL_SQL}`,
       )
       .bind(userID, from)
       .first<{ bal: number }>();
 
-    // Per-bucket non-asset deltas within the window.
+    // Per-bucket non-asset, non-reserve deltas within the window.
     const rows = await db
       .prepare(
         `SELECT strftime('${fmt}', occurred_at) AS bucket, COALESCE(SUM(amount),0) AS delta
          FROM accountant_entries
          WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
-           AND (category IS NULL OR category != 'assets')
+           AND (category IS NULL OR category != 'assets') AND ${RESERVE_NEUTRAL_SQL}
          GROUP BY bucket ORDER BY bucket ASC`,
       )
       .bind(userID, from, to)
@@ -279,7 +295,8 @@ export function reportsRoutes() {
     const row = await db
       .prepare(
         `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? AND source != 'adjustment'`,
+         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+           AND source != 'adjustment' AND ${RESERVE_NEUTRAL_SQL}`,
       )
       .bind(userID, from, to)
       .first<{ net: number }>();

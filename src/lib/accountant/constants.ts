@@ -154,6 +154,10 @@ export const STATEMENT_LINES: readonly StatementLine[] = [
   { line: "interest_expense",  section: "expenses", label: "Interest expense",             drill: { source: "accrual_tick,loan_fee" } },
   { line: "debt_relief",       section: "revenue",  label: "Debt relief (forgiven)",       drill: { source: "loan_forgiveness" } },
   { line: "forgiveness_loss",  section: "expenses", label: "Forgiveness (written off)",    drill: { source: "loan_forgiveness" } },
+  { line: "contract_fines_income",  section: "revenue",  label: "Contract fines (received)", drill: { source: "contract_fine" } },
+  { line: "settlement_income",      section: "revenue",  label: "Settlements (received)",    drill: { source: "wo_settlement" } },
+  { line: "contract_fines_expense", section: "expenses", label: "Contract fines (paid)",     drill: { source: "contract_fine" } },
+  { line: "settlement_expense",     section: "expenses", label: "Settlements (paid)",        drill: { source: "wo_settlement" } },
 ] as const;
 
 interface PLEntry {
@@ -186,6 +190,20 @@ export function classifyPLLine(e: PLEntry): { section: PLSection; line: string }
     return e.amount > 0
       ? { section: "revenue", line: "debt_relief" }
       : { section: "expenses", line: "forgiveness_loss" };
+  }
+
+  // Fines and settlements are source-keyed by sign (same pattern): their rows
+  // are category 'financial', whose generic rule drops the positive side —
+  // without these branches received fines/settlements vanish from the P&L.
+  if (e.source === "contract_fine") {
+    return e.amount > 0
+      ? { section: "revenue", line: "contract_fines_income" }
+      : { section: "expenses", line: "contract_fines_expense" };
+  }
+  if (e.source === "wo_settlement") {
+    return e.amount > 0
+      ? { section: "revenue", line: "settlement_income" }
+      : { section: "expenses", line: "settlement_expense" };
   }
 
   switch (e.category) {
