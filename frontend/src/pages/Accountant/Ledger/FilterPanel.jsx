@@ -2,7 +2,14 @@ import { LEDGER_CATEGORIES, CATEGORY_LABELS, SOURCE_LABELS } from '../constants'
 import PeriodSelector from '../components/PeriodSelector'
 
 // Visible sources toggle set; accrual_tick is OFF by default (locked UX decision).
-export const DEFAULT_SOURCES = ['parsed', 'manual', 'adjustment', 'loan_principal', 'loan_fee', 'loan_repayment']
+// M5: order/workorder sources (incl. reserve/release) are ON by default — design §5
+// wants locked funds visible; the source checkboxes are the "Order reserves" toggle.
+export const DEFAULT_SOURCES = [
+  'parsed', 'manual', 'adjustment',
+  'loan_principal', 'loan_fee', 'loan_repayment', 'loan_forgiveness',
+  'po_reserve', 'po_reserve_release', 'order_fulfillment',
+  'contract_fine', 'wo_settlement', 'workorder_summary',
+]
 
 export default function FilterPanel({ params, onChange }) {
   const activeCategories = params.getAll('category')

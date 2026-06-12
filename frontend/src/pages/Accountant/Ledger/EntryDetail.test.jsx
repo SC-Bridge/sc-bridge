@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import EntryDetail from './EntryDetail'
 
 const baseEntry = {
@@ -29,5 +30,21 @@ describe('EntryDetail', () => {
     const loanEntry = { ...baseEntry, loan_id: 42 }
     render(<EntryDetail entry={loanEntry} onClose={vi.fn()} onSaved={vi.fn()} />)
     expect(screen.getByText(/managed via its loan/i)).toBeInTheDocument()
+  })
+
+  it('order-linked entry: managed-via-order note, Market deep link, edit controls hidden', () => {
+    const orderEntry = { ...baseEntry, order_id: 9 }
+    render(<MemoryRouter><EntryDetail entry={orderEntry} onClose={vi.fn()} onSaved={vi.fn()} /></MemoryRouter>)
+    expect(screen.getByText(/managed via its order/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /view order/i })).toHaveAttribute('href', '/accountant/orders/market?order=9')
+    expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument()
+  })
+
+  it('workorder-linked entry: managed-via-workorder note, detail-route link, edit controls hidden', () => {
+    const woEntry = { ...baseEntry, workorder_id: 3 }
+    render(<MemoryRouter><EntryDetail entry={woEntry} onClose={vi.fn()} onSaved={vi.fn()} /></MemoryRouter>)
+    expect(screen.getByText(/managed via its workorder/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /view workorder/i })).toHaveAttribute('href', '/accountant/orders/workorders/3')
+    expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument()
   })
 })

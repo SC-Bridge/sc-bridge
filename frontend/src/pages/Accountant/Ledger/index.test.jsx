@@ -3,6 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import Ledger from './index'
+import { DEFAULT_SOURCES } from './FilterPanel'
+
+const M5_SOURCES = ['po_reserve', 'po_reserve_release', 'order_fulfillment', 'contract_fine', 'wo_settlement', 'workorder_summary', 'loan_forgiveness']
 
 const ENTRIES = [
   { id: 1, occurred_at: '2026-06-03T10:00:00Z', amount: 5000, category: 'trading', tag: 'minerals', source: 'parsed', description: 'Laranite sell', location: 'New Babbage', notes: null },
@@ -72,6 +75,24 @@ describe('Ledger page', () => {
     const calledUrl = String(globalThis.fetch.mock.calls[0][0])
     expect(calledUrl).toContain('source=parsed')
     expect(calledUrl).not.toContain('accrual_tick')
+  })
+
+  it('DEFAULT_SOURCES includes all seven M5 sources and still excludes accrual_tick', () => {
+    for (const src of M5_SOURCES) expect(DEFAULT_SOURCES).toContain(src)
+    expect(DEFAULT_SOURCES).not.toContain('accrual_tick')
+  })
+
+  it('renders M5 source checkboxes: reserve/release ON by default, accrual ticks OFF', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByTestId('ledger-filters')).toBeInTheDocument())
+    expect(screen.getByLabelText('PO reserve')).toBeChecked()
+    expect(screen.getByLabelText('Reserve release')).toBeChecked()
+    expect(screen.getByLabelText('Order fulfilment')).toBeChecked()
+    expect(screen.getByLabelText('Contract fine')).toBeChecked()
+    expect(screen.getByLabelText('Settlement')).toBeChecked()
+    expect(screen.getByLabelText('WO summary')).toBeChecked()
+    expect(screen.getByLabelText('Forgiveness')).toBeChecked()
+    expect(screen.getByLabelText('Accrual tick')).not.toBeChecked()
   })
 
   it('renders summary cards with balance, income, expenses, and net', async () => {

@@ -82,6 +82,20 @@ describe('LoanDetail', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/boom/)
   })
 
+  it('renders Forgive… beside Record repayment on open loans and opens the modal', async () => {
+    renderDetail()
+    await waitFor(() => expect(screen.getByText('@pilot42')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /record repayment/i })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /forgive…/i }))
+    expect(screen.getByRole('heading', { name: /forgive loan · @pilot42/i })).toBeInTheDocument()
+  })
+
+  it('does NOT render Forgive… for settled loans', async () => {
+    renderDetail('15')
+    await waitFor(() => expect(screen.getByText('@deadbeat')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /forgive/i })).not.toBeInTheDocument()
+  })
+
   it('settled loan with remainder shows Outstanding: 0 aUEC and Written off line', async () => {
     renderDetail('15')
     await waitFor(() => expect(screen.getByText('@deadbeat')).toBeInTheDocument())

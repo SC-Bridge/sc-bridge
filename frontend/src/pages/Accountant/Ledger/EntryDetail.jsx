@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { CATEGORY_LABELS, LEDGER_CATEGORIES, DEFAULT_TAGS, TAG_LABELS } from '../constants'
 import { formatAUEC, signClass } from '../formatAUEC'
@@ -48,6 +49,16 @@ export default function EntryDetail({ entry, onClose, onSaved }) {
 
       {entry.loan_id != null ? (
         <p className="text-sm text-gray-400">This entry is managed via its loan.</p>
+      ) : entry.order_id != null ? (
+        <p className="text-sm text-gray-400">
+          This entry is managed via its order.{' '}
+          <Link to={`/accountant/orders/market?order=${entry.order_id}`} className="text-sc-accent hover:underline">View order</Link>
+        </p>
+      ) : entry.workorder_id != null ? (
+        <p className="text-sm text-gray-400">
+          This entry is managed via its workorder.{' '}
+          <Link to={`/accountant/orders/workorders/${entry.workorder_id}`} className="text-sc-accent hover:underline">View workorder</Link>
+        </p>
       ) : (
         <>
           {error && <div role="alert" className="text-sm text-sc-danger mb-3">{error}</div>}

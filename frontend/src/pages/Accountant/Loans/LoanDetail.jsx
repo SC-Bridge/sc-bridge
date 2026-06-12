@@ -7,12 +7,14 @@ import { useLoan, settleLoan } from '../hooks'
 import { formatAUEC } from '../formatAUEC'
 import { INTERVAL_LABELS } from '../loanMath'
 import RepaymentModal from './RepaymentModal'
+import ForgiveModal from './ForgiveModal'
 
 export default function LoanDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { data, error, loading, refetch } = useLoan(id)
   const [repaying, setRepaying] = useState(false)
+  const [forgiving, setForgiving] = useState(false)
   const [actionError, setActionError] = useState(null)
 
   if (loading && !data) return <LoadingState />
@@ -92,6 +94,10 @@ export default function LoanDetail() {
             className="bg-sc-accent/20 text-sc-accent border border-sc-accent/40 rounded px-4 py-1.5 text-sm hover:bg-sc-accent/30">
             Record repayment
           </button>
+          <button onClick={() => setForgiving(true)}
+            className="border border-sc-border text-gray-300 rounded px-4 py-1.5 text-sm hover:bg-white/5">
+            Forgive…
+          </button>
           <button onClick={doSettle}
             className="border border-sc-border text-gray-300 rounded px-4 py-1.5 text-sm hover:bg-white/5">
             Close loan
@@ -104,6 +110,13 @@ export default function LoanDetail() {
           loan={{ id: loan.id, counterparty: loan.counterparty, outstanding }}
           onClose={() => setRepaying(false)}
           onSaved={() => { setRepaying(false); refetch() }}
+        />
+      )}
+      {forgiving && (
+        <ForgiveModal
+          loan={{ id: loan.id, counterparty: loan.counterparty, outstanding, direction: loan.direction }}
+          onClose={() => setForgiving(false)}
+          onSaved={() => { setForgiving(false); refetch() }}
         />
       )}
     </div>

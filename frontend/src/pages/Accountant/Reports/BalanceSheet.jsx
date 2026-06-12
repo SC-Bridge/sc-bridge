@@ -38,6 +38,11 @@ export default function BalanceSheet() {
           <StatementSection title="Assets" rows={[
             { label: 'Cash', value: data.cash },
             { label: 'Holdings (cost basis)', value: data.holdings },
+            // M5 memo line: open PO reserves. Display only — the server already
+            // adds this back into equity (equity = cash + holdings + lockedInPOs).
+            ...(data.lockedInPOs != null
+              ? [{ label: 'Locked in POs', value: data.lockedInPOs, indent: true }]
+              : []),
             { label: 'Total assets', value: data.assets, total: true },
           ]} />
           <StatementSection title="Liabilities" rows={[

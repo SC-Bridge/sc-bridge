@@ -46,6 +46,19 @@ describe('Balance Sheet page', () => {
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
 
+  // M5 memo row: lockedInPOs is display-only — the server already adds it back into
+  // equity (equity = cash + holdings + lockedInPOs), so the UI must NOT re-add it.
+  it('renders a Locked in POs memo row without altering the equity row', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => ({ ...BODY, lockedInPOs: 4240293 }),
+    }))
+    render(<MemoryRouter><BalanceSheet /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Locked in POs')).toBeInTheDocument())
+    expect(screen.getAllByText('4,240,293 aUEC').length).toBeGreaterThan(0)
+    // Equity stays exactly the server figure — informational, not subtracted or re-added.
+    expect(screen.getAllByText('1,800,000 aUEC').length).toBeGreaterThan(0)
+  })
+
   // Loop-regression test: with no URL params the `at` value must be stable across
   // renders so useGet never fires a loop of fetches for /reports/balance.
   // We assert ≤ 2 (accounting for React double-invoke edge cases in test environments)
