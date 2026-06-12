@@ -5,6 +5,20 @@ import { CATEGORIES } from "../../lib/accountant/constants";
 export const categoryEnum = z.enum(CATEGORIES);
 
 /**
+ * Shared ISO-8601 timestamp: accepts any offset, STORES normalized UTC
+ * (`new Date(s).toISOString()`). Stored values are compared BOTH as raw
+ * strings in SQL (badges overdue, report windows, /balance cutoff, ledger
+ * ordering) and as epochs in the fine/accrual engines — stored verbatim, a
+ * `+12:00` deliver_by is overdue to the engine yet never to the badge. One
+ * definition for every accountant datetime field; do not fork it.
+ */
+export const isoDatetime = z
+  .string()
+  .datetime({ offset: true })
+  .max(50)
+  .transform((s) => new Date(s).toISOString());
+
+/**
  * The design's core invariant: the Sorting List / badge queue is the
  * `category IS NULL AND source='parsed'` slice of accountant_entries —
  * a QUERY, not a table. One definition, used by every consumer.

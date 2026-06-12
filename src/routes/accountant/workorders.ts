@@ -17,11 +17,11 @@ import {
   incurredCosts,
   insertOrder,
   modifiedFields,
-  openReserve,
+  releaseOpenReserveStmt,
   rollbackWorkorderCreation,
 } from "./order-helpers";
 import { CreateOrderSchema } from "./orders";
-import { parseIdParam } from "./schemas";
+import { isoDatetime, parseIdParam } from "./schemas";
 
 // Same contract-term fields/defaults as orders; .strict() rejects
 // vis_corp/vis_public (private market only) exactly like CreateOrderSchema.
@@ -29,8 +29,8 @@ const CreateWorkorderSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   counterparty: z.string().max(100).optional(),
-  start_at: z.string().datetime({ offset: true }).max(50).optional(),
-  deliver_by: z.string().datetime({ offset: true }).max(50).nullable().optional(),
+  start_at: isoDatetime.optional(),
+  deliver_by: isoDatetime.nullable().optional(),
   fine_interval: z.enum(INTERVALS).default("daily"),
   fine_rate_type: z.enum(FINE_RATE_TYPES).default("percent"),
   fine_rate: z.number().min(0).max(1_000_000_000).default(0.5),
@@ -147,26 +147,34 @@ export function workordersRoutes() {
     ).run();
     const woId = woRes.meta.last_row_id as number;
 
-    // Inline orders run the same fund check as standalone creation; the FIRST
-    // failure rolls the whole creation back (loans.ts compensation pattern):
-    // reserves of earlier inline siblings → the sibling order rows → the WO.
-    for (const orderBody of b.orders ?? []) {
-      const result = await insertOrder(db, userID, orderBody, woId);
-      if (result.fundError) {
-        await rollbackWorkorderCreation(db, userID, woId);
-        return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
+    try {
+      // Inline orders run the same fund check as standalone creation; the FIRST
+      // failure rolls the whole creation back (loans.ts compensation pattern):
+      // reserves of earlier inline siblings → the sibling order rows → the WO.
+      for (const orderBody of b.orders ?? []) {
+        const result = await insertOrder(db, userID, orderBody, woId);
+        if (result.fundError) {
+          await rollbackWorkorderCreation(db, userID, woId);
+          return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
+        }
       }
-    }
 
-    // Attach AFTER the inline loop — the rollback deletes by workorder_id and
-    // must never catch a pre-existing standalone order. attachOrder's UPDATE
-    // re-checks the one-WO-per-order invariant itself: a raced/duplicate attach
-    // changes 0 rows → compensate the whole creation (detach-first).
-    for (const orderId of b.order_ids ?? []) {
-      if (!(await attachOrder(db, userID, orderId, woId))) {
-        await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
-        return c.json({ error: "Order already attached or no longer open" }, 400);
+      // Attach AFTER the inline loop — the rollback deletes by workorder_id and
+      // must never catch a pre-existing standalone order. attachOrder's UPDATE
+      // re-checks the one-WO-per-order invariant itself: a raced/duplicate attach
+      // changes 0 rows → compensate the whole creation (detach-first).
+      for (const orderId of b.order_ids ?? []) {
+        if (!(await attachOrder(db, userID, orderId, woId))) {
+          await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
+          return c.json({ error: "Order already attached or no longer open" }, 400);
+        }
       }
+    } catch (err) {
+      // An unexpected throw mid-composition (e.g. a D1 failure between sibling
+      // inserts) must not leave a half-built workorder behind — same
+      // compensation as the validated failure paths, then rethrow → 500.
+      await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
+      throw err;
     }
 
     return c.json({ ok: true, id: woId });
@@ -338,12 +346,14 @@ export function workordersRoutes() {
     if (status !== "draft") {
       return c.json({ error: "Only a draft workorder can be published" }, 400);
     }
+    // Only OPEN components count — a dead (cancelled/closed) row must not
+    // satisfy the gate (mirrors the cancel route's draft-component block).
     const count = await db
-      .prepare("SELECT COUNT(*) AS n FROM accountant_orders WHERE workorder_id = ? AND user_id = ?")
+      .prepare("SELECT COUNT(*) AS n FROM accountant_orders WHERE workorder_id = ? AND user_id = ? AND status = 'open'")
       .bind(id, userID)
       .first<{ n: number }>();
     if ((count?.n ?? 0) < 2) {
-      return c.json({ error: "A workorder needs at least 2 component orders to publish" }, 400);
+      return c.json({ error: "A workorder needs at least 2 open component orders to publish" }, 400);
     }
 
     await db.prepare(
@@ -379,19 +389,12 @@ export function workordersRoutes() {
        WHERE workorder_id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
     ).bind(id, userID).all<{ id: number }>();
 
+    // Release amounts are computed in SQL at batch-execution time — no
+    // per-component pre-reads; releases must precede the closing UPDATE.
     const now = new Date().toISOString();
-    const stmts: D1PreparedStatement[] = [];
-    for (const o of open.results) {
-      const reserve = await openReserve(db, userID, o.id);
-      if (reserve > 0) {
-        stmts.push(
-          db.prepare(
-            `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-             VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
-          ).bind(userID, now, reserve, o.id, `PO reserve release · O-${o.id}`),
-        );
-      }
-    }
+    const stmts: D1PreparedStatement[] = open.results.map((o) =>
+      releaseOpenReserveStmt(db, userID, o.id, now),
+    );
     stmts.push(
       db.prepare(
         `UPDATE accountant_orders SET status = 'cancelled'
@@ -456,7 +459,7 @@ export function workordersRoutes() {
     const signed = b.terminated_by === "counterparty" ? amount : -amount;
 
     const now = new Date().toISOString();
-    const stmts = await closeComponentStatements(db, userID, targets, now);
+    const stmts = closeComponentStatements(db, userID, targets, now);
     stmts.push(
       // ONE wo_settlement per event — the entry sequence IS the audit trail.
       db.prepare(

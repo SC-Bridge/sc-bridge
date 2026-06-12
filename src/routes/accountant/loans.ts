@@ -4,12 +4,12 @@ import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { INTERVALS, nextTickAt } from "../../lib/accountant/accrual";
 import { catchUp } from "../../lib/accountant/catchup";
-import { parseIdParam } from "./schemas";
+import { isoDatetime, parseIdParam } from "./schemas";
 
 const RepaymentSchema = z
   .object({
     amount: z.number().int().positive().max(9_999_999_999_999),
-    occurred_at: z.string().datetime({ offset: true }).max(50),
+    occurred_at: isoDatetime,
     notes: z.string().max(2000).optional(),
   })
   .strict();
@@ -25,7 +25,7 @@ const ForgiveSchema = z
 const UpdateLoanSchema = z
   .object({
     notes: z.string().max(2000).nullable().optional(),
-    due_at: z.string().datetime({ offset: true }).max(50).nullable().optional(),
+    due_at: isoDatetime.nullable().optional(),
   })
   .strict();
 
@@ -37,8 +37,8 @@ const CreateLoanSchema = z
     interest_rate: z.number().min(0).max(1000),
     interest_interval: z.enum(INTERVALS),
     fee_multiplier: z.number().min(0).max(1000).default(0),
-    started_at: z.string().datetime({ offset: true }).max(50),
-    due_at: z.string().datetime({ offset: true }).max(50).optional(),
+    started_at: isoDatetime,
+    due_at: isoDatetime.optional(),
     notes: z.string().max(2000).optional(),
   })
   .strict();

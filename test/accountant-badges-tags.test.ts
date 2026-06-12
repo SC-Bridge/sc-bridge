@@ -75,6 +75,32 @@ describe("Accountant — badges + tags + threshold", () => {
     expect(((await res.json()) as { ordersOverdue: number }).ordersOverdue).toBe(1);
   });
 
+  it("counts an offset deliver_by (+12:00, genuinely past in UTC) as overdue — normalized at the API boundary", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    // One hour overdue in UTC, expressed in +12:00 local time. Stored verbatim
+    // its date PART sorts into tomorrow, so the badge's raw string compare
+    // would never flag it — while the epoch-based fine engine already would.
+    const pastInstant = new Date(Date.now() - 3_600_000);
+    const plus12 = new Date(pastInstant.getTime() + 12 * 3_600_000)
+      .toISOString().replace(/\.\d{3}Z$/, "+12:00");
+    const res = await SELF.fetch("http://localhost/api/accountant/orders", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "sale", category: "trading", item: "Laranite", quantity: 10, price_per_unit: 1000,
+        start_at: new Date(Date.now() - 86_400_000).toISOString(),
+        deliver_by: plus12, fine_rate: 0,                  // rate 0 keeps the fine engine quiet
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const badges = await SELF.fetch("http://localhost/api/accountant/badges", {
+      headers: await authHeaders(sessionToken),
+    });
+    expect(badges.status).toBe(200);
+    expect(((await badges.json()) as { ordersOverdue: number }).ordersOverdue).toBe(1);
+  });
+
   it("threshold preference round-trips through settings and into /badges", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const put = await SELF.fetch("http://localhost/api/settings/preferences", {

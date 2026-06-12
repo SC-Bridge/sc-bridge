@@ -58,10 +58,12 @@ describe("Accountant — GET /reports/pl", () => {
     const rcTags = body.expenses.lines.filter((l) => l.line === "running_cost").map((l) => l.tag).sort();
     expect(rcTags).toEqual(["player_consumables", "ship_consumables"]);
 
-    // each revenue line carries a drill-down filter (category + period at minimum)
+    // each revenue line carries a drill-down filter (category + period at minimum);
+    // the window echoes NORMALIZED UTC (isoDatetime) — the exact bounds the
+    // report queried with, which the ledger drill-down reuses verbatim.
     const trading = body.revenue.lines.find((l) => l.line === "trading_income");
     expect(trading?.drill.category).toBe("trading");
-    expect(trading?.drill.from).toBe(FROM);
+    expect(trading?.drill.from).toBe(new Date(FROM).toISOString());
   });
 
   it("includes accrual_tick / loan_fee as interest income/expense (presentation cross-cutting)", async () => {

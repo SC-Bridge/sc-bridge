@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
+import { fulfillmentStatements } from "../src/routes/accountant/order-helpers";
 
 async function post(token: string, path: string, body: Record<string, unknown>) {
   return SELF.fetch(`http://localhost/api/accountant${path}`, {
@@ -216,9 +217,10 @@ describe("M5 — fulfilments, rate change, reserve lifecycle", () => {
     }
   });
 
-  it("reserve drift golden: qty 7 × ppu 4801 (total 33,607) in 3.5 + 3.5 → releases 16,804 then 16,803", async () => {
-    // round(33607 × 3.5/7) = round(16803.5) = 16804; naive proportional twice would
-    // release 33,608 ≠ reserve. The CLOSING fulfilment releases the exact remainder.
+  it("reserve drift golden: qty 7 × ppu 4801 (total 33,607) in 3.5 + 3.5 → releases 16,803 then 16,804", async () => {
+    // floor(33607 × 3.5/7) = floor(16803.5) = 16803 — flooring keeps Σ(partials)
+    // ≤ total STRUCTURALLY (rounding could overshoot and drive the closing
+    // release negative). The CLOSING fulfilment releases the exact open reserve.
     const { sessionToken } = await createTestUser(env.DB);
     const id = await createPO(sessionToken, { quantity: 7, price_per_unit: 4801 });
     await fulfil(sessionToken, id, { quantity: 3.5, occurred_at: "2026-06-12T00:00:00Z" });
@@ -226,9 +228,64 @@ describe("M5 — fulfilments, rate change, reserve lifecycle", () => {
     const releases = (await env.DB.prepare(
       "SELECT amount FROM accountant_entries WHERE order_id = ? AND source = 'po_reserve_release' ORDER BY id",
     ).bind(id).all<{ amount: number }>()).results.map((r) => r.amount);
-    expect(releases).toEqual([16804, 16803]);
+    expect(releases).toEqual([16803, 16804]);
     const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?").bind(id).first<{ status: string }>();
     expect(o?.status).toBe("complete");
+  });
+
+  it("fractional-half PROPERTY: four 0.5-qty fulfilments on qty 2 × ppu 1 — no release is ever negative, reserve nets EXACTLY 0", async () => {
+    // round() would release 1+1+1 against a reserve of 2, forcing a NEGATIVE
+    // closing release; floor() releases 0+0+0 and the closing fulfilment
+    // releases the actual open reserve (2).
+    const { sessionToken } = await createTestUser(env.DB);
+    const id = await createPO(sessionToken, { quantity: 2, price_per_unit: 1 });
+    for (let i = 0; i < 4; i++) {
+      expect((await fulfil(sessionToken, id, { quantity: 0.5, occurred_at: `2026-06-12T0${i}:00:00Z` })).status).toBe(200);
+    }
+    const releases = (await env.DB.prepare(
+      "SELECT amount FROM accountant_entries WHERE order_id = ? AND source = 'po_reserve_release' ORDER BY id",
+    ).bind(id).all<{ amount: number }>()).results.map((r) => r.amount);
+    expect(releases.every((a) => a > 0)).toBe(true);   // never negative, no 0-noise rows
+    const net = await env.DB.prepare(
+      `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
+       WHERE order_id = ? AND source IN ('po_reserve','po_reserve_release')`,
+    ).bind(id).first<{ net: number }>();
+    expect(net?.net).toBe(0);
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?").bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("complete");
+  });
+
+  it("duplicate closing request (sequential concurrent-style): second → 400, exactly ONE closing release", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const id = await createPO(sessionToken, {});                       // qty 100, total 100,000
+    const body = { quantity: 100, occurred_at: "2026-06-12T00:00:00Z" };
+    expect((await fulfil(sessionToken, id, body)).status).toBe(200);
+    expect((await fulfil(sessionToken, id, body)).status).toBe(400);   // order is closed
+    const releases = (await env.DB.prepare(
+      "SELECT amount FROM accountant_entries WHERE order_id = ? AND source = 'po_reserve_release'",
+    ).bind(id).all<{ amount: number }>()).results;
+    expect(releases).toHaveLength(1);
+    expect(releases[0].amount).toBe(100000);
+  });
+
+  it("fulfilment occurred_at with a non-Z offset lands NORMALIZED to UTC in the row", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", SALE);
+    const { id } = (await res.json()) as { id: number };
+    const f = await fulfil(sessionToken, id, { quantity: 10, occurred_at: "2026-06-12T12:00:00+02:00" });
+    expect(f.status).toBe(200);
+    const e = await env.DB.prepare(
+      "SELECT occurred_at FROM accountant_entries WHERE order_id = ? AND source = 'order_fulfillment'",
+    ).bind(id).first<{ occurred_at: string }>();
+    expect(e?.occurred_at).toBe("2026-06-12T10:00:00.000Z");
+  });
+
+  it("rejects an order whose TOTAL overflows the aUEC ceiling even when both factors pass individually", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", {
+      ...SALE, quantity: 1_000_000_000, price_per_unit: 9_999_999_999_999,
+    });
+    expect(res.status).toBe(400);
   });
 
   it("rate change 'late': fulfilment after deliver_by uses price × 1.10 → round(50 × 1100) = 55,000", async () => {
@@ -348,6 +405,30 @@ describe("M5 — cancel + notes-only PUT", () => {
     expect(o?.status).toBe("cancelled");
   });
 
+  it("cancel after fractional partials nets the reserve to EXACTLY 0 (over-release made it permanently +1)", async () => {
+    // qty 2 × ppu 1: with round() three 0.5-fulfilments released 3 against a
+    // reserve of 2 — openReserve went NEGATIVE, cancel skipped its release, and
+    // the +1 corrupted lockedInPOs forever. floor() releases 0 per partial.
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    const res = await post(sessionToken, "/orders", { ...PO, quantity: 2, price_per_unit: 1 });
+    const { id } = (await res.json()) as { id: number };
+    for (let i = 0; i < 3; i++) {
+      expect((await post(sessionToken, `/orders/${id}/fulfillments`, {
+        quantity: 0.5, occurred_at: `2026-06-12T0${i}:00:00Z`,
+      })).status).toBe(200);
+    }
+    expect((await cancel(sessionToken, id)).status).toBe(200);
+    const net = await env.DB.prepare(
+      `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
+       WHERE order_id = ? AND source IN ('po_reserve','po_reserve_release')`,
+    ).bind(id).first<{ net: number }>();
+    expect(net?.net).toBe(0);
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("cancelled");
+  });
+
   it("cancel on a complete order → 400; cancel a sale order with no reserve just closes it", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     await seedBalance(sessionToken, 1000000);
@@ -389,5 +470,76 @@ describe("M5 — cancel + notes-only PUT", () => {
 
     const locked = await put(sessionToken, id, { fine_rate: 9 });
     expect(locked.status).toBe(400);                              // hard-locked at creation (owner ruling 10)
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fulfilment SQL guards (TOCTOU): the route's pre-reads are friendly errors
+// only — every statement in the batch re-validates in SQL. These pins drive
+// the guarded statements DIRECTLY, exactly like a request whose pre-read won
+// the race but whose batch lost it.
+// ---------------------------------------------------------------------------
+describe("M5 — fulfilment SQL guards (raced-batch pins)", () => {
+  interface GuardOrder {
+    id: number; type: string; category: string; tag: string | null; quantity: number; total: number;
+  }
+  async function orderRow(id: number): Promise<GuardOrder> {
+    return (await env.DB.prepare(
+      "SELECT id, type, category, tag, quantity, total FROM accountant_orders WHERE id = ?",
+    ).bind(id).first<GuardOrder>())!;
+  }
+  async function entryCounts(id: number) {
+    return env.DB.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN source = 'order_fulfillment' THEN 1 ELSE 0 END), 0) AS fulfilments,
+         COALESCE(SUM(CASE WHEN source = 'po_reserve_release' THEN 1 ELSE 0 END), 0) AS releases
+       FROM accountant_entries WHERE order_id = ?`,
+    ).bind(id).first<{ fulfilments: number; releases: number }>();
+  }
+
+  it("status gate: a batch against an already-CLOSED order writes zero rows (raced cancel/closing fulfilment)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    const res = await post(sessionToken, "/orders", PO);
+    const { id } = (await res.json()) as { id: number };
+    expect((await post(sessionToken, `/orders/${id}/fulfillments`, {
+      quantity: 100, occurred_at: "2026-06-12T00:00:00Z",
+    })).status).toBe(200);                                        // order now 'complete'
+    const before = await entryCounts(id);
+
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, userId, await orderRow(id), {
+      quantity: 10, occurredAt: "2026-06-12T01:00:00Z", amount: -10000, rate: 1000,
+      location: null, closing: false,
+    });
+    const results = await env.DB.batch(stmts);
+    expect(results[fulfilmentIndex].meta.changes ?? 0).toBe(0);
+    expect(await entryCounts(id)).toEqual(before);                // releases guarded out too
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("complete");
+  });
+
+  it("remaining gate: a closing batch whose quantity no longer fits writes zero rows — no orphan release", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    const res = await post(sessionToken, "/orders", PO);
+    const { id } = (await res.json()) as { id: number };
+    expect((await post(sessionToken, `/orders/${id}/fulfillments`, {
+      quantity: 50, occurred_at: "2026-06-12T00:00:00Z",
+    })).status).toBe(200);                                        // in_progress, remaining 50
+    const before = await entryCounts(id);
+
+    // A raced request that pre-validated against remaining=100 and now tries
+    // to CLOSE with qty 100: the gate must refuse fulfilment AND release.
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, userId, await orderRow(id), {
+      quantity: 100, occurredAt: "2026-06-12T01:00:00Z", amount: -100000, rate: 1000,
+      location: null, closing: true,
+    });
+    const results = await env.DB.batch(stmts);
+    expect(results[fulfilmentIndex].meta.changes ?? 0).toBe(0);
+    expect(await entryCounts(id)).toEqual(before);
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("in_progress");                        // status untouched by the lost batch
   });
 });

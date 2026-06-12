@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
-import { categoryEnum, parseIdParam } from "./schemas";
+import { categoryEnum, isoDatetime, parseIdParam } from "./schemas";
 import { catchUp } from "../../lib/accountant/catchup";
 
 /**
@@ -19,7 +19,7 @@ const ManualEntrySchema = z
       .refine((n) => n !== 0, "amount must be non-zero"),
     category: categoryEnum.optional(),
     tag: z.string().max(100).optional(),
-    occurred_at: z.string().datetime({ offset: true }).max(50),
+    occurred_at: isoDatetime,
     location: z.string().max(200).optional(),
     description: z.string().max(500).optional(),
     notes: z.string().max(2000).optional(),
@@ -37,7 +37,7 @@ const UpdateEntrySchema = z
     notes: z.string().max(2000).nullable().optional(),
     amount: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999)
       .refine((n) => n !== 0, "amount must be non-zero").optional(),
-    occurred_at: z.string().datetime({ offset: true }).max(50).optional(),
+    occurred_at: isoDatetime.optional(),
     location: z.string().max(200).nullable().optional(),
     description: z.string().max(500).nullable().optional(),
   })
@@ -69,8 +69,16 @@ export function ledgerRoutes() {
 
     const where: string[] = ["user_id = ?"];
     const binds: (string | number)[] = [userID];
-    const from = c.req.query("from");
-    const to = c.req.query("to");
+    // Window bounds are normalized like every stored timestamp (isoDatetime)
+    // so offset inputs and the `.000Z`-millisecond form compare correctly;
+    // unparseable input keeps the old raw-compare behavior.
+    const norm = (s: string | undefined): string | undefined => {
+      if (!s) return undefined;
+      const r = isoDatetime.safeParse(s);
+      return r.success ? r.data : s;
+    };
+    const from = norm(c.req.query("from"));
+    const to = norm(c.req.query("to"));
     const q = c.req.query("q");
     if (from) { where.push("occurred_at >= ?"); binds.push(from); }
     // HALF-OPEN upper bound — must match report-period.ts so report drill-down

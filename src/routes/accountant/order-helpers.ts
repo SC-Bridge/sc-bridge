@@ -104,12 +104,22 @@ export async function insertOrder(
 
   if (b.type === "purchase") {
     const now = new Date().toISOString();
-    const guard = await db.prepare(
-      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-       SELECT ?1, ?2, ?3, NULL, 'po_reserve', ?4, ?5
-       WHERE (SELECT COALESCE(SUM(amount), 0) FROM accountant_entries WHERE user_id = ?1) >= ?6`,
-    ).bind(userID, now, -total, orderId, `PO reserve · O-${orderId}`, total).run();
-    if ((guard.meta.changes ?? 0) === 0) {
+    let reserveWritten = 0;
+    try {
+      const guard = await db.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+         SELECT ?1, ?2, ?3, NULL, 'po_reserve', ?4, ?5
+         WHERE (SELECT COALESCE(SUM(amount), 0) FROM accountant_entries WHERE user_id = ?1) >= ?6`,
+      ).bind(userID, now, -total, orderId, `PO reserve · O-${orderId}`, total).run();
+      reserveWritten = guard.meta.changes ?? 0;
+    } catch (err) {
+      // A throw here would leave an open PO with NO reserve row — its closing
+      // fulfilment would then release money that was never locked. Compensate
+      // (loans.ts pattern — D1 has no interactive tx) and rethrow.
+      await db.prepare("DELETE FROM accountant_orders WHERE id = ? AND user_id = ?").bind(orderId, userID).run();
+      throw err;
+    }
+    if (reserveWritten === 0) {
       // Whole creation "rolls back": compensating delete (loans.ts pattern — D1 has no interactive tx).
       await db.prepare("DELETE FROM accountant_orders WHERE id = ? AND user_id = ?").bind(orderId, userID).run();
       const balRow = await db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE user_id = ?")
@@ -209,10 +219,12 @@ export async function completionStatements(
                      WHERE o.workorder_id = ?1 AND e.user_id = ?2
                        AND e.source = 'order_fulfillment')`,
     ).bind(workorderId, userID),
-    // Auto-generated note "W-0007 · 2 orders · net +412,000" — net is computed
+    // Auto-generated text "W-0007 · 2 orders · net +412,000" — net is computed
     // by SQLite at execution time (printf's ',' flag does the en-US grouping).
+    // It lands in `description` like every other engine-written row (fines,
+    // accruals, fulfilments); `notes` is reserved for user prose.
     db.prepare(
-      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, notes)
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, description)
        SELECT ?2, ?3, 0, NULL, 'workorder_summary', ?1,
               'W-' || printf('%04d', ?1) || ' · ' || n.cnt || ' orders · net '
                 || CASE WHEN n.net >= 0 THEN '+' ELSE '' END || printf('%,d', n.net)
@@ -240,27 +252,119 @@ export async function completionStatements(
 }
 
 /**
+ * The ONE po_reserve_release writer outside the fulfilment batch (order cancel,
+ * workorder cancel, termination): releases the order's CURRENT open reserve,
+ * with the amount computed BY SQLITE at batch-execution time. Self-guarding —
+ * writes nothing when the reserve is already net 0 or the order is no longer
+ * open/in_progress, so double releases are structurally impossible. Must be
+ * batched BEFORE the statement that closes the order's status.
+ */
+export function releaseOpenReserveStmt(
+  db: D1Database, userID: string, orderId: number, now: string,
+): D1PreparedStatement {
+  return db.prepare(
+    `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+     SELECT ?1, ?2, r.open, NULL, 'po_reserve_release', ?3, ?4
+     FROM (SELECT COALESCE(-SUM(amount), 0) AS open FROM accountant_entries
+           WHERE user_id = ?1 AND order_id = ?3 AND source IN ('po_reserve', 'po_reserve_release')) r
+     WHERE r.open > 0
+       AND EXISTS (SELECT 1 FROM accountant_orders
+                   WHERE id = ?3 AND user_id = ?1 AND status IN ('open', 'in_progress'))`,
+  ).bind(userID, now, orderId, `PO reserve release · O-${orderId}`);
+}
+
+/**
+ * The fulfilment batch for one order (§5.3), every statement re-guarded in SQL
+ * at batch-execution time (TOCTOU): the order must still be open/in_progress
+ * AND the new quantity must still fit Σ(fulfilled) + qty ≤ quantity + ε. A
+ * raced cancel or closing fulfilment makes EVERY statement write zero rows —
+ * the caller checks `results[fulfilmentIndex].meta.changes` and 409s.
+ *
+ * Purchase releases: partial = floor((total × qty) / quantity), so Σ(partials)
+ * ≤ total structurally (rounding could overshoot and drive the closing release
+ * negative); the CLOSING release is the order's open reserve computed by
+ * SQLite at execution time — the reserve nets to exactly 0 and can never go
+ * negative, even when a reserve row is missing or prior releases drifted.
+ *
+ * Status is derived from Σ(fulfilled) at execution time (not the pre-read),
+ * so a guarded-out insert can never flip the status on stale data.
+ */
+export function fulfillmentStatements(
+  db: D1Database,
+  userID: string,
+  order: { id: number; type: string; category: string; tag: string | null; quantity: number; total: number },
+  f: { quantity: number; occurredAt: string; amount: number; rate: number; location: string | null; closing: boolean },
+): { stmts: D1PreparedStatement[]; fulfilmentIndex: number } {
+  // Shared gate — binds ?1 userID, ?2 occurredAt, ?3 orderId, ?4 qty, ?5 order quantity, ?6 ε.
+  const GATE = `EXISTS (SELECT 1 FROM accountant_orders
+                  WHERE id = ?3 AND user_id = ?1 AND status IN ('open', 'in_progress'))
+    AND (SELECT COALESCE(SUM(quantity), 0) FROM accountant_entries
+         WHERE order_id = ?3 AND user_id = ?1 AND source = 'order_fulfillment') + ?4 <= ?5 + ?6`;
+  const stmts: D1PreparedStatement[] = [];
+
+  if (order.type === "purchase") {
+    const desc = `PO reserve release · O-${order.id}`;
+    if (f.closing) {
+      stmts.push(db.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+         SELECT ?1, ?2, r.open, NULL, 'po_reserve_release', ?3, ?7
+         FROM (SELECT COALESCE(-SUM(amount), 0) AS open FROM accountant_entries
+               WHERE user_id = ?1 AND order_id = ?3 AND source IN ('po_reserve', 'po_reserve_release')) r
+         WHERE r.open > 0 AND ${GATE}`,
+      ).bind(userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON, desc));
+    } else {
+      const partial = Math.floor((order.total * f.quantity) / order.quantity);
+      if (partial > 0) {
+        stmts.push(db.prepare(
+          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
+           SELECT ?1, ?2, ?7, NULL, 'po_reserve_release', ?3, ?8
+           WHERE ${GATE}`,
+        ).bind(userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON, partial, desc));
+      }
+    }
+  }
+
+  const fulfilmentIndex = stmts.length;
+  stmts.push(db.prepare(
+    `INSERT INTO accountant_entries
+       (user_id, occurred_at, amount, category, tag, source, quantity, price_per_unit, location, order_id, description)
+     SELECT ?1, ?2, ?7, ?8, ?9, 'order_fulfillment', ?4, ?10, ?11, ?3, ?12
+     WHERE ${GATE}`,
+  ).bind(
+    userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON,
+    f.amount, order.category, order.tag, f.rate, f.location, `Order fulfilment · O-${order.id}`,
+  ));
+
+  stmts.push(db.prepare(
+    `UPDATE accountant_orders SET status = CASE
+       WHEN quantity - (SELECT COALESCE(SUM(quantity), 0) FROM accountant_entries
+                        WHERE order_id = ?1 AND user_id = ?2 AND source = 'order_fulfillment') <= ?3
+       THEN 'complete' ELSE 'in_progress' END
+     WHERE id = ?1 AND user_id = ?2 AND status IN ('open', 'in_progress')
+       AND EXISTS (SELECT 1 FROM accountant_entries
+                   WHERE order_id = ?1 AND user_id = ?2 AND source = 'order_fulfillment')`,
+  ).bind(order.id, userID, QTY_EPSILON));
+
+  return { stmts, fulfilmentIndex };
+}
+
+/**
  * Closing statements for the components a termination event targets (§5.4):
- * release each component's remaining reserve, then close the row — open →
+ * release each component's remaining reserve (amount computed in SQL at
+ * execution time — no per-component pre-reads), then close the row — open →
  * 'cancelled'; partially-fulfilled (in_progress) closes 'complete'-as-is.
  */
-export async function closeComponentStatements(
+export function closeComponentStatements(
   db: D1Database, userID: string, targets: { id: number; status: string }[], now: string,
-): Promise<D1PreparedStatement[]> {
+): D1PreparedStatement[] {
   const stmts: D1PreparedStatement[] = [];
   for (const o of targets) {
-    const reserve = await openReserve(db, userID, o.id);
-    if (reserve > 0) {
-      stmts.push(
-        db.prepare(
-          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-           VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
-        ).bind(userID, now, reserve, o.id, `PO reserve release · O-${o.id}`),
-      );
-    }
+    stmts.push(releaseOpenReserveStmt(db, userID, o.id, now));
     stmts.push(
-      db.prepare("UPDATE accountant_orders SET status = ? WHERE id = ? AND user_id = ?")
-        .bind(o.status === "in_progress" ? "complete" : "cancelled", o.id, userID),
+      db.prepare(
+        `UPDATE accountant_orders SET status = ?
+         WHERE id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
+      ).bind(o.status === "in_progress" ? "complete" : "cancelled", o.id, userID),
     );
   }
   return stmts;

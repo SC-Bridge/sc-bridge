@@ -11,8 +11,17 @@ import {
   ORDER_TYPES,
   RATE_CHANGE_CONDITIONS,
 } from "../../lib/accountant/constants";
-import { QTY_EPSILON, completionStatements, effectiveRate, insertOrder, lockedInPOs, openReserve } from "./order-helpers";
-import { parseIdParam } from "./schemas";
+import {
+  QTY_EPSILON,
+  completionStatements,
+  effectiveRate,
+  fulfillmentStatements,
+  insertOrder,
+  lockedInPOs,
+  openReserve,
+  releaseOpenReserveStmt,
+} from "./order-helpers";
+import { isoDatetime, parseIdParam } from "./schemas";
 
 // .strict() doubles as the private-market enforcement: vis_corp/vis_public are
 // unknown keys here, so they're rejected with 400 and the columns keep DEFAULT 0.
@@ -25,8 +34,8 @@ export const CreateOrderSchema = z.object({
   quantity: z.number().positive().max(1_000_000_000),
   price_per_unit: z.number().int().positive().max(9_999_999_999_999),
   counterparty: z.string().max(100).optional(),
-  start_at: z.string().datetime({ offset: true }).max(50),
-  deliver_by: z.string().datetime({ offset: true }).max(50).nullable().optional(),
+  start_at: isoDatetime,
+  deliver_by: isoDatetime.nullable().optional(),
   fine_interval: z.enum(INTERVALS).default("daily"),
   fine_rate_type: z.enum(FINE_RATE_TYPES).default("percent"),
   fine_rate: z.number().min(0).max(1_000_000_000).default(0.5),
@@ -34,7 +43,12 @@ export const CreateOrderSchema = z.object({
   rate_change_pct: z.number().min(0).max(1000).default(0),
   termination_clause: z.string().max(500).default("standard"),
   notes: z.string().max(2000).optional(),
-}).strict();
+}).strict().refine(
+  // Both factors pass their individual caps, but the server-computed total
+  // must also fit the aUEC ceiling shared by every amount column.
+  (b) => b.quantity * b.price_per_unit <= 9_999_999_999_999,
+  { message: "Order total exceeds the maximum aUEC amount" },
+);
 
 // Contract terms are hard-locked at creation ("no modifications after
 // agreement", master doc; owner ruling 10) — notes is the ONLY editable field;
@@ -47,7 +61,7 @@ const UpdateOrderSchema = z.object({
 // rate (§5.3); `amount` overrides it (real deals deviate), sign applied by type.
 const FulfillmentSchema = z.object({
   quantity: z.number().positive(),
-  occurred_at: z.string().datetime({ offset: true }).max(50).optional(),
+  occurred_at: isoDatetime.optional(),
   location: z.string().max(200).optional(),
   amount: z.number().int().positive().max(9_999_999_999_999).optional(),
 }).strict();
@@ -271,11 +285,9 @@ export function ordersRoutes() {
     }
 
     const sums = await db.prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN source = 'order_fulfillment' THEN quantity END), 0) AS fulfilled_qty,
-         COALESCE(SUM(CASE WHEN source = 'po_reserve_release' THEN amount END), 0) AS prior_released
-       FROM accountant_entries WHERE order_id = ? AND user_id = ?`,
-    ).bind(id, userID).first<{ fulfilled_qty: number; prior_released: number }>();
+      `SELECT COALESCE(SUM(quantity), 0) AS fulfilled_qty FROM accountant_entries
+       WHERE order_id = ? AND user_id = ? AND source = 'order_fulfillment'`,
+    ).bind(id, userID).first<{ fulfilled_qty: number }>();
     const fulfilledQty = sums?.fulfilled_qty ?? 0;
     const remaining = order.quantity - fulfilledQty;
     if (b.quantity > remaining + QTY_EPSILON) {
@@ -289,41 +301,31 @@ export function ordersRoutes() {
     const closing = remaining - b.quantity <= QTY_EPSILON;
     const status = closing ? "complete" : "in_progress";
 
-    const stmts: D1PreparedStatement[] = [
-      db.prepare(
-        `INSERT INTO accountant_entries
-           (user_id, occurred_at, amount, category, tag, source, quantity, price_per_unit, location, order_id, description)
-         VALUES (?, ?, ?, ?, ?, 'order_fulfillment', ?, ?, ?, ?, ?)`,
-      ).bind(
-        userID, occurredAt, amount, order.category, order.tag, b.quantity,
-        Math.round(rate), b.location ?? null, id, `Order fulfilment · O-${id}`,
-      ),
-    ];
-
+    // Response figure only — the batched statements compute their own amounts
+    // in SQL at execution time (fulfillmentStatements): floor-based partial
+    // release, exact open reserve on the closing fulfilment (§5.3, reserves
+    // are NOT re-reserved; closed orders net to exactly 0).
     let release: number | undefined;
     if (order.type === "purchase") {
-      // Proportional by quantity; the CLOSING fulfilment releases the exact
-      // remainder — kills rounding drift and settles rate-change over/shortfall
-      // (reserves are NOT re-reserved, §5.3).
       release = closing
-        ? order.total - (sums?.prior_released ?? 0)
-        : Math.round((order.total * b.quantity) / order.quantity);
-      stmts.push(
-        db.prepare(
-          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-           VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
-        ).bind(userID, occurredAt, release, id, `PO reserve release · O-${id}`),
-      );
+        ? await openReserve(db, userID, id)
+        : Math.floor((order.total * b.quantity) / order.quantity);
     }
 
-    stmts.push(
-      db.prepare("UPDATE accountant_orders SET status = ? WHERE id = ? AND user_id = ?").bind(status, id, userID),
-    );
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(db, userID, order, {
+      quantity: b.quantity, occurredAt, amount, rate: Math.round(rate),
+      location: b.location ?? null, closing,
+    });
     if (order.workorder_id !== null) {
       stmts.push(...(await completionStatements(db, userID, order.workorder_id)));
     }
 
-    await db.batch(stmts);
+    const results = await db.batch(stmts);
+    // The reads above are friendly pre-validation only — the batch re-checks
+    // status + remaining in SQL. Zero rows = a concurrent close/fulfilment won.
+    if ((results[fulfilmentIndex].meta.changes ?? 0) === 0) {
+      return c.json({ error: "Order changed concurrently - retry" }, 409);
+    }
     return c.json({ ok: true, amount, ...(release !== undefined ? { release } : {}), status });
   });
 
@@ -347,27 +349,40 @@ export function ordersRoutes() {
     if (order.status === "complete" || order.status === "cancelled") {
       return c.json({ error: "Order already closed" }, 400);
     }
-
-    const stmts: D1PreparedStatement[] = [];
-    const open = await openReserve(db, userID, id);
-    if (open > 0) {
-      stmts.push(
-        db.prepare(
-          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-           VALUES (?, ?, ?, NULL, 'po_reserve_release', ?, ?)`,
-        ).bind(userID, new Date().toISOString(), open, id, `PO reserve release · O-${id}`),
-      );
+    // Draft = "being built": detach is the draft-time tool. Cancelling a draft
+    // component would silently shrink the publish gate's open-component count.
+    if (order.workorder_id !== null) {
+      const wo = await db.prepare(
+        "SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?",
+      ).bind(order.workorder_id, userID).first<{ status: string }>();
+      if (wo?.status === "draft") {
+        return c.json({ error: "Workorder is draft - detach the component instead of cancelling it" }, 400);
+      }
     }
-    stmts.push(
-      db.prepare("UPDATE accountant_orders SET status = 'cancelled' WHERE id = ? AND user_id = ?").bind(id, userID),
-    );
+
+    // Response figure only — the batched release computes the actual amount in
+    // SQL at execution time and self-guards against a raced close (net 0 stays 0).
+    const open = await openReserve(db, userID, id);
+    const stmts: D1PreparedStatement[] = [
+      releaseOpenReserveStmt(db, userID, id, new Date().toISOString()),
+      db.prepare(
+        `UPDATE accountant_orders SET status = 'cancelled'
+         WHERE id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
+      ).bind(id, userID),
+    ];
+    const statusIndex = 1;
     // Finding 18: cancelling the last open component must advance the parent
     // workorder — same completion check the fulfilment path runs (Task 8 fills it).
     if (order.workorder_id !== null) {
       stmts.push(...(await completionStatements(db, userID, order.workorder_id)));
     }
 
-    await db.batch(stmts);
+    const results = await db.batch(stmts);
+    // Status guard lost = a concurrent fulfilment/cancel closed the order first;
+    // the release's own status gate wrote nothing either.
+    if ((results[statusIndex].meta.changes ?? 0) === 0) {
+      return c.json({ error: "Order already closed" }, 409);
+    }
     return c.json({ ok: true, released: open });
   });
 

@@ -5,11 +5,12 @@ import { validate } from "../../lib/validation";
 import { classifyEntry } from "../../lib/accountant/categorize";
 import { KNOWN_HINTS } from "../../lib/accountant/constants";
 import { logEvent } from "../../lib/logger";
+import { isoDatetime } from "./schemas";
 
 const IngestEntrySchema = z
   .object({
     event_id: z.string().min(1).max(100),
-    occurred_at: z.string().datetime({ offset: true }).max(50),
+    occurred_at: isoDatetime,
     amount: z.number().int().min(-9_999_999_999_999).max(9_999_999_999_999)
       .refine((n) => n !== 0, "amount must be non-zero"),
     description: z.string().max(500).optional(),

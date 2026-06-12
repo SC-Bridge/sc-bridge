@@ -61,10 +61,12 @@ function components(woId: number) {
   ).bind(woId).all<{ id: number; type: string; status: string; workorder_id: number }>();
 }
 function summaries(woId: number) {
+  // Generated text lives in `description` — the same column convention as every
+  // other engine-written row (fines, accruals, fulfilments); `notes` is user prose.
   return env.DB.prepare(
-    `SELECT amount, category, source, workorder_id, notes FROM accountant_entries
+    `SELECT amount, category, source, workorder_id, description FROM accountant_entries
      WHERE workorder_id = ? AND source = 'workorder_summary'`,
-  ).bind(woId).all<{ amount: number; category: string | null; workorder_id: number; notes: string }>();
+  ).bind(woId).all<{ amount: number; category: string | null; workorder_id: number; description: string }>();
 }
 
 describe("M5 — workorder lifecycle", () => {
@@ -254,6 +256,43 @@ describe("M5 — workorder lifecycle", () => {
     expect((await post(sessionToken, `/workorders/${woId}/publish`, {})).status).toBe(400);
   });
 
+  it("publish counts only OPEN components: a dead (cancelled) component does not satisfy the ≥2 gate", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const woId = await createWO(sessionToken, { title: "Half dead", orders: [SALE, SALE] });
+    const [first] = (await components(woId)).results;
+    // Simulate the legacy/corrupt state directly — the API no longer allows
+    // cancelling a draft component, but rows written before that gate exist.
+    await env.DB.prepare("UPDATE accountant_orders SET status = 'cancelled' WHERE id = ?")
+      .bind(first.id).run();
+
+    const thin = await post(sessionToken, `/workorders/${woId}/publish`, {});
+    expect(thin.status).toBe(400);
+    expect((await woRow(woId))?.status).toBe("draft");
+
+    // A replacement open component restores the gate.
+    expect((await post(sessionToken, `/workorders/${woId}/orders`, { order: SALE })).status).toBe(200);
+    expect((await post(sessionToken, `/workorders/${woId}/publish`, {})).status).toBe(200);
+  });
+
+  it("cancelling a DRAFT workorder's component → 400 (detach is the draft-time tool); publish then proceeds", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const woId = await createWO(sessionToken, { title: "Still drafting", orders: [SALE, SALE] });
+    const [first] = (await components(woId)).results;
+
+    const blocked = await post(sessionToken, `/orders/${first.id}/cancel`, {});
+    expect(blocked.status).toBe(400);
+    expect(((await blocked.json()) as { error: string }).error).toMatch(/draft/i);
+    const order = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?")
+      .bind(first.id).first<{ status: string }>();
+    expect(order?.status).toBe("open");                           // untouched
+
+    // The previously-untested hole: cancel-then-publish can no longer shrink
+    // the component count below the gate — both components are still open.
+    expect((await post(sessionToken, `/workorders/${woId}/publish`, {})).status).toBe(200);
+    // After publish (open WO) the component becomes cancellable again.
+    expect((await post(sessionToken, `/orders/${first.id}/cancel`, {})).status).toBe(200);
+  });
+
   it("first component fulfilment flips the WO open → in_progress (inside the fulfilment batch)", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const woId = await createWO(sessionToken, { title: "Two sales", orders: [SALE, SALE] });
@@ -287,7 +326,7 @@ describe("M5 — workorder lifecycle", () => {
       amount: 0,                               // a valued summary would double-count (M3 trap)
       category: null,
       workorder_id: woId,
-      notes: `W-${String(woId).padStart(4, "0")} · 2 orders · net +412,000`,  // −80,000 + 492,000
+      description: `W-${String(woId).padStart(4, "0")} · 2 orders · net +412,000`,  // −80,000 + 492,000
     });
     const wo = await woRow(woId);
     expect(wo?.status).toBe("complete");
@@ -317,7 +356,7 @@ describe("M5 — workorder lifecycle", () => {
     expect(wo?.completed_at).toBeTruthy();
     const rows = (await summaries(woId)).results;
     expect(rows).toHaveLength(1);
-    expect(rows[0].notes).toBe(`W-${String(woId).padStart(4, "0")} · 2 orders · net +10,000`);
+    expect(rows[0].description).toBe(`W-${String(woId).padStart(4, "0")} · 2 orders · net +10,000`);
   });
 
   it("workorder cancel: draft/open only; cancels open components and releases their reserves", async () => {

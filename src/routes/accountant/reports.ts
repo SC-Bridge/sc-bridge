@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { catchUp } from "../../lib/accountant/catchup";
 import {
@@ -10,6 +9,7 @@ import {
   type Source,
 } from "../../lib/accountant/constants";
 import { parsePeriod, defaultInterval, IntervalSchema } from "./report-period";
+import { isoDatetime } from "./schemas";
 
 /**
  * /api/accountant/reports — read-only derived views (design §4.5).
@@ -125,9 +125,11 @@ export function reportsRoutes() {
     const userID = getAuthUser(c).id;
     await catchUp(db, userID);
 
-    const at = c.req.query("at");
-    const ok = at && z.string().datetime({ offset: true }).safeParse(at).success;
-    if (!ok) return c.json({ error: "at must be an ISO timestamp" }, 400);
+    // Normalized to UTC (isoDatetime) — the cutoff is a raw-string compare
+    // against stored normalized timestamps.
+    const parsed = isoDatetime.safeParse(c.req.query("at") ?? "");
+    if (!parsed.success) return c.json({ error: "at must be an ISO timestamp" }, 400);
+    const at = parsed.data;
 
     // Snapshot is strictly before `at` (same half-open convention applied to the upper bound).
     // Non-loan financial entries (tactical, no loan_id) are P&L expenses, not balance-sheet liabilities.

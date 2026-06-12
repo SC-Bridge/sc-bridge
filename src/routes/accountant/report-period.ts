@@ -1,15 +1,17 @@
 import { z } from "zod";
 import { INTERVALS } from "../../lib/accountant/accrual";
+import { isoDatetime } from "./schemas";
 
 /**
  * Report period semantics (presentation design "Cross-cutting"):
  *   occurred_at >= from AND occurred_at < to   (HALF-OPEN — owner-confirmed 2026-06-11;
  *   this differs from the M1 ledger GET's inclusive `<= to`).
- * Both bounds are required, UTC ISO strings.
+ * Both bounds are required ISO strings, normalized to UTC (isoDatetime) so the
+ * raw-string SQL window compare agrees with stored normalized timestamps.
  */
 export const PeriodSchema = z.object({
-  from: z.string().datetime({ offset: true }),
-  to: z.string().datetime({ offset: true }),
+  from: isoDatetime,
+  to: isoDatetime,
 });
 
 export const IntervalSchema = z.enum(INTERVALS); // hourly|daily|weekly|monthly
