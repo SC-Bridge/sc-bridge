@@ -52,7 +52,7 @@ function sharedFetchJSON(path) {
   return p
 }
 
-export function useAPI(path, { skip = false } = {}) {
+export function useAPI(path, { skip = false, refreshOn } = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
@@ -68,6 +68,16 @@ export function useAPI(path, { skip = false } = {}) {
   }, [path, skip])
 
   useEffect(() => { refetch() }, [refetch])
+
+  // refreshOn: window event name that triggers a refetch — lets mutation
+  // helpers announce changes to long-lived consumers (e.g. the sidebar's
+  // usePreferences, which otherwise only fetches at app-shell mount).
+  useEffect(() => {
+    if (!refreshOn) return undefined
+    const handler = () => refetch()
+    window.addEventListener(refreshOn, handler)
+    return () => window.removeEventListener(refreshOn, handler)
+  }, [refreshOn, refetch])
 
   return { data, loading, error, refetch }
 }
@@ -201,11 +211,15 @@ export async function importHangarXplor(jsonData) {
 
 // User Preferences
 export function usePreferences(opts) {
-  return useAPI('/settings/preferences', opts)
+  return useAPI('/settings/preferences', { ...opts, refreshOn: 'preferences:changed' })
 }
 
 export async function setPreferences(prefs) {
-  return putJSON('/settings/preferences', prefs)
+  const res = await putJSON('/settings/preferences', prefs)
+  // Announce so every mounted usePreferences refetches — keeps tier-gated
+  // nav and other prefs-driven UI live without a page reload.
+  window.dispatchEvent(new Event('preferences:changed'))
+  return res
 }
 
 // Sync data management
