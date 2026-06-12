@@ -14,6 +14,14 @@ const RepaymentSchema = z
   })
   .strict();
 
+// No occurred_at by design (§5.6 + Finding 15): the entry posts at server now.
+const ForgiveSchema = z
+  .object({
+    amount: z.number().int().positive().max(9_999_999_999_999),
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
+
 const UpdateLoanSchema = z
   .object({
     notes: z.string().max(2000).nullable().optional(),
@@ -246,6 +254,49 @@ export function loansRoutes() {
            VALUES (?, ?, ?, 'financial', 'loan_repayment', ?, ?, 'Loan repayment')`,
         )
         .bind(userID, occurred_at, sign * amount, id, notes ?? null),
+    ];
+    const settled = amount === outstanding;
+    if (settled) {
+      stmts.push(
+        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?").bind(id, userID),
+      );
+    }
+    await db.batch(stmts);
+    return c.json({ ok: true, settled, outstanding: outstanding - amount });
+  });
+
+  // POST /loans/:id/forgive — partial forgiveness without payment (M2 amendment, design §5.6).
+  // Sign is OPPOSITE the signed outstanding: outstanding math gains the term and shrinks
+  // toward zero — outstanding = principal + fee + Σticks − Σrepayments ∓ Σforgiveness.
+  // Real P&L (no report exclusion): debt relief (+) / eaten loss (−). Auto-settles at exactly 0.
+  routes.post("/:id/forgive", validate("json", ForgiveSchema), async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const id = parseIdParam(c.req.param("id"));
+    if (id === null) return c.json({ error: "Not found" }, 404);
+    const { amount, notes } = c.req.valid("json");
+
+    const loaded = await loadLoan(db, userID, id);
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (loaded.loan.status === "settled") {
+      return c.json({ error: "Loan already settled" }, 400);
+    }
+    const outstanding = Math.abs(loaded.signedOutstanding);
+    if (amount > outstanding) {
+      // Design §6: echo current outstanding for inline UI display.
+      return c.json({ error: "Forgiveness exceeds outstanding", outstanding }, 400);
+    }
+
+    // Forgiveness carries the OPPOSITE sign of the obligation (same rule as repayments).
+    const sign = loaded.signedOutstanding < 0 ? 1 : -1;
+    const stmts: D1PreparedStatement[] = [
+      db
+        .prepare(
+          `INSERT INTO accountant_entries
+             (user_id, occurred_at, amount, category, source, loan_id, notes, description)
+           VALUES (?, ?, ?, 'financial', 'loan_forgiveness', ?, ?, 'Loan forgiveness')`,
+        )
+        .bind(userID, new Date().toISOString(), sign * amount, id, notes ?? null),
     ];
     const settled = amount === outstanding;
     if (settled) {

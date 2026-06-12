@@ -152,6 +152,8 @@ export const STATEMENT_LINES: readonly StatementLine[] = [
   // expenses over-show in the drill, accepted per the drill contract ruling.
   { line: "tactical",          section: "expenses", label: "Tactical investments",         categories: ["financial"] },
   { line: "interest_expense",  section: "expenses", label: "Interest expense",             drill: { source: "accrual_tick,loan_fee" } },
+  { line: "debt_relief",       section: "revenue",  label: "Debt relief (forgiven)",       drill: { source: "loan_forgiveness" } },
+  { line: "forgiveness_loss",  section: "expenses", label: "Forgiveness (written off)",    drill: { source: "loan_forgiveness" } },
 ] as const;
 
 interface PLEntry {
@@ -176,6 +178,14 @@ export function classifyPLLine(e: PLEntry): { section: PLSection; line: string }
     return e.amount > 0
       ? { section: "revenue", line: "interest_income" }
       : { section: "expenses", line: "interest_expense" };
+  }
+
+  // Forgiveness is source-keyed by sign: incoming relief (+) vs outgoing loss (−),
+  // real P&L per design §5.6 — no exclusion.
+  if (e.source === "loan_forgiveness") {
+    return e.amount > 0
+      ? { section: "revenue", line: "debt_relief" }
+      : { section: "expenses", line: "forgiveness_loss" };
   }
 
   switch (e.category) {
