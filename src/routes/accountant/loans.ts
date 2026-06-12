@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
-import { INTERVALS, catchUpAccruals, nextTickAt } from "../../lib/accountant/accrual";
+import { INTERVALS, nextTickAt } from "../../lib/accountant/accrual";
+import { catchUp } from "../../lib/accountant/catchup";
 import { parseIdParam } from "./schemas";
 
 const RepaymentSchema = z
@@ -59,7 +60,7 @@ export function loansRoutes() {
   // Private helper: run accruals, fetch loan row (user-scoped), compute outstanding.
   // ---------------------------------------------------------------------------
   async function loadLoan(db: D1Database, userID: string, id: number) {
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
     const loan = await db
       .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
       .bind(id, userID)
@@ -151,7 +152,7 @@ export function loansRoutes() {
   routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const loans = await db
       .prepare(

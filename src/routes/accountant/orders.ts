@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
-import { INTERVALS, catchUpAccruals } from "../../lib/accountant/accrual";
+import { INTERVALS } from "../../lib/accountant/accrual";
+import { catchUp } from "../../lib/accountant/catchup";
 import {
   FINE_RATE_TYPES,
   ORDER_CATEGORIES,
@@ -105,7 +106,7 @@ export function ordersRoutes() {
   routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
     // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
@@ -187,7 +188,7 @@ export function ordersRoutes() {
     const userID = getAuthUser(c).id;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
@@ -242,7 +243,7 @@ export function ordersRoutes() {
     const b = c.req.valid("json");
 
     // Fines must be current before the fulfilment lands (Task 6 swaps to combined catchUp).
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
@@ -320,7 +321,7 @@ export function ordersRoutes() {
 
     // Fines accrued while open must land before the close stops the clock
     // (Task 6 swaps to combined catchUp).
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")

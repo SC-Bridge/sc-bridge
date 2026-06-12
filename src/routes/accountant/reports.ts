@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
-import { catchUpAccruals } from "../../lib/accountant/accrual";
+import { catchUp } from "../../lib/accountant/catchup";
 import {
   STATEMENT_LINES,
   classifyPLLine,
@@ -24,7 +24,7 @@ export function reportsRoutes() {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     // Design §4.4 / §6: no try/catch — a throw becomes a 500, never stale numbers.
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -114,7 +114,7 @@ export function reportsRoutes() {
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const at = c.req.query("at");
     const ok = at && z.string().datetime({ offset: true }).safeParse(at).success;
@@ -181,7 +181,7 @@ export function reportsRoutes() {
   routes.get("/cash-flow", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -216,7 +216,7 @@ export function reportsRoutes() {
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -268,7 +268,7 @@ export function reportsRoutes() {
   routes.get("/investment-option", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
 
     // Default window = current calendar month (owner decision 2026-06-11). Explicit from&to override.
     const explicit = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });

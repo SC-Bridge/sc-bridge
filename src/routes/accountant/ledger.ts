@@ -4,7 +4,7 @@ import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
 import { categoryEnum, parseIdParam } from "./schemas";
-import { catchUpAccruals } from "../../lib/accountant/accrual";
+import { catchUp } from "../../lib/accountant/catchup";
 
 /**
  * /api/accountant/ledger — list/filter, manual entries, edit, delete.
@@ -54,9 +54,9 @@ export function ledgerRoutes() {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     // Design §4.4: catch-up runs at the top of every ledger read.
-    // No try/catch — catchUpAccruals throws on logic errors; Hono returns 500
+    // No try/catch — catchUp throws on logic errors; Hono returns 500
     // ("fail rather than serve stale numbers", design §6).
-    await catchUpAccruals(db, userID);
+    await catchUp(db, userID);
     // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 

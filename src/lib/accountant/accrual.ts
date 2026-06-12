@@ -82,8 +82,19 @@ interface LoanRow {
 }
 
 /**
- * Advance all open loans for userId to nowMs, inserting accrual_tick entries and
- * updating last_accrued_tick in a single atomic db.batch() per call.
+ * Prepared-but-unbatched catch-up output. The combined catchUp() (catchup.ts)
+ * concatenates the accrual + fine work into ONE db.batch(); logs are emitted
+ * only after the batch commits (no phantom events on failure).
+ */
+export interface CatchUpWork {
+  stmts: D1PreparedStatement[];
+  logs: Array<{ event: string; payload: Record<string, unknown> }>;
+}
+
+/**
+ * Collect the statements that advance all open loans for userId to nowMs
+ * (accrual_tick inserts + last_accrued_tick bookmark updates) WITHOUT batching
+ * them — the caller owns the batch.
  *
  * Compounding flaw fix:
  *   The naive approach (SELECT SUM(amount) WHERE occurred_at <= tickTs per tick)
@@ -104,11 +115,11 @@ interface LoanRow {
  *   written by the engine use new Date().toISOString() (with .000Z millis). String
  *   comparison across these formats is not reliable.
  */
-export async function catchUpAccruals(
+export async function collectAccrualWork(
   db: D1Database,
   userId: string,
-  nowMs: number = Date.now(),
-): Promise<void> {
+  nowMs: number,
+): Promise<CatchUpWork> {
   // Only open loans accrue interest.
   const loans = await db
     .prepare(
@@ -120,11 +131,11 @@ export async function catchUpAccruals(
     .bind(userId)
     .all<LoanRow>();
 
-  // Accumulate statements across ALL loans — one db.batch() per catchUpAccruals call.
+  // Accumulate statements across ALL loans — the caller batches once.
   const allStmts: D1PreparedStatement[] = [];
 
-  // Accumulate log payloads; emit after batch succeeds to avoid logging phantom events.
-  const logPayloads: Array<{ loanId: number; userId: string; from: number; to: number; ticksWritten: number }> = [];
+  // Accumulate log payloads; the caller emits them only after its batch succeeds.
+  const logs: CatchUpWork["logs"] = [];
 
   for (const loan of loans.results) {
     const due = elapsedTicks(loan, nowMs);
@@ -198,15 +209,33 @@ export async function catchUpAccruals(
       ).bind(due, loan.id, userId),
     );
 
-    logPayloads.push({ loanId: loan.id, userId, from, to: due, ticksWritten: due - from + 1 });
+    logs.push({
+      event: "accrual.catchUp",
+      payload: { loanId: loan.id, userId, from, to: due, ticksWritten: due - from + 1 },
+    });
   }
 
+  return { stmts: allStmts, logs };
+}
+
+/**
+ * Loan-only catch-up — collects + batches its own work. Kept with its original
+ * signature for the accrual test suite and direct engine callers; route handlers
+ * use the combined catchUp() in catchup.ts instead.
+ */
+export async function catchUpAccruals(
+  db: D1Database,
+  userId: string,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  const { stmts, logs } = await collectAccrualWork(db, userId, nowMs);
+
   // One atomic batch for the entire catch-up call (all loans combined).
-  if (allStmts.length > 0) {
-    await db.batch(allStmts);
+  if (stmts.length > 0) {
+    await db.batch(stmts);
     // Emit telemetry only after the batch commits — no phantom events on failure.
-    for (const payload of logPayloads) {
-      logEvent("accrual.catchUp", payload);
+    for (const l of logs) {
+      logEvent(l.event, l.payload);
     }
   }
 }
