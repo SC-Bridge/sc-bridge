@@ -28,11 +28,13 @@ export function badgesRoutes() {
          WHERE user_id = ? AND status = 'open' AND due_at IS NOT NULL
            AND due_at <= datetime('now', '+48 hours')`,
       ).bind(userID).first<{ n: number }>(),
+      // Bound ISO now, NOT datetime('now'): deliver_by is ISO ('T' at char 10),
+      // datetime('now') uses a space — raw compare misses same-UTC-day overdue.
       db.prepare(
         `SELECT COUNT(*) AS n FROM accountant_orders
          WHERE user_id = ? AND status IN ('open', 'in_progress')
-           AND deliver_by IS NOT NULL AND deliver_by < datetime('now')`,
-      ).bind(userID).first<{ n: number }>(),
+           AND deliver_by IS NOT NULL AND deliver_by < ?`,
+      ).bind(userID, new Date().toISOString()).first<{ n: number }>(),
       db.prepare(
         "SELECT value FROM user_settings WHERE user_id = ? AND key = 'accountantVerifyThreshold'",
       ).bind(userID).first<{ value: string }>(),

@@ -3,6 +3,7 @@ import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
 import { catchUp } from "../src/lib/accountant/catchup";
+import { attachOrder } from "../src/routes/accountant/order-helpers";
 
 async function post(token: string, path: string, body: Record<string, unknown>) {
   return SELF.fetch(`http://localhost/api/accountant${path}`, {
@@ -106,6 +107,96 @@ describe("M5 — workorder lifecycle", () => {
               (SELECT COUNT(*) FROM accountant_entries WHERE user_id = ?1 AND source = 'po_reserve') AS reserves`,
     ).bind(userId).first<{ workorders: number; orders: number; reserves: number }>();
     expect(counts).toEqual({ workorders: 0, orders: 0, reserves: 0 });
+  });
+
+  it("inline order fund guard sees a CAUGHT-UP balance: pending fine ticks block creation (400, no orphans)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 10000);
+    // Backdated standalone sale: 2 daily flat ticks of −2,500 accrued but not
+    // yet materialized — only a catch-up before the §5.0 guard surfaces them.
+    expect((await post(sessionToken, "/orders", FINED_SALE)).status).toBe(200);
+
+    // True balance 5,000 < the inline PO's 7,000 → whole creation rejected.
+    const res = await post(sessionToken, "/workorders", {
+      title: "Underwater run", orders: [{ ...PO, quantity: 7 }],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { balance: number }).balance).toBe(5000);
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM accountant_workorders WHERE user_id = ?",
+    ).bind(userId).first<{ n: number }>();
+    expect(count?.n).toBe(0);
+  });
+
+  it("inline component on an EXISTING workorder also fund-checks the caught-up balance", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 10000);
+    const woId = await createWO(sessionToken, { title: "Existing WO" });
+    expect((await post(sessionToken, "/orders", FINED_SALE)).status).toBe(200);  // −5,000 pending lazily
+    const res = await post(sessionToken, `/workorders/${woId}/orders`, { order: { ...PO, quantity: 7 } });
+    expect(res.status).toBe(400);            // 5,000 < 7,000 once the fines materialize
+  });
+
+  it("TOCTOU: duplicate order_ids in one creation lose at the hardened UPDATE → 400 + full rollback", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const saleId = await createOrder(sessionToken, SALE);
+    // Same id twice: the read-only pre-validation passes both, but the second
+    // attach UPDATE (workorder_id IS NULL guard) changes 0 rows — exactly what
+    // a raced concurrent attach looks like. The whole creation must compensate.
+    const res = await post(sessionToken, "/workorders", {
+      title: "Raced", orders: [SALE], order_ids: [saleId, saleId],
+    });
+    expect(res.status).toBe(400);
+    const order = await env.DB.prepare(
+      "SELECT workorder_id, status FROM accountant_orders WHERE id = ?",
+    ).bind(saleId).first<{ workorder_id: number | null; status: string }>();
+    expect(order).toEqual({ workorder_id: null, status: "open" });  // detached again, NOT deleted
+    const counts = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM accountant_workorders WHERE user_id = ?1) AS workorders,
+              (SELECT COUNT(*) FROM accountant_orders WHERE user_id = ?1) AS orders`,
+    ).bind(userId).first<{ workorders: number; orders: number }>();
+    expect(counts).toEqual({ workorders: 0, orders: 1 });           // inline sibling rolled back too
+  });
+
+  it("hardened attach UPDATE refuses even with the pre-read bypassed (already-attached / non-open)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const takenId = await createOrder(sessionToken, SALE);
+    const homeWo = await createWO(sessionToken, { title: "Home", order_ids: [takenId] });
+    const rivalWo = await createWO(sessionToken, { title: "Rival" });
+
+    // Direct helper call = the friendly pre-validation read never ran (raced path).
+    expect(await attachOrder(env.DB, userId, takenId, rivalWo)).toBe(false);
+    const row = await env.DB.prepare("SELECT workorder_id FROM accountant_orders WHERE id = ?")
+      .bind(takenId).first<{ workorder_id: number | null }>();
+    expect(row?.workorder_id).toBe(homeWo);                         // silent re-parent impossible
+
+    // A no-longer-open order is equally unattachable at the UPDATE itself.
+    const startedId = await createOrder(sessionToken, SALE);
+    expect((await fulfil(sessionToken, startedId, { quantity: 10, occurred_at: "2026-06-12T00:00:00Z" })).status).toBe(200);
+    expect(await attachOrder(env.DB, userId, startedId, rivalWo)).toBe(false);
+  });
+
+  it("fulfilment on a DRAFT workorder's component → 400; publish → fulfil works (master-doc lifecycle)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const woId = await createWO(sessionToken, { title: "Still drafting", orders: [SALE, SALE] });
+    const [first] = (await components(woId)).results;
+
+    const blocked = await fulfil(sessionToken, first.id, { quantity: 10, occurred_at: "2026-06-12T00:00:00Z" });
+    expect(blocked.status).toBe(400);
+    expect(((await blocked.json()) as { error: string }).error).toBe(
+      "Workorder is draft - publish it before recording work",
+    );
+    expect((await woRow(woId))?.status).toBe("draft");              // untouched — no partial work on drafts
+
+    expect((await post(sessionToken, `/workorders/${woId}/publish`, {})).status).toBe(200);
+    expect((await fulfil(sessionToken, first.id, { quantity: 10, occurred_at: "2026-06-12T00:00:00Z" })).status).toBe(200);
+    expect((await woRow(woId))?.status).toBe("in_progress");
+  });
+
+  it("CreateWorkorderSchema is strict: vis_corp / vis_public → 400 (private market only)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    expect((await post(sessionToken, "/workorders", { title: "Vis", vis_public: 1 })).status).toBe(400);
+    expect((await post(sessionToken, "/workorders", { title: "Vis", vis_corp: 1 })).status).toBe(400);
   });
 
   it("attach validates: order must be open, mine, and not already in another workorder (one WO per order)", async () => {

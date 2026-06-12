@@ -121,6 +121,68 @@ export async function insertOrder(
 }
 
 /**
+ * One workorder per order: attachable = mine + status 'open' + not already
+ * in a workorder. Friendly pre-validation read for precise error messages —
+ * attachOrder's UPDATE re-checks the invariant atomically (TOCTOU guard).
+ * Returns the error response payload or null when OK.
+ */
+export async function attachError(
+  db: D1Database, userID: string, orderId: number,
+): Promise<{ error: string; status: 400 | 404 } | null> {
+  const order = await db
+    .prepare("SELECT status, workorder_id FROM accountant_orders WHERE id = ? AND user_id = ?")
+    .bind(orderId, userID)
+    .first<{ status: string; workorder_id: number | null }>();
+  if (!order) return { error: "Order not found", status: 404 };
+  if (order.workorder_id !== null) return { error: "Order already belongs to a workorder", status: 400 };
+  if (order.status !== "open") return { error: "Only open orders can join a workorder", status: 400 };
+  return null;
+}
+
+/**
+ * Hardened attach (one workorder per order, design §4.2): the UPDATE itself
+ * re-checks `workorder_id IS NULL AND status = 'open'`, so an attach that
+ * raced past the friendly pre-validation read (TOCTOU) changes 0 rows instead
+ * of silently re-parenting. Returns whether the order was attached.
+ */
+export async function attachOrder(
+  db: D1Database, userID: string, orderId: number, workorderId: number,
+): Promise<boolean> {
+  const res = await db.prepare(
+    `UPDATE accountant_orders SET workorder_id = ?
+     WHERE id = ? AND user_id = ? AND workorder_id IS NULL AND status = 'open'`,
+  ).bind(workorderId, orderId, userID).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Compensating "rollback" for a failed workorder creation (loans.ts pattern —
+ * D1 has no interactive tx): detach the listed pre-existing standalone orders
+ * FIRST so the by-workorder_id deletes only ever catch inline-created siblings
+ * (and their reserve entries), then drop those and the workorder row.
+ */
+export async function rollbackWorkorderCreation(
+  db: D1Database, userID: string, workorderId: number, detachIds: number[] = [],
+): Promise<void> {
+  const stmts: D1PreparedStatement[] = [];
+  if (detachIds.length > 0) {
+    stmts.push(db.prepare(
+      `UPDATE accountant_orders SET workorder_id = NULL
+       WHERE user_id = ? AND workorder_id = ? AND id IN (${detachIds.map(() => "?").join(", ")})`,
+    ).bind(userID, workorderId, ...detachIds));
+  }
+  stmts.push(
+    db.prepare(
+      `DELETE FROM accountant_entries WHERE user_id = ?1
+       AND order_id IN (SELECT id FROM accountant_orders WHERE workorder_id = ?2 AND user_id = ?1)`,
+    ).bind(userID, workorderId),
+    db.prepare("DELETE FROM accountant_orders WHERE workorder_id = ? AND user_id = ?").bind(workorderId, userID),
+    db.prepare("DELETE FROM accountant_workorders WHERE id = ? AND user_id = ?").bind(workorderId, userID),
+  );
+  await db.batch(stmts);
+}
+
+/**
  * Statements that advance the parent workorder when a component order changes
  * inside the caller's batch (fulfilment, cancel, partial termination — finding
  * 18: completion must trigger on component cancel too). Every condition is a

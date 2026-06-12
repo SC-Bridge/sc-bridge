@@ -53,6 +53,28 @@ describe("Accountant — badges + tags + threshold", () => {
     expect(((await res.json()) as { ordersOverdue: number }).ordersOverdue).toBe(1);
   });
 
+  it("counts an order overdue by hours on the SAME UTC day (ISO 'T' vs datetime('now') space pin)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    // A few hours in the past, clamped to UTC midnight so the deliver_by stays
+    // on TODAY'S UTC date — at char 10 ISO has 'T' where datetime('now') has a
+    // space, so a raw string compare never flags same-day overdue orders.
+    const nowMs = Date.now();
+    const sameDayPast = new Date(
+      Math.max(nowMs - 3 * 3_600_000, new Date(nowMs).setUTCHours(0, 0, 0, 0)),
+    ).toISOString();
+    await env.DB.prepare(
+      `INSERT INTO accountant_orders
+         (user_id, type, category, item, quantity, price_per_unit, total, status, start_at, deliver_by)
+       VALUES (?, 'sale', 'trading', 'Laranite', 10, 1000, 10000, 'open', '2026-06-01T00:00:00Z', ?)`,
+    ).bind(userId, sameDayPast).run();
+
+    const res = await SELF.fetch("http://localhost/api/accountant/badges", {
+      headers: await authHeaders(sessionToken),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ordersOverdue: number }).ordersOverdue).toBe(1);
+  });
+
   it("threshold preference round-trips through settings and into /badges", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const put = await SELF.fetch("http://localhost/api/settings/preferences", {

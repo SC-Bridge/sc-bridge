@@ -66,6 +66,26 @@ describe("Accountant M5 — order creation + list", () => {
     expect(counts).toEqual({ orders: 1, reserves: 1 });
   });
 
+  it("fund guard sees a CAUGHT-UP balance: pending lazy fine ticks block an over-budget PO (400)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 10000);
+    // Backdated sale: deliver_by ~2.5 days ago, flat 2,500 daily → 2 fine ticks
+    // (−5,000) accrued but NOT yet materialized (no read ran a catch-up since).
+    const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+    const fined = await post(sessionToken, "/orders", {
+      type: "sale", category: "trading", item: "Laranite", quantity: 10, price_per_unit: 5000,
+      start_at: daysAgo(5), deliver_by: daysAgo(2.5), fine_rate_type: "flat", fine_rate: 2500,
+    });
+    expect(fined.status).toBe(200);
+
+    // True balance is 10,000 − 5,000 = 5,000 → a 7,000 PO must 400.
+    const res = await post(sessionToken, "/orders", { ...PO, quantity: 7 });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { balance: number; required: number };
+    expect(body.balance).toBe(5000);          // creation catch-up materialized the fines first
+    expect(body.required).toBe(7000);
+  });
+
   it("SALE ORDER NEUTRALITY: ledger, P&L and cash flow are byte-identical before/after creation", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     await seedBalance(sessionToken, 50000);

@@ -94,6 +94,10 @@ export function ordersRoutes() {
     const userID = getAuthUser(c).id;
     const b = c.req.valid("json");
 
+    // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
+    // lazy fine ticks before insertOrder's guarded reserve INSERT sums the ledger.
+    await catchUp(db, userID);
+
     // Standalone orders never auto-attach to workorders (composition is Task 8).
     const result = await insertOrder(db, userID, b, null);
     if (result.fundError) {
@@ -253,6 +257,17 @@ export function ordersRoutes() {
     if (!order) return c.json({ error: "Not found" }, 404);
     if (order.status === "complete" || order.status === "cancelled") {
       return c.json({ error: "Order is closed" }, 400);
+    }
+    // Master-doc lifecycle: draft = "being built — not yet active"; work starts
+    // at Open. Blocking draft components keeps the cancel "before any work
+    // started" gate and the publish component count honest.
+    if (order.workorder_id !== null) {
+      const wo = await db.prepare(
+        "SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?",
+      ).bind(order.workorder_id, userID).first<{ status: string }>();
+      if (wo?.status === "draft") {
+        return c.json({ error: "Workorder is draft - publish it before recording work" }, 400);
+      }
     }
 
     const sums = await db.prepare(

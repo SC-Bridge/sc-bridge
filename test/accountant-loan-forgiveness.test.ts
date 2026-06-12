@@ -166,6 +166,16 @@ describe("M2 amendment — loan partial forgiveness", () => {
       body: JSON.stringify({ notes: "tamper" }),
     });
     expect(put.status).toBe(400);
+
+    // DELETE is guarded by the same loan_id check ("Content-Length": "0" — M-01 idiom).
+    const del = await SELF.fetch(`http://localhost/api/accountant/ledger/${entry!.id}`, {
+      method: "DELETE",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+    });
+    expect(del.status).toBe(400);
+    const survives = await env.DB.prepare("SELECT id FROM accountant_entries WHERE id = ?")
+      .bind(entry!.id).first<{ id: number }>();
+    expect(survives?.id).toBe(entry!.id);
   });
 
   it("P&L: outgoing forgiveness shows as 'forgiveness_loss' expense; incoming as 'debt_relief' revenue", async () => {

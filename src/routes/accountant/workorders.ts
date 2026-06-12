@@ -10,12 +10,15 @@ import {
   WORKORDER_STATUSES,
 } from "../../lib/accountant/constants";
 import {
+  attachError,
+  attachOrder,
   closeComponentStatements,
   completionStatements,
   incurredCosts,
   insertOrder,
   modifiedFields,
   openReserve,
+  rollbackWorkorderCreation,
 } from "./order-helpers";
 import { CreateOrderSchema } from "./orders";
 import { parseIdParam } from "./schemas";
@@ -104,29 +107,16 @@ export function workordersRoutes() {
 
   const PER_PAGE = 50;
 
-  /**
-   * One workorder per order: attachable = mine + status 'open' + not already
-   * in a workorder. Returns the error response payload or null when OK.
-   */
-  async function attachError(
-    db: D1Database, userID: string, orderId: number,
-  ): Promise<{ error: string; status: 400 | 404 } | null> {
-    const order = await db
-      .prepare("SELECT status, workorder_id FROM accountant_orders WHERE id = ? AND user_id = ?")
-      .bind(orderId, userID)
-      .first<{ status: string; workorder_id: number | null }>();
-    if (!order) return { error: "Order not found", status: 404 };
-    if (order.workorder_id !== null) return { error: "Order already belongs to a workorder", status: 400 };
-    if (order.status !== "open") return { error: "Only open orders can join a workorder", status: 400 };
-    return null;
-  }
-
   // POST /workorders — create as draft, optionally with inline new orders
   // and/or attached existing standalone open orders.
   routes.post("/", validate("json", CreateWorkorderSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     const b = c.req.valid("json");
+
+    // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
+    // lazy fine ticks before any inline order's guarded reserve INSERT.
+    await catchUp(db, userID);
 
     // Pre-validate attachments before writing anything — cheaper than compensating.
     for (const orderId of b.order_ids ?? []) {
@@ -163,24 +153,20 @@ export function workordersRoutes() {
     for (const orderBody of b.orders ?? []) {
       const result = await insertOrder(db, userID, orderBody, woId);
       if (result.fundError) {
-        await db.batch([
-          db.prepare(
-            `DELETE FROM accountant_entries WHERE user_id = ?1
-             AND order_id IN (SELECT id FROM accountant_orders WHERE workorder_id = ?2 AND user_id = ?1)`,
-          ).bind(userID, woId),
-          db.prepare("DELETE FROM accountant_orders WHERE workorder_id = ? AND user_id = ?").bind(woId, userID),
-          db.prepare("DELETE FROM accountant_workorders WHERE id = ? AND user_id = ?").bind(woId, userID),
-        ]);
+        await rollbackWorkorderCreation(db, userID, woId);
         return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
       }
     }
 
-    // Attach AFTER the inline loop — the compensation above deletes by
-    // workorder_id and must never catch a pre-existing standalone order.
+    // Attach AFTER the inline loop — the rollback deletes by workorder_id and
+    // must never catch a pre-existing standalone order. attachOrder's UPDATE
+    // re-checks the one-WO-per-order invariant itself: a raced/duplicate attach
+    // changes 0 rows → compensate the whole creation (detach-first).
     for (const orderId of b.order_ids ?? []) {
-      await db.prepare(
-        "UPDATE accountant_orders SET workorder_id = ? WHERE id = ? AND user_id = ?",
-      ).bind(woId, orderId, userID).run();
+      if (!(await attachOrder(db, userID, orderId, woId))) {
+        await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
+        return c.json({ error: "Order already attached or no longer open" }, 400);
+      }
     }
 
     return c.json({ ok: true, id: woId });
@@ -287,6 +273,8 @@ export function workordersRoutes() {
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
     const b = c.req.valid("json");
+    // §5.0 fund guard must read a caught-up balance (inline-order path below).
+    await catchUp(db, userID);
 
     const status = await woStatus(db, userID, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
@@ -297,9 +285,10 @@ export function workordersRoutes() {
     if (b.order_id !== undefined) {
       const err = await attachError(db, userID, b.order_id);
       if (err) return c.json({ error: err.error }, err.status);
-      await db.prepare(
-        "UPDATE accountant_orders SET workorder_id = ? WHERE id = ? AND user_id = ?",
-      ).bind(id, b.order_id, userID).run();
+      // The friendly pre-read above can race — the UPDATE enforces the invariant.
+      if (!(await attachOrder(db, userID, b.order_id, id))) {
+        return c.json({ error: "Order already attached or no longer open" }, 400);
+      }
       return c.json({ ok: true, id: b.order_id });
     }
 
