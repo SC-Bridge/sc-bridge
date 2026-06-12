@@ -83,6 +83,13 @@ export interface StatementLine {
   categories?: Category[];
   /** If true, this line is broken out PER TAG in the report (running cost, production investment). */
   perTag?: boolean;
+  /**
+   * Extra ledger query params merged into this line's drill-down link, on top
+   * of the generic `category` derived from `categories`. Source-keyed lines
+   * (interest) carry their source filter here so the report route stays free
+   * of per-line special cases.
+   */
+  drill?: Record<string, string>;
 }
 
 /**
@@ -94,11 +101,13 @@ export const STATEMENT_LINES: readonly StatementLine[] = [
   { line: "trading_income",    section: "revenue",  label: "Trading income",               categories: ["trading"] },
   { line: "production_income", section: "revenue",  label: "Production income (derived)",  categories: ["production"] },
   { line: "mission_income",    section: "revenue",  label: "Mission income",               categories: ["mission_income"] },
-  { line: "interest_income",   section: "revenue",  label: "Interest income" }, // source-keyed
+  { line: "interest_income",   section: "revenue",  label: "Interest income",              drill: { source: "accrual_tick,loan_fee" } },
   { line: "running_cost",      section: "expenses", label: "Running cost",                 categories: ["running_cost"], perTag: true },
   { line: "production_invest", section: "expenses", label: "Production investment",        categories: ["production"],   perTag: true },
+  // tactical drill is category=financial only (no tag) — non-tactical financial
+  // expenses over-show in the drill, accepted per the drill contract ruling.
   { line: "tactical",          section: "expenses", label: "Tactical investments",         categories: ["financial"] },
-  { line: "interest_expense",  section: "expenses", label: "Interest expense" }, // source-keyed
+  { line: "interest_expense",  section: "expenses", label: "Interest expense",             drill: { source: "accrual_tick,loan_fee" } },
 ] as const;
 
 interface PLEntry {

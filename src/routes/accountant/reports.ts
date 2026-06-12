@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { catchUpAccruals } from "../../lib/accountant/accrual";
-import { STATEMENT_LINES } from "../../lib/accountant/constants";
+import {
+  STATEMENT_LINES,
+  classifyPLLine,
+  type Category,
+  type Source,
+} from "../../lib/accountant/constants";
 import { parsePeriod, defaultInterval, IntervalSchema } from "./report-period";
 
 /**
@@ -39,7 +44,10 @@ export function reportsRoutes() {
       .bind(userID, from, to)
       .all<{ category: string | null; source: string; tag: string | null; pos: number; neg: number }>();
 
-    // Bucket the grouped rows into STATEMENT_LINES (mirrors classifyPLLine in SQL terms).
+    // Bucket the grouped rows into STATEMENT_LINES. classifyPLLine is the single
+    // source of truth for line keys, exclusions, and sign logic — each grouped
+    // row is classified once per signed side (classification depends only on
+    // category/source/sign, which grouping preserves).
     const lineValues = new Map<string, number>();          // line (or line|tag) → value
     const lineTags = new Map<string, string | null>();     // composite key → tag
     function add(line: string, tag: string | null, value: number, perTag: boolean) {
@@ -48,26 +56,19 @@ export function reportsRoutes() {
       lineTags.set(key, perTag ? tag : null);
     }
 
+    const specByLine = new Map(STATEMENT_LINES.map((s) => [s.line, s]));
     for (const r of rows.results) {
-      // Excluded sources/categories never reach a line.
-      if (r.source === "adjustment" || r.source === "loan_principal" || r.source === "loan_repayment") continue;
-      if (r.category === "assets") continue;
-
-      if (r.source === "accrual_tick" || r.source === "loan_fee") {
-        if (r.pos > 0) add("interest_income", null, r.pos, false);
-        if (r.neg < 0) add("interest_expense", null, r.neg, false);
-        continue;
-      }
-      switch (r.category) {
-        case "trading":         if (r.pos > 0) add("trading_income", null, r.pos, false); break;
-        case "mission_income":  if (r.pos > 0) add("mission_income", null, r.pos, false); break;
-        case "production":
-          if (r.pos > 0) add("production_income", null, r.pos, false);
-          if (r.neg < 0) add("production_invest", r.tag, r.neg, true);
-          break;
-        case "running_cost":    if (r.neg < 0) add("running_cost", r.tag, r.neg, true); break;
-        case "financial":       if (r.neg < 0) add("tactical", null, r.neg, false); break;
-        default: break;
+      for (const amount of [r.pos, r.neg]) {
+        if (amount === 0) continue;
+        const cls = classifyPLLine({
+          category: r.category as Category | null,
+          source: r.source as Source,
+          amount,
+          tag: r.tag,
+        });
+        if (!cls) continue;
+        const perTag = !!specByLine.get(cls.line)?.perTag;
+        add(cls.line, perTag ? r.tag : null, amount, perTag);
       }
     }
 
@@ -78,12 +79,11 @@ export function reportsRoutes() {
       const matches = [...lineValues.entries()].filter(([k]) => k === spec.line || k.startsWith(`${spec.line}|`));
       for (const [key, value] of matches) {
         const tag = lineTags.get(key) ?? null;
+        // Drill link = window + generic category filter + the line's own extras
+        // (declared on STATEMENT_LINES — no per-line special cases here).
         const drill: Record<string, string> = { from, to };
         if (spec.categories?.length) drill.category = spec.categories.join(",");
-        if (spec.line === "interest_income" || spec.line === "interest_expense") drill.source = "accrual_tick,loan_fee";
-        // tactical drill: category=financial only (no tag — over-show is correct; non-tactical
-        // financial expenses are an accepted over-show per drill contract ruling).
-        if (spec.line === "tactical") { drill.category = "financial"; }
+        Object.assign(drill, spec.drill);
         if (tag) drill.tag = tag;
         const row = { line: spec.line, label: spec.label, value, ...(tag ? { tag } : {}), drill };
         (spec.section === "revenue" ? revenue : expenses).push(row);
