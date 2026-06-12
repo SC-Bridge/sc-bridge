@@ -4,6 +4,7 @@ import { CATEGORY_LABELS, FINE_RATE_TYPES, ORDER_TYPES, RATE_CHANGE_CONDITIONS, 
 import { formatAUEC, signClass } from '../formatAUEC'
 import { cancelOrder, updateOrder, useOrder } from '../hooks'
 import { orderRef } from '../orderMath'
+import FulfillmentModal from './FulfillmentModal'
 
 const TYPE_LABELS = Object.fromEntries(ORDER_TYPES.map(({ value, label }) => [value, label]))
 const FINE_TYPE_LABELS = Object.fromEntries(FINE_RATE_TYPES.map(({ value, label }) => [value, label]))
@@ -186,8 +187,13 @@ function OrderBody({ data, fulfilling, setFulfilling, actionError, onCancel }) {
 
       <NotesEditor key={order.id} order={order} />
 
-      {/* Task 14 mounts FulfillmentModal here. */}
-      {fulfilling && <div data-testid="fulfillment-modal" />}
+      {fulfilling && (
+        <FulfillmentModal
+          order={{ ...order, fulfilledQty: computed.fulfilledQty, remaining: computed.remaining }}
+          onClose={() => setFulfilling(false)}
+          onSaved={() => setFulfilling(false)}
+        />
+      )}
     </>
   )
 }

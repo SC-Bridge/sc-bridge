@@ -6,6 +6,7 @@ import LoadingState from '../../../components/LoadingState'
 import { CATEGORY_LABELS, ORDER_CATEGORIES, ORDER_TYPES, STATUS_LABELS } from '../constants'
 import { formatAUEC } from '../formatAUEC'
 import { useBadges, useOrders } from '../hooks'
+import NewOrderModal from './NewOrderModal'
 import OrderDetail from './OrderDetail'
 import OrderTable from './OrderTable'
 
@@ -121,8 +122,7 @@ export default function Market() {
 
       {selectedId && <OrderDetail id={selectedId} onClose={() => setOrderParam(null)} />}
 
-      {/* Task 14 mounts NewOrderModal here. */}
-      {adding && <div data-testid="new-order-modal" />}
+      {adding && <NewOrderModal onClose={() => setAdding(false)} onSaved={() => setAdding(false)} />}
     </div>
   )
 }
