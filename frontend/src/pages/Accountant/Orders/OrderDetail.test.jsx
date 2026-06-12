@@ -15,6 +15,7 @@ const DETAIL = {
     fine_rate: 1.5, rate_change_condition: null, rate_change_pct: 0,
     termination_clause: 'standard', workorder_id: null,
     modified_fields: ['deliver_by', 'fine_rate'], notes: 'priority client',
+    publisher: 'Vengeance',
   },
   fulfillments: [
     { id: 3, amount: -45000, quantity: 45, price_per_unit: 1000, location: 'Area18', occurred_at: '2026-06-05T00:00:00Z' },
@@ -55,6 +56,19 @@ describe('OrderDetail slide-over', () => {
     expect(within(screen.getByTestId('contract-fine_rate')).getByTestId('modified-marker')).toBeInTheDocument()
     expect(within(screen.getByTestId('contract-fine_interval')).queryByTestId('modified-marker')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('contract-termination_clause')).queryByTestId('modified-marker')).not.toBeInTheDocument()
+  })
+
+  it('shows the snapshotted publisher', async () => {
+    await renderDetail()
+    expect(screen.getByTestId('order-publisher')).toHaveTextContent('Published by Vengeance')
+  })
+
+  it('NULL publisher renders the "—" fallback, never "null"', async () => {
+    mockApi({ ...DETAIL, order: { ...DETAIL.order, publisher: null } })
+    render(<OrderDetail id="82" onClose={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText(/Quantanium/)).toBeInTheDocument())
+    expect(screen.getByTestId('order-publisher')).toHaveTextContent('Published by —')
+    expect(screen.getByTestId('order-publisher')).not.toHaveTextContent('null')
   })
 
   it('renders progress, reserve state, fines and fulfilment history', async () => {

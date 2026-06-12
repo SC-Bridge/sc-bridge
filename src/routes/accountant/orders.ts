@@ -52,7 +52,8 @@ export const CreateOrderSchema = z.object({
 
 // Contract terms are hard-locked at creation ("no modifications after
 // agreement", master doc; owner ruling 10) — notes is the ONLY editable field;
-// .strict() rejects every contract key with 400. Mirrors UpdateLoanSchema.
+// .strict() rejects every contract key with 400 (publisher included: the
+// posting-time snapshot is immutable). Mirrors UpdateLoanSchema.
 const UpdateOrderSchema = z.object({
   notes: z.string().max(2000).nullable().optional(),
 }).strict();
@@ -105,7 +106,8 @@ export function ordersRoutes() {
   // POST /orders — order row + (purchases only) the guarded po_reserve entry.
   routes.post("/", validate("json", CreateOrderSchema), async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const user = getAuthUser(c);
+    const userID = user.id;
     const b = c.req.valid("json");
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
@@ -113,7 +115,8 @@ export function ordersRoutes() {
     await catchUp(db, userID);
 
     // Standalone orders never auto-attach to workorders (composition is Task 8).
-    const result = await insertOrder(db, userID, b, null);
+    // user.name is snapshotted as the order's publisher (owner spec 2026-06-13).
+    const result = await insertOrder(db, userID, b, null, user.name);
     if (result.fundError) {
       return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
     }

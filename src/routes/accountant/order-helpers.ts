@@ -65,21 +65,27 @@ export interface OrderCreateResult { id?: number; fundError?: { balance: number;
  * INSERT…SELECT (§5.0). The guard subquery is the SAME SUM(amount) that defines
  * balance — reserves already in the ledger are inherently counted, so concurrent
  * POs cannot jointly overdraw. Zero rows written → compensating DELETE + fundError.
+ *
+ * `publisher` is the posting account's display name SNAPSHOTTED at creation
+ * (owner spec 2026-06-13; design §10 — the only identity the future public
+ * market exposes). Stored, never joined: a later rename must not rewrite
+ * historical orders. Immutable after creation (PUT is notes-only).
  */
 export async function insertOrder(
-  db: D1Database, userID: string, b: ValidatedOrderBody, workorderId: number | null,
+  db: D1Database, userID: string, b: ValidatedOrderBody, workorderId: number | null, publisher: string,
 ): Promise<OrderCreateResult> {
   const total = Math.round(b.quantity * b.price_per_unit);
   const mods = JSON.stringify(modifiedFields(b));
   // vis_corp/vis_public NOT in the column list — they keep their DEFAULT 0 (private-only).
   const orderRes = await db.prepare(
     `INSERT INTO accountant_orders
-       (user_id, type, category, tag, item, quantity, price_per_unit, total, counterparty, workorder_id,
+       (user_id, publisher, type, category, tag, item, quantity, price_per_unit, total, counterparty, workorder_id,
         start_at, deliver_by, fine_interval, fine_rate_type, fine_rate,
         rate_change_condition, rate_change_pct, termination_clause, modified_fields, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     userID,
+    publisher,
     b.type,
     b.category,
     b.tag ?? null,

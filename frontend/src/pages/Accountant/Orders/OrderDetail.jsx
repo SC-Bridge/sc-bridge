@@ -118,6 +118,10 @@ function OrderBody({ data, fulfilling, setFulfilling, actionError, busy, onCance
         {TYPE_LABELS[order.type]} · {CATEGORY_LABELS[order.category]} · {STATUS_LABELS[order.status]}
         {order.counterparty ? ` · ${order.counterparty}` : ''}
       </p>
+      {/* Posting-time name snapshot — renames never rewrite history (design §10). */}
+      <p data-testid="order-publisher" className="text-sm text-gray-400">
+        Published by <span className="text-gray-300">{order.publisher ?? '—'}</span>
+      </p>
 
       <SectionTitle>Contract</SectionTitle>
       <dl className="text-sm space-y-1">

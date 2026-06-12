@@ -13,6 +13,7 @@ export default function OrderTable({ orders, onSelect }) {
           <th className="py-2 pr-3">Type</th>
           <th className="py-2 pr-3">Item</th>
           <th className="py-2 pr-3">Category</th>
+          <th className="py-2 pr-3">Publisher</th>
           <th className="py-2 pr-3 text-right">Qty</th>
           <th className="py-2 pr-3 text-right">Price</th>
           <th className="py-2 pr-3 text-right">Total</th>
@@ -31,6 +32,8 @@ export default function OrderTable({ orders, onSelect }) {
               <td className="py-2 pr-3 text-gray-300">{TYPE_LABELS[o.type]}</td>
               <td className="py-2 pr-3 text-white">{o.item}</td>
               <td className="py-2 pr-3 text-gray-300">{CATEGORY_LABELS[o.category]}</td>
+              {/* Posting-time snapshot — "—" guards the (post-backfill impossible) NULL. */}
+              <td className="py-2 pr-3 text-gray-300">{o.publisher ?? '—'}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-gray-300">
                 {o.fulfilledQty > 0 ? `${o.fulfilledQty}/${o.quantity}` : o.quantity}
               </td>

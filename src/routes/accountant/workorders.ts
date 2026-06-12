@@ -112,7 +112,8 @@ export function workordersRoutes() {
   // and/or attached existing standalone open orders.
   routes.post("/", validate("json", CreateWorkorderSchema), async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const user = getAuthUser(c);
+    const userID = user.id;
     const b = c.req.valid("json");
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
@@ -152,8 +153,10 @@ export function workordersRoutes() {
       // Inline orders run the same fund check as standalone creation; the FIRST
       // failure rolls the whole creation back (loans.ts compensation pattern):
       // reserves of earlier inline siblings → the sibling order rows → the WO.
+      // Components are real orders on the Market list — they snapshot the
+      // poster's name as publisher exactly like standalone creation.
       for (const orderBody of b.orders ?? []) {
-        const result = await insertOrder(db, userID, orderBody, woId);
+        const result = await insertOrder(db, userID, orderBody, woId, user.name);
         if (result.fundError) {
           await rollbackWorkorderCreation(db, userID, woId);
           return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
@@ -282,7 +285,8 @@ export function workordersRoutes() {
   // POST /workorders/:id/orders — attach existing / create inside (draft + open only).
   routes.post("/:id/orders", validate("json", AttachOrderSchema), async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const user = getAuthUser(c);
+    const userID = user.id;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
     const b = c.req.valid("json");
@@ -305,7 +309,7 @@ export function workordersRoutes() {
       return c.json({ ok: true, id: b.order_id });
     }
 
-    const result = await insertOrder(db, userID, b.order!, id);
+    const result = await insertOrder(db, userID, b.order!, id, user.name);
     if (result.fundError) {
       return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
     }

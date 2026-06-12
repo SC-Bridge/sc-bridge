@@ -5,8 +5,9 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import Market from './Market'
 
 const ORDERS = [
-  { id: 82, type: 'sale', category: 'trading', tag: 'minerals', item: 'Laranite', quantity: 200, price_per_unit: 3200, total: 640000, status: 'open', deliver_by: null, fulfilledQty: 0, remaining: 200, accruedFines: 0, effectiveRate: 3200 },
-  { id: 79, type: 'purchase', category: 'production', tag: null, item: 'Ship components', quantity: 4, price_per_unit: 20000, total: 80000, status: 'in_progress', deliver_by: '2026-06-30T00:00:00Z', fulfilledQty: 2, remaining: 2, accruedFines: 0, effectiveRate: 20000 },
+  { id: 82, type: 'sale', category: 'trading', tag: 'minerals', item: 'Laranite', quantity: 200, price_per_unit: 3200, total: 640000, status: 'open', deliver_by: null, fulfilledQty: 0, remaining: 200, accruedFines: 0, effectiveRate: 3200, publisher: 'Vengeance' },
+  // publisher null shouldn't exist post-backfill — pins the "—" fallback anyway.
+  { id: 79, type: 'purchase', category: 'production', tag: null, item: 'Ship components', quantity: 4, price_per_unit: 20000, total: 80000, status: 'in_progress', deliver_by: '2026-06-30T00:00:00Z', fulfilledQty: 2, remaining: 2, accruedFines: 0, effectiveRate: 20000, publisher: null },
 ]
 
 const DETAIL = {
@@ -61,6 +62,15 @@ describe('Market page', () => {
     expect(table.getByText('3,200')).toBeInTheDocument()
     expect(table.getByText('640,000 aUEC')).toBeInTheDocument()
     expect(table.getByText('O-79')).toBeInTheDocument()
+  })
+
+  it('renders the Publisher column — name snapshot, "—" fallback for NULL', async () => {
+    renderMarket()
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    const table = within(screen.getByTestId('order-table'))
+    expect(table.getByText('Publisher')).toBeInTheDocument()
+    expect(table.getByText('Vengeance')).toBeInTheDocument()
+    expect(table.getByText('—')).toBeInTheDocument()
   })
 
   it('footer shows available balance and locked sum', async () => {
