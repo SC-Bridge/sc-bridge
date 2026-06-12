@@ -10,9 +10,12 @@ function startOfDay(d) {
   return r
 }
 
-function endOfDay(d) {
+// Half-open upper bound: local midnight of the NEXT day. Pairs with the
+// backend's `occurred_at < to` (aligned with M3 report windows).
+function startOfNextDay(d) {
   const r = new Date(d)
-  r.setHours(23, 59, 59, 999)
+  r.setHours(0, 0, 0, 0)
+  r.setDate(r.getDate() + 1)
   return r
 }
 
@@ -43,6 +46,13 @@ function isoToDateInput(iso) {
   return `${y}-${m}-${day}`
 }
 
+// The stored 'to' is an EXCLUSIVE next-midnight bound — the date input must
+// show the last included day, not the boundary day.
+function isoToDateInputExclusive(iso) {
+  if (!iso) return ''
+  return isoToDateInput(new Date(new Date(iso).getTime() - 1))
+}
+
 // ---------------------------------------------------------------------------
 // Preset definitions
 // ---------------------------------------------------------------------------
@@ -61,11 +71,11 @@ function computePreset(preset) {
   const now = new Date()
   switch (preset) {
     case 'today':
-      return { from: startOfDay(now).toISOString(), to: endOfDay(now).toISOString() }
+      return { from: startOfDay(now).toISOString(), to: startOfNextDay(now).toISOString() }
     case 'this-week':
-      return { from: startOfMonday(now).toISOString(), to: endOfDay(now).toISOString() }
+      return { from: startOfMonday(now).toISOString(), to: startOfNextDay(now).toISOString() }
     case 'this-month':
-      return { from: startOfMonth(now).toISOString(), to: endOfDay(now).toISOString() }
+      return { from: startOfMonth(now).toISOString(), to: startOfNextDay(now).toISOString() }
     default:
       return null
   }
@@ -124,8 +134,8 @@ export default function PeriodSelector({ params, onChange }) {
       // new Date(y, m-1, d) already yields local midnight — no setHours needed
       next.set('from', date.toISOString())
     } else {
-      date.setHours(23, 59, 59, 999)
-      next.set('to', date.toISOString())
+      // Selected day stays fully included: half-open bound = next local midnight
+      next.set('to', startOfNextDay(date).toISOString())
     }
     onChange(next)
   }
@@ -163,7 +173,7 @@ export default function PeriodSelector({ params, onChange }) {
             To
             <input
               type="date"
-              defaultValue={isoToDateInput(params.get('to'))}
+              defaultValue={isoToDateInputExclusive(params.get('to'))}
               onChange={(e) => handleCustomDate('to', e.target.value)}
               className="bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm text-white"
             />

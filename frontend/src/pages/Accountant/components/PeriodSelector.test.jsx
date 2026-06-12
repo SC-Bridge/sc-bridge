@@ -75,16 +75,20 @@ describe('PeriodSelector', () => {
       expect(from.getDate()).toBe(now.getDate())
     })
 
-    it('Today to is end of day (23:59:59.999 local)', async () => {
+    it('Today to is the start of the NEXT local day (half-open, aligned with reports)', async () => {
       const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /^today$/i }))
       const last = calls[calls.length - 1]
       const to = new Date(last.get('to'))
-      expect(to.getHours()).toBe(23)
-      expect(to.getMinutes()).toBe(59)
-      expect(to.getSeconds()).toBe(59)
-      expect(to.getMilliseconds()).toBe(999)
+      expect(to.getHours()).toBe(0)
+      expect(to.getMinutes()).toBe(0)
+      expect(to.getSeconds()).toBe(0)
+      expect(to.getMilliseconds()).toBe(0)
+      const tomorrow = new Date()
+      tomorrow.setHours(0, 0, 0, 0)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      expect(to.getTime()).toBe(tomorrow.getTime())
     })
   })
 
@@ -167,10 +171,10 @@ describe('PeriodSelector', () => {
       expect(screen.getByLabelText(/^to$/i)).toBeInTheDocument()
     })
 
-    it('Custom date inputs are prefilled from URL params on mount', () => {
-      // from=2026-01-05 (local midnight), to=2026-01-20 (end of day)
+    it('Custom date inputs are prefilled from URL params on mount (To shows last INCLUDED day)', () => {
+      // from=2026-01-05 (local midnight), to = exclusive next-midnight bound
       const fromIso = '2026-01-05T00:00:00.000Z'
-      const toIso = '2026-01-20T23:59:59.999Z'
+      const toIso = '2026-01-21T00:00:00.000Z' // half-open: last included day is Jan 20 (local)
       const params = makeParams({ from: fromIso, to: toIso })
       render(<PeriodSelector params={params} onChange={() => {}} />)
       const fromInput = screen.getByLabelText(/^from$/i)
@@ -184,7 +188,8 @@ describe('PeriodSelector', () => {
         return `${y}-${m}-${day}`
       }
       expect(fromInput.value).toBe(isoToDateInput(fromIso))
-      expect(toInput.value).toBe(isoToDateInput(toIso))
+      // To input shows the bound minus 1 ms — the last day the window includes.
+      expect(toInput.value).toBe(isoToDateInput(new Date(new Date(toIso).getTime() - 1)))
     })
 
     it('clicking Custom shows the date inputs', async () => {
@@ -216,7 +221,7 @@ describe('PeriodSelector', () => {
       expect(emitted.getMilliseconds()).toBe(0)
     })
 
-    it('custom To date round-trip preserves local calendar day and sets local 23:59:59.999', async () => {
+    it('custom To date emits the NEXT local midnight (half-open — picked day fully included)', async () => {
       const { onChange, calls } = captureOnChange()
       render(<PeriodSelector params={makeParams()} onChange={onChange} />)
       await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
@@ -227,11 +232,11 @@ describe('PeriodSelector', () => {
       const emitted = new Date(withTo.get('to'))
       expect(emitted.getFullYear()).toBe(2026)
       expect(emitted.getMonth()).toBe(6) // July = index 6
-      expect(emitted.getDate()).toBe(15)
-      expect(emitted.getHours()).toBe(23)
-      expect(emitted.getMinutes()).toBe(59)
-      expect(emitted.getSeconds()).toBe(59)
-      expect(emitted.getMilliseconds()).toBe(999)
+      expect(emitted.getDate()).toBe(16) // exclusive bound: midnight after the picked day
+      expect(emitted.getHours()).toBe(0)
+      expect(emitted.getMinutes()).toBe(0)
+      expect(emitted.getSeconds()).toBe(0)
+      expect(emitted.getMilliseconds()).toBe(0)
     })
   })
 })

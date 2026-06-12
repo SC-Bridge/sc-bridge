@@ -181,6 +181,31 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(data.entries[0].description).toBe("Repair at Lorville");
     });
 
+    it("date range is HALF-OPEN: entry exactly at `to` is excluded, exactly at `from` included", async () => {
+      // Alignment with M3 reports (report-period.ts) — report drill-down links
+      // pass half-open windows into the ledger; both must agree at boundaries.
+      const { sessionToken } = await createTestUser(env.DB);
+      const headers = { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" };
+      for (const e of [
+        { amount: 100, category: "trading", occurred_at: "2026-06-02T00:00:00.000Z", description: "at from" },
+        { amount: 200, category: "trading", occurred_at: "2026-06-03T00:00:00.000Z", description: "at to" },
+      ]) {
+        const res = await SELF.fetch("http://localhost/api/accountant/ledger", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(e),
+        });
+        expect(res.status).toBe(200);
+      }
+      const res = await SELF.fetch(
+        "http://localhost/api/accountant/ledger?from=2026-06-02T00:00:00.000Z&to=2026-06-03T00:00:00.000Z",
+        { headers: await authHeaders(sessionToken) },
+      );
+      const data = (await res.json()) as { total: number; entries: Array<{ description: string }> };
+      expect(data.total).toBe(1);
+      expect(data.entries[0].description).toBe("at from");
+    });
+
     it("filters by text search across description/location/notes", async () => {
       const { sessionToken } = await createTestUser(env.DB);
       await seedEntries(sessionToken);
