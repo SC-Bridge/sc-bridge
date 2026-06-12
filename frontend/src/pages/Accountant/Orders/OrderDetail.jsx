@@ -10,8 +10,10 @@ const TYPE_LABELS = Object.fromEntries(ORDER_TYPES.map(({ value, label }) => [va
 const FINE_TYPE_LABELS = Object.fromEntries(FINE_RATE_TYPES.map(({ value, label }) => [value, label]))
 const RATE_CHANGE_LABELS = Object.fromEntries(RATE_CHANGE_CONDITIONS.map(({ value, label }) => [value, label]))
 
-// Contract rows in template order — drives the "← modified" markers.
-const CONTRACT_FIELDS = [
+// Contract rows in template order — drives the "← modified" markers. Exported:
+// workorders carry the identical contract columns, so WorkorderDetail renders
+// the same rows (one display config, no drift between the two contract panels).
+export const CONTRACT_FIELDS = [
   ['deliver_by', 'Delivery date', (o) => (o.deliver_by ? new Date(o.deliver_by).toLocaleString() : 'None')],
   ['fine_interval', 'Fine interval', (o) => o.fine_interval],
   ['fine_rate_type', 'Fine type', (o) => FINE_TYPE_LABELS[o.fine_rate_type]],
