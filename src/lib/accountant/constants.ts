@@ -23,8 +23,49 @@ export const SOURCES = [
   "loan_fee",
   "loan_repayment",
   "accrual_tick",
+  // M5 (design §3.3): source doubles as the order/workorder event kind.
+  "po_reserve",
+  "po_reserve_release",
+  "order_fulfillment",
+  "contract_fine",
+  "wo_settlement",
+  "workorder_summary",
+  "loan_forgiveness", // M2 amendment (§5.6)
 ] as const;
 export type Source = (typeof SOURCES)[number];
+
+/** Orders are created within the ORIGINAL five categories — mission_income excluded (owner ruling). */
+export const ORDER_CATEGORIES = ["assets", "running_cost", "financial", "production", "trading"] as const;
+export type OrderCategory = (typeof ORDER_CATEGORIES)[number];
+
+export const ORDER_TYPES = ["sale", "purchase"] as const;
+export const FINE_RATE_TYPES = ["percent", "flat"] as const;
+export const RATE_CHANGE_CONDITIONS = ["late", "partial"] as const;
+export const ORDER_STATUSES = ["open", "in_progress", "complete", "cancelled"] as const;
+export const WORKORDER_STATUSES = ["draft", "open", "in_progress", "complete", "cancelled", "terminated"] as const;
+
+/**
+ * Contract template defaults (design §5.1). modified_fields = the keys whose
+ * submitted value deviates, computed ONCE at creation and stored — the template
+ * may evolve later, the contract's marking must not.
+ */
+export const ORDER_TEMPLATE = {
+  deliver_by: null as string | null,
+  fine_interval: "daily",
+  fine_rate_type: "percent",
+  fine_rate: 0.5,
+  rate_change_condition: null as string | null,
+  rate_change_pct: 0,
+  termination_clause: "standard",
+} as const;
+
+/**
+ * Reserve-class sources: earmarks/markers, not economic events (design §6).
+ * Excluded from P&L, Cash Flow, net-worth/equity, and investment-option.
+ */
+export const RESERVE_NEUTRAL_SOURCES = ["po_reserve", "po_reserve_release", "workorder_summary"] as const;
+/** SQL fragment derived from the array — single source of truth, no drift. */
+export const RESERVE_NEUTRAL_SQL = `source NOT IN (${RESERVE_NEUTRAL_SOURCES.map((s) => `'${s}'`).join(", ")})`;
 
 export const DEFAULT_TAGS = {
   assets: [], // intentionally empty — assets are untagged
@@ -69,6 +110,9 @@ export const PL_EXCLUDED_SOURCES: readonly Source[] = [
   "adjustment",       // equity correction (opening balance), not income/expense
   "loan_principal",   // balance-sheet movement
   "loan_repayment",   // balance-sheet movement
+  "po_reserve",       // reserve-class earmark, not an economic event (design §6)
+  "po_reserve_release",
+  "workorder_summary",
 ] as const;
 
 export type PLSection = "revenue" | "expenses";

@@ -636,10 +636,13 @@ export function accountRoutes() {
       db.prepare("DELETE FROM companion_status WHERE user_id = ?").bind(user.id),
       // Character backup (migration 0214) — metadata; R2 blobs deleted above
       db.prepare("DELETE FROM user_characters WHERE user_id = ?").bind(user.id),
-      // Accountant (migration 0258) — no FK cascade by design; entries before loans (FK)
+      // Accountant (migrations 0258/0259) — no FK cascade by design; entries first
+      // (they reference loans/orders/workorders), then orders before workorders (FK)
       db.prepare("DELETE FROM accountant_entries WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM accountant_loans WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM accountant_tags WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM accountant_orders WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM accountant_workorders WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values + IP
       db.prepare(
         `UPDATE user_change_history SET

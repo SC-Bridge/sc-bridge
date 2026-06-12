@@ -117,6 +117,9 @@ const USER_TABLES_NO_CASCADE = [
   "accountant_entries",
   "accountant_loans",
   "accountant_tags",
+  // Accountant M5 (0259) — same pattern; cleanup pinned in accountant-deletion.test.ts
+  "accountant_orders",
+  "accountant_workorders",
 ] as const;
 
 describe("GDPR — User Deletion Cascade", () => {

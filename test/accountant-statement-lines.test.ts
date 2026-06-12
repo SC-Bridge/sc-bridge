@@ -4,6 +4,9 @@ import {
   STATEMENT_LINES,
   PL_EXCLUDED_CATEGORIES,
   classifyPLLine,
+  SOURCES,
+  ORDER_CATEGORIES,
+  ORDER_TEMPLATE,
 } from "../src/lib/accountant/constants";
 
 describe("STATEMENT_LINES — P&L mapping completeness", () => {
@@ -56,5 +59,22 @@ describe("STATEMENT_LINES — P&L mapping completeness", () => {
     expect(classifyPLLine({ category: null, amount: 1000, source: "adjustment" })).toBeNull();
     expect(classifyPLLine({ category: "financial", amount: 100000, source: "loan_principal" })).toBeNull();
     expect(classifyPLLine({ category: "financial", amount: -40000, source: "loan_repayment" })).toBeNull();
+  });
+});
+
+describe("M5 order domain constants", () => {
+  it("SOURCES gains the seven M5 sources", () => {
+    for (const s of ["po_reserve", "po_reserve_release", "order_fulfillment", "contract_fine", "wo_settlement", "workorder_summary", "loan_forgiveness"]) {
+      expect(SOURCES).toContain(s);
+    }
+  });
+  it("ORDER_CATEGORIES is the original five — mission_income excluded", () => {
+    expect(ORDER_CATEGORIES).toEqual(["assets", "running_cost", "financial", "production", "trading"]);
+  });
+  it("ORDER_TEMPLATE carries the design §5.1 defaults", () => {
+    expect(ORDER_TEMPLATE).toEqual({
+      deliver_by: null, fine_interval: "daily", fine_rate_type: "percent", fine_rate: 0.5,
+      rate_change_condition: null, rate_change_pct: 0, termination_clause: "standard",
+    });
   });
 });
