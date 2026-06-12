@@ -105,6 +105,13 @@ export const SOURCE_LABELS = {
   loan_fee: 'Loan fee',
   loan_repayment: 'Repayment',
   accrual_tick: 'Accrual tick',
+  po_reserve: 'PO reserve',
+  po_reserve_release: 'Reserve release',
+  order_fulfillment: 'Order fulfilment',
+  contract_fine: 'Contract fine',
+  wo_settlement: 'Settlement',
+  workorder_summary: 'WO summary',
+  loan_forgiveness: 'Forgiveness',
 };
 
 // --- M2: loan domain ---
@@ -114,3 +121,29 @@ export const LOAN_DIRECTIONS = [
   { value: 'outgoing', label: 'Outgoing (I am the lender)' },
   { value: 'incoming', label: 'Incoming (I am the borrower)' },
 ];
+
+// --- M5: order domain (mirrors src/lib/accountant/constants.ts) ---
+export const ORDER_CATEGORIES = ['assets', 'running_cost', 'financial', 'production', 'trading'];
+export const ORDER_TYPES = [
+  { value: 'sale', label: 'Sales' },
+  { value: 'purchase', label: 'Purchase' },
+];
+export const ORDER_STATUSES = ['open', 'in_progress', 'complete', 'cancelled'];
+export const WORKORDER_STATUSES = ['draft', 'open', 'in_progress', 'complete', 'cancelled', 'terminated'];
+export const STATUS_LABELS = {
+  draft: 'Draft', open: 'Open', in_progress: 'In Progress',
+  complete: 'Complete', cancelled: 'Cancelled', terminated: 'Terminated',
+};
+export const FINE_RATE_TYPES = [
+  { value: 'percent', label: '% of remainder / tick' },
+  { value: 'flat', label: 'Flat aUEC / tick' },
+];
+export const RATE_CHANGE_CONDITIONS = [
+  { value: '', label: 'None' },
+  { value: 'late', label: 'On late delivery' },
+  { value: 'partial', label: 'On partial delivery' },
+];
+export const ORDER_TEMPLATE = {
+  deliver_by: null, fine_interval: 'daily', fine_rate_type: 'percent', fine_rate: 0.5,
+  rate_change_condition: null, rate_change_pct: 0, termination_clause: 'standard',
+};

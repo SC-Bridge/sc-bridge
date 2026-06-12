@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { useLedger, useBadges, useSorting, addEntry, categorizeEntries, useLoans, useLoan, createLoan, updateLoan, recordRepayment, settleLoan } from './hooks'
+import { useLedger, useBadges, useSorting, addEntry, categorizeEntries, useLoans, useLoan, createLoan, updateLoan, recordRepayment, settleLoan, useOrders, createOrder, recordFulfillment, terminateWorkorder, forgiveLoan } from './hooks'
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -122,5 +122,46 @@ describe('loan hooks', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, settled: false, outstanding: 60000 }) })
     await recordRepayment(7, { amount: 40000, occurred_at: '2026-06-10T00:00:00Z' })
     expect(fetchMock).toHaveBeenCalledWith('/api/accountant/loans/7/repayments', expect.objectContaining({ method: 'POST' }))
+  })
+})
+
+describe('order + workorder hooks (M5)', () => {
+  it('useOrders fetches with the given query string', async () => {
+    const spy = mockFetch({ orders: [], total: 0, balance: 0, lockedInPOs: 0, page: 1 })
+    const { result } = renderHook(() => useOrders('type=sale'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(spy).toHaveBeenCalledWith('/api/accountant/orders?type=sale', expect.any(Object))
+    expect(result.current.data.total).toBe(0)
+  })
+
+  it('createOrder POSTs and announces accountant:changed', async () => {
+    const fetchMock = mockFetch({ ok: true, id: 5 })
+    const heard = vi.fn()
+    window.addEventListener('accountant:changed', heard)
+    try {
+      await createOrder({ type: 'sale', category: 'trading', item: 'Laranite', quantity: 200, price_per_unit: 3200, start_at: '2026-06-01T00:00:00Z' })
+      expect(heard).toHaveBeenCalledTimes(1)
+      expect(fetchMock).toHaveBeenCalledWith('/api/accountant/orders', expect.objectContaining({ method: 'POST' }))
+    } finally {
+      window.removeEventListener('accountant:changed', heard)
+    }
+  })
+
+  it('recordFulfillment POSTs to /orders/:id/fulfillments', async () => {
+    const fetchMock = mockFetch({ ok: true })
+    await recordFulfillment(7, { quantity: 50, occurred_at: '2026-06-10T00:00:00Z' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/accountant/orders/7/fulfillments', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('terminateWorkorder POSTs to /workorders/:id/terminate', async () => {
+    const fetchMock = mockFetch({ ok: true })
+    await terminateWorkorder(3, { note: 'buyer vanished', terminated_by: 'counterparty' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/accountant/workorders/3/terminate', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('forgiveLoan POSTs to /loans/:id/forgive', async () => {
+    const fetchMock = mockFetch({ ok: true, settled: false, outstanding: 20000 })
+    await forgiveLoan(7, { amount: 10000 })
+    expect(fetchMock).toHaveBeenCalledWith('/api/accountant/loans/7/forgive', expect.objectContaining({ method: 'POST' }))
   })
 })

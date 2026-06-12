@@ -100,3 +100,23 @@ export const useReportBalance = (qs) => useGet(`/api/accountant/reports/balance$
 export const useReportNetWorth = (qs) => useGet(`/api/accountant/reports/net-worth${qs ? `?${qs}` : ''}`)
 export const useReportCashFlow = (qs) => useGet(`/api/accountant/reports/cash-flow${qs ? `?${qs}` : ''}`)
 export const useInvestmentOption = (qs) => useGet(`/api/accountant/reports/investment-option${qs ? `?${qs}` : ''}`)
+
+// M5 orders + workorders — query strings pre-encoded (URLSearchParams.toString()).
+export const useOrders = (qs) => useGet(`/api/accountant/orders${qs ? `?${qs}` : ''}`, { refreshOn: 'accountant:changed' })
+export const useOrder = (id) => useGet(`/api/accountant/orders/${id}`, { refreshOn: 'accountant:changed' })
+export const useWorkorders = (qs) => useGet(`/api/accountant/workorders${qs ? `?${qs}` : ''}`, { refreshOn: 'accountant:changed' })
+export const useWorkorder = (id) => useGet(`/api/accountant/workorders/${id}`, { refreshOn: 'accountant:changed' })
+
+export const createOrder = (body) => mutate('POST', '/api/accountant/orders', body)
+export const updateOrder = (id, body) => mutate('PUT', `/api/accountant/orders/${id}`, body)
+export const cancelOrder = (id) => mutate('POST', `/api/accountant/orders/${id}/cancel`)
+export const recordFulfillment = (id, body) => mutate('POST', `/api/accountant/orders/${id}/fulfillments`, body)
+
+export const createWorkorder = (body) => mutate('POST', '/api/accountant/workorders', body)
+export const addWorkorderOrders = (id, body) => mutate('POST', `/api/accountant/workorders/${id}/orders`, body)
+export const detachWorkorderOrder = (id, orderId) => mutate('DELETE', `/api/accountant/workorders/${id}/orders/${orderId}`)
+export const publishWorkorder = (id) => mutate('POST', `/api/accountant/workorders/${id}/publish`)
+export const cancelWorkorder = (id) => mutate('POST', `/api/accountant/workorders/${id}/cancel`)
+export const terminateWorkorder = (id, body) => mutate('POST', `/api/accountant/workorders/${id}/terminate`, body)
+
+export const forgiveLoan = (id, body) => mutate('POST', `/api/accountant/loans/${id}/forgive`, body)
