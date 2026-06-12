@@ -27,6 +27,9 @@ export interface ValidatedOrderBody {
   notes?: string;
 }
 
+/** `quantity` is REAL (SCU can be fractional) — every remaining/closing comparison uses this epsilon. */
+export const QTY_EPSILON = 1e-9;
+
 /** Σ open reserve across the user (positive number). Closed orders net to 0 by invariant. */
 export async function lockedInPOs(db: D1Database, userID: string): Promise<number> {
   const row = await db.prepare(
@@ -115,6 +118,18 @@ export async function insertOrder(
     }
   }
   return { id: orderId };
+}
+
+/**
+ * Statements that advance the parent workorder when a component order closes
+ * (fulfilment completes it, cancel, partial termination). Task 8 wires
+ * workorder transitions here; until then a component closing leaves the
+ * workorder untouched.
+ */
+export async function completionStatements(
+  _db: D1Database, _userID: string, _workorderId: number,
+): Promise<D1PreparedStatement[]> {
+  return [];
 }
 
 /** §5.3 — effective rate for the REMAINING quantity. Base never re-rates retroactively. */

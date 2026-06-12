@@ -147,3 +147,137 @@ describe("Accountant M5 — order creation + list", () => {
     expect(res.total).toBe(0);
   });
 });
+
+describe("M5 — fulfilments, rate change, reserve lifecycle", () => {
+  async function fulfil(token: string, id: number, body: Record<string, unknown>) {
+    return post(token, `/orders/${id}/fulfillments`, body);
+  }
+  async function createPO(token: string, over: Record<string, unknown> = {}) {
+    await seedBalance(token, 1000000);
+    const res = await post(token, "/orders", { ...PO, ...over });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { id: number }).id;
+  }
+
+  it("posts an order_fulfillment carrying category/tag/qty/rate; first fulfilment → in_progress", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", SALE);
+    const { id } = (await res.json()) as { id: number };
+    const f = await fulfil(sessionToken, id, { quantity: 50, occurred_at: "2026-06-12T00:00:00Z", location: "ARC-L1" });
+    expect(f.status).toBe(200);
+    const e = await env.DB.prepare(
+      "SELECT amount, category, tag, quantity, price_per_unit, location, source FROM accountant_entries WHERE order_id = ? AND source = 'order_fulfillment'",
+    ).bind(id).first<Record<string, unknown>>();
+    expect(e).toMatchObject({
+      amount: 160000,          // sale + : round(50 × 3200)
+      category: "trading", tag: "minerals", quantity: 50, price_per_unit: 3200, location: "ARC-L1",
+    });
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?").bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("in_progress");
+  });
+
+  it("reserve rounding PROPERTY: per-step releases round but Σ === reserve; closed → complete", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    await seedBalance(sessionToken, 1000000);
+    for (const [qty, ppu] of [[3, 333], [7, 997], [9, 1001], [11, 12345]] as const) {
+      const res = await post(sessionToken, "/orders", { ...PO, quantity: qty, price_per_unit: ppu });
+      expect(res.status).toBe(200);
+      const { id } = (await res.json()) as { id: number };
+      for (let i = 0; i < qty; i++) {
+        expect((await fulfil(sessionToken, id, { quantity: 1, occurred_at: "2026-06-12T00:00:00Z" })).status).toBe(200);
+      }
+      const net = await env.DB.prepare(
+        `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
+         WHERE order_id = ? AND source IN ('po_reserve','po_reserve_release')`,
+      ).bind(id).first<{ net: number }>();
+      expect(net?.net, `qty=${qty} ppu=${ppu}`).toBe(0);   // closed orders net to EXACTLY 0 (§3 invariant)
+      const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?").bind(id).first<{ status: string }>();
+      expect(o?.status).toBe("complete");                  // remaining 0 → auto-complete
+    }
+  });
+
+  it("reserve drift golden: qty 7 × ppu 4801 (total 33,607) in 3.5 + 3.5 → releases 16,804 then 16,803", async () => {
+    // round(33607 × 3.5/7) = round(16803.5) = 16804; naive proportional twice would
+    // release 33,608 ≠ reserve. The CLOSING fulfilment releases the exact remainder.
+    const { sessionToken } = await createTestUser(env.DB);
+    const id = await createPO(sessionToken, { quantity: 7, price_per_unit: 4801 });
+    await fulfil(sessionToken, id, { quantity: 3.5, occurred_at: "2026-06-12T00:00:00Z" });
+    await fulfil(sessionToken, id, { quantity: 3.5, occurred_at: "2026-06-12T01:00:00Z" });
+    const releases = (await env.DB.prepare(
+      "SELECT amount FROM accountant_entries WHERE order_id = ? AND source = 'po_reserve_release' ORDER BY id",
+    ).bind(id).all<{ amount: number }>()).results.map((r) => r.amount);
+    expect(releases).toEqual([16804, 16803]);
+    const o = await env.DB.prepare("SELECT status FROM accountant_orders WHERE id = ?").bind(id).first<{ status: string }>();
+    expect(o?.status).toBe("complete");
+  });
+
+  it("rate change 'late': fulfilment after deliver_by uses price × 1.10 → round(50 × 1100) = 55,000", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", {
+      ...SALE, quantity: 100, price_per_unit: 1000,
+      deliver_by: "2026-06-11T00:00:00Z", rate_change_condition: "late", rate_change_pct: 10, fine_rate: 0,
+    });
+    const { id } = (await res.json()) as { id: number };
+    await fulfil(sessionToken, id, { quantity: 50, occurred_at: "2026-06-12T00:00:00Z" }); // late
+    const e = await env.DB.prepare(
+      "SELECT amount, price_per_unit FROM accountant_entries WHERE order_id = ? AND source='order_fulfillment'",
+    ).bind(id).first<{ amount: number; price_per_unit: number }>();
+    expect(e?.amount).toBe(55000);
+    expect(e?.price_per_unit).toBe(1100);   // entry carries the EFFECTIVE rate (design §3.3 table)
+  });
+
+  it("rate change 'partial': first fulfilment at base, second at 1.10×; reserve NOT re-reserved", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const id = await createPO(sessionToken, {
+      quantity: 50, price_per_unit: 1000, rate_change_condition: "partial", rate_change_pct: 10,
+    }); // total 50,000 reserved
+    await fulfil(sessionToken, id, { quantity: 30, occurred_at: "2026-06-12T00:00:00Z" });
+    await fulfil(sessionToken, id, { quantity: 20, occurred_at: "2026-06-13T00:00:00Z" });
+    const rows = (await env.DB.prepare(
+      "SELECT amount, source FROM accountant_entries WHERE order_id = ? ORDER BY id",
+    ).bind(id).all<{ amount: number; source: string }>()).results;
+    const fulfilments = rows.filter((r) => r.source === "order_fulfillment").map((r) => r.amount);
+    expect(fulfilments).toEqual([-30000, -22000]);          // 30×1000 ; round(20 × 1100)
+    const reserveNet = rows.filter((r) => r.source.startsWith("po_reserve")).reduce((s, r) => s + r.amount, 0);
+    expect(reserveNet).toBe(0);                             // releases track the ORIGINAL 50,000 total
+  });
+
+  it("manual amount override wins (recorded as-is, sign applied by type)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", SALE);
+    const { id } = (await res.json()) as { id: number };
+    await fulfil(sessionToken, id, { quantity: 10, amount: 99999, occurred_at: "2026-06-12T00:00:00Z" });
+    const e = await env.DB.prepare("SELECT amount FROM accountant_entries WHERE order_id = ? AND source='order_fulfillment'")
+      .bind(id).first<{ amount: number }>();
+    expect(e?.amount).toBe(99999);                          // sale +; a purchase override books −99999
+  });
+
+  it("rejects quantity > remaining with 400 echoing remaining", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const res = await post(sessionToken, "/orders", SALE);  // qty 200
+    const { id } = (await res.json()) as { id: number };
+    await fulfil(sessionToken, id, { quantity: 150, occurred_at: "2026-06-12T00:00:00Z" });
+    const over = await fulfil(sessionToken, id, { quantity: 51, occurred_at: "2026-06-12T01:00:00Z" });
+    expect(over.status).toBe(400);
+    expect(((await over.json()) as { remaining: number }).remaining).toBe(50);
+  });
+
+  it("GET /orders/:id returns contract + fulfilments + fines + reserve state; foreign user → 404", async () => {
+    const a = await createTestUser(env.DB);
+    const b = await createTestUser(env.DB);
+    const id = await createPO(a.sessionToken, {});
+    await fulfil(a.sessionToken, id, { quantity: 40, occurred_at: "2026-06-12T00:00:00Z" });
+    const detail = (await (await get(a.sessionToken, `/orders/${id}`)).json()) as {
+      order: { modified_fields: string[] };
+      fulfillments: unknown[]; fines: unknown[];
+      reserve: { reserved: number; released: number; open: number };
+      computed: { fulfilledQty: number; remaining: number };
+    };
+    expect(detail.order.modified_fields).toEqual([]);
+    expect(detail.fulfillments).toHaveLength(1);
+    expect(detail.fines).toEqual([]);
+    expect(detail.reserve).toEqual({ reserved: 100000, released: 40000, open: 60000 });
+    expect(detail.computed).toMatchObject({ fulfilledQty: 40, remaining: 60 });
+    expect((await get(b.sessionToken, `/orders/${id}`)).status).toBe(404);
+  });
+});
