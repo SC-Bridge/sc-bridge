@@ -72,7 +72,7 @@ describe('Accountant nav — nested sub-groups (M3 nav pass, owner decision 2026
 
   it('structures the group as Reports / Core Financials / Finance (no Settings item)', () => {
     const labels = accountantGroup('industrial').items.map((i) => i.label)
-    expect(labels).toEqual(['Reports', 'Core Financials', 'Finance'])
+    expect(labels).toEqual(['Reports', 'Core Financials', 'Finance', 'Orders'])
   })
 
   it('Core Financials (all tiers) nests Ledger + Sorting List; sorting badge survives nesting', () => {
@@ -104,6 +104,29 @@ describe('Accountant nav — nested sub-groups (M3 nav pass, owner decision 2026
       '/accountant/reports/net-worth',
       '/accountant/reports/cash-flow',
     ])
+  })
+})
+
+describe('Accountant nav — M5 Orders sub-group (minTier advanced, after Finance)', () => {
+  function accountantGroup(tier) {
+    return getNavItems('user', true, {}, tier).find((i) => i.group === 'Accountant')
+  }
+  it('industrial tier sees Reports / Core Financials / Finance / Orders — Orders LAST', () => {
+    expect(accountantGroup('industrial').items.map((i) => i.label))
+      .toEqual(['Reports', 'Core Financials', 'Finance', 'Orders'])
+  })
+  it('advanced tier sees Orders but NOT Finance/Reports', () => {
+    const labels = accountantGroup('advanced').items.map((i) => i.label)
+    expect(labels).toEqual(['Core Financials', 'Orders'])
+  })
+  it('easy tier does NOT see Orders (fully absent, never greyed)', () => {
+    expect(accountantGroup('easy').items.map((i) => i.label)).toEqual(['Core Financials'])
+  })
+  it('Orders nests Market + Workorders at the B.5 routes and carries the orders badge', () => {
+    const orders = accountantGroup('advanced').items.find((i) => i.label === 'Orders')
+    expect(orders.submenu.map((s) => s.to)).toEqual(['/accountant/orders/market', '/accountant/orders/workorders'])
+    expect(orders.badge).toBe('orders')
+    expect(orders.minTier).toBe('advanced')
   })
 })
 

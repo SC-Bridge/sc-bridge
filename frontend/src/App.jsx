@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, Coins, LineChart, ArrowRightLeft } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Wallet, BookMarked, ClipboardList, Coins, LineChart, ArrowRightLeft, Store, ClipboardCheck } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
 import RequireFeature from './components/RequireFeature'
 import SortingNavBadge from './pages/Accountant/SortingNavBadge'
 import LoansNavBadge from './pages/Accountant/LoansNavBadge'
+import OrdersNavBadge from './pages/Accountant/OrdersNavBadge'
 import { TIER_RANK } from './pages/Accountant/constants'
 import useFontPreference from './hooks/useFontPreference'
 import { useStatus, usePreferences, setPreferences } from './hooks/useAPI'
@@ -85,6 +86,10 @@ const AccountantReportPL = lazy(() => import('./pages/Accountant/Reports/PL'))
 const AccountantReportBalance = lazy(() => import('./pages/Accountant/Reports/BalanceSheet'))
 const AccountantReportNetWorth = lazy(() => import('./pages/Accountant/Reports/NetWorth'))
 const AccountantReportCashFlow = lazy(() => import('./pages/Accountant/Reports/CashFlow'))
+const AccountantOrderMarket = lazy(() => import('./pages/Accountant/Orders/Market'))
+const AccountantWorkorders = lazy(() => import('./pages/Accountant/Orders/Workorders'))
+const AccountantNewWorkorder = lazy(() => import('./pages/Accountant/Orders/NewWorkorder'))
+const AccountantWorkorderDetail = lazy(() => import('./pages/Accountant/Orders/WorkorderDetail'))
 
 // Game Data and Reference are public — visible to all users
 const gameDataGroup = {
@@ -206,6 +211,17 @@ const authNavItems = [
           { to: '/accountant/tactical', icon: Target, label: 'Tactical' },
         ],
       },
+      {
+        to: '/accountant/orders/market',
+        icon: ShoppingCart,
+        label: 'Orders',
+        minTier: 'advanced',
+        badge: 'orders',
+        submenu: [
+          { to: '/accountant/orders/market', icon: Store, label: 'Market' },
+          { to: '/accountant/orders/workorders', icon: ClipboardCheck, label: 'Workorders' },
+        ],
+      },
     ],
   },
   { to: '/orgs', icon: Building2, label: 'Orgs' },
@@ -284,6 +300,7 @@ function renderNavItem(item, location, expandedMenu, setExpandedMenu, onNavClick
         >
           <Icon className="w-4 h-4" aria-hidden="true" />
           <span className="font-display tracking-wide text-xs uppercase flex-1 text-left">{label}</span>
+          {item.badge === 'orders' && <OrdersNavBadge />}
         </NavLink>
 
         {isParentActive && (
@@ -828,6 +845,10 @@ export default function App() {
                       <Route path="/accountant/reports/balance" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportBalance /></Suspense></RequireAuth>} />
                       <Route path="/accountant/reports/net-worth" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportNetWorth /></Suspense></RequireAuth>} />
                       <Route path="/accountant/reports/cash-flow" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantReportCashFlow /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/orders/market" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantOrderMarket /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/orders/workorders" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantWorkorders /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/orders/workorders/new" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantNewWorkorder /></Suspense></RequireAuth>} />
+                      <Route path="/accountant/orders/workorders/:id" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><AccountantWorkorderDetail /></Suspense></RequireAuth>} />
                       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
                       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><Admin /></RequireRole></RequireAuth>} />
                       <Route path="/users" element={<RequireAuth><RequireRole roles={["admin", "super_admin"]}><UserManagement /></RequireRole></RequireAuth>} />
