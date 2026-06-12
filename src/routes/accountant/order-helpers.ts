@@ -121,15 +121,86 @@ export async function insertOrder(
 }
 
 /**
- * Statements that advance the parent workorder when a component order closes
- * (fulfilment completes it, cancel, partial termination). Task 8 wires
- * workorder transitions here; until then a component closing leaves the
- * workorder untouched.
+ * Statements that advance the parent workorder when a component order changes
+ * inside the caller's batch (fulfilment, cancel, partial termination — finding
+ * 18: completion must trigger on component cancel too). Every condition is a
+ * SQL guard evaluated at BATCH-EXECUTION time, after the component's own
+ * INSERT/UPDATE statements in the same transaction — so the in-flight change
+ * (and the closing fulfilment's amount, for the net) is always visible:
+ * - open → in_progress once any component fulfilment exists (never on a
+ *   fulfilment-free cancel — an untouched workorder must stay cancellable);
+ * - all components closed + workorder open/in_progress → ONE 0-amount
+ *   `workorder_summary` entry + status 'complete' with completed_at stamped.
+ * The 0-amount summary is informational: components already posted as they
+ * fulfilled — a valued summary would double-count (the M3 loan-equity trap).
  */
 export async function completionStatements(
-  _db: D1Database, _userID: string, _workorderId: number,
+  db: D1Database, userID: string, workorderId: number,
 ): Promise<D1PreparedStatement[]> {
-  return [];
+  const now = new Date().toISOString();
+  return [
+    db.prepare(
+      `UPDATE accountant_workorders SET status = 'in_progress'
+       WHERE id = ?1 AND user_id = ?2 AND status = 'open'
+         AND EXISTS (SELECT 1 FROM accountant_entries e
+                     JOIN accountant_orders o ON e.order_id = o.id
+                     WHERE o.workorder_id = ?1 AND e.user_id = ?2
+                       AND e.source = 'order_fulfillment')`,
+    ).bind(workorderId, userID),
+    // Auto-generated note "W-0007 · 2 orders · net +412,000" — net is computed
+    // by SQLite at execution time (printf's ',' flag does the en-US grouping).
+    db.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, notes)
+       SELECT ?2, ?3, 0, NULL, 'workorder_summary', ?1,
+              'W-' || printf('%04d', ?1) || ' · ' || n.cnt || ' orders · net '
+                || CASE WHEN n.net >= 0 THEN '+' ELSE '' END || printf('%,d', n.net)
+       FROM (SELECT
+               (SELECT COUNT(*) FROM accountant_orders
+                WHERE workorder_id = ?1 AND user_id = ?2) AS cnt,
+               (SELECT COALESCE(SUM(e.amount), 0) FROM accountant_entries e
+                JOIN accountant_orders o ON e.order_id = o.id
+                WHERE o.workorder_id = ?1 AND e.user_id = ?2
+                  AND e.source = 'order_fulfillment') AS net) n
+       WHERE NOT EXISTS (SELECT 1 FROM accountant_orders
+                         WHERE workorder_id = ?1 AND user_id = ?2
+                           AND status IN ('open', 'in_progress'))
+         AND (SELECT status FROM accountant_workorders WHERE id = ?1 AND user_id = ?2)
+             IN ('open', 'in_progress')`,
+    ).bind(workorderId, userID, now),
+    db.prepare(
+      `UPDATE accountant_workorders SET status = 'complete', completed_at = ?3
+       WHERE id = ?1 AND user_id = ?2 AND status IN ('open', 'in_progress')
+         AND NOT EXISTS (SELECT 1 FROM accountant_orders
+                         WHERE workorder_id = ?1 AND user_id = ?2
+                           AND status IN ('open', 'in_progress'))`,
+    ).bind(workorderId, userID, now),
+  ];
+}
+
+/**
+ * Your incurred costs per component (design §5.4; Task 9's settlement
+ * suggestion reuses this scope-agnostic helper): what you paid out on purchase
+ * fulfilments plus fines you paid (negative `contract_fine` rows — those live
+ * on sale orders; purchase fines are income and don't count).
+ */
+export async function incurredCosts(
+  db: D1Database, userID: string, orderIds: number[],
+): Promise<Map<number, number>> {
+  if (orderIds.length === 0) return new Map();
+  const placeholders = orderIds.map(() => "?").join(", ");
+  const rows = await db.prepare(
+    `SELECT o.id,
+       (CASE WHEN o.type = 'purchase'
+             THEN ABS(COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
+                                WHERE e.order_id = o.id AND e.user_id = o.user_id
+                                  AND e.source = 'order_fulfillment'), 0))
+             ELSE 0 END)
+       + ABS(COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
+                       WHERE e.order_id = o.id AND e.user_id = o.user_id
+                         AND e.source = 'contract_fine' AND e.amount < 0), 0)) AS incurred
+     FROM accountant_orders o WHERE o.user_id = ? AND o.id IN (${placeholders})`,
+  ).bind(userID, ...orderIds).all<{ id: number; incurred: number }>();
+  return new Map(rows.results.map((r) => [r.id, r.incurred]));
 }
 
 /** §5.3 — effective rate for the REMAINING quantity. Base never re-rates retroactively. */

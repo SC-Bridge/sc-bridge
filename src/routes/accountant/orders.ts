@@ -16,7 +16,8 @@ import { parseIdParam } from "./schemas";
 
 // .strict() doubles as the private-market enforcement: vis_corp/vis_public are
 // unknown keys here, so they're rejected with 400 and the columns keep DEFAULT 0.
-const CreateOrderSchema = z.object({
+// Exported: workorders.ts validates inline component orders with the same schema.
+export const CreateOrderSchema = z.object({
   type: z.enum(ORDER_TYPES),
   category: z.enum(ORDER_CATEGORIES),               // mission_income structurally impossible
   tag: z.string().max(100).optional(),
