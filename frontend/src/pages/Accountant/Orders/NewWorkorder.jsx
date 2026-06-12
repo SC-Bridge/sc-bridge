@@ -107,7 +107,6 @@ export default function NewWorkorder() {
   const [contractForm, setContractForm] = useState(CONTRACT_FORM_INITIAL)
   const [inlineOrders, setInlineOrders] = useState([])
   const [attachedIds, setAttachedIds] = useState([])
-  const [tooFew, setTooFew] = useState(false)
   const [error, setError] = useState(null)
   const [fundError, setFundError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -122,12 +121,9 @@ export default function NewWorkorder() {
 
   async function submit(e) {
     e.preventDefault()
-    // Client courtesy mirror of the server's publish gate — a draft below two
-    // components could never be published, so composition asks for both up front.
-    if (componentCount < 2) {
-      setTooFew(true)
-      return
-    }
+    // No component minimum here — the server allows drafts with 0–1 components
+    // (more get attached later from the detail page). The ≥2-OPEN rule gates
+    // PUBLISH, where WorkorderDetail surfaces it.
     setSaving(true)
     setError(null)
     setFundError(null)
@@ -207,12 +203,6 @@ export default function NewWorkorder() {
             <AttachPicker checked={attachedIds} onToggle={toggleAttached} />
           </fieldset>
         </section>
-
-        {tooFew && componentCount < 2 && (
-          <p role="alert" className="text-sm text-sc-warn">
-            A workorder needs at least two orders to publish — add an inline order or attach another open one.
-          </p>
-        )}
 
         <div className="flex justify-end gap-2">
           <Link to="/accountant/orders/workorders" className="text-sm text-gray-400 px-3 py-1.5">Cancel</Link>

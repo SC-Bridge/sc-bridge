@@ -85,6 +85,10 @@ export default function Market() {
   }
 
   const { orders, total, balance, lockedInPOs } = data
+  // Distinguish "nothing matches the active filters" from a truly empty
+  // account — the CTA hero only makes sense for the latter. Client heuristic
+  // on the filter params; `order`/paging params don't narrow the list.
+  const filtered = FILTER_GROUPS.some(({ key }) => params.getAll(key).length > 0)
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -104,7 +108,11 @@ export default function Market() {
       <div className="flex gap-6">
         <Filters params={params} onChange={setParams} />
         <div className="flex-1 min-w-0">
-          {total === 0 ? (
+          {total === 0 && filtered ? (
+            <div className="panel p-10 text-center text-gray-400">
+              <p>No orders match these filters.</p>
+            </div>
+          ) : total === 0 ? (
             <div className="panel p-10 text-center text-gray-400">
               <p className="mb-3">No orders yet.</p>
               <button onClick={() => setAdding(true)} className="text-sc-accent text-sm">

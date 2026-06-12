@@ -13,6 +13,12 @@ const ORDERS = [
   { id: 3, type: 'purchase', category: 'production', item: 'Closed already', status: 'complete', incurred: 999999 },
 ]
 
+// Server settlementPreview.suggestion — full-termination scope is ALL
+// components (design §5.4), so the COMPLETED one's incurred is in here.
+// Deliberately ≠ the open-components sum (85,000): any client recompute
+// would show the wrong number and fail these pins.
+const SUGGESTION = 1084999
+
 function ok(body) {
   return { ok: true, status: 200, json: async () => body }
 }
@@ -26,7 +32,10 @@ afterEach(() => vi.restoreAllMocks())
 
 function renderModal(props = {}) {
   return render(
-    <TerminateModal workorder={WORKORDER} orders={ORDERS} onClose={vi.fn()} onSaved={vi.fn()} {...props} />,
+    <TerminateModal
+      workorder={WORKORDER} orders={ORDERS} suggestion={SUGGESTION}
+      onClose={vi.fn()} onSaved={vi.fn()} {...props}
+    />,
   )
 }
 
@@ -60,16 +69,18 @@ describe('TerminateModal', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/at least 1 character/i))
   })
 
-  it('terminated_by toggles the settlement field semantics: counterparty pre-fills the suggestion, you requires manual amount', async () => {
+  it('terminated_by toggles the settlement field semantics: counterparty pre-fills the SERVER suggestion verbatim, you requires manual amount', async () => {
     renderModal()
     // Closed components are outside the selectable scope entirely.
     expect(screen.queryByLabelText(/O-3/)).not.toBeInTheDocument()
 
-    // Counterparty (default): all selected → suggestion 85,000 shown and editable.
+    // Counterparty (default): full termination → the server's
+    // settlementPreview.suggestion verbatim, even though the completed
+    // component's incurred is invisible to the open-components list.
     expect(screen.getByLabelText('Counterparty')).toBeChecked()
     const amount = screen.getByLabelText(/settlement amount/i)
-    expect(amount).toHaveValue(85000)
-    expect(screen.getByText(/85,000 aUEC/)).toBeInTheDocument()
+    expect(amount).toHaveValue(SUGGESTION)
+    expect(screen.getByText(/1,084,999 aUEC/)).toBeInTheDocument()
     await userEvent.clear(amount)
     await userEvent.type(amount, '90000')
     expect(amount).toHaveValue(90000)
@@ -81,11 +92,13 @@ describe('TerminateModal', () => {
     expect(screen.queryByText(/suggestion/i)).not.toBeInTheDocument()
   })
 
-  it('partial selection: deselecting components re-sums the suggestion and sends order_ids', async () => {
+  it('partial selection: amount stays empty (no client-side scoped recompute), blank omits settlement_amount and sends order_ids', async () => {
     renderModal()
     await userEvent.click(screen.getByLabelText(/O-1/))
-    // Only #2 selected → suggestion re-sums to 5,000.
-    expect(screen.getByLabelText(/settlement amount/i)).toHaveValue(5000)
+    // No client recompute for a subset — blank defers to the server, which
+    // defaults an omitted settlement_amount to Σ-incurred over the scope.
+    expect(screen.getByLabelText(/settlement amount/i)).toHaveValue(null)
+    expect(screen.getByText(/leave blank/i)).toBeInTheDocument()
     // Server rule surfaced, not duplicated: partial keeps the workorder in progress.
     expect(screen.getByText(/partial termination/i)).toBeInTheDocument()
 
@@ -95,11 +108,26 @@ describe('TerminateModal', () => {
     expect(postedBody()).toEqual({
       note: 'dropped this leg',
       terminated_by: 'counterparty',
-      settlement_amount: 5000,
       order_ids: [2],
     })
 
-    // Full selection sends NO order_ids (full termination).
+    // A typed amount on a partial still wins over the server default.
+    cleanup()
+    globalThis.fetch.mockClear()
+    renderModal()
+    await userEvent.click(screen.getByLabelText(/O-1/))
+    await userEvent.type(screen.getByLabelText(/settlement amount/i), '7000')
+    await userEvent.type(screen.getByLabelText(/termination note/i), 'agreed partial figure')
+    await userEvent.click(screen.getByRole('button', { name: /terminate workorder/i }))
+    await waitFor(() => expect(postedBody()).not.toBeNull())
+    expect(postedBody()).toEqual({
+      note: 'agreed partial figure',
+      terminated_by: 'counterparty',
+      settlement_amount: 7000,
+      order_ids: [2],
+    })
+
+    // Full selection sends NO order_ids and the server suggestion verbatim.
     cleanup()
     globalThis.fetch.mockClear()
     renderModal()
@@ -109,7 +137,7 @@ describe('TerminateModal', () => {
     expect(postedBody()).toEqual({
       note: 'full stop',
       terminated_by: 'counterparty',
-      settlement_amount: 85000,
+      settlement_amount: SUGGESTION,
     })
   })
 
@@ -124,7 +152,7 @@ describe('TerminateModal', () => {
     expect(postedBody().settlement_amount).toBe(0)
     expect(postedBody().order_ids).toBeUndefined()
 
-    // Manual override beats the 85,000 suggestion.
+    // Manual override beats the server suggestion.
     cleanup()
     globalThis.fetch.mockClear()
     renderModal()

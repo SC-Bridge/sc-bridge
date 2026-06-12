@@ -8,7 +8,10 @@ const DETAIL = {
     id: 82, type: 'purchase', status: 'in_progress', category: 'production', tag: 'general',
     item: 'Quantanium', quantity: 200, price_per_unit: 1000, total: 200000,
     counterparty: '@miner7', start_at: '2026-06-01T00:00:00Z',
-    deliver_by: '2026-06-30T00:00:00Z', fine_interval: 'daily', fine_rate_type: 'percent',
+    // fine_interval deviates from the template ON PURPOSE while staying out of
+    // modified_fields — a regression to client-side recompute (§5.1 failure
+    // mode) would mark it and fail the no-marker assertion.
+    deliver_by: '2026-06-30T00:00:00Z', fine_interval: 'weekly', fine_rate_type: 'percent',
     fine_rate: 1.5, rate_change_condition: null, rate_change_pct: 0,
     termination_clause: 'standard', workorder_id: null,
     modified_fields: ['deliver_by', 'fine_rate'], notes: 'priority client',

@@ -22,7 +22,10 @@ function workorder(overrides = {}) {
   return {
     id: 7, title: 'Laranite hauling run', description: null, counterparty: '@vendor',
     status: 'in_progress', start_at: '2026-06-01T00:00:00.000Z', deliver_by: '2026-06-15T00:00:00.000Z',
-    fine_interval: 'daily', fine_rate_type: 'percent', fine_rate: 0.5,
+    // fine_interval deviates from the template ON PURPOSE while staying out of
+    // modified_fields — a regression to client-side recompute (§5.1 failure
+    // mode) would mark it and fail the no-marker pin below.
+    fine_interval: 'weekly', fine_rate_type: 'percent', fine_rate: 0.5,
     rate_change_condition: null, rate_change_pct: 0, termination_clause: 'standard',
     modified_fields: ['deliver_by'], terminated_by: null, termination_note: null,
     completed_at: null, created_at: '2026-06-01T00:00:00.000Z',
@@ -110,6 +113,9 @@ describe('WorkorderDetail route page', () => {
     // Contract panel carries the change markers from the workorder row.
     expect(within(screen.getByTestId('contract-deliver_by')).getByTestId('modified-marker')).toBeInTheDocument()
     expect(within(screen.getByTestId('contract-fine_rate')).queryByTestId('modified-marker')).not.toBeInTheDocument()
+    // STORED modified_fields, never recomputed: fine_interval deviates from
+    // the template in the fixture yet must carry no marker.
+    expect(within(screen.getByTestId('contract-fine_interval')).queryByTestId('modified-marker')).not.toBeInTheDocument()
 
     // Rows deep-link into the Market slide-over.
     await userEvent.click(table.getByText('Laranite'))
@@ -155,6 +161,10 @@ describe('WorkorderDetail route page', () => {
     // Opens the modal.
     await userEvent.click(screen.getByRole('button', { name: /terminate/i }))
     expect(screen.getByRole('heading', { name: /terminate · w-0007/i })).toBeInTheDocument()
+    // Full-termination prefill is the SERVER's settlementPreview.suggestion
+    // verbatim (6,000 — the two COMPLETED components' incurred). A client
+    // recompute over the still-open components would show 0.
+    expect(screen.getByLabelText(/settlement amount/i)).toHaveValue(6000)
 
     cleanup()
     mockApi({ wo: workorder({ status: 'draft' }), components: TWO_OPEN })

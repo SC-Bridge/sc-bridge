@@ -92,11 +92,22 @@ describe('Market page', () => {
     expect(screen.queryByText(/past their delivery date/)).not.toBeInTheDocument()
   })
 
-  it('empty state renders the CTA hero', async () => {
+  it('truly-unfiltered empty state renders the CTA hero', async () => {
     mockApi({ orders: [], total: 0 })
     renderMarket()
     await waitFor(() => expect(screen.getByText(/no orders yet/i)).toBeInTheDocument())
     expect(screen.getByText(/create your first order/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no orders match these filters/i)).not.toBeInTheDocument()
+  })
+
+  it('filtered empty state says no orders match — no CTA hero', async () => {
+    mockApi({ orders: [], total: 0 })
+    renderMarket('/accountant/orders/market?type=sale')
+    await waitFor(() =>
+      expect(screen.getByText(/no orders match these filters/i)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/create your first order/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/no orders yet/i)).not.toBeInTheDocument()
   })
 
   it('loading renders the loading state', () => {

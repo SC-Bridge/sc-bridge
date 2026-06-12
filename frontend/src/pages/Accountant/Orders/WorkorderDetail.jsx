@@ -115,7 +115,7 @@ export default function WorkorderDetail() {
     )
   }
 
-  const { workorder: wo, components, summaryPreview } = data
+  const { workorder: wo, components, summaryPreview, settlementPreview } = data
   // Publish gate counts OPEN components only — the server's rule, mirrored
   // as a disabled hint (never enforced client-side alone).
   const openCount = components.filter((o) => o.status === 'open').length
@@ -230,6 +230,7 @@ export default function WorkorderDetail() {
         <TerminateModal
           workorder={wo}
           orders={components}
+          suggestion={settlementPreview.suggestion}
           onClose={() => setTerminating(false)}
           onSaved={() => setTerminating(false)}
         />

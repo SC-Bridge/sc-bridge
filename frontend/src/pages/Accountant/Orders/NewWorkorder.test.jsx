@@ -102,15 +102,18 @@ describe('NewWorkorder composition route', () => {
     expect(within(screen.getByTestId('contract-fine_interval')).queryByTestId('modified-marker')).not.toBeInTheDocument()
   })
 
-  it('submit with < 2 components shows the inline "needs at least two orders" notice and does not POST', async () => {
+  it('creates a draft with a single inline component — the ≥2-open rule gates PUBLISH, not draft creation', async () => {
     renderPage()
     await userEvent.type(screen.getByLabelText(/title/i), 'Thin run')
-    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
-    await userEvent.click(within(screen.getByTestId('attach-picker')).getByRole('checkbox'))
+    await addInlineOrder()
 
     await userEvent.click(screen.getByRole('button', { name: /create draft/i }))
-    expect(screen.getByText(/needs at least two orders/i)).toBeInTheDocument()
-    expect(postedBody()).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('wo-detail-route')).toBeInTheDocument())
+
+    const sent = postedBody()
+    expect(sent.title).toBe('Thin run')
+    expect(sent.orders).toHaveLength(1)
+    expect(sent).not.toHaveProperty('order_ids')
   })
 
   it('fund rejection from an inline purchase bubbles the rejection panel', async () => {

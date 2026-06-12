@@ -9,24 +9,26 @@ import { orderRef, woRef } from '../orderMath'
 // selected subset. The server owns the rules (partial keeps the workorder
 // in progress, last-component partial completes it normally) — this modal
 // only surfaces them.
-export default function TerminateModal({ workorder, orders, onClose, onSaved }) {
+export default function TerminateModal({ workorder, orders, suggestion, onClose, onSaved }) {
   // Closed components can't be terminated again — the server 400s on them.
   const openComponents = orders.filter((o) => o.status === 'open' || o.status === 'in_progress')
   const [selected, setSelected] = useState(() => openComponents.map((o) => o.id))
   const [terminatedBy, setTerminatedBy] = useState('counterparty')
-  // null = no manual override → counterparty shows the live suggestion.
+  // null = no manual override → counterparty shows the server prefill (if any).
   const [override, setOverride] = useState(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const full = selected.length === openComponents.length
-  // Client mirror of the server's incurred-costs suggestion: Σ incurred over
-  // the selected components. Overridable; the server recomputes its own.
-  const suggestion = openComponents
-    .filter((o) => selected.includes(o.id))
-    .reduce((sum, o) => sum + o.incurred, 0)
-  const amountValue = override ?? (terminatedBy === 'counterparty' ? String(suggestion) : '')
+  // Full termination + counterparty prefills the SERVER's settlementPreview
+  // suggestion verbatim — its §5.4 full scope spans ALL components (completed
+  // ones included), which the open-components list can't see, so the client
+  // never recomputes it. A partial subset has no client value either: blank
+  // defers to the server, which defaults an omitted settlement_amount to
+  // Σ-incurred over the terminated scope.
+  const amountValue = override ?? (terminatedBy === 'counterparty' && full ? String(suggestion) : '')
+  const amountOptional = terminatedBy === 'counterparty' && !full
 
   function toggle(id) {
     setSelected((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
@@ -49,8 +51,9 @@ export default function TerminateModal({ workorder, orders, onClose, onSaved }) 
       setError('Select at least one component to terminate')
       return
     }
-    const amount = parseInt(amountValue, 10)
-    if (!Number.isInteger(amount) || amount < 0) {
+    const blank = String(amountValue).trim() === ''
+    const amount = blank && amountOptional ? undefined : parseInt(amountValue, 10)
+    if (amount !== undefined && (!Number.isInteger(amount) || amount < 0)) {
       setError(terminatedBy === 'you'
         ? 'Settlement amount is required when you terminate'
         : 'Settlement amount must be 0 or more')
@@ -62,7 +65,7 @@ export default function TerminateModal({ workorder, orders, onClose, onSaved }) 
       await terminateWorkorder(workorder.id, {
         note: trimmed,
         terminated_by: terminatedBy,
-        settlement_amount: amount,
+        ...(amount === undefined ? {} : { settlement_amount: amount }),
         ...(full ? {} : { order_ids: selected }),
       })
       onSaved()
@@ -122,18 +125,22 @@ export default function TerminateModal({ workorder, orders, onClose, onSaved }) 
             id="settlement"
             type="number"
             min="0"
-            required
+            required={!amountOptional}
             value={amountValue}
             onChange={(e) => setOverride(e.target.value)}
             className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm"
           />
-          {terminatedBy === 'counterparty' ? (
+          {terminatedBy !== 'counterparty' ? (
             <p className="text-xs text-gray-500 mt-1">
-              Suggestion — incurred costs of the selected components: {formatAUEC(suggestion)}. Override freely; 0 is legal.
+              Counterparty costs aren&apos;t on your books — enter the agreed amount (0 is legal).
+            </p>
+          ) : full ? (
+            <p className="text-xs text-gray-500 mt-1">
+              Suggestion — the server&apos;s incurred costs across the workorder: {formatAUEC(suggestion)}. Override freely; 0 is legal.
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
-              Counterparty costs aren&apos;t on your books — enter the agreed amount (0 is legal).
+              Leave blank to accept the server&apos;s incurred-costs suggestion for the selected components, or enter an agreed amount (0 is legal).
             </p>
           )}
         </div>
