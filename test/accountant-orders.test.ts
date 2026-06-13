@@ -149,6 +149,17 @@ describe("Accountant M5 — order creation + list", () => {
     expect(sale.effectiveRate).toBe(3200);       // no condition triggered → base rate
     const filtered = (await (await get(sessionToken, "/orders?type=purchase&status=open")).json()) as { total: number };
     expect(filtered.total).toBe(1);
+
+    // Multi-select type checkboxes: both checked must return BOTH (not just the
+    // first param). Mirrors the Market filter's repeatable checkbox groups.
+    const bothTypes = (await (await get(sessionToken, "/orders?type=sale&type=purchase")).json()) as { total: number };
+    expect(bothTypes.total).toBe(2);
+    // Single type still narrows.
+    const saleOnly = (await (await get(sessionToken, "/orders?type=sale")).json()) as { total: number };
+    expect(saleOnly.total).toBe(1);
+    // Category is repeatable too (PO=production, SALE=trading).
+    const bothCats = (await (await get(sessionToken, "/orders?category=production&category=trading")).json()) as { total: number };
+    expect(bothCats.total).toBe(2);
   });
 
   it("order entries NEVER reach the Sorting List (source != 'parsed' by construction)", async () => {

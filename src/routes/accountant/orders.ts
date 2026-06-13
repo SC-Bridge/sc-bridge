@@ -134,13 +134,22 @@ export function ordersRoutes() {
 
     const where: string[] = ["o.user_id = ?"];
     const binds: (string | number)[] = [userID];
-    const type = c.req.query("type");
-    if (type && (ORDER_TYPES as readonly string[]).includes(type)) {
-      where.push("o.type = ?"); binds.push(type);
+    // type/category/status are ALL repeatable — the Market filter renders each as
+    // a multi-select checkbox group (getAll/append). Reading type/category as a
+    // single value honored only the first checkbox; mirror status's IN pattern.
+    const types = (c.req.queries("type") ?? []).filter((x) =>
+      (ORDER_TYPES as readonly string[]).includes(x),
+    );
+    if (types.length > 0) {
+      where.push(`o.type IN (${types.map(() => "?").join(",")})`);
+      binds.push(...types);
     }
-    const category = c.req.query("category");
-    if (category && (ORDER_CATEGORIES as readonly string[]).includes(category)) {
-      where.push("o.category = ?"); binds.push(category);
+    const categories = (c.req.queries("category") ?? []).filter((x) =>
+      (ORDER_CATEGORIES as readonly string[]).includes(x),
+    );
+    if (categories.length > 0) {
+      where.push(`o.category IN (${categories.map(() => "?").join(",")})`);
+      binds.push(...categories);
     }
     const statuses = (c.req.queries("status") ?? []).filter((x) =>
       (ORDER_STATUSES as readonly string[]).includes(x),
