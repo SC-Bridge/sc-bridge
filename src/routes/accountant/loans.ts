@@ -196,7 +196,7 @@ export function loansRoutes() {
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const { loan } = loaded;
 
-    const [accRow, feeRow, repayments] = await Promise.all([
+    const [accRow, feeRow, repayments, forgiveness] = await Promise.all([
       db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'accrual_tick'")
         .bind(id, userID).first<{ bal: number }>(),
       db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'loan_fee'")
@@ -206,6 +206,14 @@ export function loansRoutes() {
          WHERE loan_id = ? AND user_id = ? AND source = 'loan_repayment'
          ORDER BY occurred_at ASC`,
       ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string }>(),
+      // Forgiveness entries are a distinct history from repayments (design §5.6):
+      // they reduce outstanding without payment, so they belong on the detail
+      // view alongside repayments — not just buried in the ledger.
+      db.prepare(
+        `SELECT id, amount, occurred_at, notes FROM accountant_entries
+         WHERE loan_id = ? AND user_id = ? AND source = 'loan_forgiveness'
+         ORDER BY occurred_at ASC, id ASC`,
+      ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string; notes: string | null }>(),
     ]);
 
     const outstanding = Math.abs(loaded.signedOutstanding);
@@ -217,6 +225,7 @@ export function loansRoutes() {
       accrued: Math.abs(accRow?.bal ?? 0),
       fee: Math.abs(feeRow?.bal ?? 0),
       repayments: repayments.results.map((r) => ({ ...r, amount: Math.abs(r.amount) })),
+      forgiveness: forgiveness.results.map((r) => ({ ...r, amount: Math.abs(r.amount) })),
       preview: {
         nextTickAt: nextTickAt(loan),
         projectedAmount,

@@ -178,6 +178,29 @@ describe("M2 amendment — loan partial forgiveness", () => {
     expect(survives?.id).toBe(entry!.id);
   });
 
+  it("GET /loans/:id returns forgiveness history (positive magnitudes, occurred_at order)", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const create = await newLoan(sessionToken, BASE);
+    const { id } = (await create.json()) as { id: number };
+
+    await forgive(sessionToken, id, { amount: 25000, notes: "goodwill" });
+    await forgive(sessionToken, id, { amount: 15000 });
+
+    const detail = (await (await SELF.fetch(`http://localhost/api/accountant/loans/${id}`, {
+      headers: await authHeaders(sessionToken),
+    })).json()) as {
+      outstanding: number;
+      forgiveness: Array<{ id: number; amount: number; occurred_at: string; notes: string | null }>;
+    };
+
+    expect(detail.outstanding).toBe(60000); // 100,000 − 25,000 − 15,000
+    expect(detail.forgiveness).toHaveLength(2);
+    // Magnitudes are positive (sign stripped) regardless of loan direction.
+    expect(detail.forgiveness.every((f) => f.amount > 0)).toBe(true);
+    expect(detail.forgiveness.map((f) => f.amount)).toEqual([25000, 15000]);
+    expect(detail.forgiveness[0].notes).toBe("goodwill");
+  });
+
   it("P&L: outgoing forgiveness shows as 'forgiveness_loss' expense; incoming as 'debt_relief' revenue", async () => {
     // All-time window — forgiveness entries post at server now.
     const qs = "from=2020-01-01T00:00:00Z&to=2099-01-01T00:00:00Z";

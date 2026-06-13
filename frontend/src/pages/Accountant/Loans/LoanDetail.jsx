@@ -27,7 +27,7 @@ export default function LoanDetail() {
     )
   }
 
-  const { loan, outstanding, accrued, fee, repayments, preview } = data
+  const { loan, outstanding, accrued, fee, repayments, forgiveness = [], preview } = data
   const settled = loan.status === 'settled'
 
   async function doSettle() {
@@ -80,6 +80,23 @@ export default function LoanDetail() {
           </ul>
         )}
       </div>
+
+      {forgiveness.length > 0 && (
+        <div className="panel p-4">
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Forgiveness</h3>
+          <ul className="space-y-1 text-sm">
+            {forgiveness.map((f) => (
+              <li key={f.id} className="flex justify-between">
+                <span className="text-gray-400">
+                  {new Date(f.occurred_at).toLocaleDateString()}
+                  {f.notes ? <span className="text-gray-500"> · {f.notes}</span> : null}
+                </span>
+                <span className="text-amber-400 tabular-nums">{formatAUEC(f.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {actionError && <div role="alert" className="panel p-4 text-sc-danger text-sm">{actionError}</div>}
 

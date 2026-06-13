@@ -10,6 +10,7 @@ const DETAIL = {
   accrued: 2500,
   fee: 7500, // amended formula: 100000 × 5% × 1.5 (matches the UX thumbnail's booked fee)
   repayments: [{ id: 1, amount: 40000, occurred_at: '2026-06-10T00:00:00Z' }, { id: 2, amount: 20000, occurred_at: '2026-06-18T00:00:00Z' }],
+  forgiveness: [{ id: 9, amount: 15000, occurred_at: '2026-06-12T00:00:00Z', notes: 'goodwill' }],
   preview: { nextTickAt: '2026-07-01T00:00:00Z', projectedAmount: 2125, paybackTotal: 44625 },
 }
 
@@ -57,6 +58,19 @@ describe('LoanDetail', () => {
     renderDetail()
     await waitFor(() => expect(screen.getByText('40,000 aUEC')).toBeInTheDocument())
     expect(screen.getByText('20,000 aUEC')).toBeInTheDocument()
+  })
+
+  it('lists forgiveness history (distinct from repayments)', async () => {
+    renderDetail()
+    await waitFor(() => expect(screen.getByText('Forgiveness')).toBeInTheDocument())
+    expect(screen.getByText('15,000 aUEC')).toBeInTheDocument()
+    expect(screen.getByText(/goodwill/)).toBeInTheDocument()
+  })
+
+  it('omits the Forgiveness panel when there is no forgiveness history', async () => {
+    renderDetail('15') // SETTLED_WITH_REMAINDER has no forgiveness key
+    await waitFor(() => expect(screen.getByText('@deadbeat')).toBeInTheDocument())
+    expect(screen.queryByText('Forgiveness')).not.toBeInTheDocument()
   })
 
   it('opens the RepaymentModal from Record repayment', async () => {
