@@ -636,13 +636,16 @@ export function accountRoutes() {
       db.prepare("DELETE FROM companion_status WHERE user_id = ?").bind(user.id),
       // Character backup (migration 0214) — metadata; R2 blobs deleted above
       db.prepare("DELETE FROM user_characters WHERE user_id = ?").bind(user.id),
-      // Accountant (migrations 0258/0259) — no FK cascade by design; entries first
-      // (they reference loans/orders/workorders), then orders before workorders (FK)
-      db.prepare("DELETE FROM accountant_entries WHERE user_id = ?").bind(user.id),
-      db.prepare("DELETE FROM accountant_loans WHERE user_id = ?").bind(user.id),
-      db.prepare("DELETE FROM accountant_tags WHERE user_id = ?").bind(user.id),
-      db.prepare("DELETE FROM accountant_orders WHERE user_id = ?").bind(user.id),
-      db.prepare("DELETE FROM accountant_workorders WHERE user_id = ?").bind(user.id),
+      // Accountant (migrations 0258/0259/0261) — no FK cascade by design; entries
+      // first (they reference loans/orders/workorders), then orders before
+      // workorders (FK). PRIVATE ONLY (org_id IS NULL): corp-ledger rows are
+      // org-owned and outlive a departing member (M4 design §5.7) — deleting them
+      // here would erase the corp's books when one member leaves.
+      db.prepare("DELETE FROM accountant_entries WHERE user_id = ? AND org_id IS NULL").bind(user.id),
+      db.prepare("DELETE FROM accountant_loans WHERE user_id = ? AND org_id IS NULL").bind(user.id),
+      db.prepare("DELETE FROM accountant_tags WHERE user_id = ? AND org_id IS NULL").bind(user.id),
+      db.prepare("DELETE FROM accountant_orders WHERE user_id = ? AND org_id IS NULL").bind(user.id),
+      db.prepare("DELETE FROM accountant_workorders WHERE user_id = ? AND org_id IS NULL").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values + IP
       db.prepare(
         `UPDATE user_change_history SET

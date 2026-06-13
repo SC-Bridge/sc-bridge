@@ -38,6 +38,40 @@ describe("Account deletion — accountant tables", () => {
     }
   });
 
+  it("deletes ONLY private rows — corp-scoped rows (org_id set) survive a member's account deletion (M4 §5.7)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const orgId = `org-${crypto.randomUUID().slice(0, 8)}`;
+    await env.DB.prepare(
+      `INSERT INTO organization (id, name, slug, createdAt) VALUES (?, 'Corp', ?, '2026-06-01T00:00:00Z')`,
+    ).bind(orgId, orgId).run();
+
+    // One private entry (org_id NULL) and one corp entry (org_id set) for the same user.
+    await env.DB.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source)
+       VALUES (?, '2026-06-01T00:00:00Z', -100, 'running_cost', 'manual')`,
+    ).bind(userId).run();
+    await env.DB.prepare(
+      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, org_id)
+       VALUES (?, '2026-06-02T00:00:00Z', 5000, 'trading', 'manual', ?)`,
+    ).bind(userId, orgId).run();
+
+    const res = await SELF.fetch("http://localhost/api/account", {
+      method: "DELETE",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: "DELETE" }),
+    });
+    expect([200, 204]).toContain(res.status);
+
+    const priv = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM accountant_entries WHERE user_id = ? AND org_id IS NULL",
+    ).bind(userId).first<{ n: number }>();
+    expect(priv?.n, "private rows deleted").toBe(0);
+    const corp = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM accountant_entries WHERE org_id = ?",
+    ).bind(orgId).first<{ n: number }>();
+    expect(corp?.n, "corp rows survive").toBe(1);
+  });
+
   it("deletes orders and workorders with the account (FK pressure: entries → orders → workorders)", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     const wo = await env.DB.prepare(
