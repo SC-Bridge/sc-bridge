@@ -111,6 +111,22 @@ describe('OrderDetail slide-over', () => {
     )
   })
 
+  it('Escape closes the slide-over', async () => {
+    const onClose = vi.fn()
+    await renderDetail(onClose)
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('Escape does NOT close the slide-over while the fulfilment modal is open', async () => {
+    const onClose = vi.fn()
+    await renderDetail(onClose)
+    await userEvent.click(screen.getByRole('button', { name: /record fulfilment/i }))
+    expect(screen.getByTestId('fulfillment-modal')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('notes are editable optimistically', async () => {
     await renderDetail()
     const textarea = screen.getByLabelText(/notes/i)

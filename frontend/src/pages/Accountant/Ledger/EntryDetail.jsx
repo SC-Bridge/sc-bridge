@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { CATEGORY_LABELS, LEDGER_CATEGORIES, DEFAULT_TAGS, TAG_LABELS } from '../constants'
@@ -11,6 +11,15 @@ export default function EntryDetail({ entry, onClose, onSaved }) {
   const [notes, setNotes] = useState(entry.notes ?? '')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  // Escape closes the slide-over (consistency with the order slide-over).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   async function save() {
     setSaving(true)

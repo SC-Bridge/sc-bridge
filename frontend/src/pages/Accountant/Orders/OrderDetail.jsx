@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { CATEGORY_LABELS, FINE_RATE_TYPES, ORDER_TYPES, RATE_CHANGE_CONDITIONS, STATUS_LABELS } from '../constants'
 import { formatAUEC, signClass } from '../formatAUEC'
@@ -70,6 +70,17 @@ export default function OrderDetail({ id, onClose }) {
   const [fulfilling, setFulfilling] = useState(false)
   const [actionError, setActionError] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  // Escape closes the slide-over — but not while the fulfilment modal is open
+  // (that layer owns Escape first; closing the slide-over underneath it would
+  // be surprising).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape' && !fulfilling) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fulfilling, onClose])
 
   async function doCancel(orderId) {
     if (!window.confirm('Cancel this order? Any open reserve is released.')) return

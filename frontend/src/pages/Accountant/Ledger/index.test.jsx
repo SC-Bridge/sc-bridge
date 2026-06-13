@@ -69,6 +69,15 @@ describe('Ledger page', () => {
     expect(screen.getByText(/New Babbage/)).toBeInTheDocument()
   })
 
+  it('Escape closes the entry detail slide-over', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    await userEvent.click(screen.getByText('Laranite sell'))
+    expect(screen.getByTestId('entry-detail')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByTestId('entry-detail')).not.toBeInTheDocument()
+  })
+
   it('hides accrual ticks by default (source filter excludes accrual_tick)', async () => {
     renderLedger()
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
