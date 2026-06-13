@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { categoryEnum, SORTING_PAGE, UNSORTED_PREDICATE } from "./schemas";
+import { assertManager } from "../../lib/accountant/scope";
 
 const BulkCategorizeSchema = z
   .object({
@@ -23,21 +24,21 @@ export function sortingRoutes() {
   // GET /api/accountant/sorting — oldest first (work the backlog top-down)
   routes.get("/", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const entries = await db
       .prepare(
         `SELECT * FROM accountant_entries
-         WHERE user_id = ? AND ${UNSORTED_PREDICATE}
+         WHERE ${scope.sql} AND ${UNSORTED_PREDICATE}
          ORDER BY occurred_at ASC, id ASC LIMIT ${SORTING_PAGE}`,
       )
-      .bind(userID)
+      .bind(...scope.binds)
       .all();
     const countRow = await db
       .prepare(
         `SELECT COUNT(*) AS n FROM accountant_entries
-         WHERE user_id = ? AND ${UNSORTED_PREDICATE}`,
+         WHERE ${scope.sql} AND ${UNSORTED_PREDICATE}`,
       )
-      .bind(userID)
+      .bind(...scope.binds)
       .first<{ n: number }>();
     return c.json({ entries: entries.results, count: countRow?.n ?? 0 });
   });
@@ -46,6 +47,8 @@ export function sortingRoutes() {
   routes.put("/bulk", validate("json", BulkCategorizeSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
     const { ids, category, tag, note } = c.req.valid("json");
 
     const placeholders = ids.map(() => "?").join(",");
@@ -53,12 +56,12 @@ export function sortingRoutes() {
     const sets: string[] = ["category = ?", "tag = ?"];
     const binds: (string | number | null)[] = [category, tag ?? null];
     if (hasNote) { sets.push("notes = ?"); binds.push(note!); }
-    binds.push(...ids, userID);
+    binds.push(...ids, ...scope.binds);
     const result = await db
       .prepare(
         `UPDATE accountant_entries SET ${sets.join(", ")}
          WHERE id IN (${placeholders})
-           AND user_id = ? AND ${UNSORTED_PREDICATE}`,
+           AND ${scope.sql} AND ${UNSORTED_PREDICATE}`,
       )
       .bind(...binds)
       .run();

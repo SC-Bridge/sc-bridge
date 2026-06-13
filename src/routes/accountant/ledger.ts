@@ -5,6 +5,7 @@ import { validate } from "../../lib/validation";
 import { CATEGORIES, SOURCES } from "../../lib/accountant/constants";
 import { categoryEnum, isoDatetime, parseIdParam } from "./schemas";
 import { catchUp } from "../../lib/accountant/catchup";
+import { assertManager } from "../../lib/accountant/scope";
 
 /**
  * /api/accountant/ledger — list/filter, manual entries, edit, delete.
@@ -52,7 +53,7 @@ export function ledgerRoutes() {
   // category/source are repeatable params. balance is ALWAYS the unfiltered sum.
   routes.get("/ledger", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     // Design §4.4: catch-up runs at the top of every ledger read.
     // No try/catch — catchUp throws on logic errors; Hono returns 500
     // ("fail rather than serve stale numbers", design §6).
@@ -67,8 +68,8 @@ export function ledgerRoutes() {
       (SOURCES as readonly string[]).includes(x),
     );
 
-    const where: string[] = ["user_id = ?"];
-    const binds: (string | number)[] = [userID];
+    const where: string[] = [scope.sql];
+    const binds: (string | number)[] = [...scope.binds];
     // Window bounds are normalized like every stored timestamp (isoDatetime)
     // so offset inputs and the `.000Z`-millisecond form compare correctly;
     // unparseable input keeps the old raw-compare behavior.
@@ -117,8 +118,8 @@ export function ledgerRoutes() {
         .bind(...binds)
         .first<{ n: number }>(),
       db
-        .prepare("SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE user_id = ?")
-        .bind(userID)
+        .prepare(`SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE ${scope.sql}`)
+        .bind(...scope.binds)
         .first<{ balance: number }>(),
       db
         .prepare(
@@ -144,17 +145,20 @@ export function ledgerRoutes() {
   routes.post("/ledger", validate("json", ManualEntrySchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const body = c.req.valid("json");
 
     const isAdjustment = body.adjustment === true;
     const result = await db
       .prepare(
         `INSERT INTO accountant_entries
-           (user_id, occurred_at, amount, category, tag, source, description, location, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (user_id, org_id, occurred_at, amount, category, tag, source, description, location, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         userID,
+        scope.orgId,
         body.occurred_at,
         body.amount,
         isAdjustment ? null : body.category,
@@ -176,13 +180,15 @@ export function ledgerRoutes() {
   routes.put("/ledger/:id", validate("json", UpdateEntrySchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
     const body = c.req.valid("json");
 
     const row = await db
-      .prepare("SELECT source, loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT source, loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<{ source: string; loan_id: number | null; order_id: number | null; workorder_id: number | null }>();
     if (!row) return c.json({ error: "Not found" }, 404);
     if (row.loan_id !== null) {
@@ -207,9 +213,9 @@ export function ledgerRoutes() {
       binds.push(value as string | number | null);
     }
     if (sets.length === 0) return c.json({ ok: true });
-    binds.push(id, userID);
+    binds.push(id);
     await db
-      .prepare(`UPDATE accountant_entries SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
+      .prepare(`UPDATE accountant_entries SET ${sets.join(", ")} WHERE id = ?`)
       .bind(...binds)
       .run();
     return c.json({ ok: true });
@@ -219,12 +225,14 @@ export function ledgerRoutes() {
   routes.delete("/ledger/:id", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
 
     const row = await db
-      .prepare("SELECT loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT loan_id, order_id, workorder_id FROM accountant_entries WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<{ loan_id: number | null; order_id: number | null; workorder_id: number | null }>();
     if (!row) return c.json({ error: "Not found" }, 404);
     if (row.loan_id !== null) {
@@ -238,8 +246,8 @@ export function ledgerRoutes() {
     }
 
     await db
-      .prepare("DELETE FROM accountant_entries WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare("DELETE FROM accountant_entries WHERE id = ?")
+      .bind(id)
       .run();
     return c.json({ ok: true });
   });
