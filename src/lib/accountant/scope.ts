@@ -74,6 +74,26 @@ export async function resolveScope(
   return { sql: "org_id = ?", binds: [activeOrgId], orgId: activeOrgId };
 }
 
+/**
+ * The user's active ledger org, read from the `activeLedgerOrgId` user setting.
+ * Returns null (private) when unset OR when the user is no longer a member of the
+ * stored org — a lapsed membership transparently falls back to private rather
+ * than 403-ing every accountant page. The single source of truth for "what scope
+ * am I in", used by the mode endpoint and the scope-resolving handlers.
+ */
+export async function getActiveOrgId(
+  db: D1Database,
+  userId: string,
+): Promise<string | null> {
+  const r = await db
+    .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'activeLedgerOrgId'")
+    .bind(userId)
+    .first<{ value: string }>();
+  const orgId = r?.value ?? null;
+  if (!orgId) return null;
+  return (await memberRole(db, orgId, userId)) ? orgId : null;
+}
+
 /** Any base role. Returns the role. Throws if not a member. */
 export async function assertMember(
   db: D1Database,
