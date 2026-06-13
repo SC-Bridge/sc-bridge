@@ -1,5 +1,8 @@
 // Integer aUEC formatting — amounts are always whole numbers end-to-end.
 export function formatAUEC(amount, { short } = {}) {
+  // Normalize negative zero (e.g. `-data.liabilities` when liabilities is 0):
+  // both `(-0).toLocaleString()` and the short path render "-0" otherwise.
+  if (amount === 0) amount = 0
   if (short && Math.abs(amount) >= 1_000_000) {
     const millions = (amount / 1_000_000).toFixed(1).replace(/\.0$/, '')
     return `${millions}M aUEC`

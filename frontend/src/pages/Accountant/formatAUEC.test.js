@@ -11,6 +11,10 @@ describe('formatAUEC', () => {
   it('formats zero', () => {
     expect(formatAUEC(0)).toBe('0 aUEC')
   })
+  it('normalizes negative zero (no "-0")', () => {
+    expect(formatAUEC(-0)).toBe('0 aUEC')
+    expect(formatAUEC(-0, { short: true })).toBe('0 aUEC')
+  })
   it('signClass maps sign to color token classes', () => {
     expect(signClass(5)).toBe('text-sc-success')
     expect(signClass(-5)).toBe('text-sc-danger')
