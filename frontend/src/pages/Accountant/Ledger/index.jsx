@@ -11,6 +11,11 @@ import EntryDetail from './EntryDetail'
 import AddEntryModal from './AddEntryModal'
 import SummaryCards from '../components/SummaryCards'
 
+// Mirrors the backend PER_PAGE in routes/accountant/ledger.ts — the server
+// pages at 50 and only echoes the requested page, so the client derives the
+// page count from total / this size.
+const PAGE_SIZE = 50
+
 function buildQuery(params) {
   const query = new URLSearchParams(params)
   // accrual_tick hidden by default (locked UX decision): when the user hasn't
@@ -27,6 +32,20 @@ export default function Ledger() {
   const [selected, setSelected] = useState(null)
   const [adding, setAdding] = useState(false)
 
+  // Any filter/period/search change must return to page 1 — staying on page 7
+  // after a filter trims the result set to one page would show an empty list.
+  function changeFilters(next) {
+    next.delete('page')
+    setParams(next)
+  }
+
+  function goToPage(p) {
+    const next = new URLSearchParams(params)
+    if (p <= 1) next.delete('page')
+    else next.set('page', String(p))
+    setParams(next)
+  }
+
   if (loading && !data) return <LoadingState />
   if (error) {
     return (
@@ -39,6 +58,11 @@ export default function Ledger() {
 
   const { entries, total, balance, sum_income = 0, sum_expense = 0 } = data
   const net = sum_income + sum_expense
+
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const rangeEnd = (page - 1) * PAGE_SIZE + entries.length
 
   const summaryCards = [
     {
@@ -83,7 +107,7 @@ export default function Ledger() {
       <SummaryCards cards={summaryCards} />
 
       <div className="flex gap-6">
-        <FilterPanel params={params} onChange={setParams} />
+        <FilterPanel params={params} onChange={changeFilters} />
         <div className="flex-1 min-w-0">
           {total === 0 ? (
             <div className="panel p-10 text-center text-gray-400">
@@ -95,9 +119,38 @@ export default function Ledger() {
           ) : (
             <EntryTable entries={entries} onSelect={setSelected} />
           )}
-          <p className="mt-3 text-sm text-gray-500">
-            Showing {entries.length} of {total} entries
-          </p>
+          <div className="mt-3 flex items-center justify-between gap-4">
+            <p className="text-sm text-gray-500">
+              {total === 0
+                ? 'No entries'
+                : `Showing ${rangeStart}–${rangeEnd} of ${total} entries`}
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page <= 1}
+                  className="px-2 py-1 rounded border border-sc-border text-gray-300 hover:bg-sc-darker disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Prev
+                </button>
+                <span className="text-gray-400 tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page >= totalPages}
+                  className="px-2 py-1 rounded border border-sc-border text-gray-300 hover:bg-sc-darker disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

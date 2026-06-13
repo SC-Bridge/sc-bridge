@@ -138,6 +138,59 @@ describe('Ledger page', () => {
     expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
   })
 
+  it('does not show the pager when results fit on one page', async () => {
+    renderLedger() // default mock: total 2
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a pager when total exceeds the page size; Next advances page in the fetch URL', async () => {
+    globalThis.fetch.mockImplementation(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        if (String(url).includes('/api/accountant/ledger')) {
+          return { entries: ENTRIES, total: 120, balance: 4600, sum_income: 50000, sum_expense: -20000, page: 1 }
+        }
+        return {}
+      },
+    }))
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument()
+    const prev = screen.getByRole('button', { name: /previous page/i })
+    const next = screen.getByRole('button', { name: /next page/i })
+    expect(prev).toBeDisabled()
+    expect(next).toBeEnabled()
+    await userEvent.click(next)
+    await waitFor(() => {
+      const calls = globalThis.fetch.mock.calls
+      const lastUrl = String(calls[calls.length - 1][0])
+      expect(lastUrl).toContain('page=2')
+    })
+  })
+
+  it('changing a filter resets pagination to page 1', async () => {
+    globalThis.fetch.mockImplementation(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        if (String(url).includes('/api/accountant/ledger')) {
+          return { entries: ENTRIES, total: 120, balance: 4600, sum_income: 50000, sum_expense: -20000, page: 3 }
+        }
+        return {}
+      },
+    }))
+    renderLedger('/accountant/ledger?page=3')
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    await userEvent.type(screen.getByPlaceholderText(/Description/i), 'ore')
+    await waitFor(() => {
+      const calls = globalThis.fetch.mock.calls
+      const lastUrl = String(calls[calls.length - 1][0])
+      expect(lastUrl).not.toContain('page=3')
+    })
+  })
+
   it('clicking All time after Today removes from= and to= from fetch URL', async () => {
     renderLedger()
     await waitFor(() => expect(screen.getByText('Today')).toBeInTheDocument())
