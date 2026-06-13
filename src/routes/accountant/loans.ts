@@ -4,6 +4,7 @@ import { getAuthUser, type HonoEnv } from "../../lib/types";
 import { validate } from "../../lib/validation";
 import { INTERVALS, nextTickAt } from "../../lib/accountant/accrual";
 import { catchUp } from "../../lib/accountant/catchup";
+import { assertManager, scopeWhere, type Scope } from "../../lib/accountant/scope";
 import { isoDatetime, parseIdParam } from "./schemas";
 
 const RepaymentSchema = z
@@ -67,18 +68,17 @@ export function loansRoutes() {
   // ---------------------------------------------------------------------------
   // Private helper: run accruals, fetch loan row (user-scoped), compute outstanding.
   // ---------------------------------------------------------------------------
-  async function loadLoan(db: D1Database, userID: string, id: number) {
-    await catchUp(db, userID);
+  async function loadLoan(db: D1Database, scope: Scope, id: number) {
+    await catchUp(db, scope);
     const loan = await db
-      .prepare("SELECT * FROM accountant_loans WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT * FROM accountant_loans WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<LoanListRow>();
     if (!loan) return null;
+    // loan_id uniquely scopes its entries — no need to re-filter by user/org.
     const outRow = await db
-      .prepare(
-        "SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ?",
-      )
-      .bind(id, userID)
+      .prepare("SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ?")
+      .bind(id)
       .first<{ bal: number }>();
     return { loan, signedOutstanding: outRow?.bal ?? 0 };
   }
@@ -87,18 +87,22 @@ export function loansRoutes() {
   routes.post("/", validate("json", CreateLoanSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated (D3/D13)
     const b = c.req.valid("json");
 
     // Insert the loan first to get its id, then batch its entries atomically.
+    // org_id = scope.orgId (NULL for private); user_id = the acting member (attribution).
     const loanRes = await db
       .prepare(
         `INSERT INTO accountant_loans
-           (user_id, direction, counterparty, principal, interest_rate, interest_interval,
+           (user_id, org_id, direction, counterparty, principal, interest_rate, interest_interval,
             fee_multiplier, started_at, due_at, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         userID,
+        scope.orgId,
         b.direction,
         b.counterparty,
         b.principal,
@@ -123,20 +127,20 @@ export function loansRoutes() {
       db
         .prepare(
           `INSERT INTO accountant_entries
-             (user_id, occurred_at, amount, category, source, loan_id, description)
-           VALUES (?, ?, ?, 'financial', 'loan_principal', ?, ?)`,
+             (user_id, org_id, occurred_at, amount, category, source, loan_id, description)
+           VALUES (?, ?, ?, ?, 'financial', 'loan_principal', ?, ?)`,
         )
-        .bind(userID, b.started_at, sign * b.principal, loanId, `Loan principal · ${b.counterparty}`),
+        .bind(userID, scope.orgId, b.started_at, sign * b.principal, loanId, `Loan principal · ${b.counterparty}`),
     ];
     if (fee > 0) {
       stmts.push(
         db
           .prepare(
             `INSERT INTO accountant_entries
-               (user_id, occurred_at, amount, category, source, loan_id, description)
-             VALUES (?, ?, ?, 'financial', 'loan_fee', ?, ?)`,
+               (user_id, org_id, occurred_at, amount, category, source, loan_id, description)
+             VALUES (?, ?, ?, ?, 'financial', 'loan_fee', ?, ?)`,
           )
-          .bind(userID, b.started_at, sign * fee, loanId, "Loan creation fee"),
+          .bind(userID, scope.orgId, b.started_at, sign * fee, loanId, "Loan creation fee"),
       );
     }
 
@@ -159,21 +163,22 @@ export function loansRoutes() {
   // GET /loans — list with computed outstanding/accrued/nextTickAt (accrual first).
   routes.get("/", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
 
+    // loan_id uniquely scopes entries, so the subqueries need no user/org filter.
     const loans = await db
       .prepare(
         `SELECT l.*,
            COALESCE((SELECT SUM(amount) FROM accountant_entries e
-                     WHERE e.loan_id = l.id AND e.user_id = l.user_id), 0) AS signed_outstanding,
+                     WHERE e.loan_id = l.id), 0) AS signed_outstanding,
            COALESCE((SELECT SUM(amount) FROM accountant_entries e
-                     WHERE e.loan_id = l.id AND e.user_id = l.user_id AND e.source = 'accrual_tick'), 0) AS signed_accrued
+                     WHERE e.loan_id = l.id AND e.source = 'accrual_tick'), 0) AS signed_accrued
          FROM accountant_loans l
-         WHERE l.user_id = ?
+         WHERE ${scopeWhere(scope, "l")}
          ORDER BY l.status ASC, l.created_at DESC`,
       )
-      .bind(userID)
+      .bind(...scope.binds)
       .all<LoanListRow & { signed_outstanding: number; signed_accrued: number }>();
 
     const shaped = loans.results.map((l) => ({
@@ -188,32 +193,33 @@ export function loansRoutes() {
   // GET /loans/:id — detail with repayment history + upcoming-tick preview.
   routes.get("/:id", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
 
-    const loaded = await loadLoan(db, userID, id);
+    const loaded = await loadLoan(db, scope, id);
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const { loan } = loaded;
 
+    // loadLoan already verified scope ownership; loan_id uniquely scopes entries.
     const [accRow, feeRow, repayments, forgiveness] = await Promise.all([
-      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'accrual_tick'")
-        .bind(id, userID).first<{ bal: number }>(),
-      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND user_id = ? AND source = 'loan_fee'")
-        .bind(id, userID).first<{ bal: number }>(),
+      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND source = 'accrual_tick'")
+        .bind(id).first<{ bal: number }>(),
+      db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ? AND source = 'loan_fee'")
+        .bind(id).first<{ bal: number }>(),
       db.prepare(
         `SELECT id, amount, occurred_at, notes FROM accountant_entries
-         WHERE loan_id = ? AND user_id = ? AND source = 'loan_repayment'
+         WHERE loan_id = ? AND source = 'loan_repayment'
          ORDER BY occurred_at ASC`,
-      ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string }>(),
+      ).bind(id).all<{ id: number; amount: number; occurred_at: string }>(),
       // Forgiveness entries are a distinct history from repayments (design §5.6):
       // they reduce outstanding without payment, so they belong on the detail
       // view alongside repayments — not just buried in the ledger.
       db.prepare(
         `SELECT id, amount, occurred_at, notes FROM accountant_entries
-         WHERE loan_id = ? AND user_id = ? AND source = 'loan_forgiveness'
+         WHERE loan_id = ? AND source = 'loan_forgiveness'
          ORDER BY occurred_at ASC, id ASC`,
-      ).bind(id, userID).all<{ id: number; amount: number; occurred_at: string; notes: string | null }>(),
+      ).bind(id).all<{ id: number; amount: number; occurred_at: string; notes: string | null }>(),
     ]);
 
     const outstanding = Math.abs(loaded.signedOutstanding);
@@ -238,11 +244,13 @@ export function loansRoutes() {
   routes.post("/:id/repayments", validate("json", RepaymentSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
     const { amount, occurred_at, notes } = c.req.valid("json");
 
-    const loaded = await loadLoan(db, userID, id);
+    const loaded = await loadLoan(db, scope, id);
     if (!loaded) return c.json({ error: "Not found" }, 404);
     if (loaded.loan.status === "settled") {
       return c.json({ error: "Loan already settled" }, 400);
@@ -259,15 +267,15 @@ export function loansRoutes() {
       db
         .prepare(
           `INSERT INTO accountant_entries
-             (user_id, occurred_at, amount, category, source, loan_id, notes, description)
-           VALUES (?, ?, ?, 'financial', 'loan_repayment', ?, ?, 'Loan repayment')`,
+             (user_id, org_id, occurred_at, amount, category, source, loan_id, notes, description)
+           VALUES (?, ?, ?, ?, 'financial', 'loan_repayment', ?, ?, 'Loan repayment')`,
         )
-        .bind(userID, occurred_at, sign * amount, id, notes ?? null),
+        .bind(userID, scope.orgId, occurred_at, sign * amount, id, notes ?? null),
     ];
     const settled = amount === outstanding;
     if (settled) {
       stmts.push(
-        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?").bind(id, userID),
+        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(id),
       );
     }
     await db.batch(stmts);
@@ -281,11 +289,13 @@ export function loansRoutes() {
   routes.post("/:id/forgive", validate("json", ForgiveSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
     const { amount, notes } = c.req.valid("json");
 
-    const loaded = await loadLoan(db, userID, id);
+    const loaded = await loadLoan(db, scope, id);
     if (!loaded) return c.json({ error: "Not found" }, 404);
     if (loaded.loan.status === "settled") {
       return c.json({ error: "Loan already settled" }, 400);
@@ -302,15 +312,15 @@ export function loansRoutes() {
       db
         .prepare(
           `INSERT INTO accountant_entries
-             (user_id, occurred_at, amount, category, source, loan_id, notes, description)
-           VALUES (?, ?, ?, 'financial', 'loan_forgiveness', ?, ?, 'Loan forgiveness')`,
+             (user_id, org_id, occurred_at, amount, category, source, loan_id, notes, description)
+           VALUES (?, ?, ?, ?, 'financial', 'loan_forgiveness', ?, ?, 'Loan forgiveness')`,
         )
-        .bind(userID, new Date().toISOString(), sign * amount, id, notes ?? null),
+        .bind(userID, scope.orgId, new Date().toISOString(), sign * amount, id, notes ?? null),
     ];
     const settled = amount === outstanding;
     if (settled) {
       stmts.push(
-        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?").bind(id, userID),
+        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(id),
       );
     }
     await db.batch(stmts);
@@ -321,9 +331,11 @@ export function loansRoutes() {
   routes.post("/:id/settle", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    const loaded = await loadLoan(db, userID, id);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
+    const loaded = await loadLoan(db, scope, id);
     if (!loaded) return c.json({ error: "Not found" }, 404);
 
     if (loaded.loan.status === "settled") {
@@ -331,8 +343,8 @@ export function loansRoutes() {
     }
 
     await db
-      .prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?")
+      .bind(id)
       .run();
     return c.json({ ok: true, writeOff: Math.abs(loaded.signedOutstanding) });
   });
@@ -341,13 +353,15 @@ export function loansRoutes() {
   routes.put("/:id", validate("json", UpdateLoanSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID);
     const body = c.req.valid("json");
 
     const exists = await db
-      .prepare("SELECT id FROM accountant_loans WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT id FROM accountant_loans WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<{ id: number }>();
     if (!exists) return c.json({ error: "Not found" }, 404);
 
@@ -357,9 +371,9 @@ export function loansRoutes() {
       if (body[key] !== undefined) { sets.push(`${key} = ?`); binds.push(body[key] ?? null); }
     }
     if (sets.length === 0) return c.json({ ok: true });
-    binds.push(String(id), userID);
+    binds.push(String(id));
     await db
-      .prepare(`UPDATE accountant_loans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
+      .prepare(`UPDATE accountant_loans SET ${sets.join(", ")} WHERE id = ?`)
       .bind(...binds)
       .run();
     return c.json({ ok: true });

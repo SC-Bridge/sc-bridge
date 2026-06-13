@@ -3,6 +3,7 @@ import { env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser } from "./helpers";
 import { catchUp } from "../src/lib/accountant/catchup";
+import { privateScope } from "../src/lib/accountant/scope";
 
 // Insert an order row directly (the engine is pure of HTTP — the M2
 // accountant-accrual.test.ts pattern). Returns the order id.
@@ -59,7 +60,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
   it("percent/daily golden: 0.5% of 100,000 → 500/tick; sign + on a purchase order", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId);
-    await catchUp(env.DB, userId, T("2026-06-04T00:00:01Z"));      // 3 days past deliver_by
+    await catchUp(env.DB, privateScope(userId), T("2026-06-04T00:00:01Z"));      // 3 days past deliver_by
     const rows = (await ticks(userId, id)).results;
     expect(rows.map((r) => [r.tick_index, r.amount])).toEqual([[1, 500], [2, 500], [3, 500]]);
     expect(rows.map((r) => r.occurred_at)).toEqual([
@@ -73,7 +74,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     // and tick 3 round(101003×0.5%)=505. The flat 500s prove the base is fulfilment-only.
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId);
-    await catchUp(env.DB, userId, T("2026-06-04T00:00:01Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-06-04T00:00:01Z"));
     const amounts = (await ticks(userId, id)).results.map((r) => r.amount);
     expect(amounts).toEqual([500, 500, 500]);
     expect(amounts).not.toEqual([500, 503, 505]);
@@ -83,7 +84,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId);
     await seedFulfillment(userId, id, 40, "2026-06-02T06:00:00Z"); // between tick 1 (06-02T00) and tick 2 (06-03T00)
-    await catchUp(env.DB, userId, T("2026-06-04T00:00:01Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-06-04T00:00:01Z"));
     expect((await ticks(userId, id)).results.map((r) => r.amount)).toEqual([500, 300, 300]); // 100k→500; 60k→300
   });
 
@@ -91,14 +92,14 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId, { type: "sale", fine_rate_type: "flat", fine_rate: 2500 });
     await seedFulfillment(userId, id, 90, "2026-06-02T06:00:00Z");
-    await catchUp(env.DB, userId, T("2026-06-03T00:00:01Z"));      // 2 ticks
+    await catchUp(env.DB, privateScope(userId), T("2026-06-03T00:00:01Z"));      // 2 ticks
     expect((await ticks(userId, id)).results.map((r) => r.amount)).toEqual([-2500, -2500]);
   });
 
   it("fine entries are category 'financial' with order_id + tick_index set", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId);
-    await catchUp(env.DB, userId, T("2026-06-02T00:00:01Z"));      // 1 tick
+    await catchUp(env.DB, privateScope(userId), T("2026-06-02T00:00:01Z"));      // 1 tick
     const row = await env.DB.prepare(
       `SELECT category, source, order_id, tick_index FROM accountant_entries
        WHERE user_id = ? AND order_id = ? AND source = 'contract_fine'`,
@@ -118,8 +119,8 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
         const idB = await seedOrder(b.userId, over);
         const sec = { hourly: 3600, daily: 86400, weekly: 604800, monthly: 2592000 }[interval];
         const base = T("2026-06-01T00:00:00Z");
-        await catchUp(env.DB, a.userId, base + 5 * sec * 1000 + 1000);            // once
-        for (let i = 1; i <= 5; i++) await catchUp(env.DB, b.userId, base + i * sec * 1000 + 1000); // stepwise
+        await catchUp(env.DB, privateScope(a.userId), base + 5 * sec * 1000 + 1000);            // once
+        for (let i = 1; i <= 5; i++) await catchUp(env.DB, privateScope(b.userId), base + i * sec * 1000 + 1000); // stepwise
         const rowsA = (await ticks(a.userId, idA)).results;
         const rowsB = (await ticks(b.userId, idB)).results;
         expect(rowsA.length, `${interval}/${rateType}`).toBe(5);
@@ -132,7 +133,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
   it("zero-amount ticks ARE written (gapless sequence, anomaly flag — M2 doctrine)", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId, { quantity: 1, price_per_unit: 50, total: 50 }); // 0.5% of 50 → round(0.25) = 0
-    await catchUp(env.DB, userId, T("2026-06-02T00:00:01Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-06-02T00:00:01Z"));
     const rows = (await ticks(userId, id)).results;
     expect(rows).toHaveLength(1);
     expect(rows[0].amount).toBe(0);
@@ -141,7 +142,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
   it("percent rounding: remainder 2,331 × 0.5% → round(11.655) = 12", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId, { quantity: 7, price_per_unit: 333, total: 2331 });
-    await catchUp(env.DB, userId, T("2026-06-02T00:00:01Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-06-02T00:00:01Z"));
     expect((await ticks(userId, id)).results[0].amount).toBe(12);
   });
 
@@ -151,16 +152,16 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     const b = await seedOrder(userId, { fine_rate: 0 });
     const c2 = await seedOrder(userId, { status: "complete" });
     const d = await seedOrder(userId, { status: "cancelled" });
-    await catchUp(env.DB, userId, T("2026-07-01T00:00:00Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-07-01T00:00:00Z"));
     for (const id of [a, b, c2, d]) expect((await ticks(userId, id)).results).toHaveLength(0);
   });
 
   it("fines STOP at close: ticks accrued while open survive, no new ticks after completion", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId);
-    await catchUp(env.DB, userId, T("2026-06-03T00:00:01Z"));      // 2 ticks while open
+    await catchUp(env.DB, privateScope(userId), T("2026-06-03T00:00:01Z"));      // 2 ticks while open
     await env.DB.prepare("UPDATE accountant_orders SET status = 'complete' WHERE id = ?").bind(id).run();
-    await catchUp(env.DB, userId, T("2026-06-10T00:00:00Z"));
+    await catchUp(env.DB, privateScope(userId), T("2026-06-10T00:00:00Z"));
     expect((await ticks(userId, id)).results).toHaveLength(2);
   });
 
@@ -170,7 +171,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     const orderId = await seedOrder(userId);                        // overdue from 2026-06-01
     const now = T("2026-06-03T00:00:01Z");                          // 2 intervals past both anchors
 
-    await catchUp(env.DB, userId, now);                             // ONE combined call → both engines run
+    await catchUp(env.DB, privateScope(userId), now);                             // ONE combined call → both engines run
     const loanTicks = () => env.DB.prepare(
       `SELECT tick_index, amount FROM accountant_entries
        WHERE user_id = ? AND loan_id = ? AND source = 'accrual_tick' ORDER BY tick_index`,
@@ -181,7 +182,7 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     expect(loanRows1.map((r) => r.amount)).toEqual([10000, 11000]); // compounding loan engine untouched
     expect(fineRows1.map((r) => r.amount)).toEqual([500, 500]);     // non-compounding fine engine
 
-    await catchUp(env.DB, userId, now);                             // same now → idempotent, adds neither
+    await catchUp(env.DB, privateScope(userId), now);                             // same now → idempotent, adds neither
     expect((await loanTicks()).results).toHaveLength(2);
     expect((await ticks(userId, orderId)).results).toHaveLength(2);
   });

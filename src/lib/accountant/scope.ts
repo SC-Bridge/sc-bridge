@@ -13,11 +13,16 @@
  * authority (owner/admin) OR being the org's accountant (D13).
  */
 
-/** Thrown when a user lacks access to the requested corp scope/action → 403. */
-export class ScopeForbidden extends Error {
+import { HTTPException } from "hono/http-exception";
+
+/**
+ * Thrown when a user lacks access to the requested corp scope/action. Extends
+ * HTTPException so Hono renders it as a 403 `{ error }` automatically — handlers
+ * can call the assert* helpers without try/catch.
+ */
+export class ScopeForbidden extends HTTPException {
   constructor(message = "Forbidden") {
-    super(message);
-    this.name = "ScopeForbidden";
+    super(403, { res: Response.json({ error: message }, { status: 403 }) });
   }
 }
 
@@ -28,6 +33,26 @@ export interface Scope {
   binds: string[];
   /** The active org id, or null for the private ledger. */
   orgId: string | null;
+}
+
+/**
+ * Build the scope WHERE fragment, optionally table-aliased (for joined queries
+ * that alias the accountant table, e.g. `l.org_id`). The single source of truth
+ * for the private-vs-corp predicate; binds are unchanged by the alias.
+ */
+function buildSql(orgId: string | null, alias = ""): string {
+  const p = alias ? `${alias}.` : "";
+  return orgId ? `${p}org_id = ?` : `${p}user_id = ? AND ${p}org_id IS NULL`;
+}
+
+/** The scope WHERE fragment with a table alias (e.g. scopeWhere(scope, "l")). */
+export function scopeWhere(scope: Scope, alias = ""): string {
+  return buildSql(scope.orgId, alias);
+}
+
+/** The private-ledger scope for a user (used by direct engine callers/tests). */
+export function privateScope(userId: string): Scope {
+  return { sql: buildSql(null), binds: [userId], orgId: null };
 }
 
 /** A member's base role in an org, or null if not a member. */
@@ -67,11 +92,11 @@ export async function resolveScope(
   activeOrgId: string | null,
 ): Promise<Scope> {
   if (!activeOrgId) {
-    return { sql: "user_id = ? AND org_id IS NULL", binds: [userId], orgId: null };
+    return { sql: buildSql(null), binds: [userId], orgId: null };
   }
   const role = await memberRole(db, activeOrgId, userId);
   if (!role) throw new ScopeForbidden();
-  return { sql: "org_id = ?", binds: [activeOrgId], orgId: activeOrgId };
+  return { sql: buildSql(activeOrgId), binds: [activeOrgId], orgId: activeOrgId };
 }
 
 /**

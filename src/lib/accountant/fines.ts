@@ -13,6 +13,7 @@
 
 import { INTERVAL_SECONDS } from "./accrual";
 import type { CatchUpWork } from "./accrual";
+import type { Scope } from "./scope";
 
 // ─── pure math helpers ─────────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ export function elapsedFineTicks(
 
 interface FineOrderRow {
   id: number;
+  user_id: string;
+  org_id: string | null;
   type: string;
   quantity: number;
   price_per_unit: number;
@@ -68,17 +71,17 @@ interface FineOrderRow {
  */
 export async function collectFineWork(
   db: D1Database,
-  userId: string,
+  scope: Scope,
   nowMs: number,
 ): Promise<CatchUpWork> {
   const orders = await db
     .prepare(
-      `SELECT id, type, quantity, price_per_unit, deliver_by, fine_interval, fine_rate_type, fine_rate, last_fine_day
+      `SELECT id, user_id, org_id, type, quantity, price_per_unit, deliver_by, fine_interval, fine_rate_type, fine_rate, last_fine_day
        FROM accountant_orders
-       WHERE user_id = ? AND status IN ('open', 'in_progress')
+       WHERE ${scope.sql} AND status IN ('open', 'in_progress')
          AND deliver_by IS NOT NULL AND fine_rate > 0`,
     )
-    .bind(userId)
+    .bind(...scope.binds)
     .all<FineOrderRow>();
 
   const stmts: D1PreparedStatement[] = [];
@@ -90,13 +93,13 @@ export async function collectFineWork(
     if (from > due) continue; // nothing to do for this order
 
     // ONE fulfilment query per order regardless of tick count (accrual.ts lesson).
-    // user_id filter is defense-in-depth: order_id already scopes to one user.
+    // order_id alone scopes to one ledger (an order belongs to exactly one scope).
     const fulfilments = await db
       .prepare(
         `SELECT quantity, occurred_at FROM accountant_entries
-         WHERE order_id = ? AND user_id = ? AND source = 'order_fulfillment'`,
+         WHERE order_id = ? AND source = 'order_fulfillment'`,
       )
-      .bind(o.id, userId)
+      .bind(o.id)
       .all<{ quantity: number; occurred_at: string }>();
 
     for (let i = from; i <= due; i++) {
@@ -117,23 +120,24 @@ export async function collectFineWork(
       }
       // Purchase: the counterparty owes YOU delivery — their lateness is your income.
       const amount = o.type === "purchase" ? mag : -mag;
+      // Fine rows carry the order's OWN scope (attribution + ledger), not the caller's.
       stmts.push(
         db.prepare(
           `INSERT INTO accountant_entries
-             (user_id, occurred_at, amount, category, source, order_id, tick_index, description)
-           VALUES (?, ?, ?, 'financial', 'contract_fine', ?, ?, ?)`,
-        ).bind(userId, ts, amount, o.id, i, `Late fine tick #${i}`),
+             (user_id, org_id, occurred_at, amount, category, source, order_id, tick_index, description)
+           VALUES (?, ?, ?, ?, 'financial', 'contract_fine', ?, ?, ?)`,
+        ).bind(o.user_id, o.org_id, ts, amount, o.id, i, `Late fine tick #${i}`),
       );
     }
 
-    // Advance the bookmark for this order. user_id filter is defense-in-depth.
+    // Advance the bookmark for this order (id is the PK — uniquely scoped).
     stmts.push(
       db.prepare(
-        "UPDATE accountant_orders SET last_fine_day = ? WHERE id = ? AND user_id = ?",
-      ).bind(due, o.id, userId),
+        "UPDATE accountant_orders SET last_fine_day = ? WHERE id = ?",
+      ).bind(due, o.id),
     );
 
-    logs.push({ event: "accountant_fine_catchup", payload: { orderId: o.id, userId, from, to: due } });
+    logs.push({ event: "accountant_fine_catchup", payload: { orderId: o.id, userId: o.user_id, orgId: o.org_id, from, to: due } });
   }
 
   return { stmts, logs };

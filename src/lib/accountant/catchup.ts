@@ -7,10 +7,11 @@
 import { collectAccrualWork } from "./accrual";
 import { collectFineWork } from "./fines";
 import { logEvent } from "../logger";
+import type { Scope } from "./scope";
 
-export async function catchUp(db: D1Database, userId: string, nowMs: number = Date.now()): Promise<void> {
-  const accrual = await collectAccrualWork(db, userId, nowMs);
-  const fines = await collectFineWork(db, userId, nowMs);
+export async function catchUp(db: D1Database, scope: Scope, nowMs: number = Date.now()): Promise<void> {
+  const accrual = await collectAccrualWork(db, scope, nowMs);
+  const fines = await collectFineWork(db, scope, nowMs);
   const stmts = [...accrual.stmts, ...fines.stmts];
   if (stmts.length === 0) return;
   await db.batch(stmts); // one atomic batch — emit logs only after commit

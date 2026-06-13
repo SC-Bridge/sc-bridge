@@ -3,6 +3,7 @@ import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
 import { catchUp } from "../src/lib/accountant/catchup";
+import { privateScope } from "../src/lib/accountant/scope";
 import { attachOrder } from "../src/routes/accountant/order-helpers";
 
 async function post(token: string, path: string, body: Record<string, unknown>) {
@@ -745,7 +746,7 @@ describe("M5 — termination settlement (full + partial)", () => {
     expect((await fineTicks(userId, finedId)).results).toHaveLength(2);  // accrued while open
 
     // Ten days later the closed component must NOT tick (injectable-clock idiom).
-    await catchUp(env.DB, userId, Date.now() + 10 * 86_400_000);
+    await catchUp(env.DB, privateScope(userId), Date.now() + 10 * 86_400_000);
     expect((await fineTicks(userId, finedId)).results).toHaveLength(2);
   });
 });

@@ -17,7 +17,7 @@ export function badgesRoutes() {
     // Design §4.4: catch-up runs at the top of every badges read.
     // No try/catch — catchUp throws on logic errors; Hono returns 500
     // ("fail rather than serve stale numbers", design §6).
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
     const [sorting, due, overdue, threshold] = await Promise.all([
       db.prepare(
         `SELECT COUNT(*) AS n FROM accountant_entries

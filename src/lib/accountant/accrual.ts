@@ -13,6 +13,7 @@
  */
 
 import { logEvent } from "../logger";
+import { privateScope, type Scope } from "./scope";
 
 // ─── interval constants ────────────────────────────────────────────────────────
 
@@ -75,6 +76,8 @@ function tickTimestamp(started_at: string, interval: string, index: number): str
 
 interface LoanRow {
   id: number;
+  user_id: string;
+  org_id: string | null;
   interest_rate: number;
   interest_interval: string;
   started_at: string;
@@ -117,18 +120,18 @@ export interface CatchUpWork {
  */
 export async function collectAccrualWork(
   db: D1Database,
-  userId: string,
+  scope: Scope,
   nowMs: number,
 ): Promise<CatchUpWork> {
-  // Only open loans accrue interest.
+  // Only open loans accrue interest, scoped to the active ledger (private or corp).
   const loans = await db
     .prepare(
-      `SELECT id, interest_rate, interest_interval,
+      `SELECT id, user_id, org_id, interest_rate, interest_interval,
               started_at, last_accrued_tick
        FROM accountant_loans
-       WHERE user_id = ? AND status = 'open'`,
+       WHERE ${scope.sql} AND status = 'open'`,
     )
-    .bind(userId)
+    .bind(...scope.binds)
     .all<LoanRow>();
 
   // Accumulate statements across ALL loans — the caller batches once.
@@ -145,13 +148,12 @@ export async function collectAccrualWork(
 
     // Fetch ALL committed entries for this loan once (principal + repayments).
     // Avoids N sequential queries for catch-up batches with many ticks.
-    // user_id filter is defense-in-depth: loan_id already scopes to one user.
+    // loan_id alone scopes to one ledger (a loan belongs to exactly one scope).
     const committedEntries = await db
       .prepare(
-        `SELECT amount, occurred_at FROM accountant_entries
-         WHERE loan_id = ? AND user_id = ?`,
+        `SELECT amount, occurred_at FROM accountant_entries WHERE loan_id = ?`,
       )
-      .bind(loan.id, userId)
+      .bind(loan.id)
       .all<{ amount: number; occurred_at: string }>();
 
     // Running accumulator: sum of tick amounts queued in this batch so far.
@@ -186,13 +188,17 @@ export async function collectAccrualWork(
       // Advance the in-memory accumulator BEFORE next tick computes its base.
       queuedSum += amount;
 
+      // Tick rows carry the loan's OWN scope (user_id for attribution, org_id for
+      // the ledger) — not the triggering caller's — so corp catch-up triggered by
+      // any member stamps the corp ledger correctly.
       allStmts.push(
         db.prepare(
           `INSERT INTO accountant_entries
-             (user_id, occurred_at, amount, category, source, loan_id, tick_index, description)
-           VALUES (?, ?, ?, 'financial', 'accrual_tick', ?, ?, ?)`,
+             (user_id, org_id, occurred_at, amount, category, source, loan_id, tick_index, description)
+           VALUES (?, ?, ?, ?, 'financial', 'accrual_tick', ?, ?, ?)`,
         ).bind(
-          userId,
+          loan.user_id,
+          loan.org_id,
           ts,
           amount,
           loan.id,
@@ -202,16 +208,16 @@ export async function collectAccrualWork(
       );
     }
 
-    // Advance the bookmark for this loan. user_id filter is defense-in-depth.
+    // Advance the bookmark for this loan (id is the PK — uniquely scoped).
     allStmts.push(
       db.prepare(
-        `UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ? AND user_id = ?`,
-      ).bind(due, loan.id, userId),
+        `UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ?`,
+      ).bind(due, loan.id),
     );
 
     logs.push({
       event: "accrual.catchUp",
-      payload: { loanId: loan.id, userId, from, to: due, ticksWritten: due - from + 1 },
+      payload: { loanId: loan.id, userId: loan.user_id, orgId: loan.org_id, from, to: due, ticksWritten: due - from + 1 },
     });
   }
 
@@ -228,7 +234,7 @@ export async function catchUpAccruals(
   userId: string,
   nowMs: number = Date.now(),
 ): Promise<void> {
-  const { stmts, logs } = await collectAccrualWork(db, userId, nowMs);
+  const { stmts, logs } = await collectAccrualWork(db, privateScope(userId), nowMs);
 
   // One atomic batch for the entire catch-up call (all loans combined).
   if (stmts.length > 0) {

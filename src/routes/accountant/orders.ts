@@ -112,7 +112,7 @@ export function ordersRoutes() {
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
     // lazy fine ticks before insertOrder's guarded reserve INSERT sums the ledger.
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     // Standalone orders never auto-attach to workorders (composition is Task 8).
     // user.name is snapshotted as the order's publisher (owner spec 2026-06-13).
@@ -128,7 +128,7 @@ export function ordersRoutes() {
   routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
     // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
@@ -219,7 +219,7 @@ export function ordersRoutes() {
     const userID = getAuthUser(c).id;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
@@ -274,7 +274,7 @@ export function ordersRoutes() {
     const b = c.req.valid("json");
 
     // Fines must be current before the fulfilment lands (Task 6 swaps to combined catchUp).
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
@@ -351,7 +351,7 @@ export function ordersRoutes() {
 
     // Fines accrued while open must land before the close stops the clock
     // (Task 6 swaps to combined catchUp).
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const order = await db
       .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")

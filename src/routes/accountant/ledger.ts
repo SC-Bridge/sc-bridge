@@ -56,7 +56,7 @@ export function ledgerRoutes() {
     // Design §4.4: catch-up runs at the top of every ledger read.
     // No try/catch — catchUp throws on logic errors; Hono returns 500
     // ("fail rather than serve stale numbers", design §6).
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
     // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 

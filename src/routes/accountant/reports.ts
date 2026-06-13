@@ -25,7 +25,7 @@ export function reportsRoutes() {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
     // Design §4.4 / §6: no try/catch — a throw becomes a 500, never stale numbers.
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -123,7 +123,7 @@ export function reportsRoutes() {
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     // Normalized to UTC (isoDatetime) — the cutoff is a raw-string compare
     // against stored normalized timestamps.
@@ -195,7 +195,7 @@ export function reportsRoutes() {
   routes.get("/cash-flow", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -234,7 +234,7 @@ export function reportsRoutes() {
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -286,7 +286,7 @@ export function reportsRoutes() {
   routes.get("/investment-option", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     // Default window = current calendar month (owner decision 2026-06-11). Explicit from&to override.
     const explicit = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });

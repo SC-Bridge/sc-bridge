@@ -118,7 +118,7 @@ export function workordersRoutes() {
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
     // lazy fine ticks before any inline order's guarded reserve INSERT.
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     // Pre-validate attachments before writing anything — cheaper than compensating.
     for (const orderId of b.order_ids ?? []) {
@@ -188,7 +188,7 @@ export function workordersRoutes() {
   routes.get("/", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
     const where: string[] = ["w.user_id = ?"];
@@ -241,7 +241,7 @@ export function workordersRoutes() {
     const userID = getAuthUser(c).id;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const workorder = await db
       .prepare("SELECT * FROM accountant_workorders WHERE id = ? AND user_id = ?")
@@ -291,7 +291,7 @@ export function workordersRoutes() {
     if (id === null) return c.json({ error: "Not found" }, 404);
     const b = c.req.valid("json");
     // §5.0 fund guard must read a caught-up balance (inline-order path below).
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const status = await woStatus(db, userID, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
@@ -381,7 +381,7 @@ export function workordersRoutes() {
     if (id === null) return c.json({ error: "Not found" }, 404);
 
     // Fines accrued while open must land before the close stops the clock.
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const status = await woStatus(db, userID, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
@@ -429,7 +429,7 @@ export function workordersRoutes() {
     const b = c.req.valid("json");
 
     // Fines accrued while open must land before the close stops the clock.
-    await catchUp(db, userID);
+    await catchUp(db, c.get("acctScope")!);
 
     const status = await woStatus(db, userID, id);
     if (status === null) return c.json({ error: "Not found" }, 404);

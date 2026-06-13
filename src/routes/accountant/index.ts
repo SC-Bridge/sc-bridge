@@ -10,6 +10,7 @@ import { badgesRoutes } from "./badges";
 import { tagsRoutes } from "./tags";
 import { reportsRoutes } from "./reports";
 import { modeRoutes } from "./mode";
+import { getActiveOrgId, resolveScope } from "../../lib/accountant/scope";
 
 /**
  * /api/accountant — SC ERP Accountant module (design: accountant-m1-m3-design.md).
@@ -24,6 +25,11 @@ export function accountantRoutes() {
     if (!user) {
       return c.json({ error: "Authentication required" }, 401);
     }
+    // Resolve the active ledger scope once per request (design §5.1). getActiveOrgId
+    // returns null for a lapsed/absent corp membership, so resolveScope never throws
+    // here — corp access errors surface from assertManager in write handlers instead.
+    const scope = await resolveScope(c.env.DB, user.id, await getActiveOrgId(c.env.DB, user.id));
+    c.set("acctScope", scope);
     return next();
   });
 

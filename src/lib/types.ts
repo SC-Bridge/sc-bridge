@@ -63,6 +63,13 @@ export type HonoEnv = {
     } | null;
     session: { id: string; userId: string; expiresAt: Date; impersonatedBy?: string | null } | null;
     /**
+     * Active accountant ledger scope for this request, resolved once by the
+     * accountant router middleware (private = user_id + org_id IS NULL, corp =
+     * org_id = ?). Every accountant handler reads this instead of building its
+     * own user_id filter. See lib/accountant/scope.ts.
+     */
+    acctScope?: { sql: string; binds: string[]; orgId: string | null };
+    /**
      * Active channel for game-data queries on this request. Resolved by
      * `channelMiddleware` from `?channel=` query param or the authenticated
      * super_admin's `adminPreviewPatch` user_settings row. Defaults to "LIVE".
