@@ -29,6 +29,18 @@ describe('ReportChart wrappers', () => {
     const { container } = render(<div style={{ width: 400, height: 300 }}><CategoryDonut data={data} /></div>)
     expect(container.querySelector('.recharts-responsive-container')).toBeTruthy()
   })
+  it('CategoryDonut accepts a semantic colors prop without throwing (Assets vs Liabilities)', () => {
+    // recharts Pie sectors don't render in jsdom (no real geometry), so the fill
+    // wiring can't be asserted at the DOM here — this guards the render path for
+    // the colors override that BalanceSheet relies on.
+    const data = [{ name: 'Assets', value: 2000000 }, { name: 'Liabilities', value: 200000 }]
+    const { container } = render(
+      <div style={{ width: 400, height: 300 }}>
+        <CategoryDonut data={data} colors={['#2ec4b6', '#ef4444']} />
+      </div>,
+    )
+    expect(container.querySelector('.recharts-responsive-container')).toBeTruthy()
+  })
   it('NetLine renders the net series field as a line path', () => {
     const data = [
       { bucket: '2026-06-01', net: 1050000 },

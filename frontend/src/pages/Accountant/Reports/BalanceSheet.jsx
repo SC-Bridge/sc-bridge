@@ -3,6 +3,7 @@ import SummaryCards from '../components/SummaryCards'
 import ReportShell from './ReportShell'
 import { StatementSection } from './StatementSection'
 import { CategoryDonut } from './ReportChart'
+import { CHART_SEMANTIC } from '../../../lib/theme'
 import { useReportBalance } from '../hooks'
 import { formatAUEC } from '../formatAUEC'
 import { reportWindowFromParams } from './reportWindow'
@@ -30,10 +31,13 @@ export default function BalanceSheet() {
             { label: 'Liabilities', value: formatAUEC(data.liabilities), tone: 'negative' },
           ]} />
           <div className="panel p-4">
-            <CategoryDonut data={[
-              { name: 'Assets', value: data.assets },
-              { name: 'Liabilities', value: data.liabilities },
-            ]} />
+            <CategoryDonut
+              colors={[CHART_SEMANTIC.positive, CHART_SEMANTIC.negative]}
+              data={[
+                { name: 'Assets', value: data.assets },
+                { name: 'Liabilities', value: data.liabilities },
+              ]}
+            />
           </div>
           <StatementSection title="Assets" rows={[
             { label: 'Cash', value: data.cash },

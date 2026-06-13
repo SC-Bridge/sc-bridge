@@ -10,6 +10,11 @@ export const CHART_COLORS = [
   '#6366f1', // indigo deeper
 ]
 
+// Semantic chart fills mirroring the sc-success / sc-danger Tailwind tokens
+// (Recharts SVG fills can't reference CSS vars). Use when a chart's segments
+// carry a good/bad meaning rather than being an arbitrary categorical series.
+export const CHART_SEMANTIC = { positive: '#2ec4b6', negative: '#ef4444' }
+
 export const TOOLTIP_STYLE = {
   contentStyle: {
     background: '#132238',

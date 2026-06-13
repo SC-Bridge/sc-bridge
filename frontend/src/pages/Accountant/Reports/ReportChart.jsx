@@ -21,12 +21,15 @@ export function GroupedBars({ data }) {
   )
 }
 
-export function CategoryDonut({ data }) {
+export function CategoryDonut({ data, colors }) {
+  // `colors` overrides the categorical palette when segments carry a semantic
+  // meaning (e.g. Assets vs Liabilities → success/danger).
+  const palette = colors ?? CHART_COLORS
   return (
     <ResponsiveContainer width="100%" height={280}>
       <PieChart>
         <Pie data={data} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100}>
-          {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+          {data.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} />)}
         </Pie>
         <Tooltip {...TOOLTIP_STYLE} />
       </PieChart>
