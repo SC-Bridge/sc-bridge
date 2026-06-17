@@ -71,24 +71,16 @@ export function chatRoutes() {
         return c.json({ error: "No API key configured for this provider" }, 400);
       }
 
-      // Resolve an existing chat or create a new one.
-      let chatId: number;
+      // Resolve an existing chat (must exist + be owned) or prepare a new one.
       let model: string;
       let history: { role: string; content: string }[] = [];
       if (body.chat_id) {
         const existing = await getChat(db, userID, body.chat_id);
         if (!existing) return c.json({ error: "Chat not found" }, 404);
-        chatId = body.chat_id;
         model = body.model || existing.chat.model;
         history = existing.messages.map((m) => ({ role: m.role, content: m.content }));
       } else {
         model = body.model || DEFAULT_MODELS[provider] || "";
-        chatId = await createChat(db, {
-          userId: userID,
-          provider,
-          model,
-          title: body.message.slice(0, 80),
-        });
       }
 
       // Full fleet payload (incl. custom names) lives in the system message.
@@ -115,6 +107,11 @@ export function chatRoutes() {
         return c.json({ error: "No response from the provider. Try again." }, 502);
       }
 
+      // Only persist once we have a successful reply — a provider failure on the
+      // first turn leaves no orphan empty chat in the user's history.
+      const chatId =
+        body.chat_id ??
+        (await createChat(db, { userId: userID, provider, model, title: body.message.slice(0, 80) }));
       await addChatMessage(db, { chatId, role: "user", content: body.message });
       await addChatMessage(db, { chatId, role: "assistant", content: reply });
 

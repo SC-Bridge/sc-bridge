@@ -8,11 +8,12 @@ import usePrivacyMode from '../hooks/usePrivacyMode'
 import useTimezone from '../hooks/useTimezone'
 import { formatDateOnly } from '../lib/dates'
 import { resolveActiveModel } from '../lib/llmModels'
-import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff, RefreshCw } from 'lucide-react'
+import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff, RefreshCw, MessageSquare } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import SectionBoundary from '../components/SectionBoundary'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
+import FleetChat from './FleetChat'
 
 export default function Analysis() {
   const { timezone } = useTimezone()
@@ -24,6 +25,7 @@ export default function Analysis() {
   const [aiError, setAIError] = useState(null)
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
+  const [mode, setMode] = useState('analysis') // 'analysis' | 'chat'
   const [context, setContext] = useState('')
   const { models: liveModels, loading: modelsLoading, refresh: refreshModels } = useLLMModels(selectedProvider)
   const { privacyMode } = usePrivacyMode()
@@ -123,6 +125,30 @@ export default function Analysis() {
       {/* Provider / Model Selection */}
       {hasAnyKey ? (
         <div className="panel p-5 space-y-4">
+          {/* Mode toggle: one-shot Analysis vs conversational Chat */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('analysis')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border flex items-center gap-2 ${
+                mode === 'analysis'
+                  ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                  : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" /> Analysis
+            </button>
+            <button
+              onClick={() => setMode('chat')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border flex items-center gap-2 ${
+                mode === 'chat'
+                  ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                  : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" /> Chat about my fleet
+            </button>
+          </div>
+
           {/* Provider tabs */}
           {configuredProviders.length > 1 && (
             <div className="flex gap-2">
@@ -194,32 +220,35 @@ export default function Analysis() {
             </div>
           </div>
 
-          {/* Context */}
-          <div>
-            <label className="text-xs text-gray-500 font-mono uppercase tracking-wider block mb-1.5">Additional context <span className="normal-case tracking-normal text-gray-600">(optional)</span></label>
-            <textarea
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="E.g. I mainly play solo, I'm interested in cargo hauling and mining, my budget is around $300..."
-              rows={3}
-              maxLength={1000}
-              className="w-full bg-sc-darker border border-sc-border rounded-lg px-3 py-2 text-sm text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-sc-accent/40 focus:ring-1 focus:ring-sc-accent/20 transition-colors resize-none"
-            />
-            <div className="text-[10px] text-gray-600 text-right mt-1 font-mono">{context.length}/1000</div>
-          </div>
+          {/* Analysis-only: context + generate */}
+          {mode === 'analysis' && (
+            <>
+              <div>
+                <label className="text-xs text-gray-500 font-mono uppercase tracking-wider block mb-1.5">Additional context <span className="normal-case tracking-normal text-gray-600">(optional)</span></label>
+                <textarea
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  placeholder="E.g. I mainly play solo, I'm interested in cargo hauling and mining, my budget is around $300..."
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full bg-sc-darker border border-sc-border rounded-lg px-3 py-2 text-sm text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-sc-accent/40 focus:ring-1 focus:ring-sc-accent/20 transition-colors resize-none"
+                />
+                <div className="text-[10px] text-gray-600 text-right mt-1 font-mono">{context.length}/1000</div>
+              </div>
 
-          {/* Generate */}
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="btn-primary flex items-center gap-2"
-          >
-            {generating ? (
-              <><Loader className="w-4 h-4 animate-spin" /> Generating...</>
-            ) : (
-              <><Sparkles className="w-4 h-4" /> Generate Analysis</>
-            )}
-          </button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating}
+                className="btn-primary flex items-center gap-2"
+              >
+                {generating ? (
+                  <><Loader className="w-4 h-4 animate-spin" /> Generating...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> Generate Analysis</>
+                )}
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="panel p-8 text-center">
@@ -237,7 +266,14 @@ export default function Analysis() {
         </div>
       )}
 
-      {/* Error */}
+      {/* Chat mode */}
+      {mode === 'chat' && hasAnyKey && (
+        <FleetChat provider={selectedProvider} model={activeModel} />
+      )}
+
+      {/* Analysis output — analysis mode only */}
+      {mode === 'analysis' && (
+      <>
       {aiError && (
         <div className="panel p-4 border-l-2 border-sc-danger/40">
           <div className="flex items-start gap-3">
@@ -280,6 +316,8 @@ export default function Analysis() {
           </div>
           </SectionBoundary>
         </div>
+      )}
+      </>
       )}
     </div>
   )
