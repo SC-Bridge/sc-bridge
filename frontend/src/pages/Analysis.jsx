@@ -3,33 +3,16 @@ import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig } from '../hooks/useAPI'
+import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig, useLLMModels } from '../hooks/useAPI'
 import usePrivacyMode from '../hooks/usePrivacyMode'
 import useTimezone from '../hooks/useTimezone'
 import { formatDateOnly } from '../lib/dates'
-import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff } from 'lucide-react'
+import { resolveActiveModel } from '../lib/llmModels'
+import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff, RefreshCw } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import SectionBoundary from '../components/SectionBoundary'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
-
-const PROVIDER_MODELS = {
-  anthropic: [
-    { id: 'claude-opus-4-6', name: 'Opus 4.6', desc: 'Most capable' },
-    { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', desc: 'Balanced' },
-    { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', desc: 'Fast' },
-  ],
-  openai: [
-    { id: 'gpt-5.2', name: 'GPT-5.2', desc: 'Most capable' },
-    { id: 'gpt-4o', name: 'GPT-4o', desc: 'Balanced' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', desc: 'Fast' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', desc: 'Most capable' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Balanced' },
-    { id: 'gemini-2.5-flash-lite', name: 'Flash-Lite', desc: 'Fast' },
-  ],
-}
 
 export default function Analysis() {
   const { timezone } = useTimezone()
@@ -42,6 +25,7 @@ export default function Analysis() {
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
   const [context, setContext] = useState('')
+  const { models: liveModels, loading: modelsLoading, refresh: refreshModels } = useLLMModels(selectedProvider)
   const { privacyMode } = usePrivacyMode()
   const resultsRef = useRef(null)
   const generatingRef = useRef(false)
@@ -126,8 +110,8 @@ export default function Analysis() {
 
   if (configLoading || analysisLoading) return <LoadingState message="Loading..." />
 
-  const models = selectedProvider ? (PROVIDER_MODELS[selectedProvider] || []) : []
-  const activeModel = selectedModel || models[1]?.id || models[0]?.id
+  const models = liveModels || []
+  const activeModel = resolveActiveModel(models, selectedModel)
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -176,21 +160,37 @@ export default function Analysis() {
                 Model:
               </span>
             )}
-            <div className="flex gap-1.5">
-              {models.map(m => (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {modelsLoading && models.length === 0 ? (
+                <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <Loader className="w-3 h-3 animate-spin" /> Loading models…
+                </span>
+              ) : (
+                models.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleModelChange(m.id)}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-all border ${
+                      activeModel === m.id
+                        ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                        : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+                    }`}
+                    title={m.description || m.id}
+                  >
+                    {m.name}
+                  </button>
+                ))
+              )}
+              {selectedProvider && (
                 <button
-                  key={m.id}
-                  onClick={() => handleModelChange(m.id)}
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all border ${
-                    activeModel === m.id
-                      ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
-                      : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
-                  }`}
-                  title={m.desc}
+                  onClick={refreshModels}
+                  disabled={modelsLoading}
+                  className="px-2 py-1.5 rounded text-xs text-gray-500 border border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300 transition-all disabled:opacity-50"
+                  title="Refresh model list from the provider"
                 >
-                  {m.name}
+                  <RefreshCw className={`w-3 h-3 ${modelsLoading ? 'animate-spin' : ''}`} />
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
