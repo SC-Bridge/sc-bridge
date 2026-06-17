@@ -310,6 +310,23 @@ export function useAIAnalysisHistory() {
   return useAPI('/llm/analysis-history')
 }
 
+// Fleet chat (saved "Chat about my fleet" conversations)
+export function useChats() {
+  return useAPI('/llm/chats')
+}
+
+export function useChat(id) {
+  return useAPI(id ? `/llm/chats/${id}` : '/llm/chats', { skip: !id })
+}
+
+export async function sendChatMessage({ chat_id, provider, model, message }) {
+  return postJSON('/llm/chat', { chat_id, provider, model, message })
+}
+
+export async function deleteChat(id) {
+  return apiFetch('DELETE', `/llm/chats/${id}`)
+}
+
 // Organisation hooks
 export function useUserOrgs(opts) {
   return useAPI('/orgs', opts)
