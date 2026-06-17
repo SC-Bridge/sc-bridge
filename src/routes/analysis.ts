@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv, type UserFleetEntry, type Vehicle, type FleetAnalysis } from "../lib/types";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
-import { decrypt } from "../lib/crypto";
+import { decryptAPIKey, getDecryptedAPIKey } from "../lib/llm-keys";
 import { logEvent } from "../lib/logger";
 import { ANALYSIS_PROMPT } from "../lib/analysis-prompt";
 import { validate, IntIdParam, LLMProvider } from "../lib/validation";
@@ -294,43 +294,8 @@ export function analysisRoutes() {
 
 // --- LLM Helpers ---
 // Provider model lists, error mapping, connection testing and chat calls live
-// in ../lib/llm.ts (unit-tested with an injected fetch). The helpers below only
-// handle decrypting the user's stored key.
-
-async function decryptAPIKey(
-  encryptedKey: string,
-  encryptionKey?: string,
-): Promise<string | null> {
-  if (!encryptionKey) {
-    // No encryption key — key was stored in plaintext (dev mode only; production blocks this at write time)
-    console.warn("[analysis] ENCRYPTION_KEY not set — reading API key as plaintext (dev mode)");
-    return encryptedKey;
-  }
-  try {
-    return await decrypt(encryptedKey, encryptionKey);
-  } catch {
-    return null;
-  }
-}
-
-async function getDecryptedAPIKey(
-  db: D1Database,
-  userID: string,
-  encryptionKey?: string,
-  provider?: string,
-): Promise<string | null> {
-  const config = await db
-    .prepare(
-      provider
-        ? "SELECT encrypted_api_key FROM user_llm_configs WHERE user_id = ? AND provider = ? LIMIT 1"
-        : "SELECT encrypted_api_key FROM user_llm_configs WHERE user_id = ? LIMIT 1",
-    )
-    .bind(...(provider ? [userID, provider] : [userID]))
-    .first<{ encrypted_api_key: string }>();
-
-  if (!config?.encrypted_api_key) return null;
-  return decryptAPIKey(config.encrypted_api_key, encryptionKey);
-}
+// in ../lib/llm.ts; API-key decryption lives in ../lib/llm-keys.ts. Both are
+// unit-tested and shared with the chat routes.
 
 /**
  * Fleet analysis — ported from internal/analysis/analysis.go
