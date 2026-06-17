@@ -61,6 +61,8 @@ const USER_TABLES = [
   "user_named_ships",
   // AI analyses also cascade
   "ai_analyses",
+  // AI chats (0258) — ai_chat_messages cascade via FK
+  "ai_chats",
   // Change history (fixed in 0106)
   "user_change_history",
   // Org verification pending (0125)
@@ -205,6 +207,15 @@ describe("GDPR — User Deletion Cascade", () => {
         .prepare(
           `INSERT INTO ai_analyses (user_id, provider, model, vehicle_count, analysis)
            VALUES (?, 'test', 'test-model', 5, 'test analysis')`
+        )
+        .bind(user.userId)
+        .run();
+
+      // ai_chats (0258)
+      await db
+        .prepare(
+          `INSERT INTO ai_chats (user_id, provider, model, title)
+           VALUES (?, 'test', 'test-model', 'test chat')`
         )
         .bind(user.userId)
         .run();
