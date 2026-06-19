@@ -45,7 +45,7 @@ export const STAT_SORT_KEY: Record<string, string> = {
   QuantumDrive: "cq.quantum_speed",
   WeaponGun: "cw.dps",
   Radar: "cr.radar_range",
-  MissileLauncher: "cm.damage",
+  MissileLauncher: "cm.ammo_count",
   TurretBase: "cw.dps",
   Turret: "cw.dps",
   QuantumInterdictionGenerator: "ce.qed_range",

@@ -42,7 +42,9 @@ async function fetchAllShips(): Promise<FleetyardsShip[]> {
     if (!res.ok) {
       throw new Error(`Fleetyards API returned ${res.status}`);
     }
-    const data = (await res.json()) as FleetyardsShip[];
+    // API returns { items: [...], meta: {...} } (changed from a bare array).
+    const body = (await res.json()) as { items?: FleetyardsShip[] } | FleetyardsShip[];
+    const data = Array.isArray(body) ? body : (body.items ?? []);
     if (!data.length) break;
     all.push(...data);
     if (data.length < PER_PAGE) break;
