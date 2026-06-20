@@ -9,6 +9,7 @@ import {
   listChats,
   getChat,
   deleteChat,
+  renameChat,
   getEntitledLoaners,
   getCustomLoadoutFleetIds,
 } from "../db/queries";
@@ -50,6 +51,20 @@ export function chatRoutes() {
     await deleteChat(c.env.DB, userID, id);
     return c.json({ ok: true });
   });
+
+  // PATCH /api/llm/chats/:id — rename a chat
+  routes.patch(
+    "/llm/chats/:id",
+    validate("param", IntIdParam),
+    validate("json", z.object({ title: z.string().min(1).max(80) })),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { title } = c.req.valid("json");
+      const ok = await renameChat(c.env.DB, getAuthUser(c).id, id, title.trim());
+      if (!ok) return c.json({ error: "Chat not found" }, 404);
+      return c.json({ ok: true });
+    },
+  );
 
   // POST /api/llm/chat — send a message; creates the chat on the first turn
   routes.post(

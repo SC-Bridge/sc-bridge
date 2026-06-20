@@ -29,4 +29,9 @@ describe("LLM prompts", () => {
     expect(CHAT_PROMPT.toLowerCase()).toContain("label");
     expect(CHAT_PROMPT.toLowerCase()).toContain("uuid");
   });
+
+  it("CHAT_PROMPT tells the model to use has_custom_loadout flags instead of tool-calling every ship", () => {
+    expect(CHAT_PROMPT).toContain("has_custom_loadout");
+    expect(CHAT_PROMPT.toLowerCase()).toMatch(/do not call|don't call|not.*every ship/);
+  });
 });
