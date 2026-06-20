@@ -16,6 +16,7 @@ import type {
 import { extractSetName, makeSetSlug } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
 import { ptuShadowExists } from "../lib/ptu";
+import { humanizePortName } from "../lib/loadout-format";
 
 // --- Loot summary stats (category-aware card display) ---
 // LEFT JOINs to detail tables for key stats shown on item cards.
@@ -3399,9 +3400,11 @@ export async function deleteChat(db: D1Database, userId: string, chatId: number)
 
 export interface EffectivePort {
   port: string;
+  label: string;
   component: string | null;
   size: number | null;
   type: string | null;
+  uuid: string | null;
   source: "stock" | "custom" | "crafted";
 }
 
@@ -3458,9 +3461,11 @@ export async function getEffectiveShipLoadout(
 
   const ports: EffectivePort[] = rows.results.map((r) => ({
     port: r.port,
+    label: humanizePortName(r.port),
     component: r.component,
     size: r.size,
     type: r.type,
+    uuid: r.component_uuid,
     source: r.component_uuid && crafted[r.component_uuid] ? "crafted" : r.is_custom ? "custom" : "stock",
   }));
 

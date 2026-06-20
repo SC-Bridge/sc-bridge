@@ -23,4 +23,10 @@ describe("LLM prompts", () => {
     expect(p).toContain("only");
     expect(p).toMatch(/ask|question/);
   });
+
+  it("CHAT_PROMPT tells the model to link components to /loot/<uuid> and use port labels", () => {
+    expect(CHAT_PROMPT).toContain("/loot/");
+    expect(CHAT_PROMPT.toLowerCase()).toContain("label");
+    expect(CHAT_PROMPT.toLowerCase()).toContain("uuid");
+  });
 });

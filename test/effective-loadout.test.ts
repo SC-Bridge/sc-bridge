@@ -61,8 +61,11 @@ describe("getEffectiveShipLoadout", () => {
     const byPort = Object.fromEntries(result!.ports.map((p) => [p.port, p]));
     expect(byPort["shield_port"].component).toBe("Custom Shield");
     expect(byPort["shield_port"].source).toBe("custom");
+    expect(byPort["shield_port"].label).toBe("Shield Port");
+    expect(byPort["shield_port"].uuid).toBe("eff-custom-shield");
     expect(byPort["pp_port"].component).toBe("Stock Power Plant");
     expect(byPort["pp_port"].source).toBe("stock");
+    expect(byPort["pp_port"].uuid).toBe("eff-stock-pp");
   });
 
   it("returns null for a fleet entry not owned by the user", async () => {
