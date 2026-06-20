@@ -96,4 +96,38 @@ describe("Chat API — /api/llm/chat*", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("renames a chat via PATCH (owner-scoped, validated)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const chatId = await createChat(env.DB, { userId, provider: "openai", model: "gpt-4o", title: "Old" });
+
+    const ok = await SELF.fetch(`http://localhost/api/llm/chats/${chatId}`, {
+      method: "PATCH",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Renamed Chat" }),
+    });
+    expect(ok.status).toBe(200);
+    const got = await SELF.fetch(`http://localhost/api/llm/chats/${chatId}`, { headers: await authHeaders(sessionToken) });
+    expect(((await got.json()) as { chat: { title: string } }).chat.title).toBe("Renamed Chat");
+
+    // empty title rejected
+    const bad = await SELF.fetch(`http://localhost/api/llm/chats/${chatId}`, {
+      method: "PATCH",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "" }),
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it("cannot rename another user's chat (404)", async () => {
+    const a = await createTestUser(env.DB);
+    const b = await createTestUser(env.DB);
+    const chatId = await createChat(env.DB, { userId: a.userId, provider: "openai", model: "gpt-4o", title: "A's" });
+    const res = await SELF.fetch(`http://localhost/api/llm/chats/${chatId}`, {
+      method: "PATCH",
+      headers: { ...(await authHeaders(b.sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "stolen" }),
+    });
+    expect(res.status).toBe(404);
+  });
 });

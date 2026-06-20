@@ -8,6 +8,7 @@ import {
   listChats,
   getChat,
   deleteChat,
+  renameChat,
 } from "../src/db/queries";
 
 describe("Chat DB queries", () => {
@@ -76,5 +77,18 @@ describe("Chat DB queries", () => {
       .bind(chatId)
       .all();
     expect(msgs.results.length).toBe(0);
+  });
+
+  it("renameChat updates the title, owner-scoped", async () => {
+    const a = await createTestUser(env.DB);
+    const b = await createTestUser(env.DB);
+    const chatId = await createChat(env.DB, { userId: a.userId, provider: "openai", model: "gpt-4o", title: "Old" });
+
+    expect(await renameChat(env.DB, a.userId, chatId, "New Title")).toBe(true);
+    expect((await getChat(env.DB, a.userId, chatId))!.chat.title).toBe("New Title");
+
+    // another user cannot rename it
+    expect(await renameChat(env.DB, b.userId, chatId, "Hacked")).toBe(false);
+    expect((await getChat(env.DB, a.userId, chatId))!.chat.title).toBe("New Title");
   });
 });

@@ -3502,3 +3502,12 @@ export async function getCustomLoadoutFleetIds(db: D1Database, userId: string): 
     .all<{ user_fleet_id: number }>();
   return new Set(result.results.map((r) => r.user_fleet_id));
 }
+
+/** Rename a chat (owner-scoped). Returns true if a row was updated. */
+export async function renameChat(db: D1Database, userId: string, chatId: number, title: string): Promise<boolean> {
+  const r = await db
+    .prepare("UPDATE ai_chats SET title = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+    .bind(title, chatId, userId)
+    .run();
+  return (r.meta.changes ?? 0) > 0;
+}
