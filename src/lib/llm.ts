@@ -304,15 +304,30 @@ export async function chatCompletion(
         : {}),
     };
   } else {
+    const contents = req.messages.map((m) => {
+      if (m.role === "tool") {
+        return { role: "user", parts: [{ functionResponse: { name: m.name, response: { content: m.content } } }] };
+      }
+      if (m.role === "assistant" && m.toolCalls?.length) {
+        return {
+          role: "model",
+          parts: [
+            ...(m.content ? [{ text: m.content }] : []),
+            ...m.toolCalls.map((tc) => ({ functionCall: { name: tc.name, args: tc.arguments } })),
+          ],
+        };
+      }
+      return { role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] };
+    });
     url = `https://generativelanguage.googleapis.com/v1beta/models/${req.model}:generateContent`;
     headers = { "Content-Type": "application/json", "x-goog-api-key": apiKey };
     payload = {
-      contents: req.messages.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      })),
+      contents,
       generationConfig: { maxOutputTokens: req.max_tokens },
       ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
+      ...(req.tools?.length
+        ? { tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }] }
+        : {}),
     };
   }
 
@@ -346,9 +361,20 @@ export async function chatCompletion(
         }
       }
     } else {
-      text =
-        (data as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content
-          ?.parts?.[0]?.text || "";
+      const parts = (data as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args?: Record<string, unknown> } }> } }>;
+      })?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        text = parts.filter((p) => typeof p.text === "string").map((p) => p.text).join("");
+        const fcs = parts.filter((p) => p.functionCall);
+        if (fcs.length) {
+          toolCalls = fcs.map((p, i) => ({
+            id: `${p.functionCall!.name}-${i}`,
+            name: p.functionCall!.name,
+            arguments: p.functionCall!.args || {},
+          }));
+        }
+      }
     }
   }
   return { ok: resp.ok, status: resp.status, body, text, ...(toolCalls ? { toolCalls } : {}) };
