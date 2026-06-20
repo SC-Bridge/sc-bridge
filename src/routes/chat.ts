@@ -15,7 +15,8 @@ import {
 import { getDecryptedAPIKey } from "../lib/llm-keys";
 import { buildChatFleetPayload } from "../lib/fleet-payload";
 import { buildChatRequest } from "../lib/chat";
-import { chatCompletion, mapProviderError, DEFAULT_MODELS, type LLMProviderId } from "../lib/llm";
+import { runChatTurn } from "../lib/chat-agent";
+import { DEFAULT_MODELS, type LLMProviderId } from "../lib/llm";
 import { logEvent } from "../lib/logger";
 
 /**
@@ -100,17 +101,14 @@ export function chatRoutes() {
         userMessage: body.message,
       });
 
-      const comp = await chatCompletion(provider, apiKey, {
-        model,
-        max_tokens: 1500,
-        system,
-        messages,
-      });
-      if (!comp.ok) {
-        console.error(`[chat] provider error (${provider}, ${comp.status})`);
-        return c.json({ error: mapProviderError(provider, comp.status, comp.body) }, 502);
+      // Agent loop: the model may call get_ship_loadout on demand (up to 4 rounds)
+      // to fetch a ship's full components, then produces a final answer.
+      const turn = await runChatTurn({ provider, apiKey, model, system, messages, db, userId: userID });
+      if (!turn.ok) {
+        console.error(`[chat] provider error (${provider}, ${turn.status})`);
+        return c.json({ error: turn.error }, 502);
       }
-      const reply = comp.text || "";
+      const reply = turn.text;
       if (!reply) {
         return c.json({ error: "No response from the provider. Try again." }, 502);
       }
@@ -123,8 +121,8 @@ export function chatRoutes() {
       await addChatMessage(db, { chatId, role: "user", content: body.message });
       await addChatMessage(db, { chatId, role: "assistant", content: reply });
 
-      logEvent("llm_chat", { provider, model, chat_id: chatId });
-      return c.json({ chat_id: chatId, reply, model });
+      logEvent("llm_chat", { provider, model, chat_id: chatId, tool_rounds: turn.rounds });
+      return c.json({ chat_id: chatId, reply, model, tools_used: turn.toolsUsed });
     },
   );
 
