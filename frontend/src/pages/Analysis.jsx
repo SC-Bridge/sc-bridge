@@ -3,33 +3,17 @@ import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig } from '../hooks/useAPI'
+import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig, useLLMModels } from '../hooks/useAPI'
 import usePrivacyMode from '../hooks/usePrivacyMode'
 import useTimezone from '../hooks/useTimezone'
 import { formatDateOnly } from '../lib/dates'
-import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff } from 'lucide-react'
+import { resolveActiveModel } from '../lib/llmModels'
+import { AlertCircle, Sparkles, Loader, ChevronRight, Settings, EyeOff, RefreshCw, MessageSquare } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import SectionBoundary from '../components/SectionBoundary'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
-
-const PROVIDER_MODELS = {
-  anthropic: [
-    { id: 'claude-opus-4-6', name: 'Opus 4.6', desc: 'Most capable' },
-    { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', desc: 'Balanced' },
-    { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', desc: 'Fast' },
-  ],
-  openai: [
-    { id: 'gpt-5.2', name: 'GPT-5.2', desc: 'Most capable' },
-    { id: 'gpt-4o', name: 'GPT-4o', desc: 'Balanced' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', desc: 'Fast' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', desc: 'Most capable' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', desc: 'Balanced' },
-    { id: 'gemini-2.5-flash-lite', name: 'Flash-Lite', desc: 'Fast' },
-  ],
-}
+import FleetChat from './FleetChat'
 
 export default function Analysis() {
   const { timezone } = useTimezone()
@@ -41,7 +25,9 @@ export default function Analysis() {
   const [aiError, setAIError] = useState(null)
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
+  const [mode, setMode] = useState('analysis') // 'analysis' | 'chat'
   const [context, setContext] = useState('')
+  const { models: liveModels, loading: modelsLoading, refresh: refreshModels } = useLLMModels(selectedProvider)
   const { privacyMode } = usePrivacyMode()
   const resultsRef = useRef(null)
   const generatingRef = useRef(false)
@@ -126,8 +112,8 @@ export default function Analysis() {
 
   if (configLoading || analysisLoading) return <LoadingState message="Loading..." />
 
-  const models = selectedProvider ? (PROVIDER_MODELS[selectedProvider] || []) : []
-  const activeModel = selectedModel || models[1]?.id || models[0]?.id
+  const models = liveModels || []
+  const activeModel = resolveActiveModel(models, selectedModel)
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -139,6 +125,30 @@ export default function Analysis() {
       {/* Provider / Model Selection */}
       {hasAnyKey ? (
         <div className="panel p-5 space-y-4">
+          {/* Mode toggle: one-shot Analysis vs conversational Chat */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('analysis')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border flex items-center gap-2 ${
+                mode === 'analysis'
+                  ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                  : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" /> Analysis
+            </button>
+            <button
+              onClick={() => setMode('chat')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border flex items-center gap-2 ${
+                mode === 'chat'
+                  ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                  : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" /> Chat about my fleet
+            </button>
+          </div>
+
           {/* Provider tabs */}
           {configuredProviders.length > 1 && (
             <div className="flex gap-2">
@@ -176,50 +186,69 @@ export default function Analysis() {
                 Model:
               </span>
             )}
-            <div className="flex gap-1.5">
-              {models.map(m => (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {modelsLoading && models.length === 0 ? (
+                <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <Loader className="w-3 h-3 animate-spin" /> Loading models…
+                </span>
+              ) : (
+                models.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleModelChange(m.id)}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-all border ${
+                      activeModel === m.id
+                        ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
+                        : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
+                    }`}
+                    title={m.description || m.id}
+                  >
+                    {m.name}
+                  </button>
+                ))
+              )}
+              {selectedProvider && (
                 <button
-                  key={m.id}
-                  onClick={() => handleModelChange(m.id)}
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-all border ${
-                    activeModel === m.id
-                      ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
-                      : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
-                  }`}
-                  title={m.desc}
+                  onClick={refreshModels}
+                  disabled={modelsLoading}
+                  className="px-2 py-1.5 rounded text-xs text-gray-500 border border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300 transition-all disabled:opacity-50"
+                  title="Refresh model list from the provider"
                 >
-                  {m.name}
+                  <RefreshCw className={`w-3 h-3 ${modelsLoading ? 'animate-spin' : ''}`} />
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
-          {/* Context */}
-          <div>
-            <label className="text-xs text-gray-500 font-mono uppercase tracking-wider block mb-1.5">Additional context <span className="normal-case tracking-normal text-gray-600">(optional)</span></label>
-            <textarea
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="E.g. I mainly play solo, I'm interested in cargo hauling and mining, my budget is around $300..."
-              rows={3}
-              maxLength={1000}
-              className="w-full bg-sc-darker border border-sc-border rounded-lg px-3 py-2 text-sm text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-sc-accent/40 focus:ring-1 focus:ring-sc-accent/20 transition-colors resize-none"
-            />
-            <div className="text-[10px] text-gray-600 text-right mt-1 font-mono">{context.length}/1000</div>
-          </div>
+          {/* Analysis-only: context + generate */}
+          {mode === 'analysis' && (
+            <>
+              <div>
+                <label className="text-xs text-gray-500 font-mono uppercase tracking-wider block mb-1.5">Additional context <span className="normal-case tracking-normal text-gray-600">(optional)</span></label>
+                <textarea
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  placeholder="E.g. I mainly play solo, I'm interested in cargo hauling and mining, my budget is around $300..."
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full bg-sc-darker border border-sc-border rounded-lg px-3 py-2 text-sm text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-sc-accent/40 focus:ring-1 focus:ring-sc-accent/20 transition-colors resize-none"
+                />
+                <div className="text-[10px] text-gray-600 text-right mt-1 font-mono">{context.length}/1000</div>
+              </div>
 
-          {/* Generate */}
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="btn-primary flex items-center gap-2"
-          >
-            {generating ? (
-              <><Loader className="w-4 h-4 animate-spin" /> Generating...</>
-            ) : (
-              <><Sparkles className="w-4 h-4" /> Generate Analysis</>
-            )}
-          </button>
+              <button
+                onClick={handleGenerate}
+                disabled={generating}
+                className="btn-primary flex items-center gap-2"
+              >
+                {generating ? (
+                  <><Loader className="w-4 h-4 animate-spin" /> Generating...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> Generate Analysis</>
+                )}
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="panel p-8 text-center">
@@ -237,7 +266,14 @@ export default function Analysis() {
         </div>
       )}
 
-      {/* Error */}
+      {/* Chat mode */}
+      {mode === 'chat' && hasAnyKey && (
+        <FleetChat provider={selectedProvider} model={activeModel} />
+      )}
+
+      {/* Analysis output — analysis mode only */}
+      {mode === 'analysis' && (
+      <>
       {aiError && (
         <div className="panel p-4 border-l-2 border-sc-danger/40">
           <div className="flex items-start gap-3">
@@ -280,6 +316,8 @@ export default function Analysis() {
           </div>
           </SectionBoundary>
         </div>
+      )}
+      </>
       )}
     </div>
   )
