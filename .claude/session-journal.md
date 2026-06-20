@@ -1,17 +1,5 @@
 # Session Journal
 
-## Current Focus (2026-06-17 NZST)
-**AI/LLM connection-test + live model list overhaul. Gavin hit "Connection test failed" on /settings testing an OpenAI key — root cause was NO API CREDIT (429 insufficient_quota), not a bug. Also clarified (with sources) that subscription-SSO (use ChatGPT/Gemini sub instead of API key) is NOT possible for a hosted 3rd-party web app — only first-party CLIs (Codex/Gemini CLI) or impersonation hacks that Google banned Feb–Mar 2026. Built 3 changes. ALL TESTS PASS (backend 739, frontend 371, typecheck clean). UNCOMMITTED — awaiting Gavin's review/deploy choice.**
-
-### 2026-06-17 — LLM test hardening + live models (new src/lib/llm.ts)
-- **Why:** generic "Connection test failed" hid the real reason (no credit); test used a hardcoded model (`gpt-4o-mini`) that breaks on model churn; both `analysis.ts` AND `Analysis.jsx` had stale hardcoded model lists (`gpt-5.2` etc.).
-- **New `src/lib/llm.ts`** (DI-testable; vitest-4 pool dropped fetchMock so fetch is injected, mirroring `runLocalizationIngest(deps)`). Holds: `mapProviderError` (401→bad key, 429 insufficient_quota / "credit balance" / RESOURCE_EXHAUSTED→no-credit, 403→permission, 5xx→down), `normalizeModels` (filters chat-capable per provider), `pickProbeModel`, `listModels`/`fetchModels` (live + static `FALLBACK_MODELS`), `chatCompletion`/`callLLM`, `testConnection`. Moved callOpenAI/Anthropic/Google + model maps OUT of analysis.ts (de-duped).
-- **Change C (clear errors):** `POST /llm/test-connection` returns specific safe messages, 502 on failure, raw logged server-side.
-- **Change 2 (model-agnostic test):** validate key via provider model-LIST endpoint, then 1-token probe on a model picked from the LIVE list (Gavin chose "list + tiny dynamic inference" so the no-credit case is caught at test time).
-- **Change 3 (live models):** `GET /llm/models?provider=X` fetches live models w/ user's stored key, **KV-cached 24h** (`llm:models:{userID}:{provider}`), `?refresh=1` busts. Frontend `useLLMModels` hook + `resolveActiveModel` helper (`frontend/src/lib/llmModels.js`) + **refresh button** on /analysis. Removed both hardcoded lists.
-- **Tests:** `test/llm.test.ts` (19) + `frontend/src/lib/llmModels.test.js` (4), TDD red→green. Full backend 739 pass, frontend 371 pass.
-- **NOTE for prod debugging:** production worker logs go to Grafana Cloud + New Relic via `destinations=[...]` in wrangler.toml — they are NOT in Cloudflare's queryable logs dataset, so the Workers Observability MCP returns "Cloudflare API request failed" for `sc-bridge`. Use Grafana/New Relic for prod log lookups.
-
 ## Current Focus (2026-05-23 NZST)
 **Crafting gaps fixed (Gavin: click Monde Arms Daimyo → nothing; /crafting search not bookmarkable). Both FIXED + verified live, 256 frontend tests pass. Uncommitted on feat/ptu-shadow-tables alongside the Missions deep-review batch. Nothing committed/staged.**
 
@@ -310,3 +298,132 @@ In-flight SQL files patched via sed + Python helper. Recovery executed in 3 stan
 
 
 ### 2026-05-05 — Item-Task 4: Legacy-default test case added
+
+Test added: `test/crafting-item-slot-api.test.ts` now has 3 test cases covering slot_type behavior:
+1. Resource slot with explicit slot_type='resource' — works ✓
+2. Item slot with explicit slot_type='item' — works ✓
+3. **NEW: Legacy data path** — omitted slot_type defaults to 'resource' via migration 0217 DEFAULT
+
+Production state right now: every existing `crafting_blueprint_slots` row got `slot_type='resource'` via the migration default (pre-0217 pipeline code omitted the column entirely on INSERT). This test exercises that exact production path and will catch any regression in DEFAULT-handling before Item-Task 7's re-load.
+
+**Test logic:** Inserts a slot WITHOUT `slot_type` column (simulating pre-0217 code), then queries the API and verifies response includes `slot_type: 'resource'` + `item_class: null`. Uses `slot_index=1` to avoid UNIQUE constraint collision with existing test data.
+
+**Test results:** Full backend suite 308/308 PASS (1 new test). Pre-commit hook executed: typecheck clean, vitest 308/308 pass.
+
+**Commit:** `e500295` — `test(crafting): add legacy-default API test case`
+
+### 2026-05-05 — Crafting dedupe end-to-end ship
+
+**The bug** (Gavin's report verbatim): *"why is the crafting sim page broken? I have tons of duplicates on the UI and the results aren't updating"*
+
+**Root cause:** `crafting_blueprint_slots` and `crafting_slot_modifiers` accumulated 28× duplicates because migration 0129 lacked UNIQUE on natural keys and the v2 pipeline emitted plain INSERTs. 28× sliders × 28× modifier multiplications per property = off-scale stat math.
+
+**6-task plan executed via subagent-driven development** (plan: `tools/docs/plans/2026-05-05-crafting-dedupe.md`):
+1. API GROUP BY dedupe + COALESCE(slot_name, name) — `b124ac4`+`a45666f`
+2. React `key={selectedBlueprint.id}` reset — `c5fa6c3`+`c713503`
+3. Migration 0216 dedupe + UNIQUE + create missing PTU shadows — `07a6283`+`d0d8b7a`+`542c500`
+4. SqlWriter `_CUSTOM_CONFLICT` for crafting tables (tools repo) — `8bb3535`+`10eb522`
+5. Staging migration applied (deploy run 25364540676 ✅)
+6. Production migration applied (deploy run 25366464839 ✅)
+
+**Counts before/after** (identical on both envs):
+| Table | Before | After |
+|---|---|---|
+| crafting_blueprint_slots | 72,492 | 2,589 |
+| crafting_slot_modifiers | 108,808 | 3,886 |
+| crafting_blueprints | 1,044 | 1,044 |
+
+**The "27 of 28" math:** every natural key had exactly 28 dupes; migration kept 1, deleted 27. 27 × 2,589 = 69,903 slot deletes; 27 × 3,886 = 104,922 modifier deletes. Total 174,825 per env. Pipeline ran 28 times across the lifetime of these tables, accumulated linearly.
+
+**Surprise during dry-run:** Phase 1 deleted 0 modifiers — every existing modifier already attached to MIN(id) of its (bp, slot_index) group. Pipeline FK resolver always picked the lowest-id parent slot, so dupe slots accumulated without dupe modifier links. Made the 3-phase DELETE FK-safe.
+
+**Gavin's rollout call (verbatim):** *"1 yes dry run always, 2 yes, staging first, validate evverything looks good. I visually log in and check the crafting sim before we go to prod"* → executed exactly. Visual sign-off: *"LGTM ship it"*.
+
+**Side effect of running migration:** PTU shadow tables migration 0215 had been local-only (per the PTU plan's no-remote-write rule). Running 0216 on staging+prod also applied 0215 — created 84 empty `ptu_*` tables + 155 indexes per env. No business impact.
+
+**Memory updates:** `project_crafting_sim_dupes.md` (full execution log + quotes), `reference_sqlwriter_conflict_dispatch.md` (architecture detail), `reference_vitest_workers_flake.md` (--max-workers=1 --no-isolate + retry:2 mitigation).
+
+**Deferred follow-ups not in this plan:** Channel-aware mutations on wishlist/collection routes, POI functions, getLootItems is_deleted filtering. Tracked as TaskList items #34-36, separate from crafting work.
+
+### 2026-04-23 — p4k provenance verified + dig into "new blueprints" claim
+
+Gavin pushback after first diff result: *"Dig deeper because they explicitly said they are available, might be exising ones that had to loot pool or mission and now they do"* → thesis that existing blueprints gained new loot/mission wiring.
+
+**Per-directory aggregate-hash audit** of every mechanism by which a blueprint becomes a loot/mission reward:
+
+| Directory | File count | Aggregate md5 match |
+|---|---|---|
+| `libs/foundry/records/contracts/contractgenerator` | 105 | SAME |
+| `libs/foundry/records/crafting/blueprintrewards/blueprintmissionpools` | 45 | SAME |
+| `libs/foundry/records/contracts/contracttemplates` | 441 | SAME |
+| `libs/foundry/records/contracts/contractrewards` | 5 | SAME |
+| `libs/foundry/records/missiondata` | 2,437 | SAME |
+| `libs/foundry/records/missionbroker` | 2,584 | SAME |
+
+5,617 files covering contract generators, blueprint mission pools, mission templates, mission data, and mission broker entries — **every one byte-identical** across the two builds. If a previously-orphan blueprint gained a pool/mission assignment, at least one of these files would have changed. None did.
+
+**P4k provenance verification** (Gavin: *"are we sure the p4k is correct? did i somehow copy an old one?"*):
+
+Live RSI install at `/mnt/d/Roberts Space Industries/StarCitizen/LIVE/Data.p4k` was modified 2026-04-23 06:46:46 (today) with same size 153,800,073,216 bytes and same manifest (RequestedP4ChangeNum 11674325). Spot-check md5 head-and-tail comparison:
+
+- First 100 MB md5: `d652105c813a699bc4e168409a907d10` — both sides identical
+- Last 100 MB md5: `f549f7b3caf2ffd8d2471bd4c291a35c` — both sides identical
+
+Gavin's extraction source is bit-identical to what every player is currently running. Not stale.
+
+`.LooseFiles.txt` on live install contains 101 SHA256 entries — but all are binaries (AccessCAPI.dll, bink2w64.dll, StarCitizen.exe, launchers, anti-cheat). No loose game-data overrides. CIG is not hot-patching content via loose files.
+
+**Conclusion:** The "new blueprints" claim cannot be from the p4k — it's server-side only (CIG can toggle blueprint drops via backend config without shipping a client patch). Possibilities:
+1. Server-side feature flag flip — blueprints present in p4k but previously inactive are now active
+2. Source refers to a future build that hasn't shipped (current live internal version is 4.7.178.8917 / change 11674325)
+3. Incorrect / PTU misread
+
+Asked Gavin for specific blueprint name / patch note URL / build number to confirm.
+
+### 2026-04-23 — 4.7.2-live.11674325 diff: provably content-identical vs 4.7.1-live.11592622
+
+Extraction completed in 7.2 min on Windows. Ran diff_versions.py — reported 0/0/0 for DataCore. Gavin: *"thats simply not true, its been confimed it has new blueprints for example so the diff logic must be bad"*.
+
+**Investigated `/mnt/e/SC Bridge/Data p4k/diff_versions.py`** — found a real flaw at lines 33 + 69: `files[rel] = full.stat().st_size` compares file SIZE only, never content. Two files of identical byte-count with different contents would be reported as "unchanged". Legitimate concern.
+
+**Ran proper content-hash diff instead:**
+
+1. `md5sum` every file in both DataCore trees:
+   - 57,948 files each side
+   - `diff /tmp/hashes_old.txt /tmp/hashes_new.txt` → **hash files IDENTICAL**. Every single DataCore record byte-matches.
+2. md5sum XML/Data/Libs non-audio (5,171 files): 100% content-identical
+3. md5sum entire non-audio Extracted tree (~347K files, ~20 min WSL I/O):
+   - Only **6 content-modified files** total, all CJK `FontConfig.xml` (Chinese-traditional, Japanese, Korean UI font configs) mirrored in `Data/Localization/*` and `XML_Raw/Data/Localization/*`
+   - Zero DataCore changes
+   - Zero XML game-logic changes
+   - Zero non-CJK localization changes
+   - Net path delta -1 (pure directory shuffle of FontConfig.xml variants)
+4. GameAudio: 582 file add/remove/replace (reverbs, ambient — SC Bridge doesn't consume)
+
+**Verdict:** Build 11674325 genuinely has no new blueprints, items, missions, ships, paints, or content of any kind vs 11592622. The size-only diff wasn't hiding anything — hash diff confirms zero content deltas.
+
+Replied to Gavin: source claim about "new blueprints" is either (a) referring to a different/future build, (b) a server-side enable of a previously-disabled-but-present blueprint (wouldn't show in p4k), or (c) marketing name for a future patch that hasn't shipped. Asked him for the source URL/build number to verify.
+
+**diff_versions.py should be fixed eventually** to use content hashing. Size-only is wrong in principle even though it happened to give the right answer here. Filing as follow-up — not this session's scope since the proper ad-hoc hash diff proved the point.
+
+### 2026-04-23 — 4.7.2-live-11674325 dropped, awaiting extraction
+
+Gavin: *"4.7.2-live-11674325 just dropped and ive put the p4k here: '/mnt/e/SC Bridge/Data p4k/4.7.2-live-11674325'  We should extract and diff"*
+
+Manifest read (`/mnt/e/SC Bridge/Data p4k/4.7.2-live-11674325/build_manifest.id`):
+- Branch: `sc-alpha-4.7.0`
+- BuildDateStamp: `Sat Apr 18 2026`
+- RequestedP4ChangeNum: `11674325`
+- Version: `4.7.178.8917`
+- Data.p4k size: 153,800,073,216 bytes
+
+**Naming convention change to watch:** folder is `4.7.2-live-11674325` with DASHES separating version/channel/build; our prior convention was `4.7.1-live.11592622` with a DOT before build. `extract_all.py --version` must match the folder name verbatim. We control `--game-version` independently at v2 pipeline time — will likely use `4.7.2-live` for the game_versions.code value (stable, no build suffix, consistent with prior convention).
+
+**Build number 11674325 is the SAME as the audio-only "4.7.1" folder we deleted.** But that earlier build was tagged `sc-alpha-4.7.0` too and had no content changes. This new folder is relabeled `4.7.2` — CIG's own version bump. Need to re-extract and diff to see whether any DataCore content actually shifted since 4.7.1-live.11592622 (the version currently in production).
+
+**Extraction pending.** Gave Gavin two paths:
+- Windows: `cd "E:\SC Bridge\Data p4k" && python extract_all.py --version 4.7.2-live-11674325` (~6–10 min)
+- WSL fallback: StarBreaker exists at `/home/gavin/cloned-repos/starCitizen/StarBreaker/src/StarBreaker.Cli`, dotnet at `~/.dotnet/dotnet`, but I/O on `/mnt/e` via 9P is much slower — 30–60 min estimated
+
+Once `Extracted/` + `DataCore/` populate I'll re-run the diff suite:
+- `diff_versions.py 4.7.1-live.11592622 4.7.2-live-11674325`

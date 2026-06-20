@@ -598,8 +598,6 @@ export function accountRoutes() {
     await db.batch([
       // App tables
       db.prepare("DELETE FROM ai_analyses WHERE user_id = ?").bind(user.id),
-      // ai_chats — ai_chat_messages rows cascade via FK on chat delete
-      db.prepare("DELETE FROM ai_chats WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_settings WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),

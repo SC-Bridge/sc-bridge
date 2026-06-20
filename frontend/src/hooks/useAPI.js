@@ -275,56 +275,12 @@ export async function generateAIAnalysis({ provider, model, context } = {}) {
   return postJSON('/llm/generate-analysis', { provider, model, context })
 }
 
-/**
- * Live model list for a provider. Fetched on mount and whenever the provider
- * changes; the backend caches it in KV for 24h. `refresh()` forces a re-fetch
- * (passes ?refresh=1 to bust the server cache) for when a provider ships new
- * models. Returns the static fallback list server-side if the live call fails.
- */
-export function useLLMModels(provider) {
-  const [models, setModels] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-  const load = useCallback((refresh = false) => {
-    if (!provider) { setModels(null); return }
-    setLoading(true)
-    setError(null)
-    const qs = `provider=${encodeURIComponent(provider)}${refresh ? '&refresh=1' : ''}`
-    fetchJSON(`/llm/models?${qs}`)
-      .then((d) => setModels(d.models || []))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [provider])
-
-  useEffect(() => { load(false) }, [load])
-
-  return { models, loading, error, refresh: () => load(true) }
-}
-
 export function useLatestAIAnalysis() {
   return useAPI('/llm/latest-analysis')
 }
 
 export function useAIAnalysisHistory() {
   return useAPI('/llm/analysis-history')
-}
-
-// Fleet chat (saved "Chat about my fleet" conversations)
-export function useChats() {
-  return useAPI('/llm/chats')
-}
-
-export function useChat(id) {
-  return useAPI(id ? `/llm/chats/${id}` : '/llm/chats', { skip: !id })
-}
-
-export async function sendChatMessage({ chat_id, provider, model, message }) {
-  return postJSON('/llm/chat', { chat_id, provider, model, message })
-}
-
-export async function deleteChat(id) {
-  return apiFetch('DELETE', `/llm/chats/${id}`)
 }
 
 // Organisation hooks

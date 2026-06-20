@@ -52,9 +52,7 @@ COMBINED="$WORK/combined.sql"
   echo 'CREATE TABLE IF NOT EXISTS "passkey" (id TEXT PRIMARY KEY NOT NULL, name TEXT, publicKey TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), webauthnUserID TEXT, counter INTEGER NOT NULL DEFAULT 0, deviceType TEXT, backedUp INTEGER, transports TEXT, credentialID TEXT NOT NULL, createdAt TEXT);'
   # All migrations in lexical order (matches readD1Migrations).
   COUNT=0
-  # Quoted glob (already lexically sorted by the shell) — handles repo paths
-  # that contain spaces; an unquoted `$(ls ...)` split each path on the space.
-  for f in "$MIG_DIR"/*.sql; do
+  for f in $(ls "$MIG_DIR"/*.sql | sort); do
     echo "-- >>> $(basename "$f")"
     cat "$f"
     echo ""
