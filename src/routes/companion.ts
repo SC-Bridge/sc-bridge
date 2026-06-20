@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HonoEnv } from "../lib/types";
 import { validate } from "../lib/validation";
 import { logEvent } from "../lib/logger";
+import { buildBridgeStatements } from "../lib/accountant/companion-bridge";
 
 const companion = new Hono<HonoEnv>();
 
@@ -586,8 +587,11 @@ companion.post("/events", validate("json", EventBatchSchema), async (c) => {
     .map((evt) => routeToStructuredTable(db, user.id, evt.type, evt.data, evt.timestamp))
     .filter((stmt): stmt is D1PreparedStatement => stmt !== null);
 
-  // Batch all statements together — raw + structured
-  const allStmts = [...rawStmts, ...structuredStmts];
+  // Bridge economy events into the accountant ledger (source = 'parsed').
+  const bridgeStmts = buildBridgeStatements(db, user.id, events, now);
+
+  // Batch all statements together — raw + structured + ledger bridge
+  const allStmts = [...rawStmts, ...structuredStmts, ...bridgeStmts];
   for (let i = 0; i < allStmts.length; i += 100) {
     await db.batch(allStmts.slice(i, i + 100));
   }
@@ -596,10 +600,16 @@ companion.post("/events", validate("json", EventBatchSchema), async (c) => {
     user_id: user.id,
     count: events.length,
     structured: structuredStmts.length,
+    bridged: bridgeStmts.length,
     types: [...new Set(events.map((e) => e.type))].join(","),
   });
 
-  return c.json({ ok: true, stored: events.length, structured: structuredStmts.length });
+  return c.json({
+    ok: true,
+    stored: events.length,
+    structured: structuredStmts.length,
+    bridged: bridgeStmts.length,
+  });
 });
 
 /**
