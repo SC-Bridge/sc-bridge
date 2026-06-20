@@ -139,3 +139,62 @@ describe("chatCompletion tool calling — Anthropic", () => {
     expect(tr.content).toBe('{"ports":[]}');
   });
 });
+
+describe("chatCompletion tool calling — Google", () => {
+  it("parses functionCall parts into normalized toolCalls (synthesized id)", async () => {
+    const f = (async () =>
+      res(200, {
+        candidates: [{ content: { parts: [{ functionCall: { name: "get_ship_loadout", args: { ship: "Idris" } } }] } }],
+      })) as unknown as FetchFn;
+
+    const r = await chatCompletion(
+      "google",
+      "k",
+      { model: "gemini-2.5-flash", max_tokens: 100, tools: [SPEC], messages: [{ role: "user", content: "x" }] },
+      f,
+    );
+    expect(r.toolCalls).toEqual([{ id: "get_ship_loadout-0", name: "get_ship_loadout", arguments: { ship: "Idris" } }]);
+  });
+
+  it("sends functionDeclarations + functionCall turn + functionResponse in the body", async () => {
+    let captured: Record<string, unknown> = {};
+    const f = (async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string);
+      return res(200, { candidates: [{ content: { parts: [{ text: "done" }] } }] });
+    }) as unknown as FetchFn;
+
+    await chatCompletion(
+      "google",
+      "k",
+      {
+        model: "gemini-2.5-flash",
+        max_tokens: 100,
+        tools: [SPEC],
+        messages: [
+          { role: "user", content: "x" },
+          { role: "assistant", content: "", toolCalls: [{ id: "get_ship_loadout-0", name: "get_ship_loadout", arguments: { ship: "Idris" } }] },
+          { role: "tool", toolCallId: "get_ship_loadout-0", name: "get_ship_loadout", content: '{"ports":[]}' },
+        ],
+      },
+      f,
+    );
+
+    const tools = captured.tools as Array<Record<string, unknown>>;
+    const decls = tools[0].functionDeclarations as Array<Record<string, unknown>>;
+    expect(decls[0].name).toBe("get_ship_loadout");
+
+    const contents = captured.contents as Array<Record<string, unknown>>;
+    const modelTurn = contents.find(
+      (c) => c.role === "model" && (c.parts as Array<Record<string, unknown>>).some((p) => p.functionCall),
+    )!;
+    const fc = (modelTurn.parts as Array<Record<string, unknown>>).find((p) => p.functionCall)!.functionCall as Record<string, unknown>;
+    expect(fc.name).toBe("get_ship_loadout");
+    expect(fc.args).toEqual({ ship: "Idris" });
+
+    const respTurn = contents.find(
+      (c) => (c.parts as Array<Record<string, unknown>>).some((p) => p.functionResponse),
+    )!;
+    const fr = (respTurn.parts as Array<Record<string, unknown>>).find((p) => p.functionResponse)!.functionResponse as Record<string, unknown>;
+    expect(fr.name).toBe("get_ship_loadout");
+  });
+});
