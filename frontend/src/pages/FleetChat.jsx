@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import { useChats, useChat, sendChatMessage, deleteChat } from '../hooks/useAPI'
+import { useLootDetailPane } from '../hooks/useLootDetailPane'
+import { parseLootUuid } from '../lib/lootLinks'
 import { Loader, Send, Plus, Trash2, MessageSquare, AlertCircle } from 'lucide-react'
 
 /**
@@ -12,6 +14,27 @@ import { Loader, Send, Plus, Trash2, MessageSquare, AlertCircle } from 'lucide-r
 export default function FleetChat({ provider, model }) {
   const { data: chatsData, refetch: refetchChats } = useChats()
   const chats = chatsData?.chats || []
+  const { openDetail, detailNode } = useLootDetailPane()
+
+  // Component links (/loot/<uuid>) open the item-detail pane in place instead
+  // of navigating away; all other links open normally in a new tab.
+  const mdComponents = {
+    a: ({ href, children, ...props }) => {
+      const uuid = parseLootUuid(href)
+      if (uuid) {
+        return (
+          <a
+            href={href}
+            onClick={(e) => { e.preventDefault(); openDetail(uuid) }}
+            className="text-sc-accent underline decoration-dotted cursor-pointer"
+          >
+            {children}
+          </a>
+        )
+      }
+      return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+    },
+  }
 
   const [activeChatId, setActiveChatId] = useState(null)
   const { data: chatData } = useChat(activeChatId)
@@ -133,7 +156,7 @@ export default function FleetChat({ provider, model }) {
                   <span className="whitespace-pre-wrap">{m.content}</span>
                 ) : (
                   <div className="prose-fleet prose-sm">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={mdComponents}>
                       {m.content}
                     </ReactMarkdown>
                     {Array.isArray(m.toolsUsed) && m.toolsUsed.length > 0 && (
@@ -180,6 +203,9 @@ export default function FleetChat({ provider, model }) {
           </button>
         </div>
       </div>
+
+      {/* Item-detail slide-over — opens in place when a component link is clicked */}
+      {detailNode}
     </div>
   )
 }
