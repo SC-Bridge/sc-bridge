@@ -3392,3 +3392,77 @@ export async function deleteChat(db: D1Database, userId: string, chatId: number)
   // Owner-scoped. ai_chat_messages rows cascade via FK.
   await db.prepare("DELETE FROM ai_chats WHERE id = ? AND user_id = ?").bind(chatId, userId).run();
 }
+
+// ============================================================
+// Effective ship loadout for the Fleet Chat tool (stock + custom + crafted)
+// ============================================================
+
+export interface EffectivePort {
+  port: string;
+  component: string | null;
+  size: number | null;
+  type: string | null;
+  source: "stock" | "custom" | "crafted";
+}
+
+/**
+ * The effective loadout of one of the user's fleet ships: each equipped port's
+ * component, merging stock defaults (vehicle_ports.equipped_item_uuid) with the
+ * user's per-port overrides (user_fleet_loadout). A component is tagged
+ * "crafted" when the user has crafted it, else "custom" if it's an override,
+ * else "stock". User-scoped — returns null if the fleet entry isn't theirs.
+ */
+export async function getEffectiveShipLoadout(
+  db: D1Database,
+  userId: string,
+  fleetEntryId: number,
+): Promise<{ ship: string; ports: EffectivePort[] } | null> {
+  const entry = await db
+    .prepare(
+      `SELECT uf.vehicle_id, COALESCE(uf.custom_name, v.name) AS ship_name
+         FROM user_fleet uf JOIN vehicles v ON v.id = uf.vehicle_id
+        WHERE uf.id = ? AND uf.user_id = ?`,
+    )
+    .bind(fleetEntryId, userId)
+    .first<{ vehicle_id: number; ship_name: string }>();
+  if (!entry) return null;
+
+  const rows = await db
+    .prepare(
+      `SELECT vp.name AS port,
+              COALESCE(ovc.name, svc.name) AS component,
+              COALESCE(ovc.type, svc.type) AS type,
+              COALESCE(ovc.size, svc.size) AS size,
+              COALESCE(ovc.uuid, svc.uuid) AS component_uuid,
+              CASE WHEN ufl.component_id IS NOT NULL THEN 1 ELSE 0 END AS is_custom
+         FROM vehicle_ports vp
+         LEFT JOIN vehicle_components svc ON svc.uuid = vp.equipped_item_uuid
+         LEFT JOIN user_fleet_loadout ufl
+                ON ufl.port_id = vp.id AND ufl.user_fleet_id = ? AND ufl.user_id = ?
+         LEFT JOIN vehicle_components ovc ON ovc.id = ufl.component_id
+        WHERE vp.vehicle_id = ?
+          AND (svc.id IS NOT NULL OR ufl.component_id IS NOT NULL)
+        ORDER BY vp.id`,
+    )
+    .bind(fleetEntryId, userId, entry.vehicle_id)
+    .all<{
+      port: string;
+      component: string | null;
+      type: string | null;
+      size: number | null;
+      component_uuid: string | null;
+      is_custom: number;
+    }>();
+
+  const crafted = await getUserCraftedByLootUuid(db, userId);
+
+  const ports: EffectivePort[] = rows.results.map((r) => ({
+    port: r.port,
+    component: r.component,
+    size: r.size,
+    type: r.type,
+    source: r.component_uuid && crafted[r.component_uuid] ? "crafted" : r.is_custom ? "custom" : "stock",
+  }));
+
+  return { ship: entry.ship_name, ports };
+}
