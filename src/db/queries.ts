@@ -3466,3 +3466,34 @@ export async function getEffectiveShipLoadout(
 
   return { ship: entry.ship_name, ports };
 }
+
+/** Entitled loaner ships derived from owned concept/in-production ships (compact, for chat). */
+export async function getEntitledLoaners(
+  db: D1Database,
+  userId: string,
+): Promise<Array<{ loaner: string; granted_by: string }>> {
+  const result = await db
+    .prepare(
+      `SELECT l.name AS loaner, group_concat(DISTINCT owned.name) AS granted_by
+         FROM user_fleet uf
+         JOIN vehicles owned ON owned.id = uf.vehicle_id
+         JOIN production_statuses ops ON ops.id = owned.production_status_id
+         JOIN vehicle_loaners vl ON vl.vehicle_id = owned.id
+         JOIN vehicles l ON l.id = vl.loaner_id
+        WHERE uf.user_id = ?1 AND uf.is_loaner = 0 AND ops.key != 'flight_ready'
+          AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
+        GROUP BY l.id ORDER BY l.name`,
+    )
+    .bind(userId)
+    .all<{ loaner: string; granted_by: string }>();
+  return result.results;
+}
+
+/** Set of user_fleet ids that have at least one custom loadout override. */
+export async function getCustomLoadoutFleetIds(db: D1Database, userId: string): Promise<Set<number>> {
+  const result = await db
+    .prepare("SELECT DISTINCT user_fleet_id FROM user_fleet_loadout WHERE user_id = ?")
+    .bind(userId)
+    .all<{ user_fleet_id: number }>();
+  return new Set(result.results.map((r) => r.user_fleet_id));
+}

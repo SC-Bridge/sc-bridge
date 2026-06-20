@@ -43,3 +43,26 @@ export function buildFleetPayload(
     return row;
   });
 }
+
+export interface ChatFleetPayload {
+  ships: Array<Record<string, unknown> & { id: number; has_custom_loadout: boolean }>;
+  loaners: unknown;
+}
+
+/**
+ * Chat-mode fleet payload: each ship gets its fleet-entry `id` (so the model can
+ * pass it to the get_ship_loadout tool) and a `has_custom_loadout` flag (so it
+ * knows which ships are worth a lookup), plus the user's entitled loaners.
+ */
+export function buildChatFleetPayload(
+  entries: UserFleetEntry[],
+  customLoadoutIds: Set<number>,
+  loaners: unknown,
+): ChatFleetPayload {
+  const ships = buildFleetPayload(entries, { includePersonal: true }).map((row, i) => ({
+    ...row,
+    id: entries[i].id,
+    has_custom_loadout: customLoadoutIds.has(entries[i].id),
+  }));
+  return { ships, loaners };
+}
