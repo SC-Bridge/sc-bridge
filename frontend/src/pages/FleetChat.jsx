@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { useChats, useChat, sendChatMessage, deleteChat } from '../hooks/useAPI'
+import { useChats, useChat, sendChatMessage, deleteChat, renameChat } from '../hooks/useAPI'
 import { useLootDetailPane } from '../hooks/useLootDetailPane'
 import { parseLootUuid } from '../lib/lootLinks'
-import { Loader, Send, Plus, Trash2, MessageSquare, AlertCircle } from 'lucide-react'
+import { Loader, Send, Plus, Trash2, MessageSquare, AlertCircle, Pencil } from 'lucide-react'
 
 /**
  * Conversational "Chat about my fleet". Multi-turn, saved per conversation.
@@ -42,6 +42,8 @@ export default function FleetChat({ provider, model }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editingTitle, setEditingTitle] = useState('')
   const threadRef = useRef(null)
 
   // Load a saved conversation when one is selected.
@@ -95,6 +97,23 @@ export default function FleetChat({ provider, model }) {
     } catch { /* ignore */ }
   }
 
+  const startRename = (c, e) => {
+    e.stopPropagation()
+    setEditingId(c.id)
+    setEditingTitle(c.title || '')
+  }
+
+  const submitRename = async () => {
+    const id = editingId
+    const title = editingTitle.trim()
+    setEditingId(null)
+    if (!id || !title) return
+    try {
+      await renameChat(id, title)
+      refetchChats()
+    } catch { /* ignore */ }
+  }
+
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -111,22 +130,44 @@ export default function FleetChat({ provider, model }) {
         </button>
         <div className="space-y-1">
           {chats.map((c) => (
-            <button
+            <div
               key={c.id}
-              onClick={() => setActiveChatId(c.id)}
-              className={`group w-full text-left px-3 py-2 rounded text-xs border flex items-center gap-2 transition-all ${
+              onClick={() => editingId !== c.id && setActiveChatId(c.id)}
+              className={`group w-full text-left px-3 py-2 rounded text-xs border flex items-center gap-2 transition-all cursor-pointer ${
                 activeChatId === c.id
                   ? 'bg-sc-accent/10 text-sc-accent border-sc-accent/30'
                   : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/[0.12] hover:text-gray-300'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-60" />
-              <span className="flex-1 truncate">{c.title || 'Untitled'}</span>
-              <Trash2
-                className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-sc-danger"
-                onClick={(e) => handleDelete(c.id, e)}
-              />
-            </button>
+              {editingId === c.id ? (
+                <input
+                  autoFocus
+                  value={editingTitle}
+                  maxLength={80}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setEditingTitle(e.target.value)}
+                  onBlur={submitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submitRename() }
+                    if (e.key === 'Escape') { e.preventDefault(); setEditingId(null) }
+                  }}
+                  className="flex-1 min-w-0 bg-sc-darker border border-sc-accent/40 rounded px-1.5 py-0.5 text-xs text-gray-200 focus:outline-none"
+                />
+              ) : (
+                <>
+                  <span className="flex-1 truncate">{c.title || 'Untitled'}</span>
+                  <Pencil
+                    className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100"
+                    onClick={(e) => startRename(c, e)}
+                  />
+                  <Trash2
+                    className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-sc-danger"
+                    onClick={(e) => handleDelete(c.id, e)}
+                  />
+                </>
+              )}
+            </div>
           ))}
         </div>
       </aside>
