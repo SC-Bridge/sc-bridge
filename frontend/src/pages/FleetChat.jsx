@@ -53,7 +53,7 @@ export default function FleetChat({ provider, model }) {
         model,
         message: text,
       })
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }])
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply, toolsUsed: res.tools_used }])
       if (!activeChatId && res.chat_id) setActiveChatId(res.chat_id)
       refetchChats()
     } catch (e) {
@@ -136,6 +136,11 @@ export default function FleetChat({ provider, model }) {
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                       {m.content}
                     </ReactMarkdown>
+                    {Array.isArray(m.toolsUsed) && m.toolsUsed.length > 0 && (
+                      <div className="mt-1.5 text-[11px] text-gray-500 not-prose">
+                        🔧 looked up: {[...new Set(m.toolsUsed)].join(', ')}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
