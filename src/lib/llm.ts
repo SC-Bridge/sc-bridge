@@ -277,13 +277,31 @@ export async function chatCompletion(
         : {}),
     };
   } else if (provider === "anthropic") {
+    const messages = req.messages.map((m) => {
+      if (m.role === "tool") {
+        return { role: "user", content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: m.content }] };
+      }
+      if (m.role === "assistant" && m.toolCalls?.length) {
+        return {
+          role: "assistant",
+          content: [
+            ...(m.content ? [{ type: "text", text: m.content }] : []),
+            ...m.toolCalls.map((tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments })),
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
     url = "https://api.anthropic.com/v1/messages";
     headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
     payload = {
       model: req.model,
       max_tokens: req.max_tokens,
       ...(req.system ? { system: req.system } : {}),
-      messages: req.messages,
+      messages,
+      ...(req.tools?.length
+        ? { tools: req.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) }
+        : {}),
     };
   } else {
     url = `https://generativelanguage.googleapis.com/v1beta/models/${req.model}:generateContent`;
@@ -317,8 +335,16 @@ export async function chatCompletion(
         }));
       }
     } else if (provider === "anthropic") {
-      const content = (data as { content?: Array<{ type: string; text: string }> })?.content;
-      text = content?.[0]?.type === "text" ? content[0].text : "";
+      const content = (data as {
+        content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
+      })?.content;
+      if (Array.isArray(content)) {
+        text = content.filter((b) => b.type === "text").map((b) => b.text || "").join("");
+        const tus = content.filter((b) => b.type === "tool_use");
+        if (tus.length) {
+          toolCalls = tus.map((b) => ({ id: b.id || "", name: b.name || "", arguments: b.input || {} }));
+        }
+      }
     } else {
       text =
         (data as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content

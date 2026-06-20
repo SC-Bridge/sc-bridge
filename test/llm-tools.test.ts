@@ -77,3 +77,65 @@ describe("chatCompletion tool calling — OpenAI", () => {
     expect(JSON.parse((tc.function as Record<string, string>).arguments)).toEqual({ ship: "Carrack" });
   });
 });
+
+describe("chatCompletion tool calling — Anthropic", () => {
+  it("parses tool_use content blocks into normalized toolCalls", async () => {
+    const f = (async () =>
+      res(200, {
+        content: [
+          { type: "text", text: "let me check" },
+          { type: "tool_use", id: "tu1", name: "get_ship_loadout", input: { ship: "Corsair" } },
+        ],
+      })) as unknown as FetchFn;
+
+    const r = await chatCompletion(
+      "anthropic",
+      "k",
+      { model: "claude-sonnet-4-6", max_tokens: 100, tools: [SPEC], messages: [{ role: "user", content: "x" }] },
+      f,
+    );
+    expect(r.toolCalls).toEqual([{ id: "tu1", name: "get_ship_loadout", arguments: { ship: "Corsair" } }]);
+    expect(r.text).toBe("let me check");
+  });
+
+  it("sends tools (input_schema) + tool_use turn + tool_result block in the body", async () => {
+    let captured: Record<string, unknown> = {};
+    const f = (async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string);
+      return res(200, { content: [{ type: "text", text: "done" }] });
+    }) as unknown as FetchFn;
+
+    await chatCompletion(
+      "anthropic",
+      "k",
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 100,
+        tools: [SPEC],
+        messages: [
+          { role: "user", content: "x" },
+          { role: "assistant", content: "", toolCalls: [{ id: "tu1", name: "get_ship_loadout", arguments: { ship: "Corsair" } }] },
+          { role: "tool", toolCallId: "tu1", name: "get_ship_loadout", content: '{"ports":[]}' },
+        ],
+      },
+      f,
+    );
+
+    const tools = captured.tools as Array<Record<string, unknown>>;
+    expect(tools[0].name).toBe("get_ship_loadout");
+    expect(tools[0].input_schema).toEqual(SPEC.parameters);
+
+    const msgs = captured.messages as Array<Record<string, unknown>>;
+    const asst = msgs.find((m) => m.role === "assistant")!;
+    const toolUse = (asst.content as Array<Record<string, unknown>>).find((b) => b.type === "tool_use")!;
+    expect(toolUse.id).toBe("tu1");
+    expect(toolUse.input).toEqual({ ship: "Corsair" });
+
+    const toolResultMsg = msgs.find(
+      (m) => Array.isArray(m.content) && (m.content as Array<Record<string, unknown>>).some((b) => b.type === "tool_result"),
+    )!;
+    const tr = (toolResultMsg.content as Array<Record<string, unknown>>).find((b) => b.type === "tool_result")!;
+    expect(tr.tool_use_id).toBe("tu1");
+    expect(tr.content).toBe('{"ports":[]}');
+  });
+});
