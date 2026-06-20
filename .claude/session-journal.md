@@ -310,3 +310,43 @@ In-flight SQL files patched via sed + Python helper. Recovery executed in 3 stan
 
 
 ### 2026-05-05 — Item-Task 4: Legacy-default test case added
+
+### 2026-06-20 — Fleet Chat: on-demand loadouts + loaners (tool calling)
+- **On staging** (feat/chat-loadout-tools, merged origin/staging in → c577847b, +dep-fix 2becdfa6). 792 backend + 378 frontend tests green. NOT on prod yet — Gavin testing in the morning before prod.
+- Tool/function-calling added to lib/llm.ts chatCompletion for ALL 3 providers (OpenAI tool_calls / Anthropic tool_use / Google functionCall; normalized ToolSpec/ToolCall/LLMMessage). New: lib/chat-tools.ts (get_ship_loadout spec+executor), lib/chat-agent.ts (runChatTurn agent loop, cap 4 rounds), queries.ts getEffectiveShipLoadout (stock+custom+crafted, user-scoped) + getEntitledLoaners + getCustomLoadoutFleetIds. chat.ts: base payload now buildChatFleetPayload (ships w/ id + has_custom_loadout, + loaners); uses runChatTurn; returns tools_used. FleetChat.jsx shows "🔧 looked up: <ship>".
+- **GOTCHA (cost us ~20min):** staging CI silently "didn't deploy" — it was the `npm audit --omit=dev --audit-level=high` prod-gate failing on hono/vite/react-router (SAME as the first staging push). The `npm audit fix` from earlier (commit 90f4c16c) was NOT cherry-picked to main, so this branch (off main) re-tripped it. Fix: `npm audit fix` again. **CI does NOT deploy if the audit gate fails, and gh is NOT authed on the Windows box so I can't watch runs — verify deploys by polling the live bundle (the feature string lives in the Analysis-*.js code-split chunk, NOT index-*.js).**
+- **Prod promotion path (when Gavin approves):** cherry-pick THIS feature's commits (4d4656e2..deaef080, NOT the origin/staging merge) onto main + the dep-fix; no new migration (reuses existing tables); push main.
+
+### 2026-06-21 — Chat loadout polish: humanized ports + clickable components
+- On staging (feat/chat-loadout-tools → 37607d2f). Backend 776 + frontend 381 tests green.
+- getEffectiveShipLoadout now returns `label` (humanizePortName: hardpoint_weapon_top_left_1 → "Weapon Top Left 1") + component `uuid`. CHAT_PROMPT tells the model to use labels + render components as [name](/loot/<uuid>).
+- Frontend: parseLootUuid + custom ReactMarkdown <a> renderer in FleetChat intercept /loot/<uuid> links → useLootDetailPane renders the existing LootDB DetailPanel slide-over IN PLACE over the chat (no navigation). useLootDetailPane bundles the collection/wishlist/crafted hooks so the panel is fully functional outside LootDB.
+- NOTE: shipped humanized format is "Weapon Top Left 1" (generic/robust), not the "Top-Left Weapon 1" reorder Gavin mildly preferred — easy tweak if he wants it.
+- Still on staging only; prod promotion (when approved) = cherry-pick this feature's commits onto main (no migration).
+
+### Backlog — loadout-page issues (noted 2026-06-21, NOT chat-related, do later)
+1. Some weapons render as **placeholder** on the loadout screens.
+2. **All weapons appear as "loot only"** (source/availability mislabelled — likely shop/availability data not surfacing for weapons).
+3. **Module ships (e.g. MOLE) have no way to configure modules** on the loadout page — the loadout planner doesn't expose module slots.
+(These are pre-existing loadout-planner gaps, separate from the Fleet Chat feature.)
+4. **Save button on the loadout page gives no indication it saved** (no toast/confirmation feedback).
+
+### 2026-06-21 — Chat: prompt efficiency + rename chats
+- On staging (feat/chat-loadout-tools → 3b18353f, chunk Analysis-GkHL5QSh). Backend 776 + frontend 381 green.
+- F: CHAT_PROMPT now says use has_custom_loadout flags for "which ships are custom" (no per-ship tool calls); only tool-call specific ships — fixes the 36-ship brute force.
+- G+H: rename chats — renameChat query + PATCH /api/llm/chats/:id (validated 1-80, user-scoped) + inline pencil-edit in FleetChat history list.
+- Link-redirect report was almost certainly stale cache (code verified correct; model emits /loot/<uuid>, parseLootUuid + intercept are right). New chunk load includes the interceptor.
+
+### 2026-06-21 — Chat feature set PROMOTED TO PROD ✅
+- origin/main d4c4178d..f055a072 (13 feature commits cherry-picked off origin/main; merge + staging-loaner SHAs excluded). 800 backend + frontend tests green, audit gate 0 vulns, no migration (ai_chats already on prod). Prod chunk Analysis-GkHL5QSh live; /api/llm/chats 401.
+- Whole "Chat about my fleet" suite now on scbridge.app: connection-test fix, chat, on-demand loadout tools (3 providers), loaners, humanized ports, clickable components → in-place detail pane, prompt efficiency, rename chats.
+- NEXT: loadout-page backlog (placeholder weapons, weapons "loot only", MOLE module config, save-button no feedback).
+
+### 2026-06-21 — Fix: loadout shop prices (base fallback) + placeholder filter
+- Root cause ②: loadout/has_shops/loot shop joins read latest_* (UEX) only + gated on latest_source IS NOT NULL. Prod terminal_inventory has latest_*=NULL for ALL 26,320 rows (UEX doesn't cover ship components); real prices live in base_buy_price (2,845 priced). → every component rendered "Loot Only" site-wide.
+- Root cause ①: 9 vehicle_components rows type=WeaponGun named '<= PLACEHOLDER =>' (dev/test props: rn_windturbine, test_gats...) leak into the weapon picker.
+- Fix: new src/lib/pricing-sql.ts (COALESCE(latest,base) helpers); applied to ALL shop read sites — queries.ts (has_shops, getShipLoadout shopMap, loot "where to buy", shop terminal, POI shops), loadout.ts (4 shopMaps), gamedata.ts (3 shop/trade displays). Placeholder filter added to /compatible. Overrode stale "base prices unreliable" comment (current 4.8.2 base prices verified plausible).
+- Updated loot-shop-exact-match.test.ts (it encoded the old exclude-base decision) to assert base now surfaces. Prod-data verified: 57 guns/22 PP/18 coolers/17 shields/12 QD now resolve shops.
+- NOT YET on a branch's remote. Branch: fix/loadout-shop-prices-and-placeholders (off origin/main). 807 backend + 381 frontend green.
+- NOTE: staging terminal_inventory is EMPTY (0 rows) — staging won't visually show prices; tests + prod-data are the proof.
+- Remaining loadout backlog: MOLE module config; save-button no feedback.

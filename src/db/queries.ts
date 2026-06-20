@@ -17,6 +17,7 @@ import { extractSetName, makeSetSlug } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
 import { ptuShadowExists } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
+import { buyPriceSQL, sellPriceSQL, priceSourceSQL, pricedSQL, buyablePricedSQL } from "../lib/pricing-sql";
 
 // --- Loot summary stats (category-aware card display) ---
 // LEFT JOINs to detail tables for key stats shown on item cards.
@@ -82,7 +83,7 @@ function lootHasFlags(isPTU: boolean): string {
   const ti = isPTU ? "ptu_terminal_inventory" : "terminal_inventory";
   return `
         EXISTS(SELECT 1 FROM ${lil} lil WHERE lil.loot_map_id = lm.id AND lil.source_type = 'container') as has_containers,
-        EXISTS(SELECT 1 FROM ${ti} ti WHERE ti.item_uuid = lm.uuid AND ti.latest_source IS NOT NULL AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)) as has_shops,
+        EXISTS(SELECT 1 FROM ${ti} ti WHERE ti.item_uuid = lm.uuid AND ${pricedSQL("ti")}) as has_shops,
         EXISTS(SELECT 1 FROM ${lil} lil WHERE lil.loot_map_id = lm.id AND lil.source_type = 'npc') as has_npcs,
         EXISTS(SELECT 1 FROM ${lil} lil WHERE lil.loot_map_id = lm.id AND lil.source_type = 'contract') as has_contracts`;
 }
@@ -485,7 +486,9 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
   // Attach shop availability so the Location Planner (#94) can show where to buy
   // each installed component. Same join the component picker uses: loot_map.uuid
   // → terminal_inventory → terminals → shops, keyed by class_name (LIVE only —
-  // getShipLoadout is not PTU-routed). Single IN-query; a ship has <100 ports.
+  // getShipLoadout is not PTU-routed). Price = community (latest) when present,
+  // else the extracted in-game base price (UEX doesn't list most components).
+  // Single IN-query; a ship has <100 ports.
   const classNames = [
     ...new Set(
       components
@@ -499,13 +502,13 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       .prepare(
         `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                 t.shop_name_key AS location_key,
-                ROUND(ti.latest_buy_price) AS buy_price,
+                ROUND(${buyPriceSQL("ti")}) AS buy_price,
                 s.display_name AS shop_name, s.location_label
            FROM terminal_inventory ti
            JOIN loot_map lm ON lm.uuid = ti.item_uuid
            JOIN terminals t ON t.id = ti.terminal_id
            LEFT JOIN shops s ON s.id = t.shop_id
-          WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
+          WHERE ${buyablePricedSQL("ti")}
             AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
       )
       .bind(...classNames)
@@ -1572,19 +1575,19 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
     if (locationsByType[key]) locationsByType[key].push(r);
   }
 
-  // Enrich with shop availability — only community-reported prices (UEX);
-  // game-file base prices are unreliable and should not surface in the UI.
-  // Match THIS exact item (its uuid), not every variant sharing the display
-  // name. CIG reuses one name across distinct variants — e.g. "MSD-683 Missile
-  // Rack" (a sold 8-rack vs a ship-default 16-rack) — so a name match attributed
-  // a sibling variant's shops to an item that isn't itself sold. This keeps the
+  // Enrich with shop availability — community (UEX/user) price when present,
+  // else the extracted in-game base price. UEX doesn't list most ship
+  // components, so latest-only would hide every component's shops. Match THIS
+  // exact item (its uuid), not every variant sharing the display name. CIG
+  // reuses one name across distinct variants — e.g. "MSD-683 Missile Rack" (a
+  // sold 8-rack vs a ship-default 16-rack) — so a name match attributed a
+  // sibling variant's shops to an item that isn't itself sold. This keeps the
   // Item Finder's "Where to Buy" consistent with the loadout planner, which
-  // matches the exact component (#94). Still community-priced only (base prices
-  // are unreliable game-file defaults).
+  // matches the exact component (#94).
   const shopAvailability = await db.prepare(`
-    SELECT ti.latest_buy_price AS buy_price,
-           ti.latest_sell_price AS sell_price,
-           ti.latest_source AS price_source,
+    SELECT ${buyPriceSQL("ti")} AS buy_price,
+           ${sellPriceSQL("ti")} AS sell_price,
+           ${priceSourceSQL("ti")} AS price_source,
            ti.uex_date_modified AS uex_date_modified,
            s.name AS shop_name, s.slug AS shop_slug,
            s.location_label, s.display_name
@@ -1592,8 +1595,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
     JOIN ${t("terminals")} term ON term.id = ti.terminal_id
     JOIN ${t("shops")} s ON s.id = term.shop_id
     WHERE ti.item_uuid = ?
-      AND ti.latest_source IS NOT NULL
-      AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)
+      AND ${pricedSQL("ti")}
     ORDER BY s.location_label, s.name
   `).bind(item.uuid).all();
 
@@ -2570,14 +2572,13 @@ async function getShopLocationDetail(
       COALESCE(lm.uuid, ti.item_uuid) as uuid,
       COALESCE(lm.name, ti.item_name) as name,
       lm.type, lm.sub_type, lm.rarity, lm.category,
-      ti.latest_buy_price as buy_price, ti.latest_sell_price as sell_price
+      ${buyPriceSQL("ti")} as buy_price, ${sellPriceSQL("ti")} as sell_price
     FROM ${ti} ti
     JOIN ${term} t ON t.id = ti.terminal_id
     JOIN ${shops} s ON s.id = t.shop_id
     LEFT JOIN ${lm} lm ON lm.uuid = ti.item_uuid
     WHERE (s.slug = ? OR s.name = ?)
-      AND ti.latest_source IS NOT NULL
-      AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)
+      AND ${pricedSQL("ti")}
     ORDER BY COALESCE(lm.name, ti.item_name)`;
 
   const result = await db.prepare(sql).bind(slug, slug).all<{
@@ -2924,24 +2925,21 @@ async function getPOIShops(
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            WHERE t.shop_id = s.id
-             AND ti.latest_source IS NOT NULL
-             AND (ti.latest_buy_price > 0 OR ti.latest_sell_price > 0)
+             AND ${pricedSQL("ti")}
          ) AS item_count,
          (
-           SELECT MIN(ti.latest_buy_price)
+           SELECT MIN(${buyPriceSQL("ti")})
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            WHERE t.shop_id = s.id
-             AND ti.latest_source IS NOT NULL
-             AND ti.latest_buy_price > 0
+             AND ${buyablePricedSQL("ti")}
          ) AS min_price,
          (
-           SELECT MAX(ti.latest_buy_price)
+           SELECT MAX(${buyPriceSQL("ti")})
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            WHERE t.shop_id = s.id
-             AND ti.latest_source IS NOT NULL
-             AND ti.latest_buy_price > 0
+             AND ${buyablePricedSQL("ti")}
          ) AS max_price
        FROM ${t("shops")} s
        WHERE s.location_label = ?

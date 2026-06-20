@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import type { HonoEnv } from "../lib/types"
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { cachedJson, cacheSlug } from "../lib/cache"
+import { buyPriceSQL, sellPriceSQL } from "../lib/pricing-sql"
 import { resolvePOISlug } from "../lib/poi"
 import { getPOIDetail, getPOIChildren } from "../db/queries"
 
@@ -12,8 +13,8 @@ const SHOP_DISPLAY_NAME_EXPR = `COALESCE(s.display_name, REPLACE(REPLACE(REPLACE
 function buildInventoryQuery(placeholders: string, isPTU: boolean): string {
   const t = (n: string) => resolveTable(n, isPTU);
   return `SELECT t.shop_id, ti.item_uuid, ti.item_name,
-       ti.latest_buy_price as buy_price,
-       ti.latest_sell_price as sell_price,
+       ${buyPriceSQL("ti")} as buy_price,
+       ${sellPriceSQL("ti")} as sell_price,
        ti.base_inventory, ti.max_inventory,
        COALESCE(fi.name, tc.name, v.name, ti.item_name) as resolved_name,
        CASE
@@ -405,8 +406,8 @@ const [
     return cachedJson(c, `gd:shop-inv:${cacheSlug(slug)}`, async () => {
       const { results } = await db
         .prepare(`SELECT ti.item_uuid, ti.item_name,
-             ti.latest_buy_price as buy_price,
-             ti.latest_sell_price as sell_price,
+             ${buyPriceSQL("ti")} as buy_price,
+             ${sellPriceSQL("ti")} as sell_price,
              ti.base_inventory, ti.max_inventory,
              COALESCE(fi.name, v.name, ti.item_name) as resolved_name
            FROM ${t("terminal_inventory")} ti
@@ -416,7 +417,7 @@ const [
            LEFT JOIN ${t("vehicles")} v ON v.uuid = ti.item_uuid
            WHERE s.slug = ?
            ORDER BY COALESCE(fi.name, v.name, ti.item_name),
-                    ti.latest_buy_price DESC`,
+                    ${buyPriceSQL("ti")} DESC`,
         )
         .bind(slug)
         .all()
@@ -440,8 +441,8 @@ return cachedJson(c, `gd:trade`, async () => {
           .all(),
         db
           .prepare(`SELECT ti.item_uuid,
-               ti.latest_buy_price as buy_price,
-               ti.latest_sell_price as sell_price,
+               ${buyPriceSQL("ti")} as buy_price,
+               ${sellPriceSQL("ti")} as sell_price,
                ti.base_inventory, ti.max_inventory,
                s.name as shop_name, s.slug as shop_slug,
                ${SHOP_DISPLAY_NAME_EXPR} as shop_display_name,
