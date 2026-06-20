@@ -9,9 +9,11 @@ import {
   listChats,
   getChat,
   deleteChat,
+  getEntitledLoaners,
+  getCustomLoadoutFleetIds,
 } from "../db/queries";
 import { getDecryptedAPIKey } from "../lib/llm-keys";
-import { buildFleetPayload } from "../lib/fleet-payload";
+import { buildChatFleetPayload } from "../lib/fleet-payload";
 import { buildChatRequest } from "../lib/chat";
 import { chatCompletion, mapProviderError, DEFAULT_MODELS, type LLMProviderId } from "../lib/llm";
 import { logEvent } from "../lib/logger";
@@ -83,9 +85,15 @@ export function chatRoutes() {
         model = body.model || DEFAULT_MODELS[provider] || "";
       }
 
-      // Full fleet payload (incl. custom names) lives in the system message.
+      // Full fleet payload (incl. custom names) + entitled loaners + a per-ship
+      // has_custom_loadout flag live in the system message. Loadout details are
+      // fetched on demand via the get_ship_loadout tool (added in the agent loop).
       const fleet = await getFleetForAnalysis(db, userID);
-      const fleetPayload = buildFleetPayload(fleet, { includePersonal: true });
+      const [customIds, loaners] = await Promise.all([
+        getCustomLoadoutFleetIds(db, userID),
+        getEntitledLoaners(db, userID),
+      ]);
+      const fleetPayload = buildChatFleetPayload(fleet, customIds, loaners);
       const { system, messages } = buildChatRequest({
         fleetPayload,
         history,
