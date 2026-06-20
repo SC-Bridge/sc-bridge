@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { rowCategory } from './FleetTable'
 
 /**
  * FleetTable wrench icon gating tests.
@@ -42,5 +43,23 @@ describe('FleetTable wrench icon gating', () => {
 
   it('hides wrench when status is undefined', () => {
     expect(shouldShowWrench({})).toBe(false)
+  })
+})
+
+describe('FleetTable rowCategory bucketing', () => {
+  it('buckets flight-ready owned ships as flight_ready', () => {
+    expect(rowCategory({ production_status: 'flight_ready' })).toBe('flight_ready')
+  })
+
+  it('buckets concept ships as concept', () => {
+    expect(rowCategory({ production_status: 'in_concept' })).toBe('concept')
+  })
+
+  it('folds in_production into concept (unreleased/owned)', () => {
+    expect(rowCategory({ production_status: 'in_production' })).toBe('concept')
+  })
+
+  it('buckets derived loaner rows as loaner regardless of production_status', () => {
+    expect(rowCategory({ is_derived_loaner: 1, production_status: 'flight_ready' })).toBe('loaner')
   })
 })

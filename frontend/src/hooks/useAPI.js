@@ -169,6 +169,13 @@ export function useFleet() {
   return useAPI('/vehicles')
 }
 
+// Loaner ships derived from the user's owned unreleased ships (concept /
+// in-production) via the vehicle_loaners matrix. Computed server-side; rows are
+// shaped like fleet entries plus `is_derived_loaner` + `loaner_for`.
+export function useFleetLoaners() {
+  return useAPI('/vehicles/loaners')
+}
+
 export function useFleetEntryUpgrades(fleetEntryId) {
   return useAPI(fleetEntryId ? `/vehicles/${fleetEntryId}/upgrades` : null, { skip: !fleetEntryId })
 }

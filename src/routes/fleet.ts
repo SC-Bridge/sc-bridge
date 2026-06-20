@@ -20,6 +20,13 @@ export function fleetRoutes() {
     return getFleetList(c.env.DB, getAuthUser(c).id, c);
   });
 
+  // GET /api/vehicles/loaners — loaner ships the user is entitled to, derived
+  // from their owned UNRELEASED (concept / in-production) ships via the
+  // vehicle_loaners matrix. Not stored fleet rows — computed on read.
+  routes.get("/loaners", async (c) => {
+    return getFleetLoaners(c.env.DB, getAuthUser(c).id, c);
+  });
+
   // PATCH /api/vehicles/bulk-visibility — set visibility on many ships in one call.
   // Two modes:
   //   { mode: "all", org_visibility }         → UPDATE every ship in caller's fleet
@@ -304,6 +311,54 @@ async function getFleetList(
       ) latest_upg ON latest_upg.user_pledge_id = up.id
       WHERE uf.user_id = ?
       ORDER BY COALESCE(rv.name, v.name)`,
+    )
+    .bind(userID)
+    .all();
+
+  return c.json(result.results);
+}
+
+async function getFleetLoaners(
+  db: D1Database,
+  userID: string,
+  c: { json: (data: unknown, status?: number) => Response },
+) {
+  // For each owned unreleased ship (concept / in-production, not an imported
+  // loaner itself), expose the loaner ships it grants. Deduped by loaner ship,
+  // with loaner_for listing the owned ship(s) that grant it. Loaner ships the
+  // user already owns are excluded so nothing shows up twice.
+  const result = await db
+    .prepare(
+      `SELECT l.id AS vehicle_id,
+        l.name AS vehicle_name,
+        l.slug AS vehicle_slug,
+        l.image_url,
+        l.focus,
+        l.size_label,
+        l.cargo,
+        l.crew_min,
+        l.crew_max,
+        l.pledge_price,
+        l.speed_scm,
+        l.classification,
+        m.name AS manufacturer_name,
+        m.code AS manufacturer_code,
+        ps.key AS production_status,
+        1 AS is_derived_loaner,
+        group_concat(DISTINCT owned.name) AS loaner_for
+      FROM user_fleet uf
+      JOIN vehicles owned ON owned.id = uf.vehicle_id
+      JOIN production_statuses ops ON ops.id = owned.production_status_id
+      JOIN vehicle_loaners vl ON vl.vehicle_id = owned.id
+      JOIN vehicles l ON l.id = vl.loaner_id
+      LEFT JOIN manufacturers m ON m.id = l.manufacturer_id
+      LEFT JOIN production_statuses ps ON ps.id = l.production_status_id
+      WHERE uf.user_id = ?1
+        AND uf.is_loaner = 0
+        AND ops.key != 'flight_ready'
+        AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
+      GROUP BY l.id
+      ORDER BY l.name`,
     )
     .bind(userID)
     .all();

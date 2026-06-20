@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useFleet, useUserOrgs, updateShipVisibility, bulkSetVisibility } from '../hooks/useAPI'
-import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check } from 'lucide-react'
+import { useFleet, useFleetLoaners, useUserOrgs, updateShipVisibility, bulkSetVisibility } from '../hooks/useAPI'
+import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check, KeyRound } from 'lucide-react'
 import AlertBanner from '../components/AlertBanner'
 import PageHeader from '../components/PageHeader'
 import PrivacyMask from '../components/PrivacyMask'
@@ -73,6 +73,22 @@ function cleanPledgeName(name) {
     .replace(/^Upgrade\s*-\s*/i, 'CCU: ')
     .trim()
 }
+
+/** Bucket a row into a fleet category. Owned ships split by production status
+ * (in_production folds into Concept — both are "unreleased / owned"); derived
+ * loaner rows are their own category. */
+export function rowCategory(v) {
+  if (v.is_derived_loaner) return 'loaner'
+  if (v.production_status === 'flight_ready') return 'flight_ready'
+  return 'concept'
+}
+
+const CATEGORY_TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'flight_ready', label: 'Flight Ready' },
+  { key: 'concept', label: 'Concept' },
+  { key: 'loaner', label: 'Loaners' },
+]
 
 const VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private' },
@@ -175,6 +191,7 @@ function VisibilitySelect({ value, onChange }) {
 
 export default function FleetTable() {
   const { data: fleet, loading, error, refetch } = useFleet()
+  const { data: loaners } = useFleetLoaners()
   const { data: orgsData } = useUserOrgs()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -182,6 +199,19 @@ export default function FleetTable() {
   const sortDir = searchParams.get('dir') || 'asc'
   const filter = searchParams.get('filter') || ''
   const sizeFilter = searchParams.get('size') || 'all'
+  const categoryFilter = searchParams.get('category') || 'all'
+
+  // Owned ships + derived loaner ships, in one list for the unified view.
+  const combined = useMemo(
+    () => [...(fleet || []), ...(loaners || [])],
+    [fleet, loaners],
+  )
+
+  const categoryCounts = useMemo(() => {
+    const counts = { all: 0, flight_ready: 0, concept: 0, loaner: 0 }
+    for (const v of combined) { counts.all++; counts[rowCategory(v)]++ }
+    return counts
+  }, [combined])
 
   const inOrgs = !!(orgsData?.orgs?.length > 0)
 
@@ -228,10 +258,9 @@ export default function FleetTable() {
   const packFilter = searchParams.get('pack') || 'all'
 
   const sizes = useMemo(() => {
-    if (!fleet) return []
-    const s = new Set(fleet.map((v) => v.size_label || 'Unknown'))
+    const s = new Set(combined.map((v) => v.size_label || 'Unknown'))
     return ['all', ...Array.from(s).sort()]
-  }, [fleet])
+  }, [combined])
 
   const packCounts = useMemo(() => fleet ? buildPackCounts(fleet) : new Map(), [fleet])
 
@@ -250,7 +279,11 @@ export default function FleetTable() {
 
   const sorted = useMemo(() => {
     if (!fleet) return []
-    let items = [...fleet]
+    let items = [...combined]
+
+    if (categoryFilter !== 'all') {
+      items = items.filter((v) => rowCategory(v) === categoryFilter)
+    }
 
     if (filter) {
       const f = filter.toLowerCase()
@@ -293,7 +326,7 @@ export default function FleetTable() {
     })
 
     return items
-  }, [fleet, filter, sizeFilter, packFilter, sortKey, sortDir])
+  }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, sortKey, sortDir])
 
   const toggleSort = (key) => {
     setSearchParams(prev => {
@@ -316,6 +349,7 @@ export default function FleetTable() {
       prev.delete('filter')
       prev.delete('size')
       prev.delete('pack')
+      prev.delete('category')
       return prev
     }, { replace: true })
   }
@@ -353,6 +387,25 @@ export default function FleetTable() {
           </div>
         </AlertBanner>
       )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {CATEGORY_TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSearchParams(prev => { key === 'all' ? prev.delete('category') : prev.set('category', key); return prev }, { replace: true })}
+            className={`px-3 py-1.5 text-xs rounded-md border transition-colors flex items-center gap-1.5 ${
+              categoryFilter === key
+                ? 'bg-sc-accent/15 border-sc-accent/40 text-sc-accent'
+                : 'bg-white/[0.04] border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/20'
+            }`}
+          >
+            {key === 'loaner' && <KeyRound className="w-3.5 h-3.5" aria-hidden="true" />}
+            {label}
+            <span className="text-[10px] font-mono opacity-70">{categoryCounts[key] ?? 0}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="flex gap-3 items-center">
         <SearchInput
@@ -468,10 +521,11 @@ export default function FleetTable() {
                 </tr>
               ) : (
                 sorted.map((v, i) => {
-                  const rowId = v.id || v.vehicle_id
+                  const isLoaner = !!v.is_derived_loaner
+                  const rowKey = isLoaner ? `loaner-${v.vehicle_id}` : (v.id || `row-${i}`)
                   return (
                   <tr
-                    key={rowId || i}
+                    key={rowKey}
                     className="cursor-pointer transition-colors hover:bg-white/[0.03]"
                     onClick={() => navigate(`/ships/${v.vehicle_slug}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/ships/${v.vehicle_slug}`); } }}
@@ -488,17 +542,30 @@ export default function FleetTable() {
                           className="rounded border border-sc-border/50 shrink-0"
                         />
                         <div>
-                          <span className="font-medium text-white">{v.vehicle_name}</span>
-                          {v.custom_name && (
-                            <span className="block text-xs text-sc-accent italic">"{v.custom_name}"</span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-white">{v.vehicle_name}</span>
+                            {isLoaner && (
+                              <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded">
+                                <KeyRound className="w-3 h-3" aria-hidden="true" /> Loaner
+                              </span>
+                            )}
+                          </div>
+                          {isLoaner
+                            ? v.loaner_for && (
+                                <span className="block text-xs text-gray-500">
+                                  loaner for {String(v.loaner_for).split(',').join(', ')}
+                                </span>
+                              )
+                            : v.custom_name && (
+                                <span className="block text-xs text-sc-accent italic">"{v.custom_name}"</span>
+                              )}
                         </div>
                       </div>
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
                         <span className="w-6 flex-shrink-0 flex justify-center">
-                          {v.production_status === 'flight_ready' && (
+                          {v.production_status === 'flight_ready' && !isLoaner && (
                             <button
                               onClick={(e) => { e.stopPropagation(); navigate(`/loadout/${v.vehicle_slug}?fleet_id=${v.id}`) }}
                               className="p-1 text-zinc-600 hover:text-sky-400 transition-colors"
@@ -569,26 +636,32 @@ export default function FleetTable() {
                       <InsuranceBadge isLifetime={v.is_lifetime} label={v.insurance_label} />
                     </td>
                     <td className="table-cell" onClick={(e) => e.stopPropagation()}>
-                      <VisibilitySelect
-                        value={v.org_visibility || 'private'}
-                        onChange={async (val) => {
-                          await updateShipVisibility(v.id, { org_visibility: val }).catch(() => {})
-                          refetch()
-                        }}
-                      />
+                      {isLoaner ? (
+                        <span className="text-xs text-gray-600">—</span>
+                      ) : (
+                        <VisibilitySelect
+                          value={v.org_visibility || 'private'}
+                          onChange={async (val) => {
+                            await updateShipVisibility(v.id, { org_visibility: val }).catch(() => {})
+                            refetch()
+                          }}
+                        />
+                      )}
                     </td>
                     {inOrgs && (
                       <td className="table-cell text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={!!v.available_for_ops}
-                          onChange={async (e) => {
-                            await updateShipVisibility(v.id, { available_for_ops: e.target.checked }).catch(() => {})
-                            refetch()
-                          }}
-                          title="Available for ops"
-                          className="w-4 h-4 accent-sc-accent cursor-pointer rounded"
-                        />
+                        {!isLoaner && (
+                          <input
+                            type="checkbox"
+                            checked={!!v.available_for_ops}
+                            onChange={async (e) => {
+                              await updateShipVisibility(v.id, { available_for_ops: e.target.checked }).catch(() => {})
+                              refetch()
+                            }}
+                            title="Available for ops"
+                            className="w-4 h-4 accent-sc-accent cursor-pointer rounded"
+                          />
+                        )}
                       </td>
                     )}
                   </tr>
