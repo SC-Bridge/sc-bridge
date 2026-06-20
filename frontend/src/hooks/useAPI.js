@@ -334,6 +334,10 @@ export async function deleteChat(id) {
   return apiFetch('DELETE', `/llm/chats/${id}`)
 }
 
+export async function renameChat(id, title) {
+  return patchJSON(`/llm/chats/${id}`, { title })
+}
+
 // Organisation hooks
 export function useUserOrgs(opts) {
   return useAPI('/orgs', opts)
