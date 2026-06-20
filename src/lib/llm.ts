@@ -23,11 +23,34 @@ export interface ModelOption {
   description: string;
 }
 
+/** A tool the model may call. `parameters` is a JSON Schema object. */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/** A normalized tool-call request emitted by the model. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface LLMMessage {
+  role: string; // "user" | "assistant" | "tool"
+  content: string;
+  toolCalls?: ToolCall[]; // assistant turn that requested tool(s)
+  toolCallId?: string; // tool-result message: the call it answers
+  name?: string; // tool-result message: the tool's name
+}
+
 export interface LLMRequest {
   model: string;
   max_tokens: number;
   system?: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: LLMMessage[];
+  tools?: ToolSpec[];
 }
 
 export type FetchFn = typeof fetch;
@@ -40,6 +63,7 @@ export interface RawResult {
 
 export interface CompletionResult extends RawResult {
   text: string;
+  toolCalls?: ToolCall[];
 }
 
 export interface TestConnectionResult {
@@ -223,12 +247,35 @@ export async function chatCompletion(
   let payload: unknown;
 
   if (provider === "openai") {
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: Array<Record<string, unknown>> = [];
     if (req.system) messages.push({ role: "system", content: req.system });
-    messages.push(...req.messages);
+    for (const m of req.messages) {
+      if (m.role === "tool") {
+        messages.push({ role: "tool", tool_call_id: m.toolCallId, content: m.content });
+      } else if (m.role === "assistant" && m.toolCalls?.length) {
+        messages.push({
+          role: "assistant",
+          content: m.content || null,
+          tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+          })),
+        });
+      } else {
+        messages.push({ role: m.role, content: m.content });
+      }
+    }
     url = "https://api.openai.com/v1/chat/completions";
     headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
-    payload = { model: req.model, max_completion_tokens: req.max_tokens, messages };
+    payload = {
+      model: req.model,
+      max_completion_tokens: req.max_tokens,
+      messages,
+      ...(req.tools?.length
+        ? { tools: req.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })) }
+        : {}),
+    };
   } else if (provider === "anthropic") {
     url = "https://api.anthropic.com/v1/messages";
     headers = { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
@@ -254,10 +301,21 @@ export async function chatCompletion(
   const resp = await f(url, { method: "POST", headers, body: JSON.stringify(payload) });
   const body = await resp.text();
   let text = "";
+  let toolCalls: ToolCall[] | undefined;
   if (resp.ok) {
     const data = safeJson(body);
     if (provider === "openai") {
-      text = (data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "";
+      const msg = (data as { choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }> })
+        ?.choices?.[0]?.message;
+      text = msg?.content || "";
+      const tcs = msg?.tool_calls;
+      if (Array.isArray(tcs) && tcs.length) {
+        toolCalls = tcs.map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: (safeJson(tc.function.arguments) as Record<string, unknown>) || {},
+        }));
+      }
     } else if (provider === "anthropic") {
       const content = (data as { content?: Array<{ type: string; text: string }> })?.content;
       text = content?.[0]?.type === "text" ? content[0].text : "";
@@ -267,7 +325,7 @@ export async function chatCompletion(
           ?.parts?.[0]?.text || "";
     }
   }
-  return { ok: resp.ok, status: resp.status, body, text };
+  return { ok: resp.ok, status: resp.status, body, text, ...(toolCalls ? { toolCalls } : {}) };
 }
 
 /** Chat completion for analysis generation. Throws on HTTP error (raw detail logged by caller). */
