@@ -5,6 +5,7 @@ import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { validate } from "../lib/validation";
 import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
+import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
 import { getShipLoadout, getShipModules, getUserOwnedModuleTitles } from "../db/queries";
 
 // D1 has a 100-parameter limit per prepared statement.
@@ -251,6 +252,7 @@ export function loadoutRoutes() {
          WHERE vc.type IN (${typePlaceholders})
            ${resolvedSizeMin === 0 && resolvedSizeMax === 0 ? "" : "AND vc.size BETWEEN ? AND ?"}
            AND vc.name NOT LIKE '%Template%'
+           AND vc.name NOT LIKE '%PLACEHOLDER%'
          ORDER BY ${sortKey} DESC NULLS LAST, vc.name`,
       )
       .bind(...componentTypes, ...(resolvedSizeMin === 0 && resolvedSizeMax === 0 ? [] : [resolvedSizeMin, resolvedSizeMax]))
@@ -271,13 +273,13 @@ export function loadoutRoutes() {
         (ph) =>
           `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   t.shop_name_key AS location_key,
-                  ROUND(ti.latest_buy_price) AS buy_price,
+                  ROUND(${buyPriceSQL("ti")}) AS buy_price,
                   s.display_name AS shop_name, s.location_label
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-           WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
+           WHERE ${buyablePricedSQL("ti")}
              AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
       );
 
@@ -443,13 +445,13 @@ export function loadoutRoutes() {
         .prepare(
           `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   tm.shop_name_key AS location_key,
-                  ROUND(ti.latest_buy_price) AS buy_price,
+                  ROUND(${buyPriceSQL("ti")}) AS buy_price,
                   s.display_name AS shop_name, s.location_label
              FROM terminal_inventory ti
              JOIN loot_map lm ON lm.uuid = ti.item_uuid
              JOIN terminals tm ON tm.id = ti.terminal_id
              LEFT JOIN shops s ON s.id = tm.shop_id
-            WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
+            WHERE ${buyablePricedSQL("ti")}
               AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
         )
         .bind(...classNames)
@@ -563,16 +565,16 @@ export function loadoutRoutes() {
            SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
                   COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_display_name,
                   s.location_label,
-                  ROUND(ti.latest_buy_price) AS buy_price,
+                  ROUND(${buyPriceSQL("ti")}) AS buy_price,
                   ROW_NUMBER() OVER (
                     PARTITION BY lm.class_name
-                    ORDER BY ti.latest_buy_price ASC
+                    ORDER BY ${buyPriceSQL("ti")} ASC
                   ) AS rn
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-           WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
+           WHERE ${buyablePricedSQL("ti")}
          ) cheapest ON cheapest.class_name = vc.class_name AND cheapest.rn = 1
          LEFT JOIN user_fleet uf ON uf.id = ulc.source_fleet_id
          LEFT JOIN ${t("vehicles")} v ON v.id = uf.vehicle_id
@@ -594,16 +596,16 @@ export function loadoutRoutes() {
 
     const rows = await c.env.DB
       .prepare(`SELECT t.shop_name_key AS location_key,
-                ROUND(ti.latest_buy_price) AS buy_price,
+                ROUND(${buyPriceSQL("ti")}) AS buy_price,
                 COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_name,
                 s.location_label
          FROM ${t("terminal_inventory")} ti
          JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
          JOIN ${t("terminals")} t ON t.id = ti.terminal_id
          LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-         WHERE ti.latest_source IS NOT NULL AND ti.latest_buy_price > 0
+         WHERE ${buyablePricedSQL("ti")}
            AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') = ?
-         ORDER BY ti.latest_buy_price ASC`,
+         ORDER BY ${buyPriceSQL("ti")} ASC`,
       )
       .bind(className)
       .all();
