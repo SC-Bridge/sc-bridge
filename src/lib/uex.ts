@@ -428,17 +428,21 @@ export async function syncItems(
 
   // UEX prices many ship components (radars, scanners, etc.) by NAME with an
   // empty item_uuid — the sync used to drop those, leaving e.g. 0/74 radars
-  // priced. Resolve them against loot_map by normalized name. Only UNAMBIGUOUS
-  // names (exactly one uuid) are used: a name shared by variants resolves to
-  // null and is skipped, so a price is never pinned to the wrong variant.
-  const nameToUuid = new Map<string, string | null>();
+  // priced. Resolve them against loot_map by normalized name. When a name maps
+  // to several variants, keep the CANONICAL one (shortest class_name = base
+  // model): these are near-identical same-name sub-variants (e.g. a fuel pod vs
+  // its "_hydrogenprefilled" version) and UEX gives no size/uuid to tell them
+  // apart, so the base model's price is the right approximation.
+  const nameToUuid = new Map<string, { uuid: string; cls: string }>();
   const { results: lmRows } = await db
-    .prepare("SELECT name, uuid FROM loot_map WHERE name IS NOT NULL AND uuid IS NOT NULL AND COALESCE(is_deleted, 0) = 0")
-    .all<{ name: string; uuid: string }>();
+    .prepare("SELECT name, uuid, class_name FROM loot_map WHERE name IS NOT NULL AND uuid IS NOT NULL AND COALESCE(is_deleted, 0) = 0")
+    .all<{ name: string; uuid: string; class_name: string | null }>();
   for (const r of lmRows) {
     const k = normalize(r.name);
     if (!k) continue;
-    nameToUuid.set(k, nameToUuid.has(k) ? null : r.uuid);
+    const cls = r.class_name || "";
+    const cur = nameToUuid.get(k);
+    if (!cur || cls.length < cur.cls.length) nameToUuid.set(k, { uuid: r.uuid, cls });
   }
 
   const stmts: D1PreparedStatement[] = [];
@@ -446,7 +450,7 @@ export async function syncItems(
     const ourTermId = uexToOurs.get(p.id_terminal);
     if (!ourTermId) continue;
 
-    const itemUuid = p.item_uuid || nameToUuid.get(normalize(p.item_name)) || null;
+    const itemUuid = p.item_uuid || nameToUuid.get(normalize(p.item_name))?.uuid || null;
     if (!itemUuid) continue;
 
     const buy = p.price_buy || null;
