@@ -131,6 +131,72 @@ const CartUpdateBody = z.object({
   quantity: z.number().int().min(1).optional(),
 });
 
+const ModuleSelectionBody = z.object({
+  selections: z.array(z.object({
+    port_name: z.string().min(1).max(120),
+    module_uuid: z.string().min(1).max(80),
+  })),
+});
+
+// Module-selection owner: 'fleet' → owner_id is user_fleet.id; 'loaner' →
+// owner_id is the loaner's vehicle id. Resolves to the underlying vehicle (and
+// verifies the user may customize it); null if not found / not owned.
+async function resolveModuleOwnerVehicle(
+  db: D1Database,
+  ownerKind: "fleet" | "loaner",
+  ownerId: number,
+  userId: string,
+  t: (n: string) => string,
+): Promise<number | null> {
+  if (ownerKind === "fleet") {
+    const row = await db
+      .prepare("SELECT vehicle_id FROM user_fleet WHERE id = ? AND user_id = ?")
+      .bind(ownerId, userId)
+      .first<{ vehicle_id: number }>();
+    return row?.vehicle_id ?? null;
+  }
+  const v = await db.prepare(`SELECT id FROM ${t("vehicles")} WHERE id = ?`).bind(ownerId).first();
+  return v ? ownerId : null;
+}
+
+async function getModuleSelections(
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+): Promise<Array<{ port_name: string; module_uuid: string }>> {
+  const r = await db
+    .prepare("SELECT port_name, module_uuid FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ?")
+    .bind(userId, ownerKind, ownerId)
+    .all<{ port_name: string; module_uuid: string }>();
+  return r.results;
+}
+
+// Validate each chosen module actually fits this vehicle's named port, then
+// upsert. Rejects (returns an error) if any selection is bogus.
+async function saveModuleSelections(
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+  vehicleId: number, selections: Array<{ port_name: string; module_uuid: string }>,
+  t: (n: string) => string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  for (const s of selections) {
+    const valid = await db
+      .prepare(`SELECT 1 FROM ${t("vehicle_modules")} WHERE uuid = ? AND vehicle_id = ? AND port_name = ?`)
+      .bind(s.module_uuid, vehicleId, s.port_name)
+      .first();
+    if (!valid) return { ok: false, error: `Module ${s.module_uuid} is not valid for port ${s.port_name}` };
+  }
+  const stmts = selections.map((s) =>
+    db
+      .prepare(
+        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+         DO UPDATE SET module_uuid = excluded.module_uuid, updated_at = datetime('now')`,
+      )
+      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid),
+  );
+  if (stmts.length > 0) await db.batch(stmts);
+  return { ok: true };
+}
+
 /**
  * /api/loadout/* — Ship loadout builder (public compatible components, auth-gated customization)
  */
@@ -632,6 +698,66 @@ export function loadoutRoutes() {
 
     return c.json({ ok: true });
   });
+
+  // ============================================================
+  //  AUTH — Module selections (bay/room modules; fleet OR loaner owner)
+  // ============================================================
+  // Persists a user's chosen module per slot in user_module_selection. The same
+  // handlers serve owned fleet ships (?id = user_fleet.id) and loaners (?id =
+  // vehicle id) via the owner_kind discriminator. Absent slot = stock module.
+  for (const { kind, prefix, param } of [
+    { kind: "fleet" as const, prefix: "/fleet", param: "id" },
+    { kind: "loaner" as const, prefix: "/loaner", param: "vehicleId" },
+  ]) {
+    // GET — the user's saved module choices for this ship
+    app.get(`${prefix}/:${param}/modules`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id);
+      return c.json({ selections });
+    });
+
+    // PUT — save module choices (validated against vehicle_modules)
+    app.put(`${prefix}/:${param}/modules`, validate("json", ModuleSelectionBody), async (c) => {
+      const isPTU = isPTUChannel(getActiveChannel(c));
+      const t = (n: string) => resolveTable(n, isPTU);
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const vehicleId = await resolveModuleOwnerVehicle(c.env.DB, kind, ownerId, user.id, t);
+      if (!vehicleId) return c.json({ error: kind === "fleet" ? "Fleet entry not found" : "Vehicle not found" }, 404);
+      const { selections } = c.req.valid("json");
+      const res = await saveModuleSelections(c.env.DB, kind, ownerId, user.id, vehicleId, selections, t);
+      if (!res.ok) return c.json({ error: res.error }, 400);
+      return c.json({ ok: true });
+    });
+
+    // DELETE one slot — reset that module to stock
+    app.delete(`${prefix}/:${param}/modules/:portName`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      const portName = c.req.param("portName");
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      await c.env.DB
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ?")
+        .bind(user.id, kind, ownerId, portName)
+        .run();
+      return c.json({ ok: true });
+    });
+
+    // DELETE all — reset every module to stock
+    app.delete(`${prefix}/:${param}/modules`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      await c.env.DB
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ?")
+        .bind(user.id, kind, ownerId)
+        .run();
+      return c.json({ ok: true });
+    });
+  }
 
   // ============================================================
   //  AUTH — Shopping cart

@@ -607,6 +607,20 @@ export async function resetLoanerLoadout(loanerVehicleId) {
   return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}`)
 }
 
+// Module selections — bay/room module choices per slot. ownerKind is 'fleet'
+// (ownerId = fleet entry id) or 'loaner' (ownerId = loaner vehicle id).
+export function useModuleSelections(ownerKind, ownerId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/modules` : null, { skip: !ownerId })
+}
+
+export async function saveModuleSelections(ownerKind, ownerId, selections) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/modules`, { selections })
+}
+
+export async function resetModuleSelection(ownerKind, ownerId, portName) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}`)
+}
+
 export function useLoadoutCart() {
   return useAPI('/loadout/cart')
 }

@@ -606,6 +606,8 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
       // user_loaner_loadout is keyed by vehicle (no user_fleet cascade) — delete explicitly.
       db.prepare("DELETE FROM user_loaner_loadout WHERE user_id = ?").bind(user.id),
+      // user_module_selection has a polymorphic owner (no user_fleet cascade) — delete explicitly.
+      db.prepare("DELETE FROM user_module_selection WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_loot_collection WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_loot_wishlist WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_rsi_profile WHERE user_id = ?").bind(user.id),
