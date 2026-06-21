@@ -79,6 +79,13 @@ export default function ModulesSection({ modules, ownedTitles }) {
                       <span className={`flex-1 ${m.is_default ? 'text-gray-200' : 'text-gray-400'}`}>
                         {m.display_name}
                       </span>
+                      {m.price != null ? (
+                        <span className="text-[11px] text-amber-300 flex-shrink-0 tabular-nums">
+                          {Math.round(m.price).toLocaleString()} aUEC
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-gray-600 flex-shrink-0">—</span>
+                      )}
                       {!!m.is_default && (
                         <span className="text-[9px] text-amber-400/70 uppercase tracking-wider font-semibold">Default</span>
                       )}
