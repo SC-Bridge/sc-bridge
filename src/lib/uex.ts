@@ -426,12 +426,28 @@ export async function syncItems(
   // 6MB items feed is fetched once per sync (not twice).
   const prices = prefetched ?? (await fetchUex<UexItemPrice>("items_prices_all"));
 
+  // UEX prices many ship components (radars, scanners, etc.) by NAME with an
+  // empty item_uuid — the sync used to drop those, leaving e.g. 0/74 radars
+  // priced. Resolve them against loot_map by normalized name. Only UNAMBIGUOUS
+  // names (exactly one uuid) are used: a name shared by variants resolves to
+  // null and is skipped, so a price is never pinned to the wrong variant.
+  const nameToUuid = new Map<string, string | null>();
+  const { results: lmRows } = await db
+    .prepare("SELECT name, uuid FROM loot_map WHERE name IS NOT NULL AND uuid IS NOT NULL AND COALESCE(is_deleted, 0) = 0")
+    .all<{ name: string; uuid: string }>();
+  for (const r of lmRows) {
+    const k = normalize(r.name);
+    if (!k) continue;
+    nameToUuid.set(k, nameToUuid.has(k) ? null : r.uuid);
+  }
+
   const stmts: D1PreparedStatement[] = [];
   for (const p of prices) {
     const ourTermId = uexToOurs.get(p.id_terminal);
     if (!ourTermId) continue;
 
-    if (!p.item_uuid) continue;
+    const itemUuid = p.item_uuid || nameToUuid.get(normalize(p.item_name)) || null;
+    if (!itemUuid) continue;
 
     const buy = p.price_buy || null;
     const sell = p.price_sell || null;
@@ -457,7 +473,7 @@ export async function syncItems(
            uex_date_modified = excluded.uex_date_modified,
            uex_date_added = COALESCE(excluded.uex_date_added, terminal_inventory.uex_date_added)`,
         )
-        .bind(ourTermId, p.item_uuid, p.item_name, buy, sell, gvId, modified, added),
+        .bind(ourTermId, itemUuid, p.item_name, buy, sell, gvId, modified, added),
     );
   }
 
