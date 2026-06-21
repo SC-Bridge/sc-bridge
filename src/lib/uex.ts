@@ -39,6 +39,7 @@ interface UexCommodityPrice {
 
 interface UexItemPrice {
   id_terminal: number;
+  id_item?: number;
   item_uuid: string;
   item_name: string;
   price_buy: number;
@@ -62,6 +63,8 @@ export interface SyncResult {
   items: number;
   /** loot_map rows created for buy-only items that UEX knows but extraction misses. */
   backfilled?: number;
+  /** loot_map rows created for uuid-less UEX items (bay modules, etc.). */
+  itemsCreated?: number;
   /** existing unmapped terminals matched to a UEX terminal and given uex_terminal_id. */
   terminalsMapped?: number;
   /** shop+terminal rows created for UEX terminals we never extracted. */
@@ -276,6 +279,58 @@ export async function backfillBuyOnlyLootMap(db: D1Database, gvId: number): Prom
   return res.meta?.changes ?? 0;
 }
 
+/**
+ * Create loot_map rows for UEX-priced items that have NO item_uuid and aren't
+ * already in loot_map by name (e.g. Retaliator/Apollo bay modules, Flight
+ * Blades). UEX identifies these by id_item + name only — without a loot_map row
+ * they're invisible in the Item DB and the syncItems name-resolution has nothing
+ * to price against. We mint a deterministic synthetic uuid (uex-item-<id_item>)
+ * so the item is searchable and its UEX price links via the "Where to Buy" join.
+ * Runs BEFORE syncItems so the price lands in the same sync. Idempotent +
+ * self-healing (existing-name guard + NOT EXISTS), mirroring #135. Junk names
+ * (no uppercase / PLACEHOLDER / unlocalized @-names) are skipped.
+ */
+export async function backfillUexItems(
+  db: D1Database,
+  itemPrices: UexItemPrice[],
+  gvId: number,
+): Promise<number> {
+  const existing = new Set<string>();
+  const { results: lmRows } = await db
+    .prepare("SELECT name FROM loot_map WHERE name IS NOT NULL")
+    .all<{ name: string }>();
+  for (const r of lmRows) existing.add(normalize(r.name));
+
+  const toCreate = new Map<string, { name: string; category: string }>();
+  for (const p of itemPrices) {
+    if (p.item_uuid) continue; // real uuid → handled by the normal sync path
+    if (!(p.price_buy > 0 || p.price_sell > 0)) continue;
+    const name = p.item_name;
+    if (!name || !/[A-Z]/.test(name) || /PLACEHOLDER/i.test(name) || name.startsWith("@")) continue;
+    const key = normalize(name);
+    if (!key || existing.has(key)) continue;
+    const uuid = p.id_item ? `uex-item-${p.id_item}` : `uex-item-${key.replace(/\s+/g, "-")}`;
+    if (toCreate.has(uuid)) continue;
+    const category = /module|flight blade/i.test(name) ? "ship_component" : "misc";
+    toCreate.set(uuid, { name, category });
+  }
+
+  const stmts: D1PreparedStatement[] = [];
+  for (const [uuid, row] of toCreate) {
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO loot_map (uuid, name, category, data_source, game_version_id, updated_at)
+           SELECT ?, ?, ?, 'uex', ?, datetime('now')
+           WHERE NOT EXISTS (SELECT 1 FROM loot_map lm WHERE lm.uuid = ?)`,
+        )
+        .bind(uuid, row.name, row.category, gvId, uuid),
+    );
+  }
+  for (let i = 0; i < stmts.length; i += 100) await db.batch(stmts.slice(i, i + 100));
+  return stmts.length;
+}
+
 export async function syncUexPrices(
   db: D1Database,
   type: "commodities" | "items" | "all" = "all",
@@ -325,6 +380,11 @@ export async function syncUexPrices(
 
   try {
     if (type === "items" || type === "all") {
+      // Materialise loot_map rows for uuid-less UEX items (bay modules, etc.)
+      // FIRST, so the syncItems name-resolution prices them in this same sync.
+      if (prefetchedItemPrices) {
+        result.itemsCreated = await backfillUexItems(db, prefetchedItemPrices, gvId);
+      }
       result.items = await syncItems(db, uexToOurs, gvId, prefetchedItemPrices);
       // Durable fix for buy-only items the p4k extractor misses (#135): once
       // UEX knows an item, ensure it has a loot_map row so it's searchable +
