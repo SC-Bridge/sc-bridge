@@ -559,9 +559,6 @@ function PledgeSection({ ship }) {
 // ─── Overview ─────────────────────────────────────────────────────────────────
 
 function OverviewTab({ ship, isAuthed }) {
-  const { data: modules } = useShipModules(ship.slug)
-  const { data: ownedModules } = useOwnedModules(ship.slug)
-
   const crewValue = ship.crew_min != null && ship.crew_max != null
     ? ship.crew_min === ship.crew_max ? String(ship.crew_min) : `${ship.crew_min} – ${ship.crew_max}`
     : null
@@ -623,10 +620,6 @@ function OverviewTab({ ship, isAuthed }) {
             <div className="panel-header">Description</div>
             <p className="p-4 text-sm text-gray-400 leading-relaxed whitespace-pre-line">{ship.description.replace(/\\n/g, '\n')}</p>
           </div>
-        )}
-
-        {modules?.length > 0 && (
-          <ModulesSection modules={modules} ownedTitles={ownedModules} />
         )}
       </div>
 
@@ -805,13 +798,15 @@ function LoadoutItems({ items, emptyIcon: Icon, emptyMessage, onItemClick }) {
 function ComponentsTab({ slug }) {
   const navigate = useNavigate()
   const { data: loadout, loading, error, refetch } = useShipLoadout(slug)
+  const { data: modules } = useShipModules(slug)
+  const { data: ownedModules } = useOwnedModules(slug)
   const [selected, setSelected] = useState(null)
   if (loading) return <LoadingState message="Loading components..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
   const items = (loadout || []).filter(r => COMPONENT_TYPES.has(r.port_type))
   return (
     <>
-      {items.length > 0 && (
+      {(items.length > 0 || modules?.length > 0) && (
         <div className="flex justify-end mb-2">
           <button
             onClick={() => navigate(`/loadout/${slug}`)}
@@ -823,6 +818,11 @@ function ComponentsTab({ slug }) {
         </div>
       )}
       <LoadoutItems items={items} emptyIcon={Box} emptyMessage="No component data available" onItemClick={setSelected} />
+      {modules?.length > 0 && (
+        <div className="mt-4">
+          <ModulesSection modules={modules} ownedTitles={ownedModules} />
+        </div>
+      )}
       <ComponentDetailPanel item={selected} onClose={() => setSelected(null)} />
     </>
   )
