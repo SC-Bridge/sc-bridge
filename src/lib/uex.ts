@@ -62,7 +62,173 @@ export interface SyncResult {
   items: number;
   /** loot_map rows created for buy-only items that UEX knows but extraction misses. */
   backfilled?: number;
+  /** existing unmapped terminals matched to a UEX terminal and given uex_terminal_id. */
+  terminalsMapped?: number;
+  /** shop+terminal rows created for UEX terminals we never extracted. */
+  terminalsCreated?: number;
   errors: string[];
+}
+
+interface UexTerminal {
+  id: number;
+  name: string;
+  nickname?: string;
+  displayname?: string;
+  company_name?: string;
+  type?: string;
+  is_shop_fps?: number;
+  is_shop_vehicle?: number;
+  is_refinery?: number;
+  city_name?: string | null;
+  space_station_name?: string | null;
+  outpost_name?: string | null;
+  planet_name?: string | null;
+  star_system_name?: string | null;
+}
+
+/** Lagrange code (e.g. "cru-l1") if present, else the normalized string. */
+function locKeyOf(s: string | null | undefined): string {
+  const m = String(s || "").toUpperCase().match(/\b([A-Z]{3}-L[1-5])\b/);
+  return m ? m[1].toLowerCase() : normalize(s || "");
+}
+
+/** Best location key for a UEX terminal (prefers a Lagrange code). */
+function uexLocKey(u: UexTerminal): string {
+  for (const s of [u.nickname, u.name, u.space_station_name, u.city_name, u.outpost_name]) {
+    const k = locKeyOf(s);
+    if (/^[a-z]{3}-l[1-5]$/.test(k)) return k;
+  }
+  return normalize(u.city_name || u.space_station_name || u.outpost_name || (u.name || "").split(" - ").pop() || "");
+}
+
+function slugify(s: string): string {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+/**
+ * Self-heal the terminal mapping so the UEX price sync can reach every priced
+ * item. UEX tracks far more terminals than the p4k extractor produces, and a
+ * data reload wipes `terminals.uex_terminal_id` entirely. For each UEX terminal
+ * that sells a priced item or commodity:
+ *   1. if already mapped → skip;
+ *   2. else if an existing unmapped terminal matches by location + brand → set
+ *      its uex_terminal_id (map);
+ *   3. else create a shop (data_source='uex') + terminal from UEX metadata.
+ * Idempotent (deterministic uuids + ON CONFLICT) and self-healing across reloads,
+ * exactly like backfillBuyOnlyLootMap. Mirrors that #135 pattern for terminals.
+ */
+export async function ensureUexTerminals(
+  db: D1Database,
+  gvId: number,
+): Promise<{ mapped: number; created: number }> {
+  const [uexTerminals, itemPrices] = await Promise.all([
+    fetchUex<UexTerminal>("terminals"),
+    fetchUex<UexItemPrice>("items_prices_all"),
+  ]);
+
+  const uexById = new Map(uexTerminals.map((u) => [u.id, u]));
+
+  // Existing terminals: which UEX ids are mapped, and an index of unmapped ones
+  // by (locationKey) for brand matching.
+  const { results: existing } = await db
+    .prepare(
+      `SELECT t.id, t.uex_terminal_id, t.shop_name_key, s.name AS shop_name, s.location_label
+       FROM terminals t LEFT JOIN shops s ON s.id = t.shop_id
+       WHERE COALESCE(t.is_deleted, 0) = 0`,
+    )
+    .all<{ id: number; uex_terminal_id: number | null; shop_name_key: string; shop_name: string | null; location_label: string | null }>();
+  const mappedUex = new Set<number>();
+  const unmappedByLoc = new Map<string, Array<{ id: number; brand: string }>>();
+  for (const t of existing) {
+    if (t.uex_terminal_id != null) { mappedUex.add(t.uex_terminal_id); continue; }
+    const lk = locKeyOf(t.location_label);
+    const brand = normalize(t.shop_name || t.shop_name_key).replace(/stanton\d+ l(eo)?\d+/g, "").trim();
+    if (!unmappedByLoc.has(lk)) unmappedByLoc.set(lk, []);
+    unmappedByLoc.get(lk)!.push({ id: t.id, brand });
+  }
+
+  // Only materialise terminals that close a REAL gap: those selling at least one
+  // priced item that NO already-mapped terminal carries. Scoped to ITEMS
+  // (components/FPS/ship gear), not commodities (matched by name elsewhere).
+  // Without this we'd create ~400 redundant shops for items already priced.
+  const itemTerms = new Map<string, Set<number>>();
+  for (const p of itemPrices) {
+    if (!(p.price_buy > 0 || p.price_sell > 0) || !p.item_uuid) continue;
+    if (!itemTerms.has(p.item_uuid)) itemTerms.set(p.item_uuid, new Set());
+    itemTerms.get(p.item_uuid)!.add(p.id_terminal);
+  }
+  const priced = new Set<number>();
+  for (const [, terms] of itemTerms) {
+    if ([...terms].some((t) => mappedUex.has(t))) continue; // item already covered
+    for (const t of terms) priced.add(t);
+  }
+
+  const mapStmts: D1PreparedStatement[] = [];
+  const shopStmts: D1PreparedStatement[] = [];
+  const toCreateTerminals: Array<{ uid: number; u: UexTerminal }> = [];
+  const usedExisting = new Set<number>();
+
+  for (const uid of priced) {
+    if (mappedUex.has(uid)) continue;
+    const u = uexById.get(uid);
+    if (!u) continue;
+
+    // 2) match an existing unmapped terminal at the same location + brand
+    const lk = uexLocKey(u);
+    const company = normalize(u.company_name || (u.name || "").split(" - ")[0]);
+    const cands = (unmappedByLoc.get(lk) || []).filter(
+      (c) => !usedExisting.has(c.id) && company && (c.brand.includes(company) || company.includes(c.brand.split(" ")[0])),
+    );
+    if (cands.length >= 1) {
+      usedExisting.add(cands[0].id);
+      mappedUex.add(uid);
+      mapStmts.push(
+        db.prepare("UPDATE terminals SET uex_terminal_id = ?, updated_at = datetime('now') WHERE id = ?").bind(uid, cands[0].id),
+      );
+      continue;
+    }
+
+    // 3) create a shop (data_source='uex') for this UEX terminal
+    const shopName = u.company_name || (u.name || `UEX ${uid}`).split(" - ")[0];
+    const loc = u.city_name || u.space_station_name || u.outpost_name || u.planet_name || null;
+    const shopType = u.is_shop_vehicle ? "ship_components" : u.is_shop_fps ? "fps" : u.is_refinery ? "refinery" : (u.type || "general");
+    shopStmts.push(
+      db
+        .prepare(
+          `INSERT INTO shops (uuid, name, slug, shop_type, location_label, display_name, data_source, game_version_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'uex', ?)
+           ON CONFLICT(uuid) DO UPDATE SET name = excluded.name, location_label = excluded.location_label,
+             display_name = excluded.display_name, game_version_id = excluded.game_version_id, updated_at = datetime('now')`,
+        )
+        .bind(`uex-shop-${uid}`, shopName, `uex-${slugify(u.name || String(uid))}`, shopType, loc, u.name || shopName, gvId),
+    );
+    toCreateTerminals.push({ uid, u });
+  }
+
+  for (let i = 0; i < mapStmts.length; i += 100) await db.batch(mapStmts.slice(i, i + 100));
+  for (let i = 0; i < shopStmts.length; i += 100) await db.batch(shopStmts.slice(i, i + 100));
+
+  // Resolve the shop ids we just created, then create their terminals.
+  let created = 0;
+  if (toCreateTerminals.length > 0) {
+    const termStmts: D1PreparedStatement[] = [];
+    for (const { uid, u } of toCreateTerminals) {
+      termStmts.push(
+        db
+          .prepare(
+            `INSERT INTO terminals (uuid, shop_id, shop_name_key, terminal_type, uex_terminal_id, game_version_id)
+             SELECT ?, s.id, ?, 'item', ?, ?
+             FROM shops s WHERE s.uuid = ?
+             ON CONFLICT(uuid) DO UPDATE SET uex_terminal_id = excluded.uex_terminal_id, updated_at = datetime('now')`,
+          )
+          .bind(`uex-term-${uid}`, `UEX ${(u.name || uid).toString().slice(0, 110)}`, uid, gvId, `uex-shop-${uid}`),
+      );
+    }
+    for (let i = 0; i < termStmts.length; i += 100) await db.batch(termStmts.slice(i, i + 100));
+    created = termStmts.length;
+  }
+
+  return { mapped: mapStmts.length, created };
 }
 
 /**
@@ -117,7 +283,23 @@ export async function syncUexPrices(
 ): Promise<SyncResult> {
   const result: SyncResult = { commodities: 0, items: 0, errors: [] };
 
-  // Get terminal mappings: uex_terminal_id → our terminal_id
+  // Get game version for inserts
+  const gv = await db.prepare("SELECT id FROM game_versions WHERE is_default = 1 LIMIT 1").first<{ id: number }>();
+  const gvId = gv?.id ?? 1;
+
+  // Self-heal the terminal mapping FIRST: map existing unmapped terminals + create
+  // shop/terminal rows for UEX terminals we never extracted, so every UEX-priced
+  // item has a home. Without this, a data reload (which wipes uex_terminal_id)
+  // leaves the sync with nothing to map and it silently writes zero prices.
+  try {
+    const ens = await ensureUexTerminals(db, gvId);
+    result.terminalsMapped = ens.mapped;
+    result.terminalsCreated = ens.created;
+  } catch (e) {
+    result.errors.push(`Terminal self-heal failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Get terminal mappings: uex_terminal_id → our terminal_id (now self-healed)
   const { results: terminals } = await db
     .prepare("SELECT id, uex_terminal_id FROM terminals WHERE uex_terminal_id IS NOT NULL")
     .all();
@@ -130,10 +312,6 @@ export async function syncUexPrices(
     result.errors.push("No terminals with uex_terminal_id mapped");
     return result;
   }
-
-  // Get game version for inserts
-  const gv = await db.prepare("SELECT id FROM game_versions WHERE is_default = 1 LIMIT 1").first<{ id: number }>();
-  const gvId = gv?.id ?? 1;
 
   try {
     if (type === "commodities" || type === "all") {
