@@ -551,10 +551,20 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
 export async function getShipModules(db: D1Database, slug: string, isPTU = false): Promise<Record<string, unknown>[]> {
   const vm = isPTU ? "ptu_vehicle_modules" : "vehicle_modules";
   const v = isPTU ? "ptu_vehicles" : "vehicles";
+  const lm = isPTU ? "ptu_loot_map" : "loot_map";
+  const ti = isPTU ? "ptu_terminal_inventory" : "terminal_inventory";
+  // Bay modules are UEX-priced items whose loot_map row carries the human name but
+  // a NULL class_name, so we link by display_name. `price` is the cheapest effective
+  // buy price across terminals (COALESCE latest→base, see pricing-sql). NULL when the
+  // module has no UEX item (e.g. Retaliator base bays) → UI shows "—". Additive field.
   const result = await db
     .prepare(
       `SELECT vm.id, vm.uuid, vm.port_name, vm.class_name, vm.display_name,
-              vm.size, vm.is_default, vm.has_loadout
+              vm.size, vm.is_default, vm.has_loadout,
+              (SELECT ROUND(MIN(${buyPriceSQL("ti")}))
+                 FROM ${ti} ti
+                 JOIN ${lm} lm ON lm.uuid = ti.item_uuid
+                WHERE lm.name = vm.display_name AND ${buyablePricedSQL("ti")}) AS price
        FROM ${vm} vm
        WHERE vm.vehicle_id IN (SELECT v.id FROM ${v} v WHERE v.slug = ? OR v.short_slug = ?)
        ORDER BY vm.port_name, vm.is_default DESC, vm.display_name`
