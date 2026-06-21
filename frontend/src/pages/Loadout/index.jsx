@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight, FlaskConical, ExternalLink } from 'lucide-react'
-import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout } from '../../hooks/useAPI'
+import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout, useModuleSelections, saveModuleSelections, resetModuleSelection } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ComponentPicker from './ComponentPicker'
 import StatsPanel from './StatsPanel'
@@ -31,6 +31,11 @@ export default function Loadout() {
   const { data: ownedModules } = useOwnedModules(slug)
   const { data: fleetLoadout, refetch: refetchFleetLoadout } = useFleetLoadout(fleetId)
   const { data: loanerLoadout, refetch: refetchLoanerLoadout } = useLoanerLoadout(loanerVehicleId)
+
+  // Module selections persist against the same owner (fleet entry or loaner vehicle).
+  const moduleOwnerKind = loanerVehicleId ? 'loaner' : 'fleet'
+  const moduleOwnerId = loanerVehicleId || fleetId
+  const { data: moduleSelData, refetch: refetchModuleSel } = useModuleSelections(moduleOwnerKind, moduleOwnerId)
   const { data: fleetEntries, refetch: refetchFleet } = useFleet()
   const { data: cartData, loading: cartLoading, refetch: refetchCart } = useLoadoutCart()
 
@@ -192,6 +197,24 @@ export default function Loadout() {
     if (loanerVehicleId) { await resetLoanerLoadout(loanerVehicleId); refetchLoanerLoadout() }
     else if (fleetId) { await resetFleetLoadout(fleetId); refetchFleetLoadout() }
   }, [fleetId, loanerVehicleId, refetchFleetLoadout, refetchLoanerLoadout])
+
+  // Module slot selections (port_name → chosen module uuid).
+  const moduleSelections = useMemo(() => {
+    const map = {}
+    for (const s of moduleSelData?.selections || []) map[s.port_name] = s.module_uuid
+    return map
+  }, [moduleSelData])
+
+  const handleSelectModule = useCallback(async (portName, module) => {
+    if (!canPersist) return
+    // Choosing the default clears the override (back to stock); else save the choice.
+    if (module.is_default) {
+      await resetModuleSelection(moduleOwnerKind, moduleOwnerId, portName)
+    } else {
+      await saveModuleSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: portName, module_uuid: module.uuid }])
+    }
+    refetchModuleSel()
+  }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchModuleSel])
 
   const handleAddNonStockToCart = useCallback(async () => {
     const items = Object.values(overrides).map(o => ({ component_id: o.component_id, source_fleet_id: fleetId || undefined }))
@@ -481,7 +504,12 @@ export default function Loadout() {
         {/* MODULES (full-width) */}
         {modules?.length > 0 && (
           <div className="mt-4">
-            <ModulesSection modules={modules} ownedTitles={ownedModules} />
+            <ModulesSection
+              modules={modules}
+              ownedTitles={ownedModules}
+              selections={canPersist ? moduleSelections : undefined}
+              onSelect={canPersist ? handleSelectModule : undefined}
+            />
           </div>
         )}
 

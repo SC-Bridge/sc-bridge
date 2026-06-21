@@ -17,21 +17,35 @@ function isModuleOwned(displayName, ownedTitles) {
   })
 }
 
-export default function ModulesSection({ modules, ownedTitles }) {
+/**
+ * Module slots for a ship. Read-only on the Ship DB (no onSelect); interactive
+ * in the loadout planner when `onSelect` is provided — clicking an option
+ * installs it. `selections` maps port_name → chosen module uuid; the effective
+ * installed module per port is the selection, else the ship's default module.
+ */
+export default function ModulesSection({ modules, ownedTitles, selections, onSelect }) {
   const [collapsed, setCollapsed] = useState(false)
+  const editable = typeof onSelect === 'function'
 
   if (!modules?.length) return null
 
-  // Deduplicate by display_name+port_name, then group by port_name
+  // Group by port, de-duped by uuid.
   const seen = new Set()
   const byPort = new Map()
   for (const m of modules) {
-    const dedup = `${m.port_name}:${m.display_name}`
-    if (seen.has(dedup)) continue
-    seen.add(dedup)
+    if (m.uuid && seen.has(m.uuid)) continue
+    if (m.uuid) seen.add(m.uuid)
     const port = m.port_name || 'Default'
     if (!byPort.has(port)) byPort.set(port, [])
     byPort.get(port).push(m)
+  }
+
+  // Effective installed uuid per port: the user's selection, else the default.
+  const installedByPort = {}
+  for (const [port, list] of byPort.entries()) {
+    const chosen = selections?.[port]
+    const def = list.find(m => m.is_default)
+    installedByPort[port] = chosen || def?.uuid || null
   }
 
   const portCount = byPort.size
@@ -49,57 +63,71 @@ export default function ModulesSection({ modules, ownedTitles }) {
           <span className="text-[12px] font-semibold uppercase tracking-wider font-hud">Modules</span>
         </button>
         <span className="text-[11px] text-gray-600">{portLabel}</span>
+        {editable && <span className="text-[10px] text-gray-600 ml-auto">Click to install</span>}
       </div>
 
       {!collapsed && (
         <div className="divide-y divide-white/[0.04]">
-          {[...byPort.entries()].map(([portName, portModules]) => (
-            <div key={portName} className="px-3 py-2">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-hud">
-                {formatPortName(portName)}
+          {[...byPort.entries()].map(([portName, portModules]) => {
+            const installedUuid = installedByPort[portName]
+            return (
+              <div key={portName} className="px-3 py-2">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5 font-hud">
+                  {formatPortName(portName)}
+                </div>
+                <div className="space-y-1">
+                  {portModules.map(m => {
+                    const owned = isModuleOwned(m.display_name, ownedTitles)
+                    const installed = editable && m.uuid && m.uuid === installedUuid
+                    const Row = editable ? 'button' : 'div'
+                    return (
+                      <Row
+                        key={m.id ?? m.uuid}
+                        {...(editable ? { onClick: () => onSelect(portName, m), type: 'button' } : {})}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm text-left transition-colors
+                          ${installed
+                            ? 'bg-sc-accent/10 border border-sc-accent/40'
+                            : m.is_default
+                              ? 'bg-white/[0.03] border border-white/[0.08]'
+                              : 'bg-white/[0.01] border border-transparent'}
+                          ${editable ? 'hover:bg-white/[0.06] cursor-pointer' : ''}
+                          ${owned && !installed ? 'border-purple-500/30' : ''}`}
+                      >
+                        {m.size != null && (
+                          <span className="text-[10px] font-mono font-bold text-gray-500 bg-white/[0.05] px-1.5 py-0.5 rounded">
+                            S{m.size}
+                          </span>
+                        )}
+                        <span className={`flex-1 ${installed || m.is_default ? 'text-gray-200' : 'text-gray-400'}`}>
+                          {m.display_name}
+                        </span>
+                        {m.price != null ? (
+                          <span className="text-[11px] text-amber-300 flex-shrink-0 tabular-nums">
+                            {Math.round(m.price).toLocaleString()} aUEC
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-gray-600 flex-shrink-0">—</span>
+                        )}
+                        {installed && (
+                          <span className="text-[9px] text-sc-accent uppercase tracking-wider font-semibold flex items-center gap-0.5">
+                            <Check className="w-3 h-3" /> Installed
+                          </span>
+                        )}
+                        {!!m.is_default && !installed && (
+                          <span className="text-[9px] text-amber-400/70 uppercase tracking-wider font-semibold">Default</span>
+                        )}
+                        {owned && !installed && (
+                          <span className="flex items-center gap-0.5 text-[9px] text-purple-400 uppercase tracking-wider font-semibold">
+                            <Check className="w-3 h-3" /> Owned
+                          </span>
+                        )}
+                      </Row>
+                    )
+                  })}
+                </div>
               </div>
-              <div className="space-y-1">
-                {portModules.map(m => {
-                  const owned = isModuleOwned(m.display_name, ownedTitles)
-                  return (
-                    <div
-                      key={m.id}
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded text-sm
-                        ${m.is_default
-                          ? 'bg-white/[0.03] border border-white/[0.08]'
-                          : 'bg-white/[0.01] border border-transparent'
-                        }
-                        ${owned ? 'border-purple-500/30' : ''}`}
-                    >
-                      {m.size != null && (
-                        <span className="text-[10px] font-mono font-bold text-gray-500 bg-white/[0.05] px-1.5 py-0.5 rounded">
-                          S{m.size}
-                        </span>
-                      )}
-                      <span className={`flex-1 ${m.is_default ? 'text-gray-200' : 'text-gray-400'}`}>
-                        {m.display_name}
-                      </span>
-                      {m.price != null ? (
-                        <span className="text-[11px] text-amber-300 flex-shrink-0 tabular-nums">
-                          {Math.round(m.price).toLocaleString()} aUEC
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-gray-600 flex-shrink-0">—</span>
-                      )}
-                      {!!m.is_default && (
-                        <span className="text-[9px] text-amber-400/70 uppercase tracking-wider font-semibold">Default</span>
-                      )}
-                      {owned && (
-                        <span className="flex items-center gap-0.5 text-[9px] text-purple-400 uppercase tracking-wider font-semibold">
-                          <Check className="w-3 h-3" /> Owned
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
