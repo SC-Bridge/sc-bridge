@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight, FlaskConical, ExternalLink } from 'lucide-react'
-import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart } from '../../hooks/useAPI'
+import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ComponentPicker from './ComponentPicker'
 import StatsPanel from './StatsPanel'
@@ -21,12 +21,16 @@ export default function Loadout() {
   const { slug } = useParams()
   const [searchParams] = useSearchParams()
   const fleetId = searchParams.get('fleet_id') ? parseInt(searchParams.get('fleet_id'), 10) : null
+  // Loaners are derived (no fleet id) — they persist by their vehicle id instead.
+  const loanerVehicleId = searchParams.get('loaner_vehicle_id') ? parseInt(searchParams.get('loaner_vehicle_id'), 10) : null
+  const canPersist = !!(fleetId || loanerVehicleId)
 
   const { data: ship } = useShip(slug)
   const { data: stockComponents, loading: stockLoading, error: stockError } = useLoadoutComponents(slug)
   const { data: modules } = useShipModules(slug)
   const { data: ownedModules } = useOwnedModules(slug)
   const { data: fleetLoadout, refetch: refetchFleetLoadout } = useFleetLoadout(fleetId)
+  const { data: loanerLoadout, refetch: refetchLoanerLoadout } = useLoanerLoadout(loanerVehicleId)
   const { data: fleetEntries, refetch: refetchFleet } = useFleet()
   const { data: cartData, loading: cartLoading, refetch: refetchCart } = useLoadoutCart()
 
@@ -45,12 +49,13 @@ export default function Loadout() {
   const [showCart, setShowCart] = useState(false)
 
   useEffect(() => {
-    if (fleetLoadout?.overrides) {
+    const src = loanerVehicleId ? loanerLoadout : fleetLoadout
+    if (src?.overrides) {
       const map = {}
-      for (const o of fleetLoadout.overrides) map[o.port_id] = o
+      for (const o of src.overrides) map[o.port_id] = o
       setOverrides(map)
     }
-  }, [fleetLoadout])
+  }, [fleetLoadout, loanerLoadout, loanerVehicleId])
 
   // Group components by category, re-parenting turret children into the Turrets group
   const grouped = useMemo(() => {
@@ -169,18 +174,24 @@ export default function Loadout() {
   }, [stockComponents])
 
   const handleSave = useCallback(async () => {
-    if (!fleetId) return
+    if (!canPersist) return
     const overrideList = Object.entries(overrides).map(([portId, data]) => ({
       port_id: parseInt(portId, 10), component_id: data.component_id,
     }))
-    await saveFleetLoadout(fleetId, overrideList)
-    refetchFleetLoadout()
-  }, [fleetId, overrides, refetchFleetLoadout])
+    if (loanerVehicleId) {
+      await saveLoanerLoadout(loanerVehicleId, overrideList)
+      refetchLoanerLoadout()
+    } else {
+      await saveFleetLoadout(fleetId, overrideList)
+      refetchFleetLoadout()
+    }
+  }, [canPersist, fleetId, loanerVehicleId, overrides, refetchFleetLoadout, refetchLoanerLoadout])
 
   const handleResetAll = useCallback(async () => {
     setOverrides({})
-    if (fleetId) { await resetFleetLoadout(fleetId); refetchFleetLoadout() }
-  }, [fleetId, refetchFleetLoadout])
+    if (loanerVehicleId) { await resetLoanerLoadout(loanerVehicleId); refetchLoanerLoadout() }
+    else if (fleetId) { await resetFleetLoadout(fleetId); refetchFleetLoadout() }
+  }, [fleetId, loanerVehicleId, refetchFleetLoadout, refetchLoanerLoadout])
 
   const handleAddNonStockToCart = useCallback(async () => {
     const items = Object.values(overrides).map(o => ({ component_id: o.component_id, source_fleet_id: fleetId || undefined }))
@@ -259,6 +270,9 @@ export default function Loadout() {
                 {fleetId && (
                   <span className="text-[11px] bg-sc-accent/10 text-sc-accent px-2 py-0.5 rounded border border-sc-accent/20 font-medium">Fleet Ship</span>
                 )}
+                {loanerVehicleId && (
+                  <span className="text-[11px] bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded border border-amber-500/20 font-medium">Loaner</span>
+                )}
                 {overrideCount > 0 && (
                   <span className="text-[11px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20 font-medium">{overrideCount} customized</span>
                 )}
@@ -279,7 +293,7 @@ export default function Loadout() {
               )}
             </div>
             {hasComponents && <div className="flex items-center gap-1.5 mt-3 flex-wrap justify-end">
-              {fleetId && overrideCount > 0 && (
+              {canPersist && overrideCount > 0 && (
                 <button onClick={handleSave} className="px-2.5 py-1 text-xs bg-sc-accent/20 hover:bg-sc-accent/30 text-sc-accent border border-sc-accent/30 rounded transition-all font-medium cursor-pointer">
                   Save
                 </button>

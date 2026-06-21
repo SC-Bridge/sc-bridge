@@ -593,6 +593,20 @@ export async function resetFleetLoadoutPort(fleetId, portId) {
   return apiFetch('DELETE', `/loadout/fleet/${fleetId}/port/${portId}`)
 }
 
+// Loaner equivalents — derived loaners have no fleet id, so their loadout is
+// keyed by the loaner's vehicle id (user_loaner_loadout).
+export function useLoanerLoadout(loanerVehicleId) {
+  return useAPI(loanerVehicleId ? `/loadout/loaner/${loanerVehicleId}` : null, { skip: !loanerVehicleId })
+}
+
+export async function saveLoanerLoadout(loanerVehicleId, overrides) {
+  return putJSON(`/loadout/loaner/${loanerVehicleId}`, { overrides })
+}
+
+export async function resetLoanerLoadout(loanerVehicleId) {
+  return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}`)
+}
+
 export function useLoadoutCart() {
   return useAPI('/loadout/cart')
 }

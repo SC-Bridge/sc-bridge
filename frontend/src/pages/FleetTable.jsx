@@ -565,9 +565,14 @@ export default function FleetTable() {
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
                         <span className="w-6 flex-shrink-0 flex justify-center">
-                          {v.production_status === 'flight_ready' && !isLoaner && (
+                          {v.production_status === 'flight_ready' && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); navigate(`/loadout/${v.vehicle_slug}?fleet_id=${v.id}`) }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigate(isLoaner
+                                  ? `/loadout/${v.vehicle_slug}?loaner_vehicle_id=${v.vehicle_id}`
+                                  : `/loadout/${v.vehicle_slug}?fleet_id=${v.id}`)
+                              }}
                               className="p-1 text-zinc-600 hover:text-sky-400 transition-colors"
                               title="Customize loadout"
                             >
