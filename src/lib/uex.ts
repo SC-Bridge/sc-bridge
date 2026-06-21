@@ -120,7 +120,7 @@ function slugify(s: string): string {
 export async function ensureUexTerminals(
   db: D1Database,
   gvId: number,
-): Promise<{ mapped: number; created: number }> {
+): Promise<{ mapped: number; created: number; itemPrices: UexItemPrice[] }> {
   const [uexTerminals, itemPrices] = await Promise.all([
     fetchUex<UexTerminal>("terminals"),
     fetchUex<UexItemPrice>("items_prices_all"),
@@ -228,7 +228,7 @@ export async function ensureUexTerminals(
     created = termStmts.length;
   }
 
-  return { mapped: mapStmts.length, created };
+  return { mapped: mapStmts.length, created, itemPrices };
 }
 
 /**
@@ -291,10 +291,12 @@ export async function syncUexPrices(
   // shop/terminal rows for UEX terminals we never extracted, so every UEX-priced
   // item has a home. Without this, a data reload (which wipes uex_terminal_id)
   // leaves the sync with nothing to map and it silently writes zero prices.
+  let prefetchedItemPrices: UexItemPrice[] | undefined;
   try {
     const ens = await ensureUexTerminals(db, gvId);
     result.terminalsMapped = ens.mapped;
     result.terminalsCreated = ens.created;
+    prefetchedItemPrices = ens.itemPrices;
   } catch (e) {
     result.errors.push(`Terminal self-heal failed: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -323,7 +325,7 @@ export async function syncUexPrices(
 
   try {
     if (type === "items" || type === "all") {
-      result.items = await syncItems(db, uexToOurs, gvId);
+      result.items = await syncItems(db, uexToOurs, gvId, prefetchedItemPrices);
       // Durable fix for buy-only items the p4k extractor misses (#135): once
       // UEX knows an item, ensure it has a loot_map row so it's searchable +
       // price-linked. Self-healing across full DB reloads.
@@ -418,8 +420,11 @@ export async function syncItems(
   db: D1Database,
   uexToOurs: Map<number, number>,
   gvId: number,
+  prefetched?: UexItemPrice[],
 ): Promise<number> {
-  const prices = await fetchUex<UexItemPrice>("items_prices_all");
+  // Reuse the feed already fetched by ensureUexTerminals when available, so the
+  // 6MB items feed is fetched once per sync (not twice).
+  const prices = prefetched ?? (await fetchUex<UexItemPrice>("items_prices_all"));
 
   const stmts: D1PreparedStatement[] = [];
   for (const p of prices) {
