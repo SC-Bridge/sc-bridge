@@ -31,6 +31,83 @@ async function batchInQuery<T>(
   return results;
 }
 
+// Shared loadout-override fetch for both owned fleet ships (user_fleet_loadout,
+// keyed by user_fleet_id) and derived loaners (user_loaner_loadout, keyed by
+// loaner_vehicle_id). Returns override rows with component stats + the exact
+// buy-shop locations for each saved swap (same rule as getShipLoadout — exact
+// class_name only, no name-variant fallback). The override table is user data
+// (never PTU-shadowed); component joins use `t()` so PTU channels resolve right.
+async function fetchLoadoutOverrides(
+  db: D1Database,
+  overrideTable: "user_fleet_loadout" | "user_loaner_loadout",
+  keyCol: "user_fleet_id" | "loaner_vehicle_id",
+  userId: string,
+  keyVal: number,
+  t: (n: string) => string,
+): Promise<Record<string, unknown>[]> {
+  const overrides = await db
+    .prepare(`SELECT l.id, l.port_id, l.component_id,
+              vc.name AS component_name, vc.name AS child_name,
+              vc.uuid AS component_uuid, vc.class_name,
+              vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
+              cp.power_output, cc.cooling_rate, cs.shield_hp, cs.shield_regen,
+              cs.resist_physical, cs.resist_energy, cs.resist_distortion, cs.resist_thermal,
+              cq.quantum_speed, cq.quantum_range, cq.fuel_rate, cq.spool_time,
+              cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute, cw.effective_range,
+              cw.damage_physical, cw.damage_energy, cw.damage_distortion, cw.damage_thermal,
+              cr.radar_range, vc.power_draw, vc.power_draw_min, vc.thermal_output,
+              m.name AS manufacturer_name
+       FROM ${overrideTable} l
+       JOIN ${t("vehicle_components")} vc ON vc.id = l.component_id
+       LEFT JOIN ${t("manufacturers")} m ON m.id = vc.manufacturer_id
+       LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
+       LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
+       LEFT JOIN ${t("component_shields")} cs ON cs.component_id = vc.id
+       LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
+       LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
+       LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
+       WHERE l.user_id = ? AND l.${keyCol} = ?`,
+    )
+    .bind(userId, keyVal)
+    .all<Record<string, unknown>>();
+
+  const rows = overrides.results;
+  const classNames = [
+    ...new Set(rows.map((r) => (r.class_name as string | null) ?? "").filter(Boolean)),
+  ];
+  if (classNames.length > 0) {
+    const ph = classNames.map(() => "?").join(",");
+    const shopRows = await db
+      .prepare(
+        `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
+                tm.shop_name_key AS location_key,
+                ROUND(${buyPriceSQL("ti")}) AS buy_price,
+                s.display_name AS shop_name, s.location_label
+           FROM terminal_inventory ti
+           JOIN loot_map lm ON lm.uuid = ti.item_uuid
+           JOIN terminals tm ON tm.id = ti.terminal_id
+           LEFT JOIN shops s ON s.id = tm.shop_id
+          WHERE ${buyablePricedSQL("ti")}
+            AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
+      )
+      .bind(...classNames)
+      .all<{ class_name: string; location_key: string; buy_price: number | null; shop_name: string | null; location_label: string | null }>();
+    const shopMap: Record<string, Array<Record<string, unknown>>> = {};
+    for (const row of shopRows.results) {
+      (shopMap[row.class_name] ??= []).push({
+        location_key: row.location_key,
+        shop_name: row.shop_name || (row.location_key || "").replace(/^Inv_/, "").replace(/_/g, " "),
+        location_label: row.location_label,
+        buy_price: row.buy_price,
+      });
+    }
+    for (const r of rows) r.shops = shopMap[(r.class_name as string) ?? ""] || [];
+  } else {
+    for (const r of rows) r.shops = [];
+  }
+  return rows;
+}
+
 // --- Validation schemas ---
 
 const LoadoutBody = z.object({
@@ -405,71 +482,7 @@ export function loadoutRoutes() {
     const fleetId = parseInt(c.req.param("id"), 10);
     if (isNaN(fleetId)) return c.json({ error: "Invalid fleet ID" }, 400);
 
-    const overrides = await c.env.DB
-      .prepare(`SELECT ufl.id, ufl.port_id, ufl.component_id,
-                vc.name AS component_name, vc.name AS child_name,
-                vc.uuid AS component_uuid, vc.class_name,
-                vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
-                cp.power_output, cc.cooling_rate, cs.shield_hp, cs.shield_regen,
-                cs.resist_physical, cs.resist_energy, cs.resist_distortion, cs.resist_thermal,
-                cq.quantum_speed, cq.quantum_range, cq.fuel_rate, cq.spool_time,
-                cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute, cw.effective_range,
-                cw.damage_physical, cw.damage_energy, cw.damage_distortion, cw.damage_thermal,
-                cr.radar_range, vc.power_draw, vc.power_draw_min, vc.thermal_output,
-                m.name AS manufacturer_name
-         FROM user_fleet_loadout ufl
-         JOIN ${t("vehicle_components")} vc ON vc.id = ufl.component_id
-         LEFT JOIN ${t("manufacturers")} m ON m.id = vc.manufacturer_id
-         LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
-         LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
-         LEFT JOIN ${t("component_shields")} cs ON cs.component_id = vc.id
-         LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
-         LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
-         LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
-         WHERE ufl.user_id = ? AND ufl.user_fleet_id = ?`,
-      )
-      .bind(user.id, fleetId)
-      .all<Record<string, unknown>>();
-
-    // Attach shops (exact class_name only — same rule as getShipLoadout, no
-    // name-variant fallback) so a saved swap carries its real buy locations
-    // into the Location Planner instead of inheriting the stock component's
-    // shops on the client-side merge (#94).
-    const rows = overrides.results;
-    const classNames = [
-      ...new Set(rows.map((r) => (r.class_name as string | null) ?? "").filter(Boolean)),
-    ];
-    if (classNames.length > 0) {
-      const ph = classNames.map(() => "?").join(",");
-      const shopRows = await c.env.DB
-        .prepare(
-          `SELECT REPLACE(lm.class_name, 'EntityClassDefinition.', '') AS class_name,
-                  tm.shop_name_key AS location_key,
-                  ROUND(${buyPriceSQL("ti")}) AS buy_price,
-                  s.display_name AS shop_name, s.location_label
-             FROM terminal_inventory ti
-             JOIN loot_map lm ON lm.uuid = ti.item_uuid
-             JOIN terminals tm ON tm.id = ti.terminal_id
-             LEFT JOIN shops s ON s.id = tm.shop_id
-            WHERE ${buyablePricedSQL("ti")}
-              AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') IN (${ph})`,
-        )
-        .bind(...classNames)
-        .all<{ class_name: string; location_key: string; buy_price: number | null; shop_name: string | null; location_label: string | null }>();
-      const shopMap: Record<string, Array<Record<string, unknown>>> = {};
-      for (const row of shopRows.results) {
-        (shopMap[row.class_name] ??= []).push({
-          location_key: row.location_key,
-          shop_name: row.shop_name || (row.location_key || "").replace(/^Inv_/, "").replace(/_/g, " "),
-          location_label: row.location_label,
-          buy_price: row.buy_price,
-        });
-      }
-      for (const r of rows) r.shops = shopMap[(r.class_name as string) ?? ""] || [];
-    } else {
-      for (const r of rows) r.shops = [];
-    }
-
+    const rows = await fetchLoadoutOverrides(c.env.DB, "user_fleet_loadout", "user_fleet_id", user.id, fleetId, t);
     return c.json({ overrides: rows });
   });
 
@@ -535,6 +548,86 @@ export function loadoutRoutes() {
     await c.env.DB
       .prepare("DELETE FROM user_fleet_loadout WHERE user_id = ? AND user_fleet_id = ? AND port_id = ?")
       .bind(user.id, fleetId, portId)
+      .run();
+
+    return c.json({ ok: true });
+  });
+
+  // ============================================================
+  //  AUTH — Loaner loadout (derived ships, keyed by vehicle_id)
+  // ============================================================
+  // Loaners have no user_fleet row, so their overrides live in
+  // user_loaner_loadout keyed by (user_id, loaner_vehicle_id). Same shape as
+  // the fleet endpoints; the key is the loaner's vehicle id, not a fleet id.
+
+  // GET /api/loadout/loaner/:vehicleId — get custom loadout for a loaner
+  app.get("/loaner/:vehicleId", async (c) => {
+    const isPTU = isPTUChannel(getActiveChannel(c));
+    const t = (n: string) => resolveTable(n, isPTU);
+    const user = getAuthUser(c);
+    const vehicleId = parseInt(c.req.param("vehicleId"), 10);
+    if (isNaN(vehicleId)) return c.json({ error: "Invalid vehicle ID" }, 400);
+
+    const rows = await fetchLoadoutOverrides(c.env.DB, "user_loaner_loadout", "loaner_vehicle_id", user.id, vehicleId, t);
+    return c.json({ overrides: rows });
+  });
+
+  // PUT /api/loadout/loaner/:vehicleId — save loaner loadout overrides (bulk)
+  app.put("/loaner/:vehicleId",
+    validate("json", LoadoutBody),
+    async (c) => {
+      const user = getAuthUser(c);
+      const vehicleId = parseInt(c.req.param("vehicleId"), 10);
+      if (isNaN(vehicleId)) return c.json({ error: "Invalid vehicle ID" }, 400);
+
+      // The vehicle must exist (and be a real ship) — guards the FK + junk ids.
+      const vehicle = await c.env.DB
+        .prepare("SELECT id FROM vehicles WHERE id = ?")
+        .bind(vehicleId)
+        .first();
+      if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
+
+      const { overrides } = c.req.valid("json");
+      const db = c.env.DB;
+      const stmts = overrides.map((o) =>
+        db
+          .prepare(
+            `INSERT INTO user_loaner_loadout (user_id, loaner_vehicle_id, port_id, component_id, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT (user_id, loaner_vehicle_id, port_id)
+             DO UPDATE SET component_id = excluded.component_id, updated_at = datetime('now')`,
+          )
+          .bind(user.id, vehicleId, o.port_id, o.component_id),
+      );
+      if (stmts.length > 0) await db.batch(stmts);
+      return c.json({ ok: true });
+    },
+  );
+
+  // DELETE /api/loadout/loaner/:vehicleId — reset loaner to stock
+  app.delete("/loaner/:vehicleId", async (c) => {
+    const user = getAuthUser(c);
+    const vehicleId = parseInt(c.req.param("vehicleId"), 10);
+    if (isNaN(vehicleId)) return c.json({ error: "Invalid vehicle ID" }, 400);
+
+    await c.env.DB
+      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND loaner_vehicle_id = ?")
+      .bind(user.id, vehicleId)
+      .run();
+
+    return c.json({ ok: true });
+  });
+
+  // DELETE /api/loadout/loaner/:vehicleId/port/:portId — reset single port
+  app.delete("/loaner/:vehicleId/port/:portId", async (c) => {
+    const user = getAuthUser(c);
+    const vehicleId = parseInt(c.req.param("vehicleId"), 10);
+    const portId = parseInt(c.req.param("portId"), 10);
+    if (isNaN(vehicleId) || isNaN(portId)) return c.json({ error: "Invalid IDs" }, 400);
+
+    await c.env.DB
+      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND loaner_vehicle_id = ? AND port_id = ?")
+      .bind(user.id, vehicleId, portId)
       .run();
 
     return c.json({ ok: true });

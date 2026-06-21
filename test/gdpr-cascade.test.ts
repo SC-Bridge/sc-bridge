@@ -31,6 +31,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     db.prepare("DELETE FROM org_op_capital WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM org_op_participants WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_fleet_loadout WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_loaner_loadout WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_loadout_cart WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_blueprints WHERE user_id = ?").bind(userId),
     // Better Auth tables (no CASCADE)
@@ -88,6 +89,8 @@ const USER_TABLES = [
   // Loadout customization (0141)
   "user_fleet_loadout",
   "user_loadout_cart",
+  // Loaner loadout customization (0259) — explicit cleanup (keyed by vehicle, no cascade)
+  "user_loaner_loadout",
   // Crafting blueprint ownership (0146) + named saved builds (0226)
   "user_blueprints",
   "user_blueprint_builds",
@@ -448,6 +451,15 @@ describe("GDPR — User Deletion Cascade", () => {
            VALUES (?, ?, 1)`
         )
         .bind(user.userId, compRow!.id)
+        .run();
+
+      // user_loaner_loadout (migration 0259) — keyed by vehicle, not user_fleet
+      await db
+        .prepare(
+          `INSERT INTO user_loaner_loadout (user_id, loaner_vehicle_id, port_id, component_id)
+           VALUES (?, ?, ?, ?)`
+        )
+        .bind(user.userId, vehicleId, portRow!.id, compRow!.id)
         .run();
 
       // user_blueprints (migration 0146) — need a crafting_blueprints row
