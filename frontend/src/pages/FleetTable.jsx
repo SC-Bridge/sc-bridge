@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useFleet, useFleetLoaners, useUserOrgs, updateShipVisibility, bulkSetVisibility } from '../hooks/useAPI'
-import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check, KeyRound } from 'lucide-react'
+import { useFleet, useFleetLoaners, useUserOrgs, updateShipVisibility, bulkSetVisibility, deleteIngameShip, clearIngameShips } from '../hooks/useAPI'
+import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check, KeyRound, Plus, Trash2, Coins } from 'lucide-react'
+import AddIngameShipModal from './AddIngameShipModal'
 import AlertBanner from '../components/AlertBanner'
 import PageHeader from '../components/PageHeader'
 import PrivacyMask from '../components/PrivacyMask'
@@ -79,6 +80,7 @@ function cleanPledgeName(name) {
  * loaner rows are their own category. */
 export function rowCategory(v) {
   if (v.is_derived_loaner) return 'loaner'
+  if (v.source === 'ingame') return 'ingame'
   if (v.production_status === 'flight_ready') return 'flight_ready'
   return 'concept'
 }
@@ -88,6 +90,7 @@ const CATEGORY_TABS = [
   { key: 'flight_ready', label: 'Flight Ready' },
   { key: 'concept', label: 'Concept' },
   { key: 'loaner', label: 'Loaners' },
+  { key: 'ingame', label: 'In-Game' },
 ]
 
 const VISIBILITY_OPTIONS = [
@@ -208,12 +211,30 @@ export default function FleetTable() {
   )
 
   const categoryCounts = useMemo(() => {
-    const counts = { all: 0, flight_ready: 0, concept: 0, loaner: 0 }
+    const counts = { all: 0, flight_ready: 0, concept: 0, loaner: 0, ingame: 0 }
     for (const v of combined) { counts.all++; counts[rowCategory(v)]++ }
     return counts
   }, [combined])
 
   const inOrgs = !!(orgsData?.orgs?.length > 0)
+
+  // In-game-purchased ships (manually added; cleared after a wipe).
+  const [showAddIngame, setShowAddIngame] = useState(false)
+  const [ingameBusy, setIngameBusy] = useState(false)
+  const ingameCount = categoryCounts.ingame || 0
+
+  async function handleDeleteIngame(id) {
+    if (ingameBusy) return
+    setIngameBusy(true)
+    try { await deleteIngameShip(id); refetch() } catch { /* surfaced by row state */ } finally { setIngameBusy(false) }
+  }
+
+  async function handleClearIngame() {
+    if (ingameBusy || ingameCount === 0) return
+    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} from your fleet? (Pledged ships are unaffected.)`)) return
+    setIngameBusy(true)
+    try { await clearIngameShips(); refetch() } catch { /* no-op */ } finally { setIngameBusy(false) }
+  }
 
   // Bulk-visibility undo state. Holds the previous (id → org_visibility) snapshot
   // for 5s so the user can revert a "Set all" they didn't mean. The timerId is
@@ -361,8 +382,33 @@ export default function FleetTable() {
     <div className="space-y-4 animate-fade-in-up">
       <PageHeader
         title="MY FLEET"
-        actions={<span className="text-xs font-mono text-gray-500">{sorted.length} ships</span>}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAddIngame(true)}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs bg-sc-accent/15 hover:bg-sc-accent/25 text-sc-accent border border-sc-accent/30 rounded transition-colors cursor-pointer"
+              title="Add a ship you bought in-game with aUEC"
+            >
+              <Coins className="w-3.5 h-3.5" /> Add In-Game Ship
+            </button>
+            {ingameCount > 0 && (
+              <button
+                onClick={handleClearIngame}
+                disabled={ingameBusy}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs bg-white/[0.04] hover:bg-red-500/10 text-gray-400 hover:text-red-300 border border-white/[0.08] hover:border-red-500/30 rounded transition-colors cursor-pointer disabled:opacity-50"
+                title="Remove all in-game-purchased ships (e.g. after a server wipe)"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Clear In-Game ({ingameCount})
+              </button>
+            )}
+            <span className="text-xs font-mono text-gray-500">{sorted.length} ships</span>
+          </div>
+        }
       />
+
+      {showAddIngame && (
+        <AddIngameShipModal onClose={() => setShowAddIngame(false)} onAdded={refetch} />
+      )}
 
       <ShareFleetBanner />
 
@@ -522,6 +568,7 @@ export default function FleetTable() {
               ) : (
                 sorted.map((v, i) => {
                   const isLoaner = !!v.is_derived_loaner
+                  const isIngame = v.source === 'ingame'
                   const rowKey = isLoaner ? `loaner-${v.vehicle_id}` : (v.id || `row-${i}`)
                   return (
                   <tr
@@ -547,6 +594,11 @@ export default function FleetTable() {
                             {isLoaner && (
                               <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded">
                                 <KeyRound className="w-3 h-3" aria-hidden="true" /> Loaner
+                              </span>
+                            )}
+                            {isIngame && (
+                              <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] px-1.5 py-0.5 rounded">
+                                <Coins className="w-3 h-3" aria-hidden="true" /> In-Game
                               </span>
                             )}
                           </div>
@@ -580,6 +632,18 @@ export default function FleetTable() {
                             </button>
                           )}
                         </span>
+                        {isIngame && (
+                          <span className="w-6 flex-shrink-0 flex justify-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteIngame(v.id) }}
+                              disabled={ingameBusy}
+                              className="p-1 text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-50"
+                              title="Remove this in-game ship"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        )}
                         <span className="badge badge-size inline-block w-16 text-center">{v.size_label || '?'}</span>
                       </div>
                     </td>

@@ -254,6 +254,79 @@ export function fleetRoutes() {
     });
   });
 
+  // ─── In-game-purchased ships ────────────────────────────────────────────
+  // Ships bought with aUEC in-game. Stored as normal user_fleet rows tagged
+  // source='ingame' so they show in the fleet but (a) survive HangarXplor
+  // re-imports and (b) can be bulk-cleared after a server wipe.
+
+  // POST /api/vehicles/ingame — add an in-game-purchased ship to the fleet
+  routes.post("/ingame",
+    validate("json", z.object({
+      vehicle_id: z.number().int().positive(),
+      custom_name: z.string().trim().max(120).optional(),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const { vehicle_id, custom_name } = c.req.valid("json");
+
+      const vehicle = await db.prepare("SELECT id FROM vehicles WHERE id = ?").bind(vehicle_id).first();
+      if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
+
+      await db
+        .prepare(
+          `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at)
+           VALUES (?, ?, 'ingame', ?, datetime('now'))`,
+        )
+        .bind(userID, vehicle_id, custom_name || null)
+        .run();
+      c.executionCtx.waitUntil(
+        resolveVerifiedHandle(db, userID)
+          .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
+          .catch(() => {}),
+      );
+      return c.json({ ok: true });
+    },
+  );
+
+  // DELETE /api/vehicles/ingame — clear ALL in-game ships (post-wipe reset)
+  routes.delete("/ingame", async (c) => {
+    const db = c.env.DB;
+    const userID = getAuthUser(c).id;
+    const res = await db
+      .prepare("DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
+      .bind(userID)
+      .run();
+    c.executionCtx.waitUntil(
+      resolveVerifiedHandle(db, userID)
+        .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
+        .catch(() => {}),
+    );
+    return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
+  });
+
+  // DELETE /api/vehicles/ingame/:id — remove a single in-game ship.
+  // Scoped to source='ingame' so pledge/imported ships can't be deleted here.
+  routes.delete("/ingame/:id",
+    validate("param", IntIdParam),
+    async (c) => {
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const { id } = c.req.valid("param");
+      const res = await db
+        .prepare("DELETE FROM user_fleet WHERE id = ? AND user_id = ? AND source = 'ingame'")
+        .bind(id, userID)
+        .run();
+      if (!res.meta?.changes) return c.json({ error: "In-game ship not found" }, 404);
+      c.executionCtx.waitUntil(
+        resolveVerifiedHandle(db, userID)
+          .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
+          .catch(() => {}),
+      );
+      return c.json({ ok: true });
+    },
+  );
+
   return routes;
 }
 
@@ -266,7 +339,7 @@ async function getFleetList(
     .prepare(
       `SELECT uf.id, uf.user_id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
-        uf.equipped_paint_id, uf.imported_at, uf.org_visibility, uf.available_for_ops,
+        uf.equipped_paint_id, uf.imported_at, uf.org_visibility, uf.available_for_ops, uf.source,
         COALESCE(rv.name, v.name) as vehicle_name,
         COALESCE(rv.slug, v.slug) as vehicle_slug,
         COALESCE(rv.image_url, v.image_url) as image_url,
