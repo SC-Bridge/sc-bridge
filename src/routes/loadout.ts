@@ -6,7 +6,7 @@ import { validate } from "../lib/validation";
 import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
-import { getShipLoadout, getShipModules, getUserOwnedModuleTitles } from "../db/queries";
+import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets } from "../db/queries";
 
 // D1 has a 100-parameter limit per prepared statement.
 // Batch an IN-clause query into chunks, merging all results.
@@ -138,6 +138,16 @@ const ModuleSelectionBody = z.object({
   })),
 });
 
+const GadgetSelectionBody = z.object({
+  selections: z.array(z.object({
+    // Composite gadget slot key: '<headPortName>#<slotIndex>'. Opaque to the
+    // backend — uniquely identifies one gadget slot for this owner.
+    port_name: z.string().min(1).max(160),
+    module_uuid: z.string().min(1).max(80),
+    module_kind: z.enum(["mining_gadget", "salvage_gadget"]),
+  })),
+});
+
 // Module-selection owner: 'fleet' → owner_id is user_fleet.id; 'loaner' →
 // owner_id is the loaner's vehicle id. Resolves to the underlying vehicle (and
 // verifies the user may customize it); null if not found / not owned.
@@ -161,12 +171,58 @@ async function resolveModuleOwnerVehicle(
 
 async function getModuleSelections(
   db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
-): Promise<Array<{ port_name: string; module_uuid: string }>> {
+  kinds: string[] = ["bay"],
+): Promise<Array<{ port_name: string; module_uuid: string; module_kind: string }>> {
+  const placeholders = kinds.map(() => "?").join(",");
   const r = await db
-    .prepare("SELECT port_name, module_uuid FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ?")
-    .bind(userId, ownerKind, ownerId)
-    .all<{ port_name: string; module_uuid: string }>();
+    .prepare(`SELECT port_name, module_uuid, module_kind FROM user_module_selection
+               WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN (${placeholders})`)
+    .bind(userId, ownerKind, ownerId, ...kinds)
+    .all<{ port_name: string; module_uuid: string; module_kind: string }>();
   return r.results;
+}
+
+// Validate that each chosen uuid is a real gadget (mining consumable or salvage
+// modifier) for the active channel, then upsert keyed by the composite slot key.
+// The slot key (port_name) is opaque; we validate the module, not the slot.
+async function saveGadgetSelections(
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+  selections: Array<{ port_name: string; module_uuid: string; module_kind: "mining_gadget" | "salvage_gadget" }>,
+  t: (n: string) => string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  for (const s of selections) {
+    let valid: unknown = null;
+    if (s.module_kind === "mining_gadget") {
+      if (s.module_uuid.startsWith("mining-")) {
+        const id = parseInt(s.module_uuid.slice("mining-".length), 10);
+        valid = isNaN(id) ? null : await db.prepare(`SELECT 1 FROM ${t("mining_modules")} WHERE id = ? AND is_deleted = 0`).bind(id).first();
+      } else {
+        valid = await db
+          .prepare(`SELECT 1 FROM ${t("loot_map")} lm WHERE lm.uuid = ? AND lm.is_deleted = 0
+                      AND lm.name IN (SELECT name FROM ${t("mining_modules")} WHERE is_deleted = 0)`)
+          .bind(s.module_uuid)
+          .first();
+      }
+    } else {
+      valid = await db
+        .prepare(`SELECT 1 FROM ${t("vehicle_components")} WHERE uuid = ? AND type = 'SalvageModifier'`)
+        .bind(s.module_uuid)
+        .first();
+    }
+    if (!valid) return { ok: false, error: `Gadget ${s.module_uuid} is not a valid ${s.module_kind}` };
+  }
+  const stmts = selections.map((s) =>
+    db
+      .prepare(
+        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, module_kind, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+         DO UPDATE SET module_uuid = excluded.module_uuid, module_kind = excluded.module_kind, updated_at = datetime('now')`,
+      )
+      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid, s.module_kind),
+  );
+  if (stmts.length > 0) await db.batch(stmts);
+  return { ok: true };
 }
 
 // Validate each chosen module actually fits this vehicle's named port, then
@@ -233,6 +289,19 @@ export function loadoutRoutes() {
     } catch {
       return c.json([]);
     }
+  });
+
+  // GET /api/loadout/head/:headUuid/gadgets — gadget consumable slots inside a
+  // mining laser / salvage head + the gadgets compatible with each slot. Keyed
+  // by the head component uuid (the head is what carries the slots), so it works
+  // for whichever laser/head the user has equipped. Public + cached.
+  app.get("/head/:headUuid/gadgets", async (c) => {
+    const headUuid = c.req.param("headUuid");
+    const isPTU = isPTUChannel(getActiveChannel(c));
+    return cachedJson(c, `loadout:gadgets:${cacheSlug(headUuid)}`, async () => {
+      const res = await getHeadGadgets(c.env.DB, headUuid, isPTU);
+      return res ?? { head_uuid: headUuid, head_name: null, head_type: null, kind: null, slots: [] };
+    });
   });
 
   // GET /api/loadout/:slug/compatible?port_id=N&patch=X — all components fitting a port
@@ -752,7 +821,57 @@ export function loadoutRoutes() {
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
       await c.env.DB
-        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ?")
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind = 'bay'")
+        .bind(user.id, kind, ownerId)
+        .run();
+      return c.json({ ok: true });
+    });
+
+    // ── Gadget selections (mining/salvage consumables in tool-head slots) ──
+    // Same owner model; module_kind discriminates from bay modules. port_name is
+    // the composite slot key '<headPortName>#<slotIndex>'.
+    app.get(`${prefix}/:${param}/gadgets`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id, ["mining_gadget", "salvage_gadget"]);
+      return c.json({ selections });
+    });
+
+    app.put(`${prefix}/:${param}/gadgets`, validate("json", GadgetSelectionBody), async (c) => {
+      const isPTU = isPTUChannel(getActiveChannel(c));
+      const t = (n: string) => resolveTable(n, isPTU);
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const vehicleId = await resolveModuleOwnerVehicle(c.env.DB, kind, ownerId, user.id, t);
+      if (!vehicleId) return c.json({ error: kind === "fleet" ? "Fleet entry not found" : "Vehicle not found" }, 404);
+      const { selections } = c.req.valid("json");
+      const res = await saveGadgetSelections(c.env.DB, kind, ownerId, user.id, selections, t);
+      if (!res.ok) return c.json({ error: res.error }, 400);
+      return c.json({ ok: true });
+    });
+
+    // DELETE one gadget slot — reset to empty. Slot key is URL-encoded.
+    app.delete(`${prefix}/:${param}/gadgets/:slotKey`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      const slotKey = decodeURIComponent(c.req.param("slotKey"));
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      await c.env.DB
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
+        .bind(user.id, kind, ownerId, slotKey)
+        .run();
+      return c.json({ ok: true });
+    });
+
+    // DELETE all gadgets — reset every gadget slot to empty
+    app.delete(`${prefix}/:${param}/gadgets`, async (c) => {
+      const user = getAuthUser(c);
+      const ownerId = parseInt(c.req.param(param), 10);
+      if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      await c.env.DB
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
         .bind(user.id, kind, ownerId)
         .run();
       return c.json({ ok: true });

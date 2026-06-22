@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight, FlaskConical, ExternalLink } from 'lucide-react'
-import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout, useModuleSelections, saveModuleSelections, resetModuleSelection } from '../../hooks/useAPI'
+import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout, useModuleSelections, saveModuleSelections, resetModuleSelection, useGadgetSelections, saveGadgetSelections, resetGadgetSelection } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ComponentPicker from './ComponentPicker'
 import StatsPanel from './StatsPanel'
@@ -13,6 +13,7 @@ import LockedPort from './LockedPort'
 import DamageBreakdown from './DamageBreakdown'
 import PowerPips from './PowerPips'
 import ModulesSection from './ModulesSection'
+import GadgetModulesSection from './GadgetModulesSection'
 import PaintsSection from './PaintsSection'
 import LocationPlanner from './LocationPlanner'
 import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape } from './loadoutHelpers'
@@ -36,6 +37,7 @@ export default function Loadout() {
   const moduleOwnerKind = loanerVehicleId ? 'loaner' : 'fleet'
   const moduleOwnerId = loanerVehicleId || fleetId
   const { data: moduleSelData, refetch: refetchModuleSel } = useModuleSelections(moduleOwnerKind, moduleOwnerId)
+  const { data: gadgetSelData, refetch: refetchGadgetSel } = useGadgetSelections(moduleOwnerKind, moduleOwnerId)
   const { data: fleetEntries, refetch: refetchFleet } = useFleet()
   const { data: cartData, loading: cartLoading, refetch: refetchCart } = useLoadoutCart()
 
@@ -131,6 +133,20 @@ export default function Loadout() {
     return stockComponents.map(c => overrides[c.port_id] ? { ...c, ...overrides[c.port_id] } : c)
   }, [stockComponents, overrides])
 
+  // Equipped tool heads (mining lasers / salvage heads) that carry gadget slots.
+  // Keyed by the effective (possibly swapped) component uuid + the ship port so
+  // gadget selections persist per head. MOLE's 3 turret lasers → 3 distinct heads.
+  const toolHeads = useMemo(() => {
+    const heads = []
+    for (const c of effectiveComponents) {
+      const type = c.component_type || c.type
+      if ((type === 'WeaponMining' || type === 'SalvageHead') && c.component_uuid) {
+        heads.push({ uuid: c.component_uuid, port_name: c.port_name, name: c.component_name || c.child_name })
+      }
+    }
+    return heads
+  }, [effectiveComponents])
+
   // Auto-collapse Point Defense section when >6 items
   useEffect(() => {
     const pdcGroup = grouped.find(g => g.label === 'Point Defense')
@@ -215,6 +231,23 @@ export default function Loadout() {
     }
     refetchModuleSel()
   }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchModuleSel])
+
+  // Gadget slot selections (composite slot key '<headPortName>#<slotIndex>' → uuid).
+  const gadgetSelections = useMemo(() => {
+    const map = {}
+    for (const s of gadgetSelData?.selections || []) map[s.port_name] = s.module_uuid
+    return map
+  }, [gadgetSelData])
+
+  const handleSelectGadget = useCallback(async (slotKey, gadget, kind) => {
+    if (!canPersist) return
+    if (!gadget) {
+      await resetGadgetSelection(moduleOwnerKind, moduleOwnerId, slotKey)
+    } else {
+      await saveGadgetSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: slotKey, module_uuid: gadget.uuid, module_kind: kind }])
+    }
+    refetchGadgetSel()
+  }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchGadgetSel])
 
   const handleAddNonStockToCart = useCallback(async () => {
     const items = Object.values(overrides).map(o => ({ component_id: o.component_id, source_fleet_id: fleetId || undefined }))
@@ -510,6 +543,20 @@ export default function Loadout() {
               selections={canPersist ? moduleSelections : undefined}
               onSelect={canPersist ? handleSelectModule : undefined}
             />
+          </div>
+        )}
+
+        {/* MINING / SALVAGE GADGET MODULES (per equipped tool head) */}
+        {toolHeads.length > 0 && (
+          <div className="mt-4 space-y-4">
+            {toolHeads.map(head => (
+              <GadgetModulesSection
+                key={`${head.port_name}:${head.uuid}`}
+                head={head}
+                selections={canPersist ? gadgetSelections : undefined}
+                onSelect={canPersist ? handleSelectGadget : undefined}
+              />
+            ))}
           </div>
         )}
 

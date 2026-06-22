@@ -281,6 +281,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       deepest AS (
         SELECT
           pt.root_id,
+          vc.uuid,
           vc.name, vc.class_name, vc.type, vc.sub_type, vc.size, vc.grade, vc.class,
           cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute,
           cw.projectile_speed, cw.effective_range, cw.heat_per_shot,
@@ -376,6 +377,9 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
           ELSE COALESCE(d.name, mount.name)
         END AS component_name,
         COALESCE(d.type, mount.type) AS component_type,
+        -- Equipped item uuid (deepest real component, else the mount) — lets the
+        -- loadout planner key gadget slots to the actual mining/salvage head.
+        COALESCE(d.uuid, mount.uuid) AS component_uuid,
         COALESCE(d.sub_type, mount.sub_type) AS sub_type,
         COALESCE(d.size, mount.size) AS component_size,
         COALESCE(d.grade, mount.grade) AS grade,
@@ -572,6 +576,120 @@ export async function getShipModules(db: D1Database, slug: string, isPTU = false
     .bind(slug, slug)
     .all();
   return result.results as Record<string, unknown>[];
+}
+
+export interface GadgetSlot {
+  slot_index: number;
+  slot_name: string;
+  accepts_tag: string;
+  port_tags: string | null;
+  min_size: number;
+  max_size: number;
+  compatible: Record<string, unknown>[];
+}
+
+/**
+ * Gadget consumable slots inside a tool head (mining laser / salvage head) plus
+ * the gadgets compatible with each slot. The head itself is a swappable
+ * WeaponMining/SalvageHead component; THIS returns the small consumable modules
+ * that slot into it (see component_module_slots, migration 0262).
+ *
+ * Mining gadgets come from `mining_modules` (rich stats for the Rock Calculator),
+ * linked to `loot_map` BY NAME for the purchasable uuid + price (27/28 link; the
+ * vehicle built-ins ATLS GEO / ROC fall back to a synthetic `mining-<id>`).
+ * Salvage gadgets are `vehicle_components` of type SalvageModifier (already in
+ * loot_map by uuid). Returns null when the uuid is not a known component.
+ */
+export async function getHeadGadgets(
+  db: D1Database, headUuid: string, isPTU = false,
+): Promise<{ head_uuid: string; head_name: string; head_type: string; kind: "mining" | "salvage" | null; slots: GadgetSlot[] } | null> {
+  const vc = isPTU ? "ptu_vehicle_components" : "vehicle_components";
+  const mm = isPTU ? "ptu_mining_modules" : "mining_modules";
+  const lm = isPTU ? "ptu_loot_map" : "loot_map";
+  const ti = isPTU ? "ptu_terminal_inventory" : "terminal_inventory";
+
+  const head = await db
+    .prepare(`SELECT id, name, type FROM ${vc} WHERE uuid = ?`)
+    .bind(headUuid)
+    .first<{ id: number; name: string; type: string }>();
+  if (!head) return null;
+
+  const slotRows = await db
+    .prepare(`SELECT slot_index, slot_name, accepts_tag, port_tags, min_size, max_size
+                FROM component_module_slots WHERE component_id = ? ORDER BY slot_index`)
+    .bind(head.id)
+    .all<{ slot_index: number; slot_name: string; accepts_tag: string; port_tags: string | null; min_size: number; max_size: number }>();
+  const slots = slotRows.results;
+  if (slots.length === 0) {
+    return { head_uuid: headUuid, head_name: head.name, head_type: head.type, kind: null, slots: [] };
+  }
+
+  const isMining = slots.some((s) => s.accepts_tag === "miningConsumable");
+  const isSalvage = slots.some((s) => s.accepts_tag === "salvageMount");
+  const kind: "mining" | "salvage" | null = isMining ? "mining" : isSalvage ? "salvage" : null;
+
+  // Fetch the candidate pool once, then partition per slot in JS.
+  let candidates: Record<string, unknown>[] = [];
+  if (isMining) {
+    const r = await db
+      .prepare(
+        `SELECT mm.id, mm.name, mm.size, mm.grade, mm.type,
+                mm.damage_multiplier, mm.mod_resistance, mm.mod_optimal_window_size, mm.mod_instability,
+                mm.mod_shatter_damage, mm.mod_cluster_factor, mm.mod_optimal_charge_rate,
+                mm.mod_catastrophic_charge_rate, mm.mod_filter, mm.charges, mm.lifetime,
+                (SELECT lm.uuid FROM ${lm} lm WHERE lm.name = mm.name AND lm.is_deleted = 0 ORDER BY lm.id LIMIT 1) AS loot_uuid,
+                (SELECT ROUND(MIN(${buyPriceSQL("ti")})) FROM ${ti} ti
+                   JOIN ${lm} lm ON lm.uuid = ti.item_uuid
+                  WHERE lm.name = mm.name AND ${buyablePricedSQL("ti")}) AS price
+           FROM ${mm} mm WHERE mm.is_deleted = 0
+          ORDER BY mm.name`,
+      )
+      .all<Record<string, unknown>>();
+    candidates = r.results.map((m) => ({
+      ...m,
+      uuid: (m.loot_uuid as string | null) ?? `mining-${m.id}`,
+    }));
+  } else if (isSalvage) {
+    const r = await db
+      .prepare(
+        `SELECT vc.uuid, vc.name, vc.size, vc.grade, vc.sub_type,
+                (SELECT ROUND(MIN(${buyPriceSQL("ti")})) FROM ${ti} ti
+                  WHERE ti.item_uuid = vc.uuid AND ${buyablePricedSQL("ti")}) AS price
+           FROM ${vc} vc
+          WHERE vc.type = 'SalvageModifier' AND COALESCE(vc.sub_type, '') NOT LIKE '%TractorBeam%'
+          ORDER BY vc.name`,
+      )
+      .all<Record<string, unknown>>();
+    // Dedup by name (some scraper modules have duplicate component rows); keep a priced one.
+    const byName = new Map<string, Record<string, unknown>>();
+    for (const g of r.results) {
+      const prev = byName.get(g.name as string);
+      if (!prev || (prev.price == null && g.price != null)) byName.set(g.name as string, g);
+    }
+    candidates = [...byName.values()];
+  }
+
+  const inRange = (size: number, lo: number, hi: number) => size >= lo && size <= hi;
+  const slotsOut: GadgetSlot[] = slots.map((s) => {
+    const tags = (s.port_tags || "").toLowerCase();
+    let compatible = candidates.filter((g) => inRange((g.size as number) ?? 1, s.min_size, s.max_size));
+    if (isMining) {
+      if (tags.includes("atlsmodifier")) compatible = compatible.filter((g) => g.name === "ATLS GEO Module");
+      else if (tags.includes("rocmodifier") || tags.includes("rocdsmodifier")) compatible = compatible.filter((g) => g.name === "ROC Module");
+      else compatible = compatible.filter((g) => g.name !== "ATLS GEO Module" && g.name !== "ROC Module");
+    }
+    return {
+      slot_index: s.slot_index,
+      slot_name: s.slot_name,
+      accepts_tag: s.accepts_tag,
+      port_tags: s.port_tags,
+      min_size: s.min_size,
+      max_size: s.max_size,
+      compatible,
+    };
+  });
+
+  return { head_uuid: headUuid, head_name: head.name, head_type: head.type, kind, slots: slotsOut };
 }
 
 export async function getUserOwnedModuleTitles(db: D1Database, userId: string): Promise<string[]> {

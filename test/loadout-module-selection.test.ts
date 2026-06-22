@@ -50,8 +50,8 @@ describe("Module selection — persist chosen module per slot", () => {
     const get = await SELF.fetch(`http://localhost/api/loadout/fleet/${fleetId}/modules`, {
       headers: await authHeaders(sessionToken),
     });
-    const body = (await get.json()) as { selections: Array<{ port_name: string; module_uuid: string }> };
-    expect(body.selections).toEqual([{ port_name: PORT, module_uuid: cargoUuid }]);
+    const body = (await get.json()) as { selections: Array<{ port_name: string; module_uuid: string; module_kind: string }> };
+    expect(body.selections).toEqual([{ port_name: PORT, module_uuid: cargoUuid, module_kind: "bay" }]);
   });
 
   it("rejects a module that doesn't fit the vehicle's port", async () => {
