@@ -421,10 +421,11 @@ export async function executeFleetSwap(
     await db.batch(insertStmts.slice(i, i + batchSize));
   }
 
-  // Sweep entries the current hangar no longer contains.
+  // Sweep PLEDGE entries the current hangar no longer contains. In-game
+  // purchases (source='ingame') are user-managed and must survive re-imports.
   await db
     .prepare(
-      "DELETE FROM user_fleet WHERE user_id = ? AND imported_at < ?",
+      "DELETE FROM user_fleet WHERE user_id = ? AND imported_at < ? AND source = 'pledge'",
     )
     .bind(userID, importTag)
     .run();

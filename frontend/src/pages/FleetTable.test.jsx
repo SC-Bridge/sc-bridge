@@ -62,4 +62,12 @@ describe('FleetTable rowCategory bucketing', () => {
   it('buckets derived loaner rows as loaner regardless of production_status', () => {
     expect(rowCategory({ is_derived_loaner: 1, production_status: 'flight_ready' })).toBe('loaner')
   })
+
+  it('buckets in-game-purchased ships as ingame', () => {
+    expect(rowCategory({ source: 'ingame', production_status: 'flight_ready' })).toBe('ingame')
+  })
+
+  it('treats pledge ships normally (not ingame)', () => {
+    expect(rowCategory({ source: 'pledge', production_status: 'flight_ready' })).toBe('flight_ready')
+  })
 })
