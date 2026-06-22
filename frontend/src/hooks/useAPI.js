@@ -634,6 +634,23 @@ export async function resetModuleSelection(ownerKind, ownerId, portName) {
   return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}`)
 }
 
+// Gadget consumable slots inside a tool head (mining laser / salvage head).
+export function useHeadGadgets(headUuid) {
+  return useAPI(headUuid ? `/loadout/head/${headUuid}/gadgets` : null, { skip: !headUuid })
+}
+
+export function useGadgetSelections(ownerKind, ownerId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/gadgets` : null, { skip: !ownerId })
+}
+
+export async function saveGadgetSelections(ownerKind, ownerId, selections) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/gadgets`, { selections })
+}
+
+export async function resetGadgetSelection(ownerKind, ownerId, slotKey) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/gadgets/${encodeURIComponent(slotKey)}`)
+}
+
 export function useLoadoutCart() {
   return useAPI('/loadout/cart')
 }
