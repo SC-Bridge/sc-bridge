@@ -45,7 +45,7 @@ export default function GadgetSlots({ headUuid, portName, selections, onSelect }
   const dmgMult = kind === 'mining' ? chosen.reduce((p, g) => p * (g.damage_multiplier || 1), 1) : 1
 
   return (
-    <div className="pb-1.5 -mt-0.5">
+    <div className="px-3 pb-1.5 -mt-0.5">
       {data.slots.map(slot => {
         const slotKey = slotKeyFor(slot)
         const installedUuid = selections?.[slotKey] || null
@@ -55,9 +55,9 @@ export default function GadgetSlots({ headUuid, portName, selections, onSelect }
           <Row
             key={slot.slot_index}
             {...(editable ? { type: 'button', onClick: () => setOpenSlot(slot) } : {})}
-            className={`w-full flex items-center gap-1.5 py-0.5 px-1 leading-tight text-left rounded transition-colors
+            className={`w-full flex items-center gap-1.5 py-0.5 pr-1 leading-tight text-left rounded transition-colors
               ${editable ? 'cursor-pointer hover:bg-white/[0.03]' : ''}`}
-            style={{ marginLeft: '44px' }}
+            style={{ paddingLeft: '46px' }}
           >
             <Bracket />
             <span className="text-[11px] w-6 text-center flex-shrink-0 font-mono bg-white/[0.04] border border-white/[0.08] rounded px-1 py-px text-gray-500">
@@ -65,9 +65,9 @@ export default function GadgetSlots({ headUuid, portName, selections, onSelect }
             </span>
             {installed ? (
               <>
-                <span className="text-[13px] text-gray-300 truncate">{installed.name}</span>
+                <span className="text-[13px] text-gray-300 truncate flex-1 min-w-0">{installed.name}</span>
                 {installed.price != null && (
-                  <span className="text-[11px] text-amber-300/80 tabular-nums ml-auto flex-shrink-0">{Math.round(installed.price).toLocaleString()} aUEC</span>
+                  <span className="text-[11px] text-amber-300/80 tabular-nums flex-shrink-0">{Math.round(installed.price).toLocaleString()} aUEC</span>
                 )}
               </>
             ) : (
@@ -82,7 +82,7 @@ export default function GadgetSlots({ headUuid, portName, selections, onSelect }
 
       {/* Combined effect — one compact line, only when modules are installed */}
       {kind === 'mining' && (activeMods.length > 0 || Math.abs(dmgMult - 1) > 0.0001) && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[11px]" style={{ marginLeft: '64px' }}>
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[11px]" style={{ paddingLeft: '66px' }}>
           {Math.abs(dmgMult - 1) > 0.0001 && (
             <span className="tabular-nums"><span className="text-gray-600">Power </span><span className={dmgMult >= 1 ? 'text-emerald-400' : 'text-red-400'}>×{dmgMult.toFixed(2)}</span></span>
           )}

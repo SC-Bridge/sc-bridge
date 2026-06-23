@@ -316,7 +316,11 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         LEFT JOIN component_weapons cw ON cw.component_id = vc.id
         LEFT JOIN component_turrets ct ON ct.component_id = vc.id
         LEFT JOIN component_radar cr ON cr.component_id = vc.id
-        WHERE vc.type NOT IN ('Display', 'SeatDashboard', 'Seat', 'SeatAccess')
+        -- Exclude consumable gadget modules (mining/salvage) from deepest-component
+        -- resolution so the TOOL HEAD anchors the row (e.g. Baler Salvage Head, not
+        -- the scraper inside it) — mirrors mining lasers. The modules render as the
+        -- head's gadget slots (component_module_slots / getHeadGadgets) instead.
+        WHERE vc.type NOT IN ('Display', 'SeatDashboard', 'Seat', 'SeatAccess', 'SalvageModifier', 'MiningModifier')
       ),
       -- Count real weapons under each root (for turrets: how many guns)
       weapon_count AS (
