@@ -13,7 +13,7 @@ import LockedPort from './LockedPort'
 import DamageBreakdown from './DamageBreakdown'
 import PowerPips from './PowerPips'
 import ModulesSection from './ModulesSection'
-import GadgetModulesSection from './GadgetModulesSection'
+import GadgetSlots from './GadgetSlots'
 import PaintsSection from './PaintsSection'
 import LocationPlanner from './LocationPlanner'
 import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape } from './loadoutHelpers'
@@ -133,20 +133,6 @@ export default function Loadout() {
     return stockComponents.map(c => overrides[c.port_id] ? { ...c, ...overrides[c.port_id] } : c)
   }, [stockComponents, overrides])
 
-  // Equipped tool heads (mining lasers / salvage heads) that carry gadget slots.
-  // Keyed by the effective (possibly swapped) component uuid + the ship port so
-  // gadget selections persist per head. MOLE's 3 turret lasers → 3 distinct heads.
-  const toolHeads = useMemo(() => {
-    const heads = []
-    for (const c of effectiveComponents) {
-      const type = c.component_type || c.type
-      if ((type === 'WeaponMining' || type === 'SalvageHead') && c.component_uuid) {
-        heads.push({ uuid: c.component_uuid, port_name: c.port_name, name: c.component_name || c.child_name })
-      }
-    }
-    return heads
-  }, [effectiveComponents])
-
   // Auto-collapse Point Defense section when >6 items
   useEffect(() => {
     const pdcGroup = grouped.find(g => g.label === 'Point Defense')
@@ -248,6 +234,22 @@ export default function Loadout() {
     }
     refetchGadgetSel()
   }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchGadgetSel])
+
+  // Render gadget consumable slots inline under a mining laser / salvage head.
+  // Returns null for any other component. The equipped head's uuid keys the slots.
+  const renderGadgets = useCallback((item) => {
+    const type = item?.component_type || item?.type
+    if (type !== 'WeaponMining' && type !== 'SalvageHead') return null
+    if (!item.component_uuid) return null
+    return (
+      <GadgetSlots
+        headUuid={item.component_uuid}
+        portName={item.port_name}
+        selections={canPersist ? gadgetSelections : undefined}
+        onSelect={canPersist ? handleSelectGadget : undefined}
+      />
+    )
+  }, [canPersist, gadgetSelections, handleSelectGadget])
 
   const handleAddNonStockToCart = useCallback(async () => {
     const items = Object.values(overrides).map(o => ({ component_id: o.component_id, source_fleet_id: fleetId || undefined }))
@@ -511,6 +513,7 @@ export default function Loadout() {
                 onResetComponent={(portId) => setOverrides(prev => { const next = { ...prev }; delete next[portId]; return next })}
                 onOpenPicker={(portId, portType) => { setPickerPortId(portId); setPickerPortType(portType) }}
                 onAddToCart={async (comp) => { await addToLoadoutCart([{ component_id: comp.component_id || comp.id }]); refetchCart() }}
+                renderGadgets={renderGadgets}
                 isWeaponSection
               />
             ))}
@@ -529,6 +532,7 @@ export default function Loadout() {
                 onResetComponent={(portId) => setOverrides(prev => { const next = { ...prev }; delete next[portId]; return next })}
                 onOpenPicker={(portId, portType) => { setPickerPortId(portId); setPickerPortType(portType) }}
                 onAddToCart={async (comp) => { await addToLoadoutCart([{ component_id: comp.component_id || comp.id }]); refetchCart() }}
+                renderGadgets={renderGadgets}
               />
             ))}
           </div>
@@ -543,20 +547,6 @@ export default function Loadout() {
               selections={canPersist ? moduleSelections : undefined}
               onSelect={canPersist ? handleSelectModule : undefined}
             />
-          </div>
-        )}
-
-        {/* MINING / SALVAGE GADGET MODULES (per equipped tool head) */}
-        {toolHeads.length > 0 && (
-          <div className="mt-4 space-y-4">
-            {toolHeads.map(head => (
-              <GadgetModulesSection
-                key={`${head.port_name}:${head.uuid}`}
-                head={head}
-                selections={canPersist ? gadgetSelections : undefined}
-                onSelect={canPersist ? handleSelectGadget : undefined}
-              />
-            ))}
           </div>
         )}
 
@@ -614,7 +604,7 @@ function StatCell({ label, value, format, color, unit, size }) {
   )
 }
 
-function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategory, onResetComponent, onOpenPicker, onAddToCart, isWeaponSection }) {
+function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategory, onResetComponent, onOpenPicker, onAddToCart, renderGadgets, isWeaponSection }) {
   const isCollapsed = collapsed[group.label]
   const Icon = PORT_TYPE_ICONS[group.portType]
   const categoryOverrides = group.items.filter(i => overrides[i.port_id]).length
@@ -668,7 +658,7 @@ function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategor
             )
             if (isTurretHousing) {
               const children = group.items.filter(c => c.parent_port_id === item.port_id)
-              return <TurretHeader key={item.port_id} item={item} children={children} overrides={overrides} onOpenPicker={onOpenPicker} onAddToCart={onAddToCart} />
+              return <TurretHeader key={item.port_id} item={item} children={children} overrides={overrides} onOpenPicker={onOpenPicker} onAddToCart={onAddToCart} renderGadgets={renderGadgets} />
             }
 
             // Skip turret children — rendered inside their parent TurretHeader
@@ -680,17 +670,20 @@ function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategor
 
             // Weapon sections use WeaponBlock for parent-child rendering
             if (isWeaponSection || item.port_type === 'weapon') {
+              const effItem = override ? { ...item, ...override } : item
               return (
-                <WeaponBlock
-                  key={item.port_id}
-                  item={override ? { ...item, ...override } : item}
-                  isCustomized={isOverridden}
-                  weaponGroups={[]}
-                  onClickMount={() => onOpenPicker(item.port_id, item.port_type)}
-                  onClickWeapon={() => onOpenPicker(item.port_id, item.port_type)}
-                  onAddToCart={() => onAddToCart?.(item)}
-                  onReset={isOverridden ? () => onResetComponent(item.port_id) : undefined}
-                />
+                <React.Fragment key={item.port_id}>
+                  <WeaponBlock
+                    item={effItem}
+                    isCustomized={isOverridden}
+                    weaponGroups={[]}
+                    onClickMount={() => onOpenPicker(item.port_id, item.port_type)}
+                    onClickWeapon={() => onOpenPicker(item.port_id, item.port_type)}
+                    onAddToCart={() => onAddToCart?.(item)}
+                    onReset={isOverridden ? () => onResetComponent(item.port_id) : undefined}
+                  />
+                  {renderGadgets?.(effItem)}
+                </React.Fragment>
               )
             }
 

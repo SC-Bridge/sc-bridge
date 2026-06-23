@@ -6,7 +6,7 @@ import LockedPort from './LockedPort'
  * TurretHeader — renders a turret housing as a section header with its weapon children.
  * Locked children (editable=0, e.g. door guns) render via LockedPort, not WeaponBlock.
  */
-export default function TurretHeader({ item, children, overrides = {}, onOpenPicker, onAddToCart }) {
+export default function TurretHeader({ item, children, overrides = {}, onOpenPicker, onAddToCart, renderGadgets }) {
   const turretLabel = item.mount_name || item.port_name?.replace('hardpoint_', '').replace(/_/g, ' ')
   const posHint = item.mount_name ? item.port_name?.replace('hardpoint_turret_', '').replace(/_/g, ' ') : null
 
@@ -27,30 +27,35 @@ export default function TurretHeader({ item, children, overrides = {}, onOpenPic
           return <LockedPort key={child.port_id} item={child} />
         }
         const childOverride = overrides[child.port_id]
+        const effChild = childOverride ? { ...child, ...childOverride } : child
         return (
-          <WeaponBlock
-            key={child.port_id}
-            item={childOverride ? { ...child, ...childOverride } : child}
-            isCustomized={!!childOverride}
-            weaponGroups={[]}
-            onClickMount={() => onOpenPicker(child.port_id, child.port_type)}
-            onClickWeapon={() => onOpenPicker(child.port_id, child.port_type)}
-            onAddToCart={() => onAddToCart?.(child)}
-          />
+          <React.Fragment key={child.port_id}>
+            <WeaponBlock
+              item={effChild}
+              isCustomized={!!childOverride}
+              weaponGroups={[]}
+              onClickMount={() => onOpenPicker(child.port_id, child.port_type)}
+              onClickWeapon={() => onOpenPicker(child.port_id, child.port_type)}
+              onAddToCart={() => onAddToCart?.(child)}
+            />
+            {renderGadgets?.(effChild)}
+          </React.Fragment>
         )
       }) : (
         (item.editable === 0 || item.editable === false) ? (
           <LockedPort key={`${item.port_id}-locked`} item={item} />
         ) : (
-          <WeaponBlock
-            key={`${item.port_id}-weapon`}
-            item={override ? { ...item, ...override } : item}
-            isCustomized={isOverridden}
-            weaponGroups={[]}
-            onClickMount={() => onOpenPicker(item.port_id, item.port_type)}
-            onClickWeapon={() => onOpenPicker(item.port_id, item.port_type)}
-            onAddToCart={() => onAddToCart?.(item)}
-          />
+          <React.Fragment key={`${item.port_id}-weapon`}>
+            <WeaponBlock
+              item={override ? { ...item, ...override } : item}
+              isCustomized={isOverridden}
+              weaponGroups={[]}
+              onClickMount={() => onOpenPicker(item.port_id, item.port_type)}
+              onClickWeapon={() => onOpenPicker(item.port_id, item.port_type)}
+              onAddToCart={() => onAddToCart?.(item)}
+            />
+            {renderGadgets?.(override ? { ...item, ...override } : item)}
+          </React.Fragment>
         )
       )}
     </div>
