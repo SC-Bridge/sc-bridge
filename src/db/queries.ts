@@ -2804,6 +2804,20 @@ export async function getSalvageForShip(
 /**
  * List all salvageable ships grouped by base vehicle.
  */
+export async function listChangelogEntries(
+  db: D1Database,
+): Promise<Record<string, unknown>[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, version, entry_date, title, description, category
+       FROM changelog_entries
+       WHERE is_published = 1
+       ORDER BY entry_date DESC, id DESC`,
+    )
+    .all();
+  return results;
+}
+
 export async function listSalvageableShips(
   db: D1Database,
 ): Promise<Record<string, unknown>[]> {

@@ -126,6 +126,10 @@ export function useSalvageableShips() {
   return useAPI('/gamedata/salvageable-ships')
 }
 
+export function useChangelog() {
+  return useAPI('/changelog')
+}
+
 export function useCrafting() {
   return useAPI('/gamedata/crafting')
 }
