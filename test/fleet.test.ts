@@ -442,4 +442,100 @@ describe("Fleet API — /api/vehicles", () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe("PUT /api/vehicles/:id/tags", () => {
+    async function putTags(sessionToken: string, fleetId: number, tags: string[]) {
+      return SELF.fetch(`http://localhost/api/vehicles/${fleetId}/tags`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ tags }),
+      });
+    }
+
+    it("sets tags and surfaces them on the fleet list", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-1", name: "Tagged Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      const res = await putTags(sessionToken, fleetId, ["cargo", "ground ops"]);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; tags: string[] };
+      expect(body.ok).toBe(true);
+      expect(body.tags).toEqual(["cargo", "ground ops"]);
+
+      const list = await SELF.fetch("http://localhost/api/vehicles", {
+        headers: await authHeaders(sessionToken),
+      });
+      const fleet = (await list.json()) as Array<{ id: number; tags: string[] }>;
+      expect(fleet[0].tags.sort()).toEqual(["cargo", "ground ops"]);
+    });
+
+    it("replaces the full tag set (replace-all semantics)", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-2", name: "Replace Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      await putTags(sessionToken, fleetId, ["a", "b", "c"]);
+      const res = await putTags(sessionToken, fleetId, ["x"]);
+      expect(res.status).toBe(200);
+
+      const rows = await env.DB
+        .prepare("SELECT tag FROM user_fleet_tags WHERE user_fleet_id = ?")
+        .bind(fleetId)
+        .all<{ tag: string }>();
+      expect(rows.results.map((r) => r.tag)).toEqual(["x"]);
+    });
+
+    it("de-duplicates tags case-insensitively, keeping first-seen casing", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-3", name: "Dup Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      const res = await putTags(sessionToken, fleetId, ["Cargo", "cargo", "CARGO", "mining"]);
+      const body = (await res.json()) as { tags: string[] };
+      expect(body.tags).toEqual(["Cargo", "mining"]);
+    });
+
+    it("clears all tags with an empty array", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-4", name: "Clear Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      await putTags(sessionToken, fleetId, ["one", "two"]);
+      await putTags(sessionToken, fleetId, []);
+      const rows = await env.DB
+        .prepare("SELECT COUNT(*) AS n FROM user_fleet_tags WHERE user_fleet_id = ?")
+        .bind(fleetId)
+        .first<{ n: number }>();
+      expect(rows?.n).toBe(0);
+    });
+
+    it("returns 404 for another user's fleet entry", async () => {
+      const user1 = await createTestUser(env.DB);
+      const user2 = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-5", name: "Foreign Ship" });
+      const fleetId = await seedFleetEntry(env.DB, user1.userId, vehicleId);
+
+      const res = await putTags(user2.sessionToken, fleetId, ["sneaky"]);
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects more than 10 tags", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-6", name: "Too Many" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      const res = await putTags(sessionToken, fleetId, Array.from({ length: 11 }, (_, i) => `t${i}`));
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects a tag longer than 24 chars", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "tags-7", name: "Too Long" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+
+      const res = await putTags(sessionToken, fleetId, ["x".repeat(25)]);
+      expect(res.status).toBe(400);
+    });
+  });
 });

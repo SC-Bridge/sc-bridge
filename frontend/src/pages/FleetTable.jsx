@@ -15,6 +15,7 @@ import StatusBadge from '../components/StatusBadge'
 import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
+import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
 
 /** Get display value and numeric sort value for a fleet entry's cost.
@@ -203,6 +204,7 @@ export default function FleetTable() {
   const filter = searchParams.get('filter') || ''
   const sizeFilter = searchParams.get('size') || 'all'
   const categoryFilter = searchParams.get('category') || 'all'
+  const tagFilter = searchParams.get('tag') || 'all'
 
   // Owned ships + derived loaner ships, in one list for the unified view.
   const combined = useMemo(
@@ -217,6 +219,15 @@ export default function FleetTable() {
   }, [combined])
 
   const inOrgs = !!(orgsData?.orgs?.length > 0)
+
+  // Distinct tags across the fleet, for the tag filter (#120). Loaners are
+  // derived rows without a user_fleet id, so tags only come from owned ships.
+  const allTags = useMemo(() => {
+    if (!fleet) return []
+    const s = new Set()
+    for (const v of fleet) for (const t of v.tags || []) s.add(t)
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [fleet])
 
   // In-game-purchased ships (manually added; cleared after a wipe).
   const [showAddIngame, setShowAddIngame] = useState(false)
@@ -326,6 +337,10 @@ export default function FleetTable() {
       items = items.filter((v) => v.pledge_id === packFilter)
     }
 
+    if (tagFilter !== 'all') {
+      items = items.filter((v) => (v.tags || []).includes(tagFilter))
+    }
+
     items.sort((a, b) => {
       let va, vb
       switch (sortKey) {
@@ -347,7 +362,7 @@ export default function FleetTable() {
     })
 
     return items
-  }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, sortKey, sortDir])
+  }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, tagFilter, sortKey, sortDir])
 
   const toggleSort = (key) => {
     setSearchParams(prev => {
@@ -371,6 +386,7 @@ export default function FleetTable() {
       prev.delete('size')
       prev.delete('pack')
       prev.delete('category')
+      prev.delete('tag')
       return prev
     }, { replace: true })
   }
@@ -487,6 +503,18 @@ export default function FleetTable() {
           >
             Clear pack filter
           </button>
+        )}
+        {allTags.length > 0 && (
+          <select
+            value={tagFilter}
+            onChange={(e) => setSearchParams(prev => { e.target.value === 'all' ? prev.delete('tag') : prev.set('tag', e.target.value); return prev }, { replace: true })}
+            className="px-2.5 py-1.5 text-xs bg-white/[0.04] border border-white/10 rounded-md text-gray-300 focus:border-sc-accent/40 cursor-pointer"
+          >
+            <option value="all">All Tags</option>
+            {allTags.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
         )}
       </div>
 
@@ -611,6 +639,15 @@ export default function FleetTable() {
                             : v.custom_name && (
                                 <span className="block text-xs text-sc-accent italic">"{v.custom_name}"</span>
                               )}
+                          {/* Tags are stored per user_fleet row; loaners are derived and have no id. */}
+                          {!isLoaner && (
+                            <FleetTagCell
+                              fleetId={v.id}
+                              tags={v.tags || []}
+                              onUpdated={refetch}
+                              onFilterTag={(tag) => setSearchParams(prev => { prev.set('tag', tag); return prev }, { replace: true })}
+                            />
+                          )}
                         </div>
                       </div>
                     </td>
