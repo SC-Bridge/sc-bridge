@@ -5,7 +5,7 @@ import type { Env, HonoEnv } from "./lib/types";
 import { createAuth } from "./lib/auth";
 import { fleetRoutes } from "./routes/fleet";
 import { vehicleRoutes } from "./routes/vehicles";
-import { getShipLoadout, getSalvageForShip, listSalvageableShips } from "./db/queries";
+import { getShipLoadout, getSalvageForShip, listSalvageableShips, listChangelogEntries } from "./db/queries";
 import { paintRoutes } from "./routes/paints";
 import { importRoutes } from "./routes/import";
 import { settingsRoutes } from "./routes/settings";
@@ -412,6 +412,12 @@ app.get("/api/gamedata/salvageable-ships", async (c) => {
   return cachedJson(c, `gd:salvageable-ships`, () =>
     listSalvageableShips(db),
   );
+});
+
+// Public changelog (#124) — published entries, newest first.
+app.get("/api/changelog", async (c) => {
+  const db = c.env.DB;
+  return cachedJson(c, `changelog:list`, () => listChangelogEntries(db));
 });
 
 // Mount route groups — matches Go router URL structure exactly

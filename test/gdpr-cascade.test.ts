@@ -30,6 +30,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     db.prepare("DELETE FROM org_op_payouts WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM org_op_capital WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM org_op_participants WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_fleet_tags WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_fleet_loadout WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_loaner_loadout WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_module_selection WHERE user_id = ?").bind(userId),
@@ -87,6 +88,8 @@ const USER_TABLES = [
   "org_op_participants",
   "org_op_capital",
   "org_op_payouts",
+  // Custom fleet tags (0254)
+  "user_fleet_tags",
   // Loadout customization (0141)
   "user_fleet_loadout",
   "user_loadout_cart",
@@ -472,6 +475,15 @@ describe("GDPR — User Deletion Cascade", () => {
            VALUES (?, 'fleet', ?, 'hardpoint_front_module', 'gdpr-mod-uuid')`
         )
         .bind(user.userId, fleetRow!.id)
+        .run();
+
+      // user_fleet_tags (migration 0254)
+      await db
+        .prepare(
+          `INSERT INTO user_fleet_tags (user_fleet_id, user_id, tag)
+           VALUES (?, ?, 'cargo')`
+        )
+        .bind(fleetRow!.id, user.userId)
         .run();
 
       // user_blueprints (migration 0146) — need a crafting_blueprints row

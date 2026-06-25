@@ -26,6 +26,7 @@ const AnalysisHistory = lazy(() => import('./pages/AnalysisHistory'))
 const Import = lazy(() => import('./pages/Import'))
 const ShipDB = lazy(() => import('./pages/ShipDB'))
 const ShipDetail = lazy(() => import('./pages/ShipDetail'))
+const Salvageable = lazy(() => import('./pages/Salvageable'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Admin = lazy(() => import('./pages/Admin'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
@@ -71,6 +72,7 @@ const Loadout = lazy(() => import('./pages/Loadout'))
 const Components = lazy(() => import('./pages/Components'))
 const FpsLoadout = lazy(() => import('./pages/FpsLoadout'))
 const About = lazy(() => import('./pages/About'))
+const Changelog = lazy(() => import('./pages/Changelog'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
 // Game Data and Reference are public — visible to all users
@@ -103,6 +105,7 @@ const referenceGroup = {
   icon: BookOpen,
   items: [
     { to: '/ships', icon: Database, label: 'Ship DB' },
+    { to: '/salvageable', icon: Wrench, label: 'Salvageable Ships' },
     { to: '/paints', icon: Palette, label: 'Paints' },
     { to: '/careers', icon: Briefcase, label: 'Careers & Roles' },
     { to: '/law', icon: Scale, label: 'Law System' },
@@ -429,7 +432,7 @@ function SidebarContent({ expandedMenu, setExpandedMenu, onNavClick }) {
 
       <div className="p-3 border-t border-sc-border">
         <p className="text-[11px] font-mono text-gray-500 text-center tracking-widest">
-          v1.0.0 · <NavLink to="/about" className="hover:text-sc-accent transition-colors">About</NavLink>
+          <NavLink to="/changelog" className="hover:text-sc-accent transition-colors">v1.0.0</NavLink> · <NavLink to="/about" className="hover:text-sc-accent transition-colors">About</NavLink>
         </p>
         <p className="text-[10px] text-gray-600 text-center mt-1">
           <NavLink to="/privacy" className="hover:text-gray-400 transition-colors">Privacy</NavLink>
@@ -713,6 +716,7 @@ export default function App() {
 
                       {/* Public game data routes */}
                       <Route path="/ships" element={<ShipDB />} />
+                      <Route path="/salvageable" element={<Salvageable />} />
                       <Route path="/ships/:slug" element={<ShipDetail />} />
                       <Route path="/paints" element={<PaintBrowser />} />
                       <Route path="/paints/:slug" element={<PaintDetail />} />
@@ -744,6 +748,7 @@ export default function App() {
                       <Route path="/components" element={<Navigate to="/components/weapons" replace />} />
                       <Route path="/components/:type" element={<Suspense fallback={<LoadingState fullScreen />}><Components /></Suspense>} />
                       <Route path="/about" element={<Suspense fallback={<LoadingState fullScreen />}><About /></Suspense>} />
+                      <Route path="/changelog" element={<Suspense fallback={<LoadingState fullScreen />}><Changelog /></Suspense>} />
                       <Route path="/loadout/:slug" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><Loadout /></Suspense></RequireAuth>} />
                       <Route path="/fps-loadout" element={<RequireAuth><RequireFeature flag="fpsLoadout"><Suspense fallback={<LoadingState fullScreen />}><FpsLoadout /></Suspense></RequireFeature></RequireAuth>} />
                       <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />

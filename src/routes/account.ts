@@ -603,6 +603,7 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_settings WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_llm_configs WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_fleet_tags WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(user.id),
       // user_loaner_loadout is keyed by vehicle (no user_fleet cascade) — delete explicitly.
       db.prepare("DELETE FROM user_loaner_loadout WHERE user_id = ?").bind(user.id),

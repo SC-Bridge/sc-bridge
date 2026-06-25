@@ -133,6 +133,9 @@ export default function Loadout() {
     return stockComponents.map(c => overrides[c.port_id] ? { ...c, ...overrides[c.port_id] } : c)
   }, [stockComponents, overrides])
 
+  // Equipped tool heads (mining lasers / salvage heads) that carry gadget slots.
+  // Keyed by the effective (possibly swapped) component uuid + the ship port so
+  // gadget selections persist per head. MOLE's 3 turret lasers → 3 distinct heads.
   // Auto-collapse Point Defense section when >6 items
   useEffect(() => {
     const pdcGroup = grouped.find(g => g.label === 'Point Defense')
