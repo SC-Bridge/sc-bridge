@@ -1,5 +1,5 @@
 // frontend/src/pages/FpsLoadout/WeaponBench.jsx
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsPanel from './StatsPanel'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
@@ -10,6 +10,12 @@ export default function WeaponBench({ blueprint, attachments = [] }) {
   const slots = blueprint?.slots || []
   const [qualities, setQualities] = useState(() => Object.fromEntries(slots.map((_, i) => [i, 500])))
   const [equipped, setEquipped] = useState({}) // { [slotType]: attachmentUuid }
+
+  useEffect(() => {
+    const newSlots = blueprint?.slots || []
+    setQualities(Object.fromEntries(newSlots.map((_, i) => [i, 500])))
+    setEquipped({})
+  }, [blueprint?.name]) // intentional: reset only when the weapon identity changes, not on every slots reference
 
   const equippedList = useMemo(
     () => Object.values(equipped).map((uuid) => attachments.find((a) => a.uuid === uuid)).filter(Boolean),
