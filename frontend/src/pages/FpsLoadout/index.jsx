@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useFpsGear } from '../../hooks/useAPI'
+import WeaponBenchContainer from './WeaponBenchContainer'
 
 const ICON = (name) => `/inventory-assets/${name}`
 
@@ -490,12 +491,12 @@ export default function FpsLoadout() {
             <EquipmentPanel equipTab={equipTab} setEquipTab={setEquipTab} />
           </div>
 
-          {/* Center — Paperdoll */}
+          {/* Center — Weapon Bench */}
           <div
             className="absolute z-[5]"
             style={{ left: '26.5625%', right: '26.5625%', top: 0, height: '100%' }}
           >
-            <Paperdoll />
+            <div className="h-full overflow-y-auto p-4"><WeaponBenchContainer /></div>
           </div>
 
           {/* Right panel — Gear Browser */}
