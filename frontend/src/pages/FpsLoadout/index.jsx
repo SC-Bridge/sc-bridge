@@ -77,23 +77,6 @@ function EquipSlot({ icon, size = '2.4vw', badge = null, children }) {
   )
 }
 
-function PaperdollSlot({ icon, style, small = false }) {
-  const cls = small ? 'w-[4vmin] h-[4vmin]' : 'w-[5.5vmin] h-[5.5vmin]'
-  return (
-    <div
-      className={`${cls} flex items-center justify-center cursor-pointer rounded-full`}
-      style={{
-        border: '1px solid rgba(0,200,230,0.25)',
-        background: 'rgba(0,18,28,0.4)',
-        position: small ? 'static' : 'absolute',
-        ...style,
-      }}
-    >
-      <Ico src={icon} size={small ? '1.6vmin' : '2.5vmin'} />
-    </div>
-  )
-}
-
 function EquipmentPanel({ equipTab, setEquipTab }) {
   return (
     <div className="flex flex-col h-full">
@@ -173,46 +156,6 @@ function EquipmentPanel({ equipTab, setEquipTab }) {
             )}
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function Paperdoll() {
-  return (
-    <div className="relative w-full h-full">
-      {/* Right column — armor/clothing slots, evenly spaced, centered vertically */}
-      <PaperdollSlot icon="icon_common_helmet.svg" style={{ top: '15%', right: '10%' }} />
-      <PaperdollSlot icon="icon_common_glasses.svg" style={{ top: '29%', right: '10%' }} />
-      <PaperdollSlot icon="PIT_Looting_Core_Icon.svg" style={{ top: '43%', right: '10%' }} />
-      <PaperdollSlot icon="icon_common_arms.svg" style={{ top: '57%', right: '10%' }} />
-      <PaperdollSlot icon="PIT_Looting_Legs_Icon.svg" style={{ top: '71%', right: '10%' }} />
-      <PaperdollSlot icon="icon_common_shoe.svg" style={{ top: '85%', right: '10%' }} />
-
-      {/* Left — Throwables row (aligns with glasses @ 29%) */}
-      <div className="absolute flex gap-[0.3vw]" style={{ top: '29%', left: '6%' }}>
-        {[0,1,2,3].map(i => <PaperdollSlot key={i} icon="icon_common_grenade.svg" small />)}
-      </div>
-
-      {/* Left — Backpack (aligns with core @ 43%) */}
-      <PaperdollSlot icon="PIT_Looting_Backpack_Icon.svg" style={{ top: '43%', left: '6%' }} />
-
-      {/* Left — Magazines 2 rows, midpoint aligns with arms @ 57% */}
-      <div className="absolute flex gap-[0.3vw]" style={{ top: '54%', left: '6%' }}>
-        {[0,1,2,3].map(i => <PaperdollSlot key={i} icon="icon_common_magazine.svg" small />)}
-      </div>
-      <div className="absolute flex gap-[0.3vw]" style={{ top: '60%', left: '6%' }}>
-        {[0,1,2,3].map(i => <PaperdollSlot key={i} icon="icon_common_magazine.svg" small />)}
-      </div>
-
-      {/* Left — Consumables (aligns with legs @ 71%) */}
-      <div className="absolute flex gap-[0.3vw]" style={{ top: '71%', left: '6%' }}>
-        {[0,1,2,3].map(i => <PaperdollSlot key={i} icon="icon_common_consumable.svg" small />)}
-      </div>
-
-      {/* Center label */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[30px] tracking-[0.3em] uppercase pointer-events-none" style={{ color: 'rgba(192,246,254,0.12)' }}>
-        LOADOUT
       </div>
     </div>
   )
