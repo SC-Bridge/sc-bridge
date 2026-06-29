@@ -31,6 +31,7 @@ import { companionAuthRoutes } from "./routes/companion-auth";
 import { loadoutRoutes } from "./routes/loadout";
 import { componentRoutes } from "./routes/components";
 import { blueprintRoutes } from "./routes/blueprints";
+import { weaponBuildRoutes } from "./routes/weaponBuilds";
 import { characterRoutes } from "./routes/characters";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
@@ -311,6 +312,8 @@ app.use("/api/settings/*", requireAuth);
 app.use("/api/localization/*", requireAuth);
 app.use("/api/blueprints/*", requireAuth);
 app.use("/api/blueprints", requireAuth);
+app.use("/api/weapon-builds/*", requireAuth);
+app.use("/api/weapon-builds", requireAuth);
 app.use("/api/analysis", requireAuth);
 app.use("/api/llm/*", async (c, next) => {
   // /api/llm/models is public (lists available providers); all other LLM endpoints require auth
@@ -452,6 +455,7 @@ app.route("/api/companion", companionRoutes());
 app.route("/api/loadout", loadoutRoutes());
 app.route("/api/components", componentRoutes());
 app.route("/api/blueprints", blueprintRoutes());
+app.route("/api/weapon-builds", weaponBuildRoutes());
 app.route("/api/characters", characterRoutes());
 
 // Companion app auth flow — HTML pages outside /api/* (no CORS, no JSON middleware)
