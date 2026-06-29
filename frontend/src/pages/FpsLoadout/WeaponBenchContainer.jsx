@@ -31,14 +31,17 @@ export default function WeaponBenchContainer() {
 
   const handleSave = (name) => {
     const blueprint = weapons[selected]
-    if (!blueprint) return
+    if (!blueprint?.uuid) return
     createWeaponBuild({ weaponUuid: blueprint.uuid, name, config: liveConfig.current })
       .then(() => builds.refetch?.())
   }
   const handleDelete = (b) => deleteWeaponBuild(b.id).then(() => builds.refetch?.())
   const handleLoad = (b) => {
+    // Only load builds whose weapon is available (e.g. skip builds from a different
+    // game version) — otherwise a foreign config would land on the current weapon.
     const idx = weapons.findIndex((w) => w.uuid === b.weapon_uuid)
-    if (idx >= 0) setSelected(idx)
+    if (idx < 0) return
+    setSelected(idx)
     setLoadedConfig({ ...(b.config || {}), name: b.name })
   }
 
