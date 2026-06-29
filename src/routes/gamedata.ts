@@ -964,6 +964,28 @@ return cachedJson(c, `gd:missions`, async () => {
     })
   })
 
+  // Weapon bench (#200) — attachments WITH their stat-multiplier columns. Weapons
+  // + crafting come from /api/gamedata/crafting; this fills the attachment gap the
+  // /fps-gear query omits.
+  app.get("/weapon-bench", async (c) => {
+    const db = c.env.DB;
+    return cachedJson(c, `gd:weapon-bench`, async () => {
+      const { results } = await db
+        .prepare(
+          `SELECT a.uuid, a.name, a.class_name, a.sub_type, a.size,
+                  a.damage_multiplier, a.fire_rate_multiplier,
+                  a.projectile_speed_multiplier, a.heat_generation_multiplier,
+                  m.name AS manufacturer_name, lm.rarity
+           FROM fps_attachments a
+           LEFT JOIN manufacturers m ON m.id = a.manufacturer_id
+           LEFT JOIN loot_map lm ON lm.fps_attachment_id = a.id
+           ORDER BY a.name`,
+        )
+        .all();
+      return { attachments: results };
+    });
+  });
+
   // GET /api/gamedata/crafting — all blueprints with slots and modifiers
   app.get("/crafting", async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
