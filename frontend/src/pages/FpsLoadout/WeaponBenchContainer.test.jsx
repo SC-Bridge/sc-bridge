@@ -12,6 +12,9 @@ vi.mock('../../hooks/useAPI', () => ({
   useWeaponBench: () => ({ data: { attachments: [
     { uuid: 'stark', name: 'Stark Compensator 1', sub_type: 'barrel', fire_rate_multiplier: 0.8 },
   ] }, loading: false, error: null }),
+  useWeaponBuilds: () => ({ data: { items: [] }, loading: false, error: null, refetch: vi.fn() }),
+  createWeaponBuild: vi.fn(() => Promise.resolve({})),
+  deleteWeaponBuild: vi.fn(() => Promise.resolve({})),
 }))
 
 import WeaponBenchContainer from './WeaponBenchContainer'

@@ -158,6 +158,19 @@ export function useWeaponBench() {
   return useAPI('/gamedata/weapon-bench')
 }
 
+// Saved weapon-bench builds (user_weapon_builds, Plan C endpoint).
+export function useWeaponBuilds() {
+  return useAPI('/weapon-builds')
+}
+
+export async function createWeaponBuild({ weaponUuid, name, config }) {
+  return postJSON('/weapon-builds', { weaponUuid, name, config })
+}
+
+export async function deleteWeaponBuild(id) {
+  return apiFetch('DELETE', `/weapon-builds/${id}`)
+}
+
 export function useNPCFactionLoadouts(factionCode, page = 1, perPage = 50) {
   return useAPI(
     factionCode ? `/gamedata/npc-loadouts/${factionCode}?page=${page}&per_page=${perPage}` : null,
