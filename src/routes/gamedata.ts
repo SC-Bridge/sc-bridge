@@ -1057,7 +1057,8 @@ return cachedJson(c, `gd:crafting`, async () => {
         // FPS handheld weapons (FS-9 LMG, Arclight Pistol, etc.)
         const weaponResult = await db.prepare(`SELECT fw.class_name, fw.name, fw.rounds_per_minute, fw.damage, fw.dps,
                   fw.effective_range, fw.projectile_speed, fw.ammo_capacity,
-                  fw.spread_min, fw.spread_max, fw.damage_type, fw.fire_modes
+                  fw.spread_min, fw.spread_max, fw.damage_type, fw.fire_modes,
+                  fw.loadout_icon
            FROM ${t("fps_weapons")} fw
           `
         ).all()
@@ -1076,6 +1077,7 @@ return cachedJson(c, `gd:crafting`, async () => {
               spread_max: w.spread_max,
               damage_type: w.damage_type,
               fire_modes: w.fire_modes,
+              loadout_icon: w.loadout_icon,
             })
           }
         }
