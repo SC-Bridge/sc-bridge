@@ -67,4 +67,11 @@ describe('WeaponBench', () => {
     // build rpm = 600 × 0.8 = 480. A correct reset means no 480 in the DOM.
     expect(screen.queryByText('480')).not.toBeInTheDocument()
   })
+
+  it('renders the real weapon icon image when base_stats.loadout_icon is present', () => {
+    const bp = { ...BLUEPRINT, base_stats: { ...BLUEPRINT.base_stats, loadout_icon: 'https://imagedelivery.net/x/lh86/public' } }
+    render(<WeaponBench blueprint={bp} attachments={[]} />)
+    const img = screen.getByRole('img', { name: bp.name })
+    expect(img).toHaveAttribute('src', 'https://imagedelivery.net/x/lh86/public')
+  })
 })

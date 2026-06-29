@@ -39,7 +39,8 @@ export default function WeaponBench({ blueprint, attachments = [] }) {
     return next
   })
 
-  const { url } = resolveWeaponIcon(blueprint) // placeholder name lives in the <h3>, so only the url is used here
+  // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else placeholder text.
+  const { url } = resolveWeaponIcon({ ...blueprint, icon_url: blueprint.base_stats?.loadout_icon })
 
   return (
     <div className="space-y-5">
