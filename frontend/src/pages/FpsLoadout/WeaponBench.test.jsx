@@ -1,6 +1,6 @@
 // frontend/src/pages/FpsLoadout/WeaponBench.test.jsx
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import WeaponBench from './WeaponBench'
 
 const BLUEPRINT = {
@@ -73,5 +73,23 @@ describe('WeaponBench', () => {
     render(<WeaponBench blueprint={bp} attachments={[]} />)
     const img = screen.getByRole('img', { name: bp.name })
     expect(img).toHaveAttribute('src', 'https://imagedelivery.net/x/lh86/public')
+  })
+
+  it('equips an attachment by dragging it onto its slot drop-zone', () => {
+    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+    const zone = screen.getByTestId('dropzone-barrel')
+    const card = screen.getByTestId('att-stark')
+    const dt = { getData: () => 'stark', setData: () => {} }
+    fireEvent.dragStart(card, { dataTransfer: dt })
+    fireEvent.drop(zone, { dataTransfer: dt })
+    expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
+  })
+
+  it('warns when a loaded build’s slider is moved off its saved baseline', () => {
+    render(<WeaponBench blueprint={BLUEPRINT} attachments={[]} initialConfig={{ qualities: { 0: 250, 1: 250 }, attachments: {}, name: 'My Rifle' }} />)
+    expect(screen.queryByText(/no longer match/i)).not.toBeInTheDocument()
+    fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '1000' } })
+    expect(screen.getByText(/no longer match your saved weapon/i)).toBeInTheDocument()
+    expect(screen.getByText(/My Rifle/)).toBeInTheDocument()
   })
 })
