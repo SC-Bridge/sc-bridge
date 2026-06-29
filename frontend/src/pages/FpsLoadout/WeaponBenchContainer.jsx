@@ -1,13 +1,13 @@
 // frontend/src/pages/FpsLoadout/WeaponBenchContainer.jsx
 import React, { useMemo, useState } from 'react'
-import { useCrafting, useFpsGear } from '../../hooks/useAPI'
+import { useCrafting, useWeaponBench } from '../../hooks/useAPI'
 import WeaponBench from './WeaponBench'
 
 const SLOT_FROM_SUBTYPE = { barrel: 'barrel', optic: 'optic', scope: 'optic', underbarrel: 'underbarrel' }
 
 export default function WeaponBenchContainer() {
   const crafting = useCrafting()
-  const gear = useFpsGear()
+  const bench = useWeaponBench()
   const [selected, setSelected] = useState(0)
 
   const weapons = useMemo(
@@ -15,10 +15,10 @@ export default function WeaponBenchContainer() {
     [crafting.data],
   )
   const attachments = useMemo(
-    () => (gear.data?.items || [])
-      .filter((i) => i.category === 'Weapons' && i.sub_category === 'Attachments')
-      .map((i) => ({ ...i, uuid: i.uuid || String(i.id), slot: SLOT_FROM_SUBTYPE[i.sub_type] || 'barrel' })),
-    [gear.data],
+    () => (bench.data?.attachments || []).map((a) => ({
+      ...a, uuid: a.uuid || String(a.id), slot: SLOT_FROM_SUBTYPE[a.sub_type] || 'barrel',
+    })),
+    [bench.data],
   )
 
   if (crafting.loading) return <div className="text-gray-500 text-sm p-4">Loading…</div>

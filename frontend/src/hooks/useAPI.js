@@ -154,6 +154,10 @@ export function useFpsGear() {
   return useAPI('/gamedata/fps-gear')
 }
 
+export function useWeaponBench() {
+  return useAPI('/gamedata/weapon-bench')
+}
+
 export function useNPCFactionLoadouts(factionCode, page = 1, perPage = 50) {
   return useAPI(
     factionCode ? `/gamedata/npc-loadouts/${factionCode}?page=${page}&per_page=${perPage}` : null,
