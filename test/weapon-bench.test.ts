@@ -40,4 +40,40 @@ describe("GET /api/gamedata/weapon-bench", () => {
     const bp = body.blueprints.find((b) => b.name === "Gmni Pistol Ballistic 01");
     expect(bp?.base_stats?.loadout_icon).toContain("gemini_lh86_pistol");
   });
+
+  it("exposes weapon attachment_ports + attachment port fields (compat data)", async () => {
+    await env.DB.prepare(
+      `INSERT INTO fps_weapons (uuid, class_name, name, game_version_id)
+       VALUES ('w-compat', 'gmni_pistol_compat_01', 'Compat Pistol', 1)`
+    ).run();
+    const wid = (await env.DB.prepare(
+      "SELECT id FROM fps_weapons WHERE class_name='gmni_pistol_compat_01'"
+    ).first<{ id: number }>())!.id;
+    await env.DB.prepare(
+      `INSERT INTO crafting_blueprints (uuid, tag, name, type, sub_type, product_entity_class)
+       VALUES ('bp-compat', 'BP_CRAFT_gmni_pistol_compat_01', 'Compat Pistol BP', 'weapons', 'pistol', 'gmni_pistol_compat_01')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO fps_weapon_attachment_ports (weapon_id, port_name, port_type, size_min, size_max, required_port_tags, game_version_id)
+       VALUES (?, 'barrel_attach', 'Barrel', 1, 2, 'ballistic_attach', 1)`
+    ).bind(wid).run();
+    await env.DB.prepare(
+      `INSERT INTO fps_attachments (uuid, name, class_name, sub_type, size, attach_tags, game_version_id)
+       VALUES ('att-compat', 'Compat Barrel', 'arma_barrel_compat', 'Barrel', 1, 'FPS_Barrel ballistic_attach', 1)`
+    ).run();
+
+    const craft = await SELF.fetch("http://localhost/api/gamedata/crafting");
+    const cbody = (await craft.json()) as { blueprints: Array<{ name: string; base_stats?: { attachment_ports?: Array<Record<string, unknown>> } }> };
+    const bp = cbody.blueprints.find((b) => b.name === "Compat Pistol BP");
+    expect(bp?.base_stats?.attachment_ports).toEqual([
+      { port_type: "Barrel", size_min: 1, size_max: 2, required_port_tags: "ballistic_attach" },
+    ]);
+
+    const bench = await SELF.fetch("http://localhost/api/gamedata/weapon-bench");
+    const bbody = (await bench.json()) as { attachments: Array<Record<string, unknown>> };
+    const att = bbody.attachments.find((a) => a.uuid === "att-compat");
+    expect(att?.attach_port_type).toBe("Barrel");
+    expect(att?.attach_size).toBe(1);
+    expect(att?.attach_tags).toContain("ballistic_attach");
+  });
 });

@@ -973,6 +973,7 @@ return cachedJson(c, `gd:missions`, async () => {
       const { results } = await db
         .prepare(
           `SELECT a.uuid, a.name, a.class_name, a.sub_type, a.size,
+                  a.sub_type AS attach_port_type, a.size AS attach_size, a.attach_tags,
                   a.damage_multiplier, a.fire_rate_multiplier,
                   a.projectile_speed_multiplier, a.heat_generation_multiplier,
                   m.name AS manufacturer_name, lm.rarity
@@ -1062,6 +1063,25 @@ return cachedJson(c, `gd:crafting`, async () => {
            FROM ${t("fps_weapons")} fw
           `
         ).all()
+
+        // Attachment ports per weapon (Plan B) — grouped by weapon class so the
+        // bench can enforce real compatibility (sub-type + size + required tags).
+        const portsResult = await db.prepare(`SELECT fw.class_name, p.port_type, p.size_min, p.size_max, p.required_port_tags
+           FROM ${t("fps_weapon_attachment_ports")} p
+           JOIN ${t("fps_weapons")} fw ON fw.id = p.weapon_id`
+        ).all()
+        const portsMap = new Map<string, Array<Record<string, unknown>>>()
+        for (const p of portsResult.results) {
+          const cn = (p.class_name as string).toLowerCase()
+          if (!portsMap.has(cn)) portsMap.set(cn, [])
+          portsMap.get(cn)!.push({
+            port_type: p.port_type,
+            size_min: p.size_min,
+            size_max: p.size_max,
+            required_port_tags: p.required_port_tags,
+          })
+        }
+
         for (const w of weaponResult.results) {
           const cn = (w.class_name as string).toLowerCase()
           if (weaponTags.includes(cn) && !baseStatsMap.has(cn)) {
@@ -1078,6 +1098,7 @@ return cachedJson(c, `gd:crafting`, async () => {
               damage_type: w.damage_type,
               fire_modes: w.fire_modes,
               loadout_icon: w.loadout_icon,
+              attachment_ports: portsMap.get(cn) || [],
             })
           }
         }
