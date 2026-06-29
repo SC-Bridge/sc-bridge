@@ -36,6 +36,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     db.prepare("DELETE FROM user_module_selection WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_loadout_cart WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_blueprints WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_weapon_builds WHERE user_id = ?").bind(userId),
     // Better Auth tables (no CASCADE)
     db.prepare('DELETE FROM "session" WHERE userId = ?').bind(userId),
     db.prepare('DELETE FROM "account" WHERE userId = ?').bind(userId),
@@ -102,6 +103,8 @@ const USER_TABLES = [
   "user_blueprint_builds",
   // Character backup CHF files (0214) — CASCADE deletes metadata; R2 blobs cleaned by account deletion flow
   "user_characters",
+  // Weapon bench saved builds (0264)
+  "user_weapon_builds",
 ] as const;
 
 // Tables with user_id that DON'T cascade (known exceptions).
@@ -518,6 +521,15 @@ describe("GDPR — User Deletion Cascade", () => {
         .prepare(
           `INSERT INTO user_characters (user_id, name, chf_key, file_size)
            VALUES (?, 'Test Character', 'test/0.chf', 1024)`
+        )
+        .bind(user.userId)
+        .run();
+
+      // user_weapon_builds (migration 0264)
+      await db
+        .prepare(
+          `INSERT INTO user_weapon_builds (user_id, weapon_uuid, name, config_json)
+           VALUES (?, 'gmni_pistol_ballistic_01', 'GDPR Bench Build', '{"qualities":{"0":500}}')`
         )
         .bind(user.userId)
         .run();
