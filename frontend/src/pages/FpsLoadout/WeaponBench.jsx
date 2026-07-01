@@ -1,7 +1,7 @@
 // frontend/src/pages/FpsLoadout/WeaponBench.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import QualitySlider from '../Crafting/QualitySlider'
-import StatsPanel from './StatsPanel'
+import StatsGrid from './StatsGrid'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { isCompatible } from './attachmentCompat'
 import { resolveWeaponIcon } from './weaponIcon'
@@ -145,7 +145,7 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
         </div>
       </div>
 
-      <StatsPanel baseStats={blueprint.base_stats} stats={stats} />
+      <StatsGrid baseStats={blueprint.base_stats} stats={stats} />
     </div>
   )
 }
