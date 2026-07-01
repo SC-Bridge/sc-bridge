@@ -5,7 +5,12 @@ import { render, screen, fireEvent } from '@testing-library/react'
 vi.mock('../../hooks/useAPI', () => ({
   useCrafting: () => ({ data: { blueprints: [{
     uuid: 'lh86', name: 'LH86 Pistol', type: 'weapons', sub_type: 'pistol',
-    base_stats: { damage: 13, rounds_per_minute: 950, dps: 205.8 },
+    base_stats: { damage: 13, rounds_per_minute: 950, dps: 205.8, ammo_capacity: 25 },
+    slots: [{ name: 'Barrel', resource_name: 'Iron', slot_type: 'resource', modifiers: [
+      { key: 'weapon_firerate', start_quality: 0, end_quality: 1000, modifier_at_start: 0.88, modifier_at_end: 1.12 } ] }],
+  }, {
+    uuid: 'banu-tachyon', name: 'Banu Tachyoncannon S1', type: 'weapons', sub_type: 'ship_weapon',
+    base_stats: { ship_size: 'S1', ammo_capacity: undefined },
     slots: [{ name: 'Barrel', resource_name: 'Iron', slot_type: 'resource', modifiers: [
       { key: 'weapon_firerate', start_quality: 0, end_quality: 1000, modifier_at_start: 0.88, modifier_at_end: 1.12 } ] }],
   }] }, loading: false, error: null }),
@@ -30,6 +35,11 @@ describe('WeaponBenchContainer', () => {
     expect(screen.getByRole('option', { name: 'LH86 Pistol' })).toBeInTheDocument()
     expect(screen.getByText('Damage')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Stark Compensator 1/ })).toBeInTheDocument()
+  })
+
+  it('excludes ship weapons (no ammo_capacity) from the weapon list', () => {
+    render(<WeaponBenchContainer />)
+    expect(screen.queryByRole('option', { name: /Tachyoncannon/ })).not.toBeInTheDocument()
   })
 
   it('loads a saved build for an available weapon (its sliders then warn on change)', () => {

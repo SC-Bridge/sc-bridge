@@ -15,7 +15,8 @@ export default function WeaponBenchContainer() {
   const liveConfig = useRef({ qualities: {}, attachments: {} })
 
   const weapons = useMemo(
-    () => (crafting.data?.blueprints || []).filter((b) => b.type === 'weapons' && (b.slots?.length > 0)),
+    () => (crafting.data?.blueprints || []).filter((b) =>
+      b.type === 'weapons' && (b.slots?.length > 0) && b.base_stats && b.base_stats.ammo_capacity != null),
     [crafting.data],
   )
   const attachments = useMemo(

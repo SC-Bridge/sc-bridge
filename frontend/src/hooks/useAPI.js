@@ -772,3 +772,29 @@ export async function updateBlueprintBuild(id, { name, qualityConfig, craftedQua
 export async function deleteBlueprintBuild(id) {
   return apiFetch('DELETE', `/blueprints/builds/${id}`)
 }
+
+// --- FPS Loadouts ---
+
+export function useFpsLoadouts() {
+  return useAPI('/fps-loadouts')
+}
+
+export async function createFpsLoadout({ name }) {
+  return postJSON('/fps-loadouts', { name })
+}
+
+export async function updateFpsLoadout(id, { name }) {
+  return patchJSON(`/fps-loadouts/${id}`, { name })
+}
+
+export async function deleteFpsLoadout(id) {
+  return apiFetch('DELETE', `/fps-loadouts/${id}`)
+}
+
+export async function putLoadoutSlot(id, slotKey, body) {
+  return putJSON(`/fps-loadouts/${id}/slots/${slotKey}`, body)
+}
+
+export async function clearLoadoutSlot(id, slotKey) {
+  return apiFetch('DELETE', `/fps-loadouts/${id}/slots/${slotKey}`)
+}
