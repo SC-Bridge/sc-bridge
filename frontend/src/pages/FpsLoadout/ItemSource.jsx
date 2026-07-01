@@ -11,7 +11,6 @@ const WANT = '#f3b03a'
 const LINE = 'rgba(120,200,220,0.14)'
 const LINE2 = 'rgba(120,200,220,0.30)'
 
-const WEAPON_SLOTS = new Set(['primary', 'secondary', 'sidearm'])
 const ARMOUR_SLOTS = new Set(['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'])
 const UTILITY_SLOTS = new Set(['medical', 'gadget', 'throwable'])
 

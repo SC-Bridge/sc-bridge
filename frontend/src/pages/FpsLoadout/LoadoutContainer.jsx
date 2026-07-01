@@ -48,7 +48,7 @@ function ColHeader({ children }) {
   )
 }
 
-function TopBar({ loadouts, currentLoadoutId, onSelect, onNew }) {
+function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, newLoadoutError }) {
   return (
     <div className="flex items-center gap-3 flex-wrap" style={{ padding: '4px 8px 12px', borderBottom: `1px solid ${LINE}` }}>
       <div className="font-bold uppercase" style={{ letterSpacing: 3, color: '#fff', fontSize: 14 }}>
@@ -85,6 +85,11 @@ function TopBar({ loadouts, currentLoadoutId, onSelect, onNew }) {
       >
         + New
       </button>
+      {newLoadoutError && (
+        <span data-testid="new-loadout-error" style={{ color: WANT, fontSize: 11 }}>
+          {newLoadoutError}
+        </span>
+      )}
       <div className="flex-1" />
       <div className="flex items-center gap-4" style={{ fontSize: 11, color: ICE_DIM }}>
         <span><b style={{ color: OWN, fontSize: 13 }}>&#10003;</b> Owned</span>
@@ -109,8 +114,9 @@ export default function LoadoutContainer() {
   const [selectedSlot, setSelectedSlot] = useState('primary')
   // Transient override for the selected slot — set when the user picks a
   // weapon/build from ItemSource, before it's committed via "Set to loadout".
-  const [pick, setPick] = useState(null) // { weaponUuid, config }
+  const [pick, setPick] = useState(null) // { weaponUuid, buildId, config }
   const [saving, setSaving] = useState(false)
+  const [newLoadoutError, setNewLoadoutError] = useState(null)
   const liveConfigRef = useRef({ qualities: {}, attachments: {} })
 
   const loadouts = loadoutsQ.data?.items || []
@@ -152,9 +158,17 @@ export default function LoadoutContainer() {
   // available weapon so the bench isn't empty.
   const activeWeaponUuid = pick?.weaponUuid ?? savedSlot?.item_uuid ?? weapons[0]?.uuid ?? null
   const blueprint = isWeaponSlot ? (weapons.find((w) => w.uuid === activeWeaponUuid) || null) : null
-  const initialConfig = pick
-    ? pick.config
-    : (savedSlot?.item_uuid ? { ...(savedSlot.config || {}), name: savedSlot.item_name } : null)
+  // Memoized so WeaponBench (which resets its in-progress edits whenever this
+  // reference changes) only resets when the selected slot's source item
+  // actually changes — not on every unrelated re-render (e.g. after Save
+  // build triggers buildsQ.refetch()).
+  const savedSlotConfigJSON = JSON.stringify(savedSlot?.config ?? null)
+  const initialConfig = useMemo(() => {
+    if (pick) return pick.config
+    if (!savedSlot?.item_uuid) return null
+    return { ...(savedSlot.config || {}), name: savedSlot.item_name }
+    // Deps: savedSlotConfigJSON stands in for savedSlot.config (stable string vs. new object each render).
+  }, [pick, savedSlot?.item_uuid, savedSlot?.item_name, savedSlotConfigJSON])
 
   const buildsForWeapon = useMemo(
     () => allBuilds.filter((b) => b.weapon_uuid === blueprint?.uuid),
@@ -167,19 +181,24 @@ export default function LoadoutContainer() {
     if (!item) return
     if (item.weapon_uuid) {
       // A saved build — load its weapon + its exact config.
-      setPick({ weaponUuid: item.weapon_uuid, config: { ...(item.config || {}), name: item.name } })
+      setPick({ weaponUuid: item.weapon_uuid, buildId: item.id, config: { ...(item.config || {}), name: item.name } })
     } else if (item.uuid && item.base_stats) {
       // A plain weapon blueprint — reset to a fresh config.
-      setPick({ weaponUuid: item.uuid, config: null })
+      setPick({ weaponUuid: item.uuid, buildId: null, config: null })
     }
     // Attachment picks (Item Source → Attach) aren't auto-equipped here —
     // the bench's own drag/click UI on its attachment slots handles that.
   }
 
   const handleNewLoadout = async () => {
-    const created = await createFpsLoadout({ name: `Loadout ${loadouts.length + 1}` })
-    await loadoutsQ.refetch()
-    setCurrentLoadoutId(created.id)
+    setNewLoadoutError(null)
+    try {
+      const created = await createFpsLoadout({ name: `Loadout ${loadouts.length + 1}` })
+      await loadoutsQ.refetch()
+      setCurrentLoadoutId(created.id)
+    } catch (err) {
+      setNewLoadoutError(err?.message || 'Could not create loadout.')
+    }
   }
 
   const handleSetToLoadout = async () => {
@@ -195,6 +214,7 @@ export default function LoadoutContainer() {
       await putLoadoutSlot(loadoutId, selectedSlot, {
         itemUuid: blueprint.uuid,
         itemName: blueprint.name,
+        weaponBuildId: pick?.buildId ?? null,
         config: liveConfigRef.current,
       })
       await loadoutsQ.refetch()
@@ -212,7 +232,7 @@ export default function LoadoutContainer() {
   const handleDeleteBuild = (b) => deleteWeaponBuild(b.id).then(() => buildsQ.refetch?.())
   const handleLoadBuild = (b) => {
     if (b.weapon_uuid !== blueprint?.uuid) return
-    setPick({ weaponUuid: b.weapon_uuid, config: { ...(b.config || {}), name: b.name } })
+    setPick({ weaponUuid: b.weapon_uuid, buildId: b.id, config: { ...(b.config || {}), name: b.name } })
   }
 
   // Per-weapon-slot stats for the loadout summary footer — resolves each
@@ -247,7 +267,8 @@ export default function LoadoutContainer() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto" style={{ padding: '4px 10px 14px' }}>
-      <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId} onNew={handleNewLoadout} />
+      <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
+        onNew={handleNewLoadout} newLoadoutError={newLoadoutError} />
 
       <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: '360px 1fr 320px' }}>
         <div className="rounded" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
@@ -300,7 +321,7 @@ export default function LoadoutContainer() {
             <span style={{ color: ICE_DIM, fontSize: 10 }}>for {slotLabel}</span>
           </ColHeader>
           <div style={{ padding: '11px 12px' }}>
-            <ItemSource slotKey={selectedSlot} weapons={weapons} attachments={attachments}
+            <ItemSource key={selectedSlot} slotKey={selectedSlot} weapons={weapons} attachments={attachments}
               builds={buildsForWeapon} ownership={ownership} onPick={handlePick} />
           </div>
         </div>

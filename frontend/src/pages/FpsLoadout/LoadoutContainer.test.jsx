@@ -77,4 +77,23 @@ describe('LoadoutContainer', () => {
       expect.objectContaining({ itemUuid: 'w-primary', itemName: 'P4-AR Rifle', config: expect.any(Object) }),
     )
   })
+
+  // Regression for the initialConfig-reference bug: initialConfig used to be
+  // rebuilt as a fresh object every render, so WeaponBench's reset effect
+  // (keyed on that reference) wiped in-progress slider edits on *any*
+  // unrelated re-render of LoadoutContainer (e.g. after Save build triggers
+  // buildsQ.refetch()). initialConfig must now be memoized so the bench only
+  // resets when the selected slot's source item actually changes.
+  it('does not reset bench edits on an unrelated re-render', () => {
+    const { rerender } = render(<LoadoutContainer />)
+    const slider = screen.getByRole('slider')
+    fireEvent.change(slider, { target: { value: '750' } })
+    expect(slider).toHaveValue('750')
+
+    // Re-render the same instance — nothing about the selected slot or
+    // weapon changed, so this should not touch the bench's live state.
+    rerender(<LoadoutContainer />)
+
+    expect(screen.getByRole('slider')).toHaveValue('750')
+  })
 })

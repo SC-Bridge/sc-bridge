@@ -150,10 +150,6 @@ export function useNPCLoadouts() {
   return useAPI('/gamedata/npc-loadouts')
 }
 
-export function useFpsGear() {
-  return useAPI('/gamedata/fps-gear')
-}
-
 export function useWeaponBench() {
   return useAPI('/gamedata/weapon-bench')
 }
