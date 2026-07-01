@@ -161,4 +161,70 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     const theirItems = ((await theirs.json()) as { items: Array<{ id: number; name: string }> }).items;
     expect(theirItems.find((i) => i.id === theirId)!.name).toBe("Theirs");
   });
+
+  it("rejects a weaponBuildId owned by another user (IDOR) but accepts the caller's own build", async () => {
+    const other = await createTestUser(env.DB);
+
+    const create = await post(sessionToken, { name: "Weapon Kit" });
+    const { id } = (await create.json()) as { id: number };
+
+    // A build owned by the OTHER user
+    const theirBuild = await SELF.fetch("http://localhost/api/weapon-builds", {
+      method: "POST",
+      headers: { ...(await authHeaders(other.sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ weaponUuid: "weapon-uuid-1", name: "Their Build", config: {} }),
+    });
+    const { id: theirBuildId } = (await theirBuild.json()) as { id: number };
+
+    // A build owned by the CALLER
+    const myBuild = await SELF.fetch("http://localhost/api/weapon-builds", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ weaponUuid: "weapon-uuid-1", name: "My Build", config: {} }),
+    });
+    const { id: myBuildId } = (await myBuild.json()) as { id: number };
+
+    const hijack = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ weaponBuildId: theirBuildId }),
+    });
+    expect(hijack.status).toBe(404);
+
+    const list = await SELF.fetch("http://localhost/api/fps-loadouts", { headers: await authHeaders(sessionToken) });
+    type ListBody = { items: Array<{ id: number; slots: Array<{ slot_key: string; weapon_build_id: number | null }> }> };
+    const listBody = (await list.json()) as ListBody;
+    const loadout = listBody.items.find((l) => l.id === id)!;
+    expect(loadout.slots).toHaveLength(0);
+
+    const own = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ weaponBuildId: myBuildId }),
+    });
+    expect(own.status).toBe(200);
+
+    const list2 = await SELF.fetch("http://localhost/api/fps-loadouts", { headers: await authHeaders(sessionToken) });
+    const listBody2 = (await list2.json()) as ListBody;
+    const loadout2 = listBody2.items.find((l) => l.id === id)!;
+    expect(loadout2.slots[0].weapon_build_id).toBe(myBuildId);
+  });
+
+  it("rejects an invalid slotKey with 400 on PUT and DELETE", async () => {
+    const create = await post(sessionToken, { name: "Bogus Slot Kit" });
+    const { id } = (await create.json()) as { id: number };
+
+    const put = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/bogus`, {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ itemName: "Nope" }),
+    });
+    expect(put.status).toBe(400);
+
+    const del = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/bogus`, {
+      method: "DELETE",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+    });
+    expect(del.status).toBe(400);
+  });
 });

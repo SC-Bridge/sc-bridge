@@ -4,6 +4,28 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate } from "../lib/validation";
 
+/** Known FPS loadout slot keys — mirrors the client-side slot layout. */
+const FpsSlotKey = z.enum([
+  "primary",
+  "secondary",
+  "sidearm",
+  "helmet",
+  "core",
+  "arms",
+  "legs",
+  "backpack",
+  "undersuit",
+  "medical",
+  "gadget",
+  "throwable",
+]);
+
+/** Route params for /:id/slots/:slotKey — loadout id + known slot key */
+const SlotParams = z.object({
+  id: z.coerce.number().int().positive({ message: "Invalid ID" }),
+  slotKey: FpsSlotKey,
+});
+
 interface LoadoutSlotRow {
   loadout_id: number;
   name: string;
@@ -136,6 +158,7 @@ export function fpsLoadoutRoutes() {
 
   routes.put(
     "/:id/slots/:slotKey",
+    validate("param", SlotParams),
     validate("json", z.object({
       itemUuid: z.string().trim().min(1).max(120).optional(),
       itemName: z.string().trim().min(1).max(200).optional(),
@@ -145,8 +168,7 @@ export function fpsLoadoutRoutes() {
     async (c) => {
       const db = c.env.DB;
       const userId = getAuthUser(c).id;
-      const id = parseInt(c.req.param("id"), 10);
-      const slotKey = c.req.param("slotKey");
+      const { id, slotKey } = c.req.valid("param");
       const body = c.req.valid("json");
 
       const loadoutOwned = await db
@@ -154,6 +176,14 @@ export function fpsLoadoutRoutes() {
         .bind(id, userId)
         .first();
       if (!loadoutOwned) return c.json({ error: "Not found" }, 404);
+
+      if (body.weaponBuildId != null) {
+        const buildOwned = await db
+          .prepare("SELECT id FROM user_weapon_builds WHERE id = ? AND user_id = ?")
+          .bind(body.weaponBuildId, userId)
+          .first();
+        if (!buildOwned) return c.json({ error: "weapon build not found" }, 404);
+      }
 
       await db
         .prepare(
@@ -180,11 +210,10 @@ export function fpsLoadoutRoutes() {
     },
   );
 
-  routes.delete("/:id/slots/:slotKey", async (c) => {
+  routes.delete("/:id/slots/:slotKey", validate("param", SlotParams), async (c) => {
     const db = c.env.DB;
     const userId = getAuthUser(c).id;
-    const id = parseInt(c.req.param("id"), 10);
-    const slotKey = c.req.param("slotKey");
+    const { id, slotKey } = c.req.valid("param");
 
     const loadoutOwned = await db
       .prepare("SELECT id FROM user_fps_loadouts WHERE id = ? AND user_id = ?")
