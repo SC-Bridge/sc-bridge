@@ -1,0 +1,203 @@
+// src/routes/fpsLoadouts.ts
+import { Hono } from "hono";
+import { z } from "zod";
+import { getAuthUser, type HonoEnv } from "../lib/types";
+import { validate } from "../lib/validation";
+
+interface LoadoutSlotRow {
+  loadout_id: number;
+  name: string;
+  slot_key: string | null;
+  item_uuid: string | null;
+  item_name: string | null;
+  weapon_build_id: number | null;
+  config_json: string | null;
+  owned: number;
+  wishlisted: number;
+}
+
+/**
+ * /api/fps-loadouts — Named FPS loadouts (kits) + per-slot items (#200 follow-up).
+ *
+ * Owned/wishlisted are derived at read time from the user's Loot collection/wishlist
+ * (user_loot_collection.loot_uuid / user_loot_wishlist.loot_uuid — both channel-stable
+ * uuid columns, see migration 0225) joined against a slot's item_uuid.
+ */
+export function fpsLoadoutRoutes() {
+  const routes = new Hono<HonoEnv>();
+
+  routes.get("/", async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const { results } = await db
+      .prepare(
+        `SELECT l.id AS loadout_id, l.name,
+                s.slot_key, s.item_uuid, s.item_name, s.weapon_build_id, s.config_json,
+                CASE WHEN ulc.id IS NOT NULL THEN 1 ELSE 0 END AS owned,
+                CASE WHEN ulw.id IS NOT NULL THEN 1 ELSE 0 END AS wishlisted
+         FROM user_fps_loadouts l
+         LEFT JOIN user_fps_loadout_slots s ON s.loadout_id = l.id
+         LEFT JOIN user_loot_collection ulc ON ulc.user_id = l.user_id AND ulc.loot_uuid = s.item_uuid
+         LEFT JOIN user_loot_wishlist ulw ON ulw.user_id = l.user_id AND ulw.loot_uuid = s.item_uuid
+         WHERE l.user_id = ?
+         ORDER BY l.updated_at DESC, l.id, s.slot_key`,
+      )
+      .bind(userId)
+      .all<LoadoutSlotRow>();
+
+    const loadouts = new Map<number, { id: number; name: string; slots: Record<string, unknown>[] }>();
+    for (const r of results) {
+      if (!loadouts.has(r.loadout_id)) {
+        loadouts.set(r.loadout_id, { id: r.loadout_id, name: r.name, slots: [] });
+      }
+      if (r.slot_key) {
+        let config: unknown = null;
+        if (r.config_json) {
+          try { config = JSON.parse(r.config_json); } catch { config = null; }
+        }
+        loadouts.get(r.loadout_id)!.slots.push({
+          slot_key: r.slot_key,
+          item_uuid: r.item_uuid,
+          item_name: r.item_name,
+          weapon_build_id: r.weapon_build_id,
+          config,
+          owned: !!r.owned,
+          wishlisted: !!r.wishlisted,
+        });
+      }
+    }
+
+    return c.json({ items: Array.from(loadouts.values()) });
+  });
+
+  routes.post(
+    "/",
+    validate("json", z.object({
+      name: z.string().trim().min(1).max(80),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { name } = c.req.valid("json");
+      try {
+        const row = await db
+          .prepare(`INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, ?) RETURNING id`)
+          .bind(userId, name)
+          .first<{ id: number }>();
+        return c.json({ ok: true, id: row?.id });
+      } catch (e: unknown) {
+        if (((e as Error)?.message || "").includes("UNIQUE")) {
+          return c.json({ error: "A loadout with that name already exists" }, 409);
+        }
+        throw e;
+      }
+    },
+  );
+
+  routes.patch(
+    "/:id",
+    validate("json", z.object({
+      name: z.string().trim().min(1).max(80),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const id = parseInt(c.req.param("id"), 10);
+      const { name } = c.req.valid("json");
+
+      const owned = await db
+        .prepare("SELECT id FROM user_fps_loadouts WHERE id = ? AND user_id = ?")
+        .bind(id, userId)
+        .first();
+      if (!owned) return c.json({ error: "Not found" }, 404);
+
+      try {
+        await db
+          .prepare("UPDATE user_fps_loadouts SET name = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?")
+          .bind(name, id, userId)
+          .run();
+        return c.json({ ok: true });
+      } catch (e: unknown) {
+        if (((e as Error)?.message || "").includes("UNIQUE")) {
+          return c.json({ error: "A loadout with that name already exists" }, 409);
+        }
+        throw e;
+      }
+    },
+  );
+
+  routes.delete("/:id", async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const id = parseInt(c.req.param("id"), 10);
+    await db.prepare("DELETE FROM user_fps_loadouts WHERE id = ? AND user_id = ?").bind(id, userId).run();
+    return c.json({ ok: true });
+  });
+
+  routes.put(
+    "/:id/slots/:slotKey",
+    validate("json", z.object({
+      itemUuid: z.string().trim().min(1).max(120).optional(),
+      itemName: z.string().trim().min(1).max(200).optional(),
+      weaponBuildId: z.number().int().positive().optional(),
+      config: z.record(z.string(), z.unknown()).optional(),
+    })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const id = parseInt(c.req.param("id"), 10);
+      const slotKey = c.req.param("slotKey");
+      const body = c.req.valid("json");
+
+      const loadoutOwned = await db
+        .prepare("SELECT id FROM user_fps_loadouts WHERE id = ? AND user_id = ?")
+        .bind(id, userId)
+        .first();
+      if (!loadoutOwned) return c.json({ error: "Not found" }, 404);
+
+      await db
+        .prepare(
+          `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, weapon_build_id, config_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(loadout_id, slot_key) DO UPDATE SET
+             item_uuid = excluded.item_uuid,
+             item_name = excluded.item_name,
+             weapon_build_id = excluded.weapon_build_id,
+             config_json = excluded.config_json,
+             updated_at = datetime('now')`,
+        )
+        .bind(
+          id,
+          slotKey,
+          body.itemUuid ?? null,
+          body.itemName ?? null,
+          body.weaponBuildId ?? null,
+          body.config !== undefined ? JSON.stringify(body.config) : null,
+        )
+        .run();
+
+      return c.json({ ok: true });
+    },
+  );
+
+  routes.delete("/:id/slots/:slotKey", async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const id = parseInt(c.req.param("id"), 10);
+    const slotKey = c.req.param("slotKey");
+
+    const loadoutOwned = await db
+      .prepare("SELECT id FROM user_fps_loadouts WHERE id = ? AND user_id = ?")
+      .bind(id, userId)
+      .first();
+    if (!loadoutOwned) return c.json({ error: "Not found" }, 404);
+
+    await db
+      .prepare("DELETE FROM user_fps_loadout_slots WHERE loadout_id = ? AND slot_key = ?")
+      .bind(id, slotKey)
+      .run();
+    return c.json({ ok: true });
+  });
+
+  return routes;
+}

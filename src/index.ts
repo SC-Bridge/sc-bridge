@@ -32,6 +32,7 @@ import { loadoutRoutes } from "./routes/loadout";
 import { componentRoutes } from "./routes/components";
 import { blueprintRoutes } from "./routes/blueprints";
 import { weaponBuildRoutes } from "./routes/weaponBuilds";
+import { fpsLoadoutRoutes } from "./routes/fpsLoadouts";
 import { characterRoutes } from "./routes/characters";
 import { validateEncryptionKey } from "./lib/crypto";
 import { logEvent } from "./lib/logger";
@@ -314,6 +315,8 @@ app.use("/api/blueprints/*", requireAuth);
 app.use("/api/blueprints", requireAuth);
 app.use("/api/weapon-builds/*", requireAuth);
 app.use("/api/weapon-builds", requireAuth);
+app.use("/api/fps-loadouts/*", requireAuth);
+app.use("/api/fps-loadouts", requireAuth);
 app.use("/api/analysis", requireAuth);
 app.use("/api/llm/*", async (c, next) => {
   // /api/llm/models is public (lists available providers); all other LLM endpoints require auth
@@ -456,6 +459,7 @@ app.route("/api/loadout", loadoutRoutes());
 app.route("/api/components", componentRoutes());
 app.route("/api/blueprints", blueprintRoutes());
 app.route("/api/weapon-builds", weaponBuildRoutes());
+app.route("/api/fps-loadouts", fpsLoadoutRoutes());
 app.route("/api/characters", characterRoutes());
 
 // Companion app auth flow — HTML pages outside /api/* (no CORS, no JSON middleware)

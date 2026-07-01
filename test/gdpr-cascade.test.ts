@@ -37,6 +37,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     db.prepare("DELETE FROM user_loadout_cart WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_blueprints WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_weapon_builds WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_fps_loadouts WHERE user_id = ?").bind(userId),
     // Better Auth tables (no CASCADE)
     db.prepare('DELETE FROM "session" WHERE userId = ?').bind(userId),
     db.prepare('DELETE FROM "account" WHERE userId = ?').bind(userId),
@@ -105,6 +106,8 @@ const USER_TABLES = [
   "user_characters",
   // Weapon bench saved builds (0264)
   "user_weapon_builds",
+  // FPS loadouts (0267) — slots cascade via FK on loadout delete
+  "user_fps_loadouts",
 ] as const;
 
 // Tables with user_id that DON'T cascade (known exceptions).
@@ -530,6 +533,14 @@ describe("GDPR — User Deletion Cascade", () => {
         .prepare(
           `INSERT INTO user_weapon_builds (user_id, weapon_uuid, name, config_json)
            VALUES (?, 'gmni_pistol_ballistic_01', 'GDPR Bench Build', '{"qualities":{"0":500}}')`
+        )
+        .bind(user.userId)
+        .run();
+
+      // user_fps_loadouts (migration 0267)
+      await db
+        .prepare(
+          `INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, 'GDPR Test Loadout')`
         )
         .bind(user.userId)
         .run();
