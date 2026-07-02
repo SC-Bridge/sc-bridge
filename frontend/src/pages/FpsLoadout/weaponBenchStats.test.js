@@ -56,6 +56,13 @@ describe('resolveAttachmentMultipliers', () => {
   it('maps suppressor sound radius (real Tacit Suppressor2 = 0.4)', () => {
     expect(resolveAttachmentMultipliers({ sound_radius_multiplier: 0.4 }).sound_radius).toBeCloseTo(0.4, 5)
   })
+
+  it('maps optic ADS speed (zoomTimeScale: holo 1.15 faster, 16x 0.75 slower)', () => {
+    expect(resolveAttachmentMultipliers({ zoom_time_scale: 1.15 }).ads_speed).toBeCloseTo(1.15, 5)
+    expect(resolveAttachmentMultipliers({ zoom_time_scale: 0.75 }).ads_speed).toBeCloseTo(0.75, 5)
+    // missing → 1.0 baseline (no change)
+    expect(resolveAttachmentMultipliers({ name: 'no-aim-data' }).ads_speed).toBe(1)
+  })
 })
 
 describe('combinedMultipliers + computeBenchStats', () => {

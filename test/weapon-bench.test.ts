@@ -81,9 +81,9 @@ describe("GET /api/gamedata/weapon-bench", () => {
     await env.DB.prepare(
       `INSERT INTO fps_attachments (uuid, name, class_name, sub_type, size, game_version_id,
                                     recoil_strength, recoil_decay, recoil_randomness,
-                                    sound_radius_multiplier, zoom_scale, second_zoom_scale)
-       VALUES ('att-sion', 'Sion Compensator 1', 'arma_comp_sion', 'Barrel', 1, 1, 0.7, 0.7, 0.7, 1.2, NULL, NULL),
-              ('att-farsight', 'FarSight (8x Telescopic)', 'optics_farsight', 'IronSight', 3, 1, NULL, NULL, NULL, NULL, 4, 8)`
+                                    sound_radius_multiplier, zoom_scale, second_zoom_scale, zoom_time_scale)
+       VALUES ('att-sion', 'Sion Compensator 1', 'arma_comp_sion', 'Barrel', 1, 1, 0.7, 0.7, 0.7, 1.2, NULL, NULL, NULL),
+              ('att-farsight', 'FarSight (8x Telescopic)', 'optics_farsight', 'IronSight', 3, 1, NULL, NULL, NULL, NULL, 4, 8, 1.25)`
     ).run();
     const res = await SELF.fetch("http://localhost/api/gamedata/weapon-bench");
     const body = (await res.json()) as { attachments: Array<Record<string, unknown>> };
@@ -95,6 +95,7 @@ describe("GET /api/gamedata/weapon-bench", () => {
     const farsight = body.attachments.find((a) => a.uuid === "att-farsight");
     expect(farsight?.zoom_scale).toBe(4);
     expect(farsight?.second_zoom_scale).toBe(8);
+    expect(farsight?.zoom_time_scale).toBe(1.25);
   });
 
   it("excludes fake-optic props (binoculars extracted as size-1 16x scopes)", async () => {

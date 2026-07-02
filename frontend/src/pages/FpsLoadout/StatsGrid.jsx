@@ -88,6 +88,9 @@ export default function StatsGrid({ baseStats, stats }) {
   const projDelta = pctDelta(base.projectile_speed, build.projectileSpeed)
   const sound = mult.sound_radius != null && mult.sound_radius !== 1 ? mult.sound_radius : null
   const heat = mult.heat != null && mult.heat !== 1 ? mult.heat : null
+  // ADS speed scale (>1 = faster aim-down-sight); improvement % is direct,
+  // not inverted like the recoil family.
+  const ads = mult.ads_speed != null && mult.ads_speed !== 1 ? mult.ads_speed : null
 
   const fireModes = Array.isArray(base.fire_modes)
     ? base.fire_modes.join(' / ')
@@ -183,6 +186,15 @@ export default function StatsGrid({ baseStats, stats }) {
           sub={sound != null
             ? <ImprovementSub improvementPct={invertImprovement(sound)} goodWord="quieter" badWord="louder" />
             : 'suppressor'}
+        />
+        <Cell
+          label="ADS Speed"
+          dyn
+          value={ads != null ? `×${fmt(ads, 2)}` : null}
+          na={ads == null}
+          sub={ads != null
+            ? <ImprovementSub improvementPct={(ads - 1) * 100} goodWord="faster" badWord="slower" />
+            : 'aim-down-sight'}
         />
         <Cell label="Overheat" value={null} na sub="n/a" />
         <Cell label="Charge Time" value={null} na sub="n/a" />

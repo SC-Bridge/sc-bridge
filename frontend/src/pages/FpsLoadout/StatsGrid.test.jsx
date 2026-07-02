@@ -6,7 +6,7 @@ import StatsGrid from './StatsGrid'
 const BASE_STATS = { damage: 22, rounds_per_minute: 600, dps: 220, ammo_capacity: 30, damage_type: 'Ballistic' }
 const STATS = { damage: 23.8, rpm: 480, dps: 190, recoil: 0.84 }
 
-const FULL_CELL_COUNT = 18
+const FULL_CELL_COUNT = 19
 
 describe('StatsGrid', () => {
   it('renders the full fixed set of stat cells regardless of input', () => {
@@ -84,6 +84,22 @@ describe('StatsGrid', () => {
     expect(heatCell).toHaveTextContent('25% cooler')
     const zoomCell = screen.getByText('Zoom').closest('[data-testid="stat-cell"]')
     expect(zoomCell).toHaveTextContent('4× / 8×')
+  })
+
+  it('shows the ADS speed multiplier from an equipped optic', () => {
+    const stats = { damage: 22, rpm: 600, dps: 220, multipliers: { ads_speed: 1.15 } }
+    render(<StatsGrid baseStats={BASE_STATS} stats={stats} />)
+    const cell = screen.getByText('ADS Speed').closest('[data-testid="stat-cell"]')
+    expect(cell).toHaveTextContent('×1.15')
+    expect(cell).toHaveTextContent('15% faster')
+  })
+
+  it('shows a slower ADS speed for heavy scopes (16x = ×0.75)', () => {
+    const stats = { damage: 22, rpm: 600, dps: 220, multipliers: { ads_speed: 0.75 } }
+    render(<StatsGrid baseStats={BASE_STATS} stats={stats} />)
+    const cell = screen.getByText('ADS Speed').closest('[data-testid="stat-cell"]')
+    expect(cell).toHaveTextContent('×0.75')
+    expect(cell).toHaveTextContent('25% slower')
   })
 
   it('shows the multiplied projectile speed with a delta', () => {

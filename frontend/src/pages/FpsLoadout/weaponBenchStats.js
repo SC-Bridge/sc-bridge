@@ -29,6 +29,9 @@ export function resolveAttachmentMultipliers(attachment /*, qualityConfig */) {
     weapon_recoil_handling: num(attachment.recoil_decay),
     weapon_recoil_smoothness: num(attachment.recoil_randomness),
     sound_radius: num(attachment.sound_radius_multiplier),
+    // p4k aimModifier.zoomTimeScale — ADS speed scale, >1 = faster aim-down-
+    // sight (holos/red-dots ~1.05-1.15), <1 = slower (16x scopes 0.75).
+    ads_speed: num(attachment.zoom_time_scale),
   }
 }
 
