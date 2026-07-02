@@ -17,7 +17,10 @@ const UTILITY_SLOTS = new Set(['medical', 'gadget', 'throwable'])
 const TYPES = ['Weapons', 'Armour', 'Attach', 'Utility']
 
 // Lenient sub_type matching — catalog sub_type spelling varies (e.g. 'rifle', 'assault_rifle').
+// 'All' (match: null) is first and is the default so search isn't ANDed against a narrow
+// sub-filter by default — users searching "FS" shouldn't have to know FS-9 is an LMG first.
 const WEAPON_CATEGORIES = [
+  { label: 'All', match: null },
   { label: 'Rifles', match: ['rifle'] },
   { label: 'SMG', match: ['smg', 'submachine'] },
   { label: 'Shotgun', match: ['shotgun'] },
@@ -36,7 +39,16 @@ function itemKey(item) {
   return item?.uuid || item?.name
 }
 
+// The blueprint's display name from useCrafting is the raw internal name
+// (e.g. "Behr Lmg Ballistic 01"); the friendly, player-facing name lives at
+// base_stats.item_name (e.g. "FS-9 LMG"). Fall back to the raw name only
+// when a friendly name hasn't been extracted yet.
+function friendlyWeaponName(weapon) {
+  return weapon?.base_stats?.item_name || weapon?.name
+}
+
 function matchesCategory(subType, category) {
+  if (!category.match) return true // 'All'
   const s = (subType || '').toLowerCase()
   return category.match.some((m) => s.includes(m))
 }
@@ -135,7 +147,7 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
   const activeCategory = WEAPON_CATEGORIES.find((c) => c.label === category) || WEAPON_CATEGORIES[0]
 
   const filteredWeapons = useMemo(
-    () => weapons.filter((w) => (!q || w.name?.toLowerCase().includes(q)) && matchesCategory(w.sub_type, activeCategory)),
+    () => weapons.filter((w) => (!q || friendlyWeaponName(w)?.toLowerCase().includes(q)) && matchesCategory(w.sub_type, activeCategory)),
     [weapons, activeCategory, q],
   )
 
@@ -225,7 +237,7 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
                 custom
                 ctag={`◇ CUSTOM Q${buildQuality(b.config)}`}
                 name={b.name}
-                sub="your design"
+                sub={b.weaponName ? `${b.weaponName} · your design` : 'your design'}
                 state={buildOwnershipState(ownership, b.weapon_uuid)}
                 onClick={() => pick(b)}
               />
@@ -234,7 +246,7 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
               <Row
                 key={itemKey(w)}
                 testId={`item-weapon-${itemKey(w)}`}
-                name={w.name}
+                name={friendlyWeaponName(w)}
                 sub={w.manufacturer_name}
                 state={ownershipState(ownership, itemKey(w))}
                 onClick={() => pick(w)}

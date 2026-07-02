@@ -10,17 +10,17 @@ const builds = [{ id: 1, name: 'CQB Build', weapon_uuid: 'w1', config: {} }]
 const ownership = { owned: new Set(['w1']), wishlisted: new Set(['w2']) }
 
 describe('ItemSource', () => {
-  it('defaults to the Weapons tab with the first sub-filter active for a weapon slot', () => {
+  it('defaults to the Weapons tab with the "All" sub-filter active for a weapon slot', () => {
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
     expect(screen.getByTestId('type-weapons')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('cat-rifles')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-all')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('shows an owned tick for P4-AR, renders the custom build with a CUSTOM tag, and fires onPick on click', () => {
     const onPick = vi.fn()
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={builds} ownership={ownership} onPick={onPick} />)
 
-    // P4-AR (owned) is visible under the default Rifles sub-filter.
+    // P4-AR (owned) is visible under the default "All" sub-filter.
     expect(screen.getByText('P4-AR Rifle')).toBeInTheDocument()
     expect(screen.getByLabelText('owned')).toBeInTheDocument()
 
@@ -35,6 +35,8 @@ describe('ItemSource', () => {
   it('narrows to the Sniper sub-filter, showing A03 with an aspirational badge and hiding P4-AR', () => {
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={ownership} onPick={() => {}} />)
 
+    // Narrow to Rifles first so A03 (a Sniper) is excluded.
+    fireEvent.click(screen.getByTestId('cat-rifles'))
     expect(screen.queryByText('A03 Sniper Rifle')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('cat-sniper'))
@@ -63,5 +65,30 @@ describe('ItemSource', () => {
 
     fireEvent.click(screen.getByTestId('item-attach-a1'))
     expect(onPick).toHaveBeenCalledWith(attachments[0])
+  })
+
+  // Regression: blueprint.name from useCrafting is the raw internal name
+  // ("Behr Lmg Ballistic 01"); the friendly, player-facing name lives at
+  // base_stats.item_name ("FS-9 LMG"). Both display and search must use it.
+  it('shows and finds a weapon by its friendly base_stats.item_name, not its raw name', () => {
+    const lmgWeapons = [
+      { name: 'Behr Lmg Ballistic 01', base_stats: { item_name: 'FS-9 LMG', ammo_capacity: 50 }, sub_type: 'lmg' },
+    ]
+    render(<ItemSource slotKey="primary" weapons={lmgWeapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+
+    // Default category is "All", so no need to switch to LMG first.
+    expect(screen.getByTestId('cat-all')).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'FS' } })
+
+    expect(screen.getByText('FS-9 LMG')).toBeInTheDocument()
+    expect(screen.queryByText('Behr Lmg Ballistic 01')).not.toBeInTheDocument()
+  })
+
+  it('shows a saved build tagged with its resolved weapon name when enriched by the container', () => {
+    const enrichedBuilds = [{ id: 1, name: 'CQB Build', weapon_uuid: 'w1', config: {}, weaponName: 'FS-9 LMG' }]
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={enrichedBuilds} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByText('CQB Build')).toBeInTheDocument()
+    expect(screen.getByText(/FS-9 LMG/)).toBeInTheDocument()
   })
 })

@@ -133,7 +133,11 @@ export default function LoadoutContainer() {
 
   const weapons = useMemo(
     () => (craftingQ.data?.blueprints || []).filter((b) =>
-      b.type === 'weapons' && (b.slots?.length > 0) && b.base_stats && b.base_stats.ammo_capacity != null),
+      b.type === 'weapons' && (b.slots?.length > 0) && b.base_stats && b.base_stats.ammo_capacity != null
+      // Named/skin variants (e.g. FS-9 "Blacklist" LMG) and $templates entries aren't
+      // independently craftable — only base weapons (e.g. FS-9 LMG) are.
+      && !(b.base_stats?.item_name || b.name || '').includes('"')
+      && b.sub_type !== '$templates'),
     [craftingQ.data],
   )
   const attachments = useMemo(
@@ -175,6 +179,17 @@ export default function LoadoutContainer() {
     [allBuilds, blueprint],
   )
 
+  // All of the user's saved builds, enriched with their weapon's friendly name so a
+  // build for a weapon other than the one currently on the bench is still identifiable
+  // when it surfaces via Item Source search (see buildsForSource below).
+  const buildsForSource = useMemo(
+    () => allBuilds.map((b) => {
+      const bp = weapons.find((w) => w.uuid === b.weapon_uuid)
+      return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null }
+    }),
+    [allBuilds, weapons],
+  )
+
   const onConfigChange = useCallback((cfg) => { liveConfigRef.current = cfg }, [])
 
   const handlePick = (item) => {
@@ -213,7 +228,7 @@ export default function LoadoutContainer() {
       }
       await putLoadoutSlot(loadoutId, selectedSlot, {
         itemUuid: blueprint.uuid,
-        itemName: blueprint.name,
+        itemName: blueprint.base_stats?.item_name || blueprint.name,
         weaponBuildId: pick?.buildId ?? null,
         config: liveConfigRef.current,
       })
@@ -251,7 +266,7 @@ export default function LoadoutContainer() {
       const stats = computeBenchStats(bp.base_stats, m)
       return {
         slot_key: slotKey,
-        name: slot.item_name || bp.name,
+        name: slot.item_name || bp.base_stats?.item_name || bp.name,
         damage: stats.damage,
         rpm: stats.rpm,
         dps: stats.dps,
@@ -322,7 +337,7 @@ export default function LoadoutContainer() {
           </ColHeader>
           <div style={{ padding: '11px 12px' }}>
             <ItemSource key={selectedSlot} slotKey={selectedSlot} weapons={weapons} attachments={attachments}
-              builds={buildsForWeapon} ownership={ownership} onPick={handlePick} />
+              builds={buildsForSource} ownership={ownership} onPick={handlePick} />
           </div>
         </div>
       </div>

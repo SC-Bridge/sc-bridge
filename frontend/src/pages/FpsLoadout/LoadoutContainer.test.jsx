@@ -12,6 +12,16 @@ const WEAPON_SECONDARY = {
   base_stats: { damage: 15, rounds_per_minute: 700, dps: 175, ammo_capacity: 45 },
   slots: [{ name: 'Barrel', resource_name: 'Iron', slot_type: 'resource', modifiers: [] }],
 }
+// A named/skin variant of the primary weapon — not independently craftable,
+// so it must be excluded from the catalog (base weapons only).
+const WEAPON_VARIANT = {
+  uuid: 'w-variant', name: 'P4-AR Rifle Ballistic 01', type: 'weapons', sub_type: 'rifle',
+  base_stats: { item_name: 'P4-AR "Blacklist" Rifle', damage: 22, rounds_per_minute: 600, dps: 220, ammo_capacity: 30 },
+  slots: [{ name: 'Frame', resource_name: 'Titanium', slot_type: 'resource', modifiers: [] }],
+}
+const BUILD_SECONDARY = {
+  id: 5, name: 'Stealth SMG', weapon_uuid: 'w-secondary', config: { qualities: { 0: 500 }, attachments: {} },
+}
 
 const LOADOUT = {
   id: 1,
@@ -30,9 +40,9 @@ vi.mock('../../hooks/useAPI', () => ({
   useFpsLoadouts: () => ({ data: { items: [LOADOUT] }, loading: false, error: null, refetch: refetchLoadouts }),
   createFpsLoadout: vi.fn(() => Promise.resolve({ id: 2 })),
   putLoadoutSlot: vi.fn(() => Promise.resolve({ ok: true })),
-  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY] }, loading: false, error: null }),
+  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT] }, loading: false, error: null }),
   useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
-  useWeaponBuilds: () => ({ data: { items: [] }, loading: false, error: null, refetch: vi.fn() }),
+  useWeaponBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
   createWeaponBuild: vi.fn(() => Promise.resolve({})),
   deleteWeaponBuild: vi.fn(() => Promise.resolve({})),
   useLootCollection: () => ({ data: [{ loot_uuid: 'w-primary', quantity: 1 }], loading: false }),
@@ -95,5 +105,43 @@ describe('LoadoutContainer', () => {
     rerender(<LoadoutContainer />)
 
     expect(screen.getByRole('slider')).toHaveValue('750')
+  })
+
+  // Regression: the item source's "Set to loadout" write used to save the
+  // blueprint's raw internal name — friendly base_stats.item_name must win.
+  it('saves the friendly weapon name to the slot when "Set to loadout" is clicked', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-secondary')) // no base_stats.item_name — raw name still expected
+    fireEvent.click(screen.getByTestId('set-to-loadout'))
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'secondary',
+      expect.objectContaining({ itemUuid: 'w-secondary', itemName: 'C54 SMG' }),
+    )
+  })
+
+  // FIX 4: named/skin variants aren't independently craftable — only base weapons are.
+  it('excludes named/skin weapon variants from the catalog (base weapons only)', () => {
+    render(<LoadoutContainer />)
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'Blacklist' } })
+    expect(screen.queryByText(/Blacklist/)).not.toBeInTheDocument()
+    expect(screen.getByText(/No weapons match/)).toBeInTheDocument()
+  })
+
+  // FIX 3: saved builds for weapons other than the one currently on the bench
+  // must still surface via Item Source search, and picking one must load its
+  // own weapon into the bench — not just apply when that weapon was already selected.
+  it('surfaces a saved build for a different weapon via search, and loads that weapon on pick', () => {
+    render(<LoadoutContainer />)
+    expect(screen.getByRole('heading', { name: 'P4-AR Rifle' })).toBeInTheDocument() // default slot = primary
+
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'Stealth' } })
+    const buildRow = screen.getByTestId('item-build-5')
+    expect(buildRow).toHaveTextContent('Stealth SMG')
+    expect(buildRow).toHaveTextContent('C54 SMG') // enriched with its resolved weapon name
+
+    fireEvent.click(buildRow)
+
+    expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
   })
 })

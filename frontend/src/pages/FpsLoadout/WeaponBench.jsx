@@ -75,14 +75,17 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
 
   // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else placeholder text.
   const { url } = resolveWeaponIcon({ ...blueprint, icon_url: blueprint.base_stats?.loadout_icon })
+  // blueprint.name from useCrafting is the raw internal name (e.g. "Behr Lmg Ballistic 01");
+  // the friendly, player-facing name lives at base_stats.item_name (e.g. "FS-9 LMG").
+  const displayName = blueprint.base_stats?.item_name || blueprint.name
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         {url
-          ? <img src={url} alt={blueprint.name} className="w-16 h-10 object-contain" />
+          ? <img src={url} alt={displayName} className="w-16 h-10 object-contain" />
           : <span className="w-16 h-10 flex items-center justify-center text-[9px] uppercase tracking-wide text-gray-600 border border-dashed border-white/10 rounded">no icon</span>}
-        <h3 className="text-lg font-semibold text-white">{blueprint.name}</h3>
+        <h3 className="text-lg font-semibold text-white">{displayName}</h3>
       </div>
 
       {diverged && (
