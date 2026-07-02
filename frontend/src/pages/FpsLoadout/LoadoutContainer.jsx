@@ -338,25 +338,25 @@ export default function LoadoutContainer() {
   const blueprintOwned = Boolean(blueprint && ownership.owned.has(blueprint.uuid))
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto" style={{ padding: '4px 10px 14px' }}>
+    <div className="flex flex-col h-full overflow-hidden" style={{ padding: '4px 10px 14px' }}>
       <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
         onNew={handleNewLoadout} newLoadoutError={newLoadoutError} />
 
-      <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: '360px 1fr 320px' }}>
-        <div className="rounded" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
+      <div className="grid gap-3 mt-3 flex-1 min-h-0" style={{ gridTemplateColumns: '360px 1fr 320px' }}>
+        <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
           <ColHeader><b style={{ color: '#fff' }}>My Loadout</b> &mdash; {currentLoadout.name}</ColHeader>
-          <div style={{ padding: '11px 12px' }}>
+          <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot} />
           </div>
         </div>
 
-        <div className="rounded" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
+        <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
           <ColHeader>
             <b style={{ color: '#fff' }}>Craft Bench</b> &mdash; {slotLabel} slot
             <span className="flex-1" />
             {blueprintOwned && <span style={{ color: OWN, fontSize: 11 }}>&#10003; OWNED</span>}
           </ColHeader>
-          <div style={{ padding: '11px 12px' }}>
+          <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             {!isWeaponSlot ? (
               <div className="text-center py-12 text-sm italic" style={{ color: ICE_DIM }} data-testid="slot-placeholder">
                 {slotLabel} bench coming in slice 2
@@ -386,20 +386,22 @@ export default function LoadoutContainer() {
           </div>
         </div>
 
-        <div className="rounded" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
+        <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
           <ColHeader>
             <b style={{ color: '#fff' }}>Item Source</b>
             <span className="flex-1" />
             <span style={{ color: ICE_DIM, fontSize: 10 }}>for {slotLabel}</span>
           </ColHeader>
-          <div style={{ padding: '11px 12px' }}>
+          <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             <ItemSource key={selectedSlot} slotKey={selectedSlot} weapons={weapons} attachments={attachments}
               builds={buildsForSource} ownership={ownership} onPick={handlePick} />
           </div>
         </div>
       </div>
 
-      <LoadoutStats weaponStats={weaponStats} />
+      <div className="flex-shrink-0 mt-3">
+        <LoadoutStats weaponStats={weaponStats} />
+      </div>
     </div>
   )
 }
