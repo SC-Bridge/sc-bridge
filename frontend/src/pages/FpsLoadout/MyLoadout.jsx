@@ -63,7 +63,7 @@ const ATTACHMENT_PIPS = [
 function GroupLabel({ children }) {
   return (
     <div
-      className="flex items-center gap-2 uppercase mb-2 mt-3.5 first:mt-0.5"
+      className="flex items-center gap-2 uppercase mb-1.5 mt-2.5 first:mt-0.5"
       style={{ fontSize: 10, letterSpacing: '2px', color: CYAN_DIM }}
     >
       {children}
@@ -149,8 +149,8 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot }) {
       aria-pressed={selected}
       className="relative flex flex-col items-center justify-center gap-1 rounded cursor-pointer text-left"
       style={{
-        height: 108,
-        padding: '8px 6px',
+        height: 92,
+        padding: '6px 6px',
         background: PANEL2,
         border: `1px solid ${selected ? CYAN : filled ? LINE2 : LINE}`,
         borderStyle: filled ? 'solid' : 'dashed',
@@ -163,8 +163,8 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot }) {
         src={ICON(`${SLOT_ICON[slotKey]}.svg`)}
         alt=""
         style={{
-          width: 34,
-          height: 34,
+          width: 30,
+          height: 30,
           filter: selected || owned ? ICO_FILTER_ACTIVE : ICO_FILTER_DIM,
           opacity: filled ? 1 : 0.5,
         }}

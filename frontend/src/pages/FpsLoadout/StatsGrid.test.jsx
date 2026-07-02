@@ -31,6 +31,32 @@ describe('StatsGrid', () => {
     expect(screen.getByText('+8%')).toBeInTheDocument()
   })
 
+  it('populates Recoil Recovery and Stability from build multipliers', () => {
+    const stats = {
+      damage: 14.5, rpm: 650, dps: 157, recoil: 0.9,
+      multipliers: { weapon_recoil_kick: 0.9, weapon_recoil_handling: 0.85, weapon_recoil_smoothness: 1.05 },
+    }
+    render(<StatsGrid baseStats={BASE_STATS} stats={stats} />)
+
+    const recovery = screen.getByText('Recoil Recovery').closest('[data-testid="stat-cell"]')
+    const stability = screen.getByText('Recoil Stability').closest('[data-testid="stat-cell"]')
+
+    // handling 0.85 → shown as ×0.85, +15% faster (green/positive improvement)
+    expect(recovery).toHaveTextContent('×0.85')
+    expect(recovery).toHaveTextContent('15% faster')
+    // smoothness 1.05 → ×1.05, worse (looser) since >1.0
+    expect(stability).toHaveTextContent('×1.05')
+    expect(stability).toHaveTextContent('looser')
+  })
+
+  it('shows recoil cells as N/A when no multipliers present', () => {
+    render(<StatsGrid baseStats={BASE_STATS} stats={{ damage: 22, rpm: 600, dps: 220 }} />)
+    const recovery = screen.getByText('Recoil Recovery').closest('[data-testid="stat-cell"]')
+    const stability = screen.getByText('Recoil Stability').closest('[data-testid="stat-cell"]')
+    expect(recovery).toHaveTextContent('—')
+    expect(stability).toHaveTextContent('—')
+  })
+
   it('shows em-dash for Heat / Overheat / Charge Time (not in base_stats)', () => {
     render(<StatsGrid baseStats={BASE_STATS} stats={STATS} />)
 

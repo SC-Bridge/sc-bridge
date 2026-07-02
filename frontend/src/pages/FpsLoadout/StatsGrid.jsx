@@ -23,6 +23,23 @@ function DeltaSub({ deltaPct, suffix }) {
   )
 }
 
+// Recoil-family multipliers are inverted: a multiplier below 1.0 is an
+// improvement (less kick / faster recovery / tighter pattern). Convert to a
+// signed "improvement %" where positive = better, so the delta reads the same
+// direction (green = good) as the damage/DPS cells above.
+function invertImprovement(mult) {
+  if (mult == null) return null
+  return (1 - mult) * 100
+}
+
+function ImprovementSub({ improvementPct, goodWord = 'better', badWord = 'worse' }) {
+  if (improvementPct == null) return <span className="text-gray-600">curve</span>
+  if (Math.abs(improvementPct) < 0.5) return <span className="text-gray-600">stock</span>
+  const better = improvementPct > 0
+  const cls = better ? 'text-sc-success' : 'text-sc-danger'
+  return <span className={cls}>{Math.abs(improvementPct).toFixed(0)}% {better ? goodWord : badWord}</span>
+}
+
 function Cell({ label, value, sub, dyn = false, na = false }) {
   return (
     <div
@@ -46,10 +63,19 @@ function Cell({ label, value, sub, dyn = false, na = false }) {
 export default function StatsGrid({ baseStats, stats }) {
   const base = baseStats || {}
   const build = stats || {}
+  const mult = build.multipliers || {}
 
   const damageDelta = pctDelta(base.damage, build.damage)
   const dpsDelta = pctDelta(base.dps, build.dps)
   const rpmDelta = pctDelta(base.rounds_per_minute, build.rpm)
+
+  // Recoil family — driven by the crafted multipliers (kick / recovery /
+  // stability). These move with the material-quality sliders even when raw
+  // damage doesn't, so surfacing all three is what makes every slider visibly
+  // do something (the FS-9's two recoil slots were previously invisible).
+  const kick = build.recoil ?? mult.weapon_recoil_kick ?? null
+  const recovery = mult.weapon_recoil_handling ?? null
+  const stability = mult.weapon_recoil_smoothness ?? null
 
   const hasSpread = base.spread_min != null || base.spread_max != null
   const spreadValue = hasSpread
@@ -69,7 +95,7 @@ export default function StatsGrid({ baseStats, stats }) {
           fixed layout — sized for the full stat set; only values change
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
         {/* Dynamic — build value + delta vs base */}
         <Cell
           label="Damage"
@@ -92,8 +118,9 @@ export default function StatsGrid({ baseStats, stats }) {
         <Cell
           label="Recoil"
           dyn
-          value={build.recoil != null ? `×${fmt(build.recoil, 2)}` : null}
-          sub="curve"
+          value={kick != null ? `×${fmt(kick, 2)}` : null}
+          na={kick == null}
+          sub={<ImprovementSub improvementPct={invertImprovement(kick)} goodWord="less" badWord="more" />}
         />
         <Cell label="Reload" dyn value={null} na sub="n/a" />
         <Cell
@@ -110,8 +137,20 @@ export default function StatsGrid({ baseStats, stats }) {
           sub="m/s"
           na={base.projectile_speed == null}
         />
-        <Cell label="Recoil Recovery" dyn value={null} na sub="n/a" />
-        <Cell label="Recoil Stability" dyn value={null} na sub="n/a" />
+        <Cell
+          label="Recoil Recovery"
+          dyn
+          value={recovery != null ? `×${fmt(recovery, 2)}` : null}
+          na={recovery == null}
+          sub={<ImprovementSub improvementPct={invertImprovement(recovery)} goodWord="faster" badWord="slower" />}
+        />
+        <Cell
+          label="Recoil Stability"
+          dyn
+          value={stability != null ? `×${fmt(stability, 2)}` : null}
+          na={stability == null}
+          sub={<ImprovementSub improvementPct={invertImprovement(stability)} goodWord="tighter" badWord="looser" />}
+        />
 
         {/* Static — plain values from base_stats */}
         <Cell label="Damage Type" value={base.damage_type || null} na={!base.damage_type} sub={base.damage_type ? 'physical' : 'n/a'} />
