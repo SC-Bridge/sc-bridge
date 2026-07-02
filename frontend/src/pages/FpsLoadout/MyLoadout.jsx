@@ -1,4 +1,6 @@
 import React from 'react'
+import { useDroppable } from '@dnd-kit/core'
+import { isValidTarget } from './dnd'
 
 const ICON = (name) => `/inventory-assets/${name}`
 
@@ -132,16 +134,26 @@ function SlotBadge({ owned, wishlisted }) {
   return null
 }
 
-function SlotTile({ slotKey, entry, selected, inert, onSelectSlot }) {
+function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag }) {
   const isWeapon = WEAPON_SLOTS.has(slotKey)
   const filled = Boolean(entry && entry.item_name)
   const owned = filled && Boolean(entry.owned)
   const wishlisted = filled && !owned && Boolean(entry.wishlisted)
 
+  // Weapon tiles double as dnd-kit drop targets for weapons/builds dragged
+  // from Item Source (drop = equip + save immediately).
+  const { setNodeRef, isOver } = useDroppable({
+    id: `loadout-${slotKey}`,
+    data: { kind: 'loadout-slot', slotKey },
+    disabled: !isWeapon,
+  })
+  const validTarget = isValidTarget(activeDrag, { kind: 'loadout-slot', slotKey })
+
   const nameColor = filled ? (owned ? OWN : wishlisted ? WANT : '#eafcff') : ICE_DIM
 
   return (
     <button
+      ref={setNodeRef}
       type="button"
       data-testid={`slot-${slotKey}`}
       data-selected={selected ? 'true' : 'false'}
@@ -151,10 +163,11 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot }) {
       style={{
         height: 92,
         padding: '6px 6px',
-        background: PANEL2,
-        border: `1px solid ${selected ? CYAN : filled ? LINE2 : LINE}`,
-        borderStyle: filled ? 'solid' : 'dashed',
-        boxShadow: selected ? '0 0 0 1px rgba(0,232,255,0.25), 0 0 16px rgba(0,232,255,0.14)' : 'none',
+        background: isOver && validTarget ? 'rgba(0,232,255,0.10)' : PANEL2,
+        border: `1px solid ${isOver && validTarget ? CYAN : validTarget ? 'rgba(0,232,255,0.55)' : selected ? CYAN : filled ? LINE2 : LINE}`,
+        borderStyle: filled && !validTarget ? 'solid' : 'dashed',
+        boxShadow: isOver && validTarget ? '0 0 0 1px rgba(0,232,255,0.45), 0 0 20px rgba(0,232,255,0.28)'
+          : selected ? '0 0 0 1px rgba(0,232,255,0.25), 0 0 16px rgba(0,232,255,0.14)' : 'none',
         opacity: inert && !selected ? 0.55 : 1,
       }}
     >
@@ -186,7 +199,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot }) {
   )
 }
 
-export default function MyLoadout({ loadout, selectedSlot, onSelectSlot }) {
+export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeDrag = null }) {
   const bySlot = {}
   for (const s of loadout?.slots || []) {
     bySlot[s.slot_key] = s
@@ -206,6 +219,7 @@ export default function MyLoadout({ loadout, selectedSlot, onSelectSlot }) {
                 selected={selectedSlot === slotKey}
                 inert={i !== 0}
                 onSelectSlot={onSelectSlot}
+                activeDrag={activeDrag}
               />
             ))}
           </div>

@@ -1,5 +1,6 @@
 // frontend/src/pages/FpsLoadout/ItemSource.jsx
 import React, { useMemo, useState } from 'react'
+import { useDraggable } from '@dnd-kit/core'
 import { isCompatible, SLOT_LABEL } from './attachmentCompat'
 
 // Palette lifted from the FPS loadout visual system (see MyLoadout.jsx / mock v5).
@@ -95,18 +96,27 @@ function OwnBadge({ state }) {
   return null
 }
 
-function Row({ testId, custom, ctag, name, sub, state, onClick, draggable, onDragStart }) {
+function Row({ testId, custom, ctag, name, sub, state, onClick, dragId, dragData }) {
+  // dnd-kit drag source. The PointerSensor's 4px activation distance keeps
+  // plain clicks working (onClick still fires when no drag starts).
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: dragId ?? `row-${testId}`,
+    data: dragData,
+    disabled: !dragData,
+  })
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       data-testid={testId}
       onClick={onClick}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      className="flex items-center gap-2.5 py-2 px-2 cursor-pointer"
+      className="flex items-center gap-2.5 py-2 px-2 cursor-pointer touch-none"
       style={{
         borderBottom: `1px solid ${LINE}`,
         borderLeft: custom ? `2px solid ${WANT}` : '2px solid transparent',
         background: custom ? 'rgba(243,176,58,0.04)' : 'transparent',
+        opacity: isDragging ? 0.35 : 1,
       }}
     >
       <div className="flex-none rounded-sm" style={{ width: 30, height: 22, border: `1px solid ${LINE2}` }} />
@@ -250,6 +260,8 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
                 sub={b.weaponName ? `${b.weaponName} · your design` : 'your design'}
                 state={buildOwnershipState(ownership, b.weapon_uuid || b.weaponUuid)}
                 onClick={() => pick(b)}
+                dragId={`build-${b.id}`}
+                dragData={{ kind: 'build', build: b }}
               />
             ))}
             {filteredWeapons.map((w) => (
@@ -260,6 +272,8 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
                 sub={w.manufacturer_name}
                 state={ownershipState(ownership, itemKey(w))}
                 onClick={() => pick(w)}
+                dragId={`weapon-${itemKey(w)}`}
+                dragData={{ kind: 'weapon', weapon: w }}
               />
             ))}
             {filteredWeapons.length === 0 && filteredBuilds.length === 0 && <EmptyRow>No weapons match.</EmptyRow>}
@@ -277,13 +291,8 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
               sub={SLOT_LABEL[a.slot] || a.sub_type || a.manufacturer_name}
               state={ownershipState(ownership, itemKey(a))}
               onClick={() => pick(a)}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', a.uuid)
-                // Chrome only accepts the drop if the source's effectAllowed
-                // includes the target's dropEffect ('copy').
-                e.dataTransfer.effectAllowed = 'copy'
-              }}
+              dragId={`attach-${itemKey(a)}`}
+              dragData={{ kind: 'attachment', attachment: a }}
             />
           ))}
           {filteredAttachments.length === 0 && <EmptyRow>No attachments match.</EmptyRow>}

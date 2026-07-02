@@ -1,10 +1,34 @@
 // frontend/src/pages/FpsLoadout/WeaponBench.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsGrid from './StatsGrid'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { isCompatible, weaponAttachmentSlots, SLOT_LABEL } from './attachmentCompat'
+import { isValidTarget } from './dnd'
 import { resolveWeaponIcon } from './weaponIcon'
+
+// A bench attachment slot as a dnd-kit drop target. Highlights when it's a
+// valid target for the in-flight drag, and stronger when hovered.
+function BenchDropZone({ slot, blueprint, activeDrag, equippedAtt, onToggle }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `bench-${slot}`,
+    data: { kind: 'bench-slot', slot },
+  })
+  const valid = isValidTarget(activeDrag, { kind: 'bench-slot', slot }, blueprint)
+  const border = isOver && valid ? 'border-sc-accent bg-white/10 text-sc-accent'
+    : valid ? 'border-sc-accent/60 bg-white/5 text-gray-300'
+    : 'border-white/15 text-gray-400'
+  return (
+    <div ref={setNodeRef} data-testid={`dropzone-${slot}`}
+      className={`min-w-[7rem] px-2.5 py-2 text-xs rounded border border-dashed ${border}`}>
+      <div className="uppercase tracking-wide text-[9px] text-gray-600">{SLOT_LABEL[slot] || slot}</div>
+      {equippedAtt
+        ? <button type="button" onClick={() => onToggle(equippedAtt)} className="text-sc-accent">{equippedAtt.name} ✕</button>
+        : <span className="text-gray-600">drop here</span>}
+    </div>
+  )
+}
 
 const defaultQ = (slots) => Object.fromEntries((slots || []).map((_, i) => [i, 500]))
 
@@ -21,13 +45,14 @@ function sameQualities(a, b) {
   return ka.every((k) => Number(a[k]) === Number((b || {})[k]))
 }
 
-export default function WeaponBench({ blueprint, attachments = [], initialConfig = null, onConfigChange }) {
+export default function WeaponBench({ blueprint, attachments = [], initialConfig = null, onConfigChange, equipRequest = null, activeDrag = null }) {
   const slots = blueprint?.slots || []
   const [qualities, setQualities] = useState(() => qualitiesFromConfig(slots, initialConfig))
   const [equipped, setEquipped] = useState(() => initialConfig?.attachments || {}) // { [slotType]: attachmentUuid }
-  const [dragSlot, setDragSlot] = useState(null) // slot currently under a drag, for hover feedback
   // The saved build a loaded config came from — the preview diverges once a slider moves off these.
   const baseline = useRef(initialConfig ? { qualities: qualitiesFromConfig(slots, initialConfig), name: initialConfig.name } : null)
+  // Guards against re-firing the same equip request when unrelated props change.
+  const equipSeqRef = useRef(0)
 
   // Reset when the weapon identity changes or a different saved build is loaded.
   useEffect(() => {
@@ -36,6 +61,17 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
     setEquipped(initialConfig?.attachments || {})
     baseline.current = initialConfig ? { qualities: qualitiesFromConfig(newSlots, initialConfig), name: initialConfig.name } : null
   }, [blueprint?.name, initialConfig])
+
+  // An attachment was dropped on one of this bench's slots (the DndContext
+  // lives in the container; it signals the drop here via a seq-bumped request).
+  useEffect(() => {
+    if (!equipRequest || equipRequest.seq === equipSeqRef.current) return
+    equipSeqRef.current = equipRequest.seq
+    const att = attachments.find((a) => a.uuid === equipRequest.uuid)
+    if (att && att.slot && isCompatible(blueprint, att)) {
+      setEquipped((prev) => ({ ...prev, [att.slot]: att.uuid }))
+    }
+  }, [equipRequest, attachments, blueprint])
 
   // Surface the live config so a parent can save it.
   useEffect(() => {
@@ -63,13 +99,6 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
     else next[att.slot] = att.uuid
     return next
   })
-
-  const dropOnSlot = (slot, uuid) => {
-    const att = attachments.find((a) => a.uuid === uuid)
-    if (att && att.slot === slot && isCompatible(blueprint, att)) {
-      setEquipped((prev) => ({ ...prev, [slot]: uuid }))
-    }
-  }
 
   // The attachment slots THIS weapon exposes (optic/barrel/underbarrel), from
   // its ports — not the union of every attachment's slot. Falls back to the
@@ -112,22 +141,10 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
         <div>
           <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Slots</h4>
           <div className="flex flex-wrap gap-2">
-            {slotNames.map((slot) => {
-              const equippedAtt = attachments.find((a) => a.uuid === equipped[slot])
-              return (
-                <div key={slot} data-testid={`dropzone-${slot}`}
-                  onDragEnter={(e) => { e.preventDefault(); setDragSlot(slot) }}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-                  onDragLeave={() => setDragSlot((s) => (s === slot ? null : s))}
-                  onDrop={(e) => { e.preventDefault(); setDragSlot(null); dropOnSlot(slot, e.dataTransfer.getData('text/plain')) }}
-                  className={`min-w-[7rem] px-2.5 py-2 text-xs rounded border border-dashed ${dragSlot === slot ? 'border-sc-accent bg-white/5 text-sc-accent' : 'border-white/15 text-gray-400'}`}>
-                  <div className="uppercase tracking-wide text-[9px] text-gray-600">{SLOT_LABEL[slot] || slot}</div>
-                  {equippedAtt
-                    ? <button type="button" onClick={() => toggle(equippedAtt)} className="text-sc-accent">{equippedAtt.name} ✕</button>
-                    : <span className="text-gray-600">drop here</span>}
-                </div>
-              )
-            })}
+            {slotNames.map((slot) => (
+              <BenchDropZone key={slot} slot={slot} blueprint={blueprint} activeDrag={activeDrag}
+                equippedAtt={attachments.find((a) => a.uuid === equipped[slot])} onToggle={toggle} />
+            ))}
           </div>
         </div>
       )}

@@ -25,13 +25,13 @@ const BLUEPRINT_2 = {
   ],
 }
 
-// Attachments now drag onto the bench from Item Source (a separate component,
-// covered by its own tests) — the bench only needs to handle the drop side, so
-// these helpers simulate the drop directly without a same-component drag source.
-function dropAttachmentOnSlot(zoneTestId, uuid) {
-  const zone = screen.getByTestId(zoneTestId)
-  const dt = { getData: () => uuid, setData: () => {} }
-  fireEvent.drop(zone, { dataTransfer: dt })
+// Attachments drag from Item Source via dnd-kit; the DndContext lives in
+// LoadoutContainer, which resolves the drop and signals the bench through a
+// seq-bumped equipRequest prop. Tests simulate a completed drop the same way.
+let equipSeq = 0
+function equipViaRequest(rerender, props, uuid) {
+  equipSeq += 1
+  rerender(<WeaponBench {...props} equipRequest={{ uuid, seq: equipSeq }} />)
 }
 
 describe('WeaponBench', () => {
@@ -51,11 +51,12 @@ describe('WeaponBench', () => {
     expect(screen.getByTestId('dropzone-barrel')).toBeInTheDocument()
   })
 
-  it('recomputes fire rate when an attachment is dragged onto its slot', () => {
-    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+  it('recomputes fire rate when an attachment is dropped onto its slot', () => {
+    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<WeaponBench {...props} />)
     // At default Q500 the firerate curve interpolates to ×1.0, so build rpm = base (950).
     // Equipping the Stark Compensator (−20%) drops build rpm to 760 (unique in the DOM).
-    dropAttachmentOnSlot('dropzone-barrel', 'stark')
+    equipViaRequest(rerender, props, 'stark')
     expect(screen.getByText('760')).toBeInTheDocument()
   })
 
@@ -91,9 +92,10 @@ describe('WeaponBench', () => {
     // We verify this by equipping Stark Compensator on BLUEPRINT (rpm drops from 950→760),
     // then switching to BLUEPRINT_2 and asserting its base rpm (600) is the build value —
     // if equipped was NOT reset, Stark's ×0.8 would make it 480 instead.
-    const { rerender } = render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<WeaponBench {...props} />)
     // Equip the attachment on the first weapon; build rpm drops to 760
-    dropAttachmentOnSlot('dropzone-barrel', 'stark')
+    equipViaRequest(rerender, props, 'stark')
     expect(screen.getByText('760')).toBeInTheDocument()
 
     // Switch to a different weapon (2 slots → 1 slot)
@@ -114,11 +116,23 @@ describe('WeaponBench', () => {
     expect(img).toHaveAttribute('src', 'https://imagedelivery.net/x/lh86/public')
   })
 
-  it('equips an attachment dropped onto its slot drop-zone (e.g. dragged in from Item Source)', () => {
-    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+  it('shows the equipped attachment in its slot drop-zone after a drop', () => {
+    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<WeaponBench {...props} />)
+    equipViaRequest(rerender, props, 'stark')
     const zone = screen.getByTestId('dropzone-barrel')
-    dropAttachmentOnSlot('dropzone-barrel', 'stark')
     expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
+  })
+
+  it('ignores an equip request for an attachment that does not fit the weapon', () => {
+    // An optic attachment can't land in the barrel slot state — the request
+    // carries a uuid whose slot is optic, and there's no optic among ATTACHMENTS.
+    const atts = [...ATTACHMENTS, { uuid: 'wrongslot', name: 'Fake Optic', slot: null }]
+    const props = { blueprint: BLUEPRINT, attachments: atts }
+    const { rerender } = render(<WeaponBench {...props} />)
+    equipViaRequest(rerender, props, 'wrongslot')
+    // Nothing equipped: rpm stays at base 950.
+    expect(screen.getByText('950')).toBeInTheDocument()
   })
 
   it('warns when a loaded build’s slider is moved off its saved baseline', () => {

@@ -6,6 +6,10 @@
 // WeaponBenchContainer's weapon/attachment resolution and saved-build flow.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  pointerWithin, rectIntersection,
+} from '@dnd-kit/core'
+import {
   useFpsLoadouts, createFpsLoadout, putLoadoutSlot,
   useCrafting, useWeaponBench, useWeaponBuilds, createWeaponBuild, deleteWeaponBuild,
   useUserBlueprints,
@@ -19,6 +23,15 @@ import ItemSource from './ItemSource'
 import LoadoutStats from './LoadoutStats'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { attachmentSlot } from './attachmentCompat'
+import { resolveDrop } from './dnd'
+
+// Forgiving collision: prefer the droppable directly under the pointer, but
+// fall back to any droppable the dragged rect overlaps — so a near-miss on a
+// small slot still lands instead of silently cancelling.
+function forgivingCollision(args) {
+  const within = pointerWithin(args)
+  return within.length > 0 ? within : rectIntersection(args)
+}
 
 // Palette lifted from the FPS loadout visual system (see MyLoadout.jsx / mock v5).
 const CYAN = '#00e8ff'
@@ -117,9 +130,17 @@ export default function LoadoutContainer() {
   // Transient override for the selected slot — set when the user picks a
   // weapon/build from ItemSource, before it's committed via "Set to loadout".
   const [pick, setPick] = useState(null) // { weaponUuid, buildId, config }
+  // Live drag payload while a dnd-kit drag is in flight (drives target highlights
+  // + the DragOverlay ghost); equipRequest tells the bench to equip an attachment
+  // after a successful drop (seq bumps so the same attachment can be re-dropped).
+  const [activeDrag, setActiveDrag] = useState(null)
+  const [equipRequest, setEquipRequest] = useState(null) // { uuid, seq }
+  const equipSeqRef = useRef(0)
   const [saving, setSaving] = useState(false)
   const [newLoadoutError, setNewLoadoutError] = useState(null)
   const liveConfigRef = useRef({ qualities: {}, attachments: {} })
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
   const loadouts = loadoutsQ.data?.items || []
 
@@ -277,8 +298,8 @@ export default function LoadoutContainer() {
     }
   }
 
-  const handleSetToLoadout = async () => {
-    if (!blueprint) return
+  // Persist an item into a loadout slot, creating the loadout on first save.
+  const persistSlot = async (slotKey, payload) => {
     setSaving(true)
     try {
       let loadoutId = currentLoadoutId
@@ -287,16 +308,64 @@ export default function LoadoutContainer() {
         loadoutId = created.id
         setCurrentLoadoutId(loadoutId)
       }
-      await putLoadoutSlot(loadoutId, selectedSlot, {
-        itemUuid: blueprint.uuid,
-        itemName: blueprint.base_stats?.item_name || blueprint.name,
-        weaponBuildId: pick?.buildId ?? null,
-        config: liveConfigRef.current,
-      })
+      await putLoadoutSlot(loadoutId, slotKey, payload)
       await loadoutsQ.refetch()
-      setPick(null)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSetToLoadout = async () => {
+    if (!blueprint) return
+    await persistSlot(selectedSlot, {
+      itemUuid: blueprint.uuid,
+      itemName: blueprint.base_stats?.item_name || blueprint.name,
+      weaponBuildId: pick?.buildId ?? null,
+      config: liveConfigRef.current,
+    })
+    setPick(null)
+  }
+
+  const handleDragStart = (e) => setActiveDrag(e.active?.data?.current || null)
+  const handleDragCancel = () => setActiveDrag(null)
+
+  const handleDragEnd = async (e) => {
+    setActiveDrag(null)
+    const action = resolveDrop(e.active?.data?.current, e.over?.data?.current, blueprint)
+    if (!action) return
+    if (action.type === 'equip-attachment') {
+      // The bench owns equipped state — signal it (seq-guarded so the same
+      // attachment can be dropped again after removal).
+      equipSeqRef.current += 1
+      setEquipRequest({ uuid: action.attachment.uuid, seq: equipSeqRef.current })
+      return
+    }
+    if (action.type === 'equip-weapon') {
+      // Approved UX: dropping a weapon on a paperdoll slot equips + saves it
+      // immediately (fresh default config); the bench then loads it for tuning.
+      const w = action.weapon
+      await persistSlot(action.slotKey, {
+        itemUuid: w.uuid,
+        itemName: w.base_stats?.item_name || w.name,
+        weaponBuildId: null,
+        config: { qualities: {}, attachments: {} },
+      })
+      setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-build') {
+      const b = action.build
+      const weaponUuid = b.weapon_uuid || b.weaponUuid
+      const bp = weapons.find((x) => x.uuid === weaponUuid)
+      if (!bp) return
+      await persistSlot(action.slotKey, {
+        itemUuid: bp.uuid,
+        itemName: bp.base_stats?.item_name || bp.name,
+        // Only user_weapon_builds rows have a persistable build id.
+        weaponBuildId: b.weapon_uuid ? b.id : null,
+        config: { ...(b.config || {}), name: b.name },
+      })
+      setSelectedSlot(action.slotKey)
     }
   }
 
@@ -341,7 +410,16 @@ export default function LoadoutContainer() {
   const slotLabel = WEAPON_SLOT_LABEL[selectedSlot] || selectedSlot
   const blueprintOwned = Boolean(blueprint && ownership.owned.has(blueprint.uuid))
 
+  // Ghost label for the DragOverlay — the name of whatever is being dragged.
+  const dragLabel = activeDrag?.kind === 'weapon'
+    ? (activeDrag.weapon?.base_stats?.item_name || activeDrag.weapon?.name)
+    : activeDrag?.kind === 'build' ? activeDrag.build?.name
+    : activeDrag?.kind === 'attachment' ? activeDrag.attachment?.name
+    : null
+
   return (
+    <DndContext sensors={sensors} collisionDetection={forgivingCollision}
+      onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
     <div className="flex flex-col h-full overflow-hidden" style={{ padding: '4px 10px 14px' }}>
       <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
         onNew={handleNewLoadout} newLoadoutError={newLoadoutError} />
@@ -350,7 +428,7 @@ export default function LoadoutContainer() {
         <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
           <ColHeader><b style={{ color: '#fff' }}>My Loadout</b> &mdash; {currentLoadout.name}</ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot} />
+            <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot} activeDrag={activeDrag} />
           </div>
         </div>
 
@@ -368,7 +446,8 @@ export default function LoadoutContainer() {
             ) : blueprint ? (
               <>
                 <WeaponBench blueprint={blueprint} attachments={attachments}
-                  initialConfig={initialConfig} onConfigChange={onConfigChange} />
+                  initialConfig={initialConfig} onConfigChange={onConfigChange}
+                  equipRequest={equipRequest} activeDrag={activeDrag} />
                 <button
                   type="button"
                   data-testid="set-to-loadout"
@@ -407,5 +486,19 @@ export default function LoadoutContainer() {
         <LoadoutStats weaponStats={weaponStats} />
       </div>
     </div>
+    <DragOverlay dropAnimation={null}>
+      {dragLabel ? (
+        <div
+          className="rounded pointer-events-none"
+          style={{
+            padding: '6px 12px', fontSize: 12, color: CYAN, background: 'rgba(7,16,22,0.92)',
+            border: `1px solid ${CYAN}`, boxShadow: '0 4px 18px rgba(0,0,0,0.5), 0 0 12px rgba(0,232,255,0.25)',
+          }}
+        >
+          {dragLabel}
+        </div>
+      ) : null}
+    </DragOverlay>
+    </DndContext>
   )
 }

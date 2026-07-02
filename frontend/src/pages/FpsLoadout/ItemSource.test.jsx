@@ -102,16 +102,13 @@ describe('ItemSource', () => {
     expect(screen.getByText('my sim')).toBeInTheDocument()
   })
 
-  // FIX 2: attachments now drag out of Item Source onto the bench's drop-zones
-  // (the bench no longer has its own draggable chip list).
-  it('makes attachment rows draggable, carrying their uuid via dataTransfer', () => {
-    const attachments = [{ uuid: 'a1', name: 'Stark Barrel', sub_type: 'barrel' }]
-    render(<ItemSource slotKey="primary" weapons={[]} attachments={attachments} builds={[]} ownership={{}} onPick={() => {}} />)
+  // Rows are dnd-kit drag sources (pointer-based, not native HTML5 DnD) —
+  // dnd-kit marks them with role/aria-roledescription and pointer listeners.
+  it('makes weapon and attachment rows dnd-kit draggables', () => {
+    const attachments = [{ uuid: 'a1', name: 'Stark Barrel', sub_type: 'barrel', slot: 'barrel' }]
+    render(<ItemSource slotKey="primary" weapons={weapons} attachments={attachments} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('item-weapon-w1')).toHaveAttribute('aria-roledescription', 'draggable')
     fireEvent.click(screen.getByTestId('type-attach'))
-    const row = screen.getByTestId('item-attach-a1')
-    expect(row).toHaveAttribute('draggable', 'true')
-    const setData = vi.fn()
-    fireEvent.dragStart(row, { dataTransfer: { setData } })
-    expect(setData).toHaveBeenCalledWith('text/plain', 'a1')
+    expect(screen.getByTestId('item-attach-a1')).toHaveAttribute('aria-roledescription', 'draggable')
   })
 })
