@@ -76,4 +76,48 @@ describe("GET /api/gamedata/weapon-bench", () => {
     expect(att?.attach_size).toBe(1);
     expect(att?.attach_tags).toContain("ballistic_attach");
   });
+
+  it("excludes fake-optic props (binoculars extracted as size-1 16x scopes)", async () => {
+    await env.DB.prepare(
+      `INSERT INTO fps_attachments (uuid, name, class_name, sub_type, size, game_version_id)
+       VALUES ('att-fake', 'EE16 (16x Telescopic)', 'behr_binoculars_01_fakeoptic', 'IronSight', 1, 1)`
+    ).run();
+    const res = await SELF.fetch("http://localhost/api/gamedata/weapon-bench");
+    const body = (await res.json()) as { attachments: Array<Record<string, unknown>> };
+    expect(body.attachments.find((a) => a.uuid === "att-fake")).toBeUndefined();
+  });
+});
+
+describe("GET /api/gamedata/utility-items", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+    const rows = [
+      ["u-medgun", "ParaMed Medical Device", "weapon", "Small"],
+      ["u-pistol", "LH86 Pistol", "weapon", "Small"], // Small but NOT a medical device → excluded
+      ["u-pen", "MedPen (Hemozal)", "consumable", "MedPack"],
+      ["u-multitool", "Pyro RYT Multi-Tool", "weapon", "Gadget"],
+      ["u-frag", "MK-4 Frag Grenade", "weapon", "Grenade"],
+      ["u-cutter", "OxyTorch Cutter Attachment", "attachment", "Utility"],
+      ["u-armour", "Some Armour", "armour", "Light"], // unrelated type → excluded
+    ];
+    for (const [uuid, name, type, subType] of rows) {
+      await env.DB.prepare(
+        `INSERT INTO loot_map (uuid, name, type, sub_type, game_version_id) VALUES (?, ?, ?, ?, 1)`
+      ).bind(uuid, name, type, subType).run();
+    }
+  });
+
+  it("returns utility-slot items tagged with the paperdoll slot they equip into", async () => {
+    const res = await SELF.fetch("http://localhost/api/gamedata/utility-items");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ uuid: string; util_slot: string | null }> };
+    const byUuid = Object.fromEntries(body.items.map((i) => [i.uuid, i.util_slot]));
+    expect(byUuid["u-medgun"]).toBe("medical");
+    expect(byUuid["u-pen"]).toBe("medical");
+    expect(byUuid["u-multitool"]).toBe("gadget");
+    expect(byUuid["u-frag"]).toBe("throwable");
+    expect(byUuid["u-cutter"]).toBeNull(); // tool attachment: listed, not slot-equippable
+    expect("u-pistol" in byUuid).toBe(false);
+    expect("u-armour" in byUuid).toBe(false);
+  });
 });

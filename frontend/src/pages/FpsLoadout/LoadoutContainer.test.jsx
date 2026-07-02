@@ -56,6 +56,7 @@ vi.mock('../../hooks/useAPI', () => ({
   useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
   useWeaponBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
   useUserBlueprints: () => ({ data: { items: [CRAFTING_DESIGN_PRIMARY] }, loading: false, error: null }),
+  useUtilityItems: () => ({ data: { items: [{ uuid: 'u-medgun', name: 'ParaMed Medical Device', util_slot: 'medical' }] }, loading: false, error: null }),
   createWeaponBuild: vi.fn(() => Promise.resolve({})),
   deleteWeaponBuild: vi.fn(() => Promise.resolve({})),
   useLootCollection: () => ({ data: [{ loot_uuid: 'w-primary', quantity: 1 }], loading: false }),

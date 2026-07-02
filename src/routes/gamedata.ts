@@ -980,10 +980,49 @@ return cachedJson(c, `gd:missions`, async () => {
            FROM fps_attachments a
            LEFT JOIN manufacturers m ON m.id = a.manufacturer_id
            LEFT JOIN loot_map lm ON lm.fps_attachment_id = a.id
+           -- The binoculars' fake-optic prop is extracted as a size-1
+           -- "EE16 (16x Telescopic)" IronSight; it isn't a real, equippable
+           -- scope and slips past port-size validation on pistols.
+           WHERE a.class_name NOT LIKE '%fakeoptic%'
            ORDER BY a.name`,
         )
         .all();
       return { attachments: results };
+    });
+  });
+
+  // Utility-slot catalog for the FPS loadout's Item Source (medical devices +
+  // pens, gadgets/tools, throwables, and multi-tool attachments). A focused
+  // slice of loot_map — the full /api/loot payload is far too heavy to load
+  // on the loadout page. util_slot maps each item to the paperdoll slot it
+  // can equip into (NULL = listed for reference only, e.g. tool attachments).
+  app.get("/utility-items", async (c) => {
+    const channel = getActiveChannel(c);
+    const lm = isPTUChannel(channel) ? "ptu_loot_map" : "loot_map";
+    return cachedJson(c, `gd:utility-items:${channel.toLowerCase()}`, async () => {
+      const { results } = await c.env.DB
+        .prepare(
+          `SELECT lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity, lm.manufacturer_name,
+                  CASE
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Gadget' THEN 'gadget'
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%' THEN 'medical'
+                    WHEN lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap') THEN 'medical'
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Grenade' THEN 'throwable'
+                    ELSE NULL
+                  END AS util_slot
+           FROM ${lm} lm
+           WHERE COALESCE(lm.is_deleted, 0) = 0
+             AND (
+               (lm.type = 'weapon' AND lm.sub_type = 'Gadget')
+               OR (lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%')
+               OR (lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap'))
+               OR (lm.type = 'weapon' AND lm.sub_type = 'Grenade')
+               OR (lm.type = 'attachment' AND lm.sub_type = 'Utility')
+             )
+           ORDER BY lm.name`,
+        )
+        .all();
+      return { items: results };
     });
   });
 

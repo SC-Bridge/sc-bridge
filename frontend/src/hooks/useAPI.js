@@ -154,6 +154,12 @@ export function useWeaponBench() {
   return useAPI('/gamedata/weapon-bench')
 }
 
+// Utility-slot catalog (medical devices/pens, gadgets, throwables, tool
+// attachments) for the FPS loadout's Item Source.
+export function useUtilityItems() {
+  return useAPI('/gamedata/utility-items')
+}
+
 // Saved weapon-bench builds (user_weapon_builds, Plan C endpoint).
 export function useWeaponBuilds() {
   return useAPI('/weapon-builds')

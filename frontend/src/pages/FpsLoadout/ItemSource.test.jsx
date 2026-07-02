@@ -46,13 +46,13 @@ describe('ItemSource', () => {
     expect(screen.queryByText('P4-AR Rifle')).not.toBeInTheDocument()
   })
 
-  it('renders empty "coming soon" states for Armour and Utility tabs', () => {
+  it('renders a "coming soon" state for the Armour tab and an empty state for Utility', () => {
     render(<ItemSource slotKey="helmet" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
     expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/Armour catalog coming soon/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('type-utility'))
-    expect(screen.getByText(/Utility catalog coming soon/)).toBeInTheDocument()
+    expect(screen.getByText(/No utility items match/)).toBeInTheDocument()
   })
 
   it('lists attachments on the Attach tab', () => {
@@ -110,5 +110,47 @@ describe('ItemSource', () => {
     expect(screen.getByTestId('item-weapon-w1')).toHaveAttribute('aria-roledescription', 'draggable')
     fireEvent.click(screen.getByTestId('type-attach'))
     expect(screen.getByTestId('item-attach-a1')).toHaveAttribute('aria-roledescription', 'draggable')
+  })
+
+  it('filters attachments by slot sub-filter (Optics / Barrels / Underbarrel)', () => {
+    const attachments = [
+      { uuid: 'a1', name: 'Stark Barrel', slot: 'barrel' },
+      { uuid: 'a2', name: 'Delta Reflex', slot: 'optic' },
+      { uuid: 'a3', name: 'FieldLite Flashlight', slot: 'underbarrel' },
+    ]
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={attachments} builds={[]} ownership={{}} onPick={() => {}} />)
+    fireEvent.click(screen.getByTestId('type-attach'))
+    // All three visible by default
+    expect(screen.getByTestId('item-attach-a1')).toBeInTheDocument()
+    expect(screen.getByTestId('item-attach-a2')).toBeInTheDocument()
+    // Optics only
+    fireEvent.click(screen.getByTestId('cat-optics'))
+    expect(screen.queryByTestId('item-attach-a1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('item-attach-a2')).toBeInTheDocument()
+    expect(screen.queryByTestId('item-attach-a3')).not.toBeInTheDocument()
+  })
+
+  it('lists utility items with slot sub-filters; slot items drag, tool attachments do not', () => {
+    const utility = [
+      { uuid: 'u1', name: 'ParaMed Medical Device', util_slot: 'medical', manufacturer_name: 'CureLife' },
+      { uuid: 'u2', name: 'Pyro RYT Multi-Tool', util_slot: 'gadget', manufacturer_name: 'Greycat' },
+      { uuid: 'u3', name: 'MK-4 Frag Grenade', util_slot: 'throwable', manufacturer_name: 'Behring' },
+      { uuid: 'u4', name: 'OxyTorch Cutter Attachment', util_slot: null, manufacturer_name: 'Greycat' },
+    ]
+    render(<ItemSource slotKey="medical" weapons={[]} attachments={[]} builds={[]} utility={utility} ownership={{}} onPick={() => {}} />)
+    // slotKey=medical defaults the tab to Utility; all four listed under 'All'
+    expect(screen.getByTestId('item-utility-u1')).toBeInTheDocument()
+    expect(screen.getByTestId('item-utility-u4')).toBeInTheDocument()
+    // Slot-equippable rows are draggable; tool attachments are not
+    expect(screen.getByTestId('item-utility-u1')).toHaveAttribute('aria-roledescription', 'draggable')
+    expect(screen.getByTestId('item-utility-u4')).not.toHaveAttribute('aria-roledescription')
+    // Medical sub-filter narrows to the medgun
+    fireEvent.click(screen.getByTestId('cat-medical'))
+    expect(screen.getByTestId('item-utility-u1')).toBeInTheDocument()
+    expect(screen.queryByTestId('item-utility-u2')).not.toBeInTheDocument()
+    // Tool Attach. sub-filter shows only util_slot=null rows
+    fireEvent.click(screen.getByTestId('cat-toolattach'))
+    expect(screen.getByTestId('item-utility-u4')).toBeInTheDocument()
+    expect(screen.queryByTestId('item-utility-u1')).not.toBeInTheDocument()
   })
 })

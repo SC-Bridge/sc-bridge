@@ -1,6 +1,6 @@
 // frontend/src/pages/FpsLoadout/WeaponBench.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useDroppable } from '@dnd-kit/core'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsGrid from './StatsGrid'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
@@ -26,6 +26,34 @@ function BenchDropZone({ slot, blueprint, activeDrag, equippedAtt, onToggle }) {
       {equippedAtt
         ? <button type="button" onClick={() => onToggle(equippedAtt)} className="text-sc-accent">{equippedAtt.name} ✕</button>
         : <span className="text-gray-600">drop here</span>}
+    </div>
+  )
+}
+
+// The bench header doubles as a drag handle for the WHOLE current combo
+// (weapon + slider qualities + equipped attachments): drag it onto a paperdoll
+// weapon slot to save the custom build into that slot. The container resolves
+// the live config on drop, so no payload is carried here beyond the kind.
+function BenchComboHandle({ url, displayName }) {
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: 'bench-combo',
+    data: { kind: 'bench-combo' },
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      data-testid="bench-combo-handle"
+      className="flex items-center gap-3 cursor-grab touch-none rounded"
+      style={{ opacity: isDragging ? 0.35 : 1 }}
+      title="Drag onto a loadout slot to save this build there"
+    >
+      {url
+        ? <img src={url} alt={displayName} className="w-16 h-10 object-contain" />
+        : <span className="w-16 h-10 flex items-center justify-center text-[9px] uppercase tracking-wide text-gray-600 border border-dashed border-white/10 rounded">no icon</span>}
+      <h3 className="text-lg font-semibold text-white">{displayName}</h3>
+      <span className="ml-auto text-[9px] uppercase tracking-wide text-gray-600 select-none">⠿ drag to loadout</span>
     </div>
   )
 }
@@ -114,12 +142,7 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        {url
-          ? <img src={url} alt={displayName} className="w-16 h-10 object-contain" />
-          : <span className="w-16 h-10 flex items-center justify-center text-[9px] uppercase tracking-wide text-gray-600 border border-dashed border-white/10 rounded">no icon</span>}
-        <h3 className="text-lg font-semibold text-white">{displayName}</h3>
-      </div>
+      <BenchComboHandle url={url} displayName={displayName} />
 
       {diverged && (
         <div className="text-xs rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 px-3 py-2">

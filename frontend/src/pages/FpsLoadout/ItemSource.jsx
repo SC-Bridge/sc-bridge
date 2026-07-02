@@ -31,10 +31,58 @@ const WEAPON_CATEGORIES = [
   { label: 'Pistol', match: ['pistol'] },
 ]
 
+// Attach tab sub-filters — keyed on the attachment's mapped bench slot.
+const ATTACH_CATEGORIES = [
+  { label: 'All', slot: null },
+  { label: 'Optics', slot: 'optic' },
+  { label: 'Barrels', slot: 'barrel' },
+  { label: 'Underbarrel', slot: 'underbarrel' },
+]
+
+// Utility tab sub-filters — keyed on util_slot from /gamedata/utility-items.
+// 'Tool Attach.' rows (util_slot null) are multi-tool attachments: browsable
+// + badged, but they don't equip into a paperdoll slot themselves.
+const UTILITY_CATEGORIES = [
+  { label: 'All', match: undefined },
+  { label: 'Medical', match: 'medical' },
+  { label: 'Gadgets', match: 'gadget' },
+  { label: 'Throwable', match: 'throwable' },
+  { label: 'Tool Attach.', match: null },
+]
+
+const UTIL_SLOT_LABEL = { medical: 'Medical', gadget: 'Gadget', throwable: 'Throwable' }
+
 function defaultTypeForSlot(slotKey) {
   if (ARMOUR_SLOTS.has(slotKey)) return 'Armour'
   if (UTILITY_SLOTS.has(slotKey)) return 'Utility'
   return 'Weapons' // weapon slots, and anything unrecognised, default to Weapons
+}
+
+// Shared sub-filter pill strip (Weapons / Attach / Utility tabs).
+function CategoryPills({ categories, active, onSelect }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-2.5">
+      {categories.map((c) => (
+        <button
+          key={c.label}
+          type="button"
+          data-testid={`cat-${c.label.toLowerCase().replace(/[^a-z]+/g, '')}`}
+          aria-pressed={active === c.label}
+          onClick={() => onSelect(c.label)}
+          className="rounded"
+          style={{
+            fontSize: 10,
+            padding: '4px 8px',
+            border: `1px solid ${active === c.label ? CYAN_DIM : LINE}`,
+            color: active === c.label ? ICE : ICE_DIM,
+            background: active === c.label ? 'rgba(0,232,255,0.06)' : 'transparent',
+          }}
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function itemKey(item) {
@@ -107,8 +155,8 @@ function Row({ testId, custom, ctag, name, sub, state, onClick, dragId, dragData
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
+      {...(dragData ? listeners : {})}
+      {...(dragData ? attributes : {})}
       data-testid={testId}
       onClick={onClick}
       className="flex items-center gap-2.5 py-2 px-2 cursor-pointer touch-none"
@@ -151,13 +199,17 @@ function EmptyRow({ children }) {
   )
 }
 
-export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], ownership = {}, onPick }) {
+export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], utility = [], ownership = {}, onPick }) {
   const [type, setType] = useState(() => defaultTypeForSlot(slotKey))
   const [category, setCategory] = useState(WEAPON_CATEGORIES[0].label)
+  const [attachCategory, setAttachCategory] = useState(ATTACH_CATEGORIES[0].label)
+  const [utilCategory, setUtilCategory] = useState(UTILITY_CATEGORIES[0].label)
   const [search, setSearch] = useState('')
 
   const q = search.trim().toLowerCase()
   const activeCategory = WEAPON_CATEGORIES.find((c) => c.label === category) || WEAPON_CATEGORIES[0]
+  const activeAttachCategory = ATTACH_CATEGORIES.find((c) => c.label === attachCategory) || ATTACH_CATEGORIES[0]
+  const activeUtilCategory = UTILITY_CATEGORIES.find((c) => c.label === utilCategory) || UTILITY_CATEGORIES[0]
 
   const filteredWeapons = useMemo(
     () => weapons.filter((w) => (!q || friendlyWeaponName(w)?.toLowerCase().includes(q)) && matchesCategory(w.sub_type, activeCategory)),
@@ -177,8 +229,18 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
   // the full list still shows.
   const filteredAttachments = useMemo(
     () => attachments.filter((a) =>
-      (!q || a.name?.toLowerCase().includes(q)) && isCompatible(weapon, a)),
-    [attachments, weapon, q],
+      (!q || a.name?.toLowerCase().includes(q))
+      && (activeAttachCategory.slot == null || a.slot === activeAttachCategory.slot)
+      && isCompatible(weapon, a)),
+    [attachments, weapon, q, activeAttachCategory],
+  )
+
+  const filteredUtility = useMemo(
+    () => utility.filter((u) =>
+      (!q || u.name?.toLowerCase().includes(q))
+      // 'All' (match undefined) shows everything; 'Tool Attach.' matches null util_slot.
+      && (activeUtilCategory.match === undefined || (u.util_slot ?? null) === activeUtilCategory.match)),
+    [utility, q, activeUtilCategory],
   )
 
   const pick = (item) => onPick?.(item)
@@ -227,27 +289,7 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
 
       {type === 'Weapons' && (
         <>
-          <div className="flex flex-wrap gap-1.5 mb-2.5">
-            {WEAPON_CATEGORIES.map((c) => (
-              <button
-                key={c.label}
-                type="button"
-                data-testid={`cat-${c.label.toLowerCase()}`}
-                aria-pressed={category === c.label}
-                onClick={() => setCategory(c.label)}
-                className="rounded"
-                style={{
-                  fontSize: 10,
-                  padding: '4px 8px',
-                  border: `1px solid ${category === c.label ? CYAN_DIM : LINE}`,
-                  color: category === c.label ? ICE : ICE_DIM,
-                  background: category === c.label ? 'rgba(0,232,255,0.06)' : 'transparent',
-                }}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          <CategoryPills categories={WEAPON_CATEGORIES} active={category} onSelect={setCategory} />
 
           <div>
             {filteredBuilds.map((b) => (
@@ -283,6 +325,7 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
 
       {type === 'Attach' && (
         <div>
+          <CategoryPills categories={ATTACH_CATEGORIES} active={attachCategory} onSelect={setAttachCategory} />
           {filteredAttachments.map((a) => (
             <Row
               key={itemKey(a)}
@@ -299,7 +342,28 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
         </div>
       )}
 
-      {(type === 'Armour' || type === 'Utility') && <EmptyRow>{type} catalog coming soon.</EmptyRow>}
+      {type === 'Utility' && (
+        <div>
+          <CategoryPills categories={UTILITY_CATEGORIES} active={utilCategory} onSelect={setUtilCategory} />
+          {filteredUtility.map((u) => (
+            <Row
+              key={itemKey(u)}
+              testId={`item-utility-${itemKey(u)}`}
+              name={u.name}
+              sub={u.util_slot ? `${UTIL_SLOT_LABEL[u.util_slot]} · ${u.manufacturer_name || u.sub_type}` : `Multi-Tool attachment · ${u.manufacturer_name || ''}`}
+              state={ownershipState(ownership, itemKey(u))}
+              onClick={() => pick(u)}
+              dragId={`utility-${itemKey(u)}`}
+              // Tool attachments (util_slot null) are browsable but have no
+              // paperdoll slot to drop into, so they aren't drag sources.
+              dragData={u.util_slot ? { kind: 'utility', item: u } : null}
+            />
+          ))}
+          {filteredUtility.length === 0 && <EmptyRow>No utility items match.</EmptyRow>}
+        </div>
+      )}
+
+      {type === 'Armour' && <EmptyRow>Armour catalog coming soon.</EmptyRow>}
     </div>
   )
 }

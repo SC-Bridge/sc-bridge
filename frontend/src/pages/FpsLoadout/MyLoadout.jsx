@@ -25,6 +25,7 @@ const SLOT_GROUPS = [
 ]
 
 const WEAPON_SLOTS = new Set(SLOT_GROUPS[0].slots)
+const UTILITY_SLOTS = new Set(SLOT_GROUPS[2].slots)
 
 const SLOT_ICON = {
   primary: 'icon_common_primary_weapon',
@@ -140,12 +141,14 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag })
   const owned = filled && Boolean(entry.owned)
   const wishlisted = filled && !owned && Boolean(entry.wishlisted)
 
-  // Weapon tiles double as dnd-kit drop targets for weapons/builds dragged
-  // from Item Source (drop = equip + save immediately).
+  // Weapon + utility tiles double as dnd-kit drop targets for items dragged
+  // from Item Source (drop = equip + save immediately). Armour stays inert
+  // until slice 2.
+  const isUtility = UTILITY_SLOTS.has(slotKey)
   const { setNodeRef, isOver } = useDroppable({
     id: `loadout-${slotKey}`,
     data: { kind: 'loadout-slot', slotKey },
-    disabled: !isWeapon,
+    disabled: !isWeapon && !isUtility,
   })
   const validTarget = isValidTarget(activeDrag, { kind: 'loadout-slot', slotKey })
 
@@ -168,7 +171,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag })
         borderStyle: filled && !validTarget ? 'solid' : 'dashed',
         boxShadow: isOver && validTarget ? '0 0 0 1px rgba(0,232,255,0.45), 0 0 20px rgba(0,232,255,0.28)'
           : selected ? '0 0 0 1px rgba(0,232,255,0.25), 0 0 16px rgba(0,232,255,0.14)' : 'none',
-        opacity: inert && !selected ? 0.55 : 1,
+        opacity: inert && !selected && !validTarget ? 0.55 : 1,
       }}
     >
       <SlotBadge owned={owned} wishlisted={wishlisted} />

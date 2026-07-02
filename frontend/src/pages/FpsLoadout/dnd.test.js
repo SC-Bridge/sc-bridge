@@ -50,4 +50,22 @@ describe('resolveDrop', () => {
     expect(resolveDrop({ kind: 'attachment', attachment: OPTIC }, { kind: 'loadout-slot', slotKey: 'primary' }, BENCH_WEAPON)).toBeNull()
     expect(resolveDrop({ kind: 'weapon', weapon: WEAPON }, { kind: 'bench-slot', slot: 'optic' })).toBeNull()
   })
+
+  it('bench combo on a weapon slot → equip-bench-combo', () => {
+    expect(resolveDrop({ kind: 'bench-combo' }, { kind: 'loadout-slot', slotKey: 'primary' }))
+      .toEqual({ type: 'equip-bench-combo', slotKey: 'primary' })
+    expect(resolveDrop({ kind: 'bench-combo' }, { kind: 'loadout-slot', slotKey: 'medical' })).toBeNull()
+  })
+
+  it('utility item on its matching slot only → equip-utility', () => {
+    const medgun = { uuid: 'u1', name: 'ParaMed Medical Device', util_slot: 'medical' }
+    expect(resolveDrop({ kind: 'utility', item: medgun }, { kind: 'loadout-slot', slotKey: 'medical' }))
+      .toEqual({ type: 'equip-utility', slotKey: 'medical', item: medgun })
+    // Wrong utility slot and weapon slots are rejected.
+    expect(resolveDrop({ kind: 'utility', item: medgun }, { kind: 'loadout-slot', slotKey: 'gadget' })).toBeNull()
+    expect(resolveDrop({ kind: 'utility', item: medgun }, { kind: 'loadout-slot', slotKey: 'primary' })).toBeNull()
+    // Tool attachments (util_slot null) never target a slot.
+    const cutter = { uuid: 'u2', name: 'OxyTorch Cutter Attachment', util_slot: null }
+    expect(resolveDrop({ kind: 'utility', item: cutter }, { kind: 'loadout-slot', slotKey: 'gadget' })).toBeNull()
+  })
 })

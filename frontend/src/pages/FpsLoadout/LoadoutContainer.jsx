@@ -12,7 +12,7 @@ import {
 import {
   useFpsLoadouts, createFpsLoadout, putLoadoutSlot,
   useCrafting, useWeaponBench, useWeaponBuilds, createWeaponBuild, deleteWeaponBuild,
-  useUserBlueprints,
+  useUserBlueprints, useUtilityItems,
   useLootCollection, useLootWishlist,
 } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
@@ -122,6 +122,7 @@ export default function LoadoutContainer() {
   const benchQ = useWeaponBench()
   const buildsQ = useWeaponBuilds()
   const blueprintsQ = useUserBlueprints()
+  const utilityQ = useUtilityItems()
   const collectionQ = useLootCollection(isAuthed)
   const wishlistQ = useLootWishlist(isAuthed)
 
@@ -190,6 +191,21 @@ export default function LoadoutContainer() {
     const wishlisted = new Set((wishlistQ.data || []).map((w) => w.uuid))
     return { owned, wishlisted }
   }, [collectionQ.data, wishlistQ.data])
+
+  // Utility catalog, deduped by name (loot_map carries duplicate rows for
+  // colour/paint variants that share a display name). Ownership-aware: if any
+  // duplicate's uuid is in the collection/wishlist, keep THAT row so the
+  // ✓/◇ badge reflects what the user actually tracked.
+  const utilityItems = useMemo(() => {
+    const byName = new Map()
+    for (const item of utilityQ.data?.items || []) {
+      const existing = byName.get(item.name)
+      const tracked = ownership.owned.has(item.uuid) || ownership.wishlisted.has(item.uuid)
+      const existingTracked = existing && (ownership.owned.has(existing.uuid) || ownership.wishlisted.has(existing.uuid))
+      if (!existing || (tracked && !existingTracked)) byName.set(item.name, item)
+    }
+    return [...byName.values()]
+  }, [utilityQ.data, ownership])
 
   const savedSlot = currentLoadout.slots?.find((s) => s.slot_key === selectedSlot) || null
   const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot)
@@ -366,6 +382,31 @@ export default function LoadoutContainer() {
         config: { ...(b.config || {}), name: b.name },
       })
       setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-bench-combo') {
+      // The bench header dragged onto a weapon slot: save the weapon on the
+      // bench WITH its live sliders + attachments into that slot.
+      if (!blueprint) return
+      await persistSlot(action.slotKey, {
+        itemUuid: blueprint.uuid,
+        itemName: blueprint.base_stats?.item_name || blueprint.name,
+        weaponBuildId: pick?.buildId ?? null,
+        config: liveConfigRef.current,
+      })
+      setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-utility') {
+      // A utility item onto its matching paperdoll slot (no bench config —
+      // medical/gadget/throwable items aren't craft-tunable in slice 1).
+      await persistSlot(action.slotKey, {
+        itemUuid: action.item.uuid,
+        itemName: action.item.name,
+        weaponBuildId: null,
+        config: null,
+      })
+      setSelectedSlot(action.slotKey)
     }
   }
 
@@ -415,6 +456,9 @@ export default function LoadoutContainer() {
     ? (activeDrag.weapon?.base_stats?.item_name || activeDrag.weapon?.name)
     : activeDrag?.kind === 'build' ? activeDrag.build?.name
     : activeDrag?.kind === 'attachment' ? activeDrag.attachment?.name
+    : activeDrag?.kind === 'utility' ? activeDrag.item?.name
+    : activeDrag?.kind === 'bench-combo' && blueprint
+      ? `${blueprint.base_stats?.item_name || blueprint.name} (custom build)`
     : null
 
   return (
@@ -477,7 +521,7 @@ export default function LoadoutContainer() {
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             <ItemSource key={selectedSlot} slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
-              builds={buildsForSource} ownership={ownership} onPick={handlePick} />
+              builds={buildsForSource} utility={utilityItems} ownership={ownership} onPick={handlePick} />
           </div>
         </div>
       </div>
