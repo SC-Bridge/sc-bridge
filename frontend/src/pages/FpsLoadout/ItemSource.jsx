@@ -278,7 +278,12 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
               state={ownershipState(ownership, itemKey(a))}
               onClick={() => pick(a)}
               draggable
-              onDragStart={(e) => e.dataTransfer.setData('text/plain', a.uuid)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', a.uuid)
+                // Chrome only accepts the drop if the source's effectAllowed
+                // includes the target's dropEffect ('copy').
+                e.dataTransfer.effectAllowed = 'copy'
+              }}
             />
           ))}
           {filteredAttachments.length === 0 && <EmptyRow>No attachments match.</EmptyRow>}

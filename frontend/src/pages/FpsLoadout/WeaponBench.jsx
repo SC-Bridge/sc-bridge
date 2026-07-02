@@ -25,6 +25,7 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
   const slots = blueprint?.slots || []
   const [qualities, setQualities] = useState(() => qualitiesFromConfig(slots, initialConfig))
   const [equipped, setEquipped] = useState(() => initialConfig?.attachments || {}) // { [slotType]: attachmentUuid }
+  const [dragSlot, setDragSlot] = useState(null) // slot currently under a drag, for hover feedback
   // The saved build a loaded config came from — the preview diverges once a slider moves off these.
   const baseline = useRef(initialConfig ? { qualities: qualitiesFromConfig(slots, initialConfig), name: initialConfig.name } : null)
 
@@ -115,9 +116,11 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
               const equippedAtt = attachments.find((a) => a.uuid === equipped[slot])
               return (
                 <div key={slot} data-testid={`dropzone-${slot}`}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); dropOnSlot(slot, e.dataTransfer.getData('text/plain')) }}
-                  className="min-w-[7rem] px-2.5 py-2 text-xs rounded border border-dashed border-white/15 text-gray-400">
+                  onDragEnter={(e) => { e.preventDefault(); setDragSlot(slot) }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+                  onDragLeave={() => setDragSlot((s) => (s === slot ? null : s))}
+                  onDrop={(e) => { e.preventDefault(); setDragSlot(null); dropOnSlot(slot, e.dataTransfer.getData('text/plain')) }}
+                  className={`min-w-[7rem] px-2.5 py-2 text-xs rounded border border-dashed ${dragSlot === slot ? 'border-sc-accent bg-white/5 text-sc-accent' : 'border-white/15 text-gray-400'}`}>
                   <div className="uppercase tracking-wide text-[9px] text-gray-600">{SLOT_LABEL[slot] || slot}</div>
                   {equippedAtt
                     ? <button type="button" onClick={() => toggle(equippedAtt)} className="text-sc-accent">{equippedAtt.name} ✕</button>
