@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsGrid from './StatsGrid'
-import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
+import { combinedMultipliers, computeBenchStats, equippedZoom } from './weaponBenchStats'
 import { isCompatible, weaponAttachmentSlots, SLOT_LABEL } from './attachmentCompat'
 import { isValidTarget } from './dnd'
 import { resolveWeaponIcon } from './weaponIcon'
@@ -114,7 +114,8 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
   const stats = useMemo(() => {
     if (!blueprint) return null
     const m = combinedMultipliers(slots, qualities, equippedList)
-    return computeBenchStats(blueprint.base_stats, m)
+    // Zoom rides on the equipped optic itself (a property, not a multiplier).
+    return { ...computeBenchStats(blueprint.base_stats, m), zoom: equippedZoom(equippedList) }
   }, [blueprint, slots, qualities, equippedList])
 
   if (!blueprint) {

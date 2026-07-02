@@ -976,6 +976,8 @@ return cachedJson(c, `gd:missions`, async () => {
                   a.sub_type AS attach_port_type, a.size AS attach_size, a.attach_tags,
                   a.damage_multiplier, a.fire_rate_multiplier,
                   a.projectile_speed_multiplier, a.heat_generation_multiplier,
+                  a.recoil_strength, a.recoil_decay, a.recoil_randomness,
+                  a.sound_radius_multiplier, a.zoom_scale, a.second_zoom_scale,
                   m.name AS manufacturer_name, lm.rarity
            FROM fps_attachments a
            LEFT JOIN manufacturers m ON m.id = a.manufacturer_id

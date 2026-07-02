@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   craftedMultipliers, resolveAttachmentMultipliers, combinedMultipliers, computeBenchStats,
+  equippedZoom,
 } from './weaponBenchStats'
 
 // Real Gmni Pistol Ballistic 01 (= base LH86) recipe.
@@ -41,6 +42,20 @@ describe('resolveAttachmentMultipliers', () => {
   it('returns empty object for no attachment', () => {
     expect(resolveAttachmentMultipliers(null)).toEqual({})
   })
+
+  it('maps compensator recoil columns onto the crafting recoil keys', () => {
+    // Real Sion Compensator1 values (strength/decay/randomness = 0.7).
+    const sion = { recoil_strength: 0.7, recoil_decay: 0.7, recoil_randomness: 0.7, sound_radius_multiplier: 1.2 }
+    const r = resolveAttachmentMultipliers(sion)
+    expect(r.weapon_recoil_kick).toBeCloseTo(0.7, 5)
+    expect(r.weapon_recoil_handling).toBeCloseTo(0.7, 5)
+    expect(r.weapon_recoil_smoothness).toBeCloseTo(0.7, 5)
+    expect(r.sound_radius).toBeCloseTo(1.2, 5)
+  })
+
+  it('maps suppressor sound radius (real Tacit Suppressor2 = 0.4)', () => {
+    expect(resolveAttachmentMultipliers({ sound_radius_multiplier: 0.4 }).sound_radius).toBeCloseTo(0.4, 5)
+  })
 })
 
 describe('combinedMultipliers + computeBenchStats', () => {
@@ -52,5 +67,29 @@ describe('combinedMultipliers + computeBenchStats', () => {
     expect(s.rpm).toBeCloseTo(950 * 1.0768 * 0.8, 1)          // 818.4
     expect(s.dps).toBeCloseTo((13 * 1.048) * (950 * 1.0768 * 0.8) / 60, 1)
     expect(s.recoil).toBeCloseTo(0.864, 3)
+  })
+
+  it('stacks a compensator onto crafted recoil and multiplies projectile speed', () => {
+    const q = { 0: 750, 1: 600, 2: 820 }
+    const sion = { recoil_strength: 0.7, recoil_decay: 0.7, recoil_randomness: 0.7 }
+    const combined = combinedMultipliers(SLOTS, q, [sion])
+    // Crafted kick 0.864 × compensator 0.7 = 0.6048
+    expect(combined.weapon_recoil_kick).toBeCloseTo(0.6048, 4)
+    // decay/randomness have no crafted counterpart on this recipe → attachment value alone
+    expect(combined.weapon_recoil_handling).toBeCloseTo(0.7, 5)
+
+    const emod = { projectile_speed_multiplier: 0.875 }
+    const s = computeBenchStats({ ...BASE, projectile_speed: 800 }, combinedMultipliers(SLOTS, q, [emod]))
+    expect(s.projectileSpeed).toBeCloseTo(700, 1)
+  })
+})
+
+describe('equippedZoom', () => {
+  it('reads the equipped optic zoom, formatting dual-zoom scopes', () => {
+    expect(equippedZoom([{ slot: 'optic', zoom_scale: 16, second_zoom_scale: 1 }])).toBe('16×')
+    expect(equippedZoom([{ slot: 'optic', zoom_scale: 4, second_zoom_scale: 8 }])).toBe('4× / 8×')
+    expect(equippedZoom([{ slot: 'barrel', zoom_scale: 4 }])).toBeNull() // not an optic
+    expect(equippedZoom([])).toBeNull()
+    expect(equippedZoom(null)).toBeNull()
   })
 })

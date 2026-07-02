@@ -82,6 +82,13 @@ export default function StatsGrid({ baseStats, stats }) {
     ? fmt(base.spread_max ?? base.spread_min, 2)
     : null
 
+  // Attachment-driven cells: projectile speed (multiplied), suppressor sound
+  // radius, heat, and the equipped optic's zoom.
+  const projSpeed = build.projectileSpeed ?? base.projectile_speed ?? null
+  const projDelta = pctDelta(base.projectile_speed, build.projectileSpeed)
+  const sound = mult.sound_radius != null && mult.sound_radius !== 1 ? mult.sound_radius : null
+  const heat = mult.heat != null && mult.heat !== 1 ? mult.heat : null
+
   const fireModes = Array.isArray(base.fire_modes)
     ? base.fire_modes.join(' / ')
     : base.fire_modes || null
@@ -133,9 +140,9 @@ export default function StatsGrid({ baseStats, stats }) {
         <Cell
           label="Proj. Speed"
           dyn
-          value={fmt(base.projectile_speed, 0)}
-          sub="m/s"
-          na={base.projectile_speed == null}
+          value={fmt(projSpeed, 0)}
+          sub={<DeltaSub deltaPct={projDelta} suffix="m/s" />}
+          na={projSpeed == null}
         />
         <Cell
           label="Recoil Recovery"
@@ -158,12 +165,33 @@ export default function StatsGrid({ baseStats, stats }) {
         <Cell label="Ammo" value={fmt(base.ammo_capacity, 0)} na={base.ammo_capacity == null} sub={base.ammo_capacity != null ? 'rds · mag' : 'n/a'} />
         <Cell label="Eff. Range" value={fmt(base.effective_range, 0)} na={base.effective_range == null} sub={base.effective_range != null ? 'm' : 'n/a'} />
 
-        {/* Conditional — not present in base_stats today */}
-        <Cell label="Heat / Shot" value={null} na sub="n/a" />
+        {/* Conditional — attachment-driven or absent from base_stats today */}
+        <Cell
+          label="Heat / Shot"
+          dyn
+          value={heat != null ? `×${fmt(heat, 2)}` : null}
+          na={heat == null}
+          sub={heat != null
+            ? <ImprovementSub improvementPct={invertImprovement(heat)} goodWord="cooler" badWord="hotter" />
+            : 'n/a'}
+        />
+        <Cell
+          label="Sound"
+          dyn
+          value={sound != null ? `×${fmt(sound, 2)}` : null}
+          na={sound == null}
+          sub={sound != null
+            ? <ImprovementSub improvementPct={invertImprovement(sound)} goodWord="quieter" badWord="louder" />
+            : 'suppressor'}
+        />
         <Cell label="Overheat" value={null} na sub="n/a" />
-        <Cell label="Cooling / s" value={null} na sub="n/a" />
         <Cell label="Charge Time" value={null} na sub="n/a" />
-        <Cell label="Zoom" value={null} na sub="n/a" />
+        <Cell
+          label="Zoom"
+          value={build.zoom || null}
+          na={!build.zoom}
+          sub={build.zoom ? 'optic' : 'optic'}
+        />
       </div>
     </div>
   )

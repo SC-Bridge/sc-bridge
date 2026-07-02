@@ -68,4 +68,30 @@ describe('StatsGrid', () => {
     expect(overheatCell).toHaveTextContent('—')
     expect(chargeCell).toHaveTextContent('—')
   })
+
+  it('shows suppressor sound + heat multipliers and the equipped optic zoom', () => {
+    const stats = {
+      damage: 22, rpm: 600, dps: 220,
+      zoom: '4× / 8×',
+      multipliers: { sound_radius: 0.66, heat: 0.75 },
+    }
+    render(<StatsGrid baseStats={BASE_STATS} stats={stats} />)
+    const soundCell = screen.getByText('Sound').closest('[data-testid="stat-cell"]')
+    expect(soundCell).toHaveTextContent('×0.66')
+    expect(soundCell).toHaveTextContent('34% quieter')
+    const heatCell = screen.getByText('Heat / Shot').closest('[data-testid="stat-cell"]')
+    expect(heatCell).toHaveTextContent('×0.75')
+    expect(heatCell).toHaveTextContent('25% cooler')
+    const zoomCell = screen.getByText('Zoom').closest('[data-testid="stat-cell"]')
+    expect(zoomCell).toHaveTextContent('4× / 8×')
+  })
+
+  it('shows the multiplied projectile speed with a delta', () => {
+    const base = { ...BASE_STATS, projectile_speed: 800 }
+    const stats = { damage: 22, rpm: 600, dps: 220, projectileSpeed: 700, multipliers: {} }
+    render(<StatsGrid baseStats={base} stats={stats} />)
+    const cell = screen.getByText('Proj. Speed').closest('[data-testid="stat-cell"]')
+    expect(cell).toHaveTextContent('700')
+    expect(cell).toHaveTextContent('-13%')
+  })
 })
