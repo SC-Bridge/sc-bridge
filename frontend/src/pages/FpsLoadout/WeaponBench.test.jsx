@@ -121,17 +121,6 @@ describe('WeaponBench', () => {
     expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
   })
 
-  it('equips an attachment via an equipRequest (click-to-equip from Item Source)', () => {
-    const { rerender } = render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} equipRequest={null} />)
-    const zone = screen.getByTestId('dropzone-barrel')
-    expect(within(zone).queryByText(/Stark Compensator 1/)).not.toBeInTheDocument()
-    // Bumping the request seq is what signals a fresh pick.
-    rerender(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} equipRequest={{ uuid: 'stark', seq: 1 }} />)
-    expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
-    // Fire rate reflects the equipped compensator (950 → 760).
-    expect(screen.getByText('760')).toBeInTheDocument()
-  })
-
   it('warns when a loaded build’s slider is moved off its saved baseline', () => {
     render(<WeaponBench blueprint={BLUEPRINT} attachments={[]} initialConfig={{ qualities: { 0: 250, 1: 250 }, attachments: {}, name: 'My Rifle' }} />)
     expect(screen.queryByText(/no longer match/i)).not.toBeInTheDocument()

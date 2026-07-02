@@ -21,14 +21,12 @@ function sameQualities(a, b) {
   return ka.every((k) => Number(a[k]) === Number((b || {})[k]))
 }
 
-export default function WeaponBench({ blueprint, attachments = [], initialConfig = null, onConfigChange, equipRequest = null }) {
+export default function WeaponBench({ blueprint, attachments = [], initialConfig = null, onConfigChange }) {
   const slots = blueprint?.slots || []
   const [qualities, setQualities] = useState(() => qualitiesFromConfig(slots, initialConfig))
   const [equipped, setEquipped] = useState(() => initialConfig?.attachments || {}) // { [slotType]: attachmentUuid }
   // The saved build a loaded config came from — the preview diverges once a slider moves off these.
   const baseline = useRef(initialConfig ? { qualities: qualitiesFromConfig(slots, initialConfig), name: initialConfig.name } : null)
-  // Guards against re-firing the same equip request when unrelated props change.
-  const equipSeqRef = useRef(0)
 
   // Reset when the weapon identity changes or a different saved build is loaded.
   useEffect(() => {
@@ -37,18 +35,6 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
     setEquipped(initialConfig?.attachments || {})
     baseline.current = initialConfig ? { qualities: qualitiesFromConfig(newSlots, initialConfig), name: initialConfig.name } : null
   }, [blueprint?.name, initialConfig])
-
-  // Click-to-equip from Item Source: a bumped equipRequest.seq means the user
-  // picked an attachment. Equip it into its slot if it fits — a robust
-  // alternative to native drag-and-drop (which the drop-zones still accept).
-  useEffect(() => {
-    if (!equipRequest || equipRequest.seq === equipSeqRef.current) return
-    equipSeqRef.current = equipRequest.seq
-    const att = attachments.find((a) => a.uuid === equipRequest.uuid)
-    if (att && att.slot && isCompatible(blueprint, att)) {
-      setEquipped((prev) => ({ ...prev, [att.slot]: att.uuid }))
-    }
-  }, [equipRequest, attachments, blueprint])
 
   // Surface the live config so a parent can save it.
   useEffect(() => {

@@ -117,10 +117,6 @@ export default function LoadoutContainer() {
   // Transient override for the selected slot — set when the user picks a
   // weapon/build from ItemSource, before it's committed via "Set to loadout".
   const [pick, setPick] = useState(null) // { weaponUuid, buildId, config }
-  // Click-to-equip signal for the bench — bumped seq each time an attachment is
-  // picked from Item Source, so the same attachment can be re-picked.
-  const [equipRequest, setEquipRequest] = useState(null) // { uuid, seq }
-  const equipSeqRef = useRef(0)
   const [saving, setSaving] = useState(false)
   const [newLoadoutError, setNewLoadoutError] = useState(null)
   const liveConfigRef = useRef({ qualities: {}, attachments: {} })
@@ -133,7 +129,7 @@ export default function LoadoutContainer() {
   }, [loadouts, currentLoadoutId])
 
   // A transient pick only applies to the slot it was made for.
-  useEffect(() => { setPick(null); setEquipRequest(null) }, [selectedSlot, currentLoadoutId])
+  useEffect(() => { setPick(null) }, [selectedSlot, currentLoadoutId])
 
   const currentLoadout = loadouts.find((l) => l.id === currentLoadoutId) || EMPTY_LOADOUT
 
@@ -265,13 +261,9 @@ export default function LoadoutContainer() {
     } else if (item.uuid && item.base_stats) {
       // A plain weapon blueprint — reset to a fresh config.
       setPick({ weaponUuid: item.uuid, buildId: null, config: null })
-    } else if (item.uuid && item.slot) {
-      // An attachment (has a mapped optic/barrel/underbarrel slot, no base_stats):
-      // click-to-equip it onto the current weapon on the bench. The bench
-      // validates the slot fit; the drop-zones still accept native drag too.
-      equipSeqRef.current += 1
-      setEquipRequest({ uuid: item.uuid, seq: equipSeqRef.current })
     }
+    // Attachment picks (Item Source → Attach) aren't auto-equipped here —
+    // the bench's own drag/click UI on its attachment slots handles that.
   }
 
   const handleNewLoadout = async () => {
@@ -376,7 +368,7 @@ export default function LoadoutContainer() {
             ) : blueprint ? (
               <>
                 <WeaponBench blueprint={blueprint} attachments={attachments}
-                  initialConfig={initialConfig} onConfigChange={onConfigChange} equipRequest={equipRequest} />
+                  initialConfig={initialConfig} onConfigChange={onConfigChange} />
                 <button
                   type="button"
                   data-testid="set-to-loadout"
