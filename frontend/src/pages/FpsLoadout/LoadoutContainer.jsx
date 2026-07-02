@@ -6,7 +6,7 @@
 // WeaponBenchContainer's weapon/attachment resolution and saved-build flow.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable,
   pointerWithin, rectIntersection,
 } from '@dnd-kit/core'
 import {
@@ -23,7 +23,7 @@ import ItemSource from './ItemSource'
 import LoadoutStats from './LoadoutStats'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { attachmentSlot } from './attachmentCompat'
-import { resolveDrop } from './dnd'
+import { isValidTarget, resolveDrop, resolveDropFromCollisions, mergeAttachmentIntoConfig } from './dnd'
 
 // Forgiving collision: prefer the droppable directly under the pointer, but
 // fall back to any droppable the dragged rect overlaps — so a near-miss on a
@@ -128,9 +128,11 @@ export default function LoadoutContainer() {
 
   const [currentLoadoutId, setCurrentLoadoutId] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState('primary')
-  // Transient override for the selected slot — set when the user picks a
-  // weapon/build from ItemSource, before it's committed via "Set to loadout".
-  const [pick, setPick] = useState(null) // { weaponUuid, buildId, config }
+  // Transient bench override — set when the user picks a weapon/build from
+  // ItemSource or drops one on the bench, before "Set to loadout" commits it.
+  // Scoped to a slot: it only applies while that slot is selected.
+  const [pickState, setPickState] = useState(null) // { slotKey, weaponUuid, buildId, config }
+  const pick = pickState && pickState.slotKey === selectedSlot ? pickState : null
   // Live drag payload while a dnd-kit drag is in flight (drives target highlights
   // + the DragOverlay ghost); equipRequest tells the bench to equip an attachment
   // after a successful drop (seq bumps so the same attachment can be re-dropped).
@@ -139,6 +141,15 @@ export default function LoadoutContainer() {
   const equipSeqRef = useRef(0)
   const [saving, setSaving] = useState(false)
   const [newLoadoutError, setNewLoadoutError] = useState(null)
+  // Save feedback — every persist attempt flashes "Saved ✓" or the error, so
+  // a failed save is never silent again.
+  const [saveFlash, setSaveFlash] = useState(null) // { type: 'ok'|'err', msg }
+  const flashTimerRef = useRef(null)
+  const flash = (type, msg) => {
+    clearTimeout(flashTimerRef.current)
+    setSaveFlash({ type, msg })
+    if (type === 'ok') flashTimerRef.current = setTimeout(() => setSaveFlash(null), 2500)
+  }
   const liveConfigRef = useRef({ qualities: {}, attachments: {} })
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
@@ -150,8 +161,9 @@ export default function LoadoutContainer() {
     if (currentLoadoutId == null && loadouts.length > 0) setCurrentLoadoutId(loadouts[0].id)
   }, [loadouts, currentLoadoutId])
 
-  // A transient pick only applies to the slot it was made for.
-  useEffect(() => { setPick(null) }, [selectedSlot, currentLoadoutId])
+  // Picks don't carry across loadouts; equip signals don't carry across slots.
+  useEffect(() => { setPickState(null); setEquipRequest(null) }, [currentLoadoutId])
+  useEffect(() => { setEquipRequest(null) }, [selectedSlot])
 
   const currentLoadout = loadouts.find((l) => l.id === currentLoadoutId) || EMPTY_LOADOUT
 
@@ -227,6 +239,25 @@ export default function LoadoutContainer() {
     // Deps: savedSlotConfigJSON stands in for savedSlot.config (stable string vs. new object each render).
   }, [pick, savedSlot?.item_uuid, savedSlot?.item_name, savedSlotConfigJSON])
 
+  // Saved weapon blueprint per paperdoll slot — drives drop validation for
+  // attachments dragged straight onto a loadout tile (a 16x scope must fit
+  // THAT slot's weapon, not whatever's on the bench).
+  const slotWeapons = useMemo(() => {
+    const out = {}
+    for (const s of currentLoadout.slots || []) {
+      if (!s.item_uuid || !WEAPON_SLOTS.has(s.slot_key)) continue
+      const bp = weapons.find((w) => w.uuid === s.item_uuid)
+      if (bp) out[s.slot_key] = bp
+    }
+    return out
+  }, [currentLoadout, weapons])
+
+  const dropCtx = useMemo(() => ({ benchWeapon: blueprint, slotWeapons }), [blueprint, slotWeapons])
+
+  // The whole bench panel accepts weapon/build drops (load-to-bench preview).
+  const benchDrop = useDroppable({ id: 'bench', data: { kind: 'bench' } })
+  const benchIsValidTarget = isValidTarget(activeDrag, { kind: 'bench' }, dropCtx)
+
   const buildsForWeapon = useMemo(
     () => allBuilds.filter((b) => b.weapon_uuid === blueprint?.uuid),
     [allBuilds, blueprint],
@@ -294,10 +325,10 @@ export default function LoadoutContainer() {
       // Only user_weapon_builds rows have a weapon_build_id worth persisting on
       // "Set to loadout" — crafting designs aren't rows in that table.
       const buildId = item.weapon_uuid ? item.id : null
-      setPick({ weaponUuid, buildId, config: { ...(item.config || {}), name: item.name } })
+      setPickState({ slotKey: selectedSlot, weaponUuid, buildId, config: { ...(item.config || {}), name: item.name } })
     } else if (item.uuid && item.base_stats) {
       // A plain weapon blueprint — reset to a fresh config.
-      setPick({ weaponUuid: item.uuid, buildId: null, config: null })
+      setPickState({ slotKey: selectedSlot, weaponUuid: item.uuid, buildId: null, config: null })
     }
     // Attachment picks (Item Source → Attach) aren't auto-equipped here —
     // the bench's own drag/click UI on its attachment slots handles that.
@@ -315,6 +346,8 @@ export default function LoadoutContainer() {
   }
 
   // Persist an item into a loadout slot, creating the loadout on first save.
+  // Every attempt reports through the save flash — success or failure, the
+  // user always sees what happened. Returns true when the save landed.
   const persistSlot = async (slotKey, payload) => {
     setSaving(true)
     try {
@@ -326,6 +359,11 @@ export default function LoadoutContainer() {
       }
       await putLoadoutSlot(loadoutId, slotKey, payload)
       await loadoutsQ.refetch()
+      flash('ok', `Saved ${payload.itemName || 'item'} → ${slotKey}`)
+      return true
+    } catch (err) {
+      flash('err', `Save failed: ${err?.message || 'unknown error'}`)
+      return false
     } finally {
       setSaving(false)
     }
@@ -333,13 +371,13 @@ export default function LoadoutContainer() {
 
   const handleSetToLoadout = async () => {
     if (!blueprint) return
-    await persistSlot(selectedSlot, {
+    const ok = await persistSlot(selectedSlot, {
       itemUuid: blueprint.uuid,
       itemName: blueprint.base_stats?.item_name || blueprint.name,
       weaponBuildId: pick?.buildId ?? null,
       config: liveConfigRef.current,
     })
-    setPick(null)
+    if (ok) setPickState(null)
   }
 
   const handleDragStart = (e) => setActiveDrag(e.active?.data?.current || null)
@@ -347,7 +385,12 @@ export default function LoadoutContainer() {
 
   const handleDragEnd = async (e) => {
     setActiveDrag(null)
-    const action = resolveDrop(e.active?.data?.current, e.over?.data?.current, blueprint)
+    const drag = e.active?.data?.current
+    // Walk ALL collisions for the first valid combination — droppables nest
+    // (bench-slot zones inside the bench panel), and `over` alone is just the
+    // top hit, which may be the invalid outer container.
+    const action = resolveDropFromCollisions(drag, e.collisions, dropCtx)
+      || resolveDrop(drag, e.over?.data?.current, dropCtx)
     if (!action) return
     if (action.type === 'equip-attachment') {
       // The bench owns equipped state — signal it (seq-guarded so the same
@@ -407,6 +450,39 @@ export default function LoadoutContainer() {
         config: null,
       })
       setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-attachment-to-slot') {
+      // An attachment dropped straight onto a filled paperdoll weapon tile:
+      // merge it into that slot's SAVED config (validated against that slot's
+      // weapon in resolveDrop) and persist immediately.
+      const slot = currentLoadout.slots?.find((s) => s.slot_key === action.slotKey)
+      if (!slot?.item_uuid) return
+      await persistSlot(action.slotKey, {
+        itemUuid: slot.item_uuid,
+        itemName: slot.item_name,
+        weaponBuildId: slot.weapon_build_id ?? null,
+        config: mergeAttachmentIntoConfig(slot.config, action.attachment),
+      })
+      return
+    }
+    if (action.type === 'load-bench') {
+      // A weapon/build dropped onto the bench: LOAD it for tuning — preview
+      // only, nothing saved until "Set to loadout" (or a drag to a slot).
+      const targetSlot = WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary'
+      if (action.weapon) {
+        setPickState({ slotKey: targetSlot, weaponUuid: action.weapon.uuid, buildId: null, config: null })
+      } else {
+        const b = action.build
+        const weaponUuid = b.weapon_uuid || b.weaponUuid
+        setPickState({
+          slotKey: targetSlot,
+          weaponUuid,
+          buildId: b.weapon_uuid ? b.id : null,
+          config: { ...(b.config || {}), name: b.name },
+        })
+      }
+      setSelectedSlot(targetSlot)
     }
   }
 
@@ -418,7 +494,7 @@ export default function LoadoutContainer() {
   const handleDeleteBuild = (b) => deleteWeaponBuild(b.id).then(() => buildsQ.refetch?.())
   const handleLoadBuild = (b) => {
     if (b.weapon_uuid !== blueprint?.uuid) return
-    setPick({ weaponUuid: b.weapon_uuid, buildId: b.id, config: { ...(b.config || {}), name: b.name } })
+    setPickState({ slotKey: selectedSlot, weaponUuid: b.weapon_uuid, buildId: b.id, config: { ...(b.config || {}), name: b.name } })
   }
 
   // Per-weapon-slot stats for the loadout summary footer — resolves each
@@ -467,19 +543,44 @@ export default function LoadoutContainer() {
     <div className="flex flex-col h-full overflow-hidden" style={{ padding: '4px 10px 14px' }}>
       <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
         onNew={handleNewLoadout} newLoadoutError={newLoadoutError} />
+      {saveFlash && (
+        <div
+          data-testid="save-flash"
+          className="rounded"
+          style={{
+            position: 'absolute', top: 10, right: 16, zIndex: 30, padding: '6px 14px', fontSize: 12,
+            border: `1px solid ${saveFlash.type === 'ok' ? OWN : '#e0564f'}`,
+            color: saveFlash.type === 'ok' ? OWN : '#ff8a80',
+            background: 'rgba(7,16,22,0.95)',
+          }}
+        >
+          {saveFlash.type === 'ok' ? '✓ ' : '⚠ '}{saveFlash.msg}
+        </div>
+      )}
 
       <div className="grid gap-3 mt-3 flex-1 min-h-0" style={{ gridTemplateColumns: '360px 1fr 320px' }}>
         <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
           <ColHeader><b style={{ color: '#fff' }}>My Loadout</b> &mdash; {currentLoadout.name}</ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot} activeDrag={activeDrag} />
+            <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot}
+              activeDrag={activeDrag} dropCtx={dropCtx} />
           </div>
         </div>
 
-        <div className="rounded flex flex-col min-h-0" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
+        <div
+          ref={benchDrop.setNodeRef}
+          data-testid="bench-droppable"
+          className="rounded flex flex-col min-h-0"
+          style={{
+            border: `1px solid ${benchIsValidTarget ? (benchDrop.isOver ? CYAN : 'rgba(0,232,255,0.45)') : LINE}`,
+            boxShadow: benchIsValidTarget && benchDrop.isOver ? '0 0 0 1px rgba(0,232,255,0.35), 0 0 18px rgba(0,232,255,0.2)' : 'none',
+            background: PANEL,
+          }}
+        >
           <ColHeader>
             <b style={{ color: '#fff' }}>Craft Bench</b> &mdash; {slotLabel} slot
             <span className="flex-1" />
+            {benchIsValidTarget && <span style={{ color: CYAN, fontSize: 10 }}>drop to load</span>}
             {blueprintOwned && <span style={{ color: OWN, fontSize: 11 }}>&#10003; OWNED</span>}
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
@@ -530,13 +631,17 @@ export default function LoadoutContainer() {
         <LoadoutStats weaponStats={weaponStats} />
       </div>
     </div>
-    <DragOverlay dropAnimation={null}>
+    {/* width/height max-content: the overlay wrapper otherwise inherits the
+        measured size of the dragged element (the bench header spans its whole
+        column → a screen-wide ghost). */}
+    <DragOverlay dropAnimation={null} style={{ width: 'max-content', height: 'max-content' }}>
       {dragLabel ? (
         <div
-          className="rounded pointer-events-none"
+          className="rounded pointer-events-none flex items-center gap-2"
           style={{
             padding: '6px 12px', fontSize: 12, color: CYAN, background: 'rgba(7,16,22,0.92)',
             border: `1px solid ${CYAN}`, boxShadow: '0 4px 18px rgba(0,0,0,0.5), 0 0 12px rgba(0,232,255,0.25)',
+            maxWidth: 280, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}
         >
           {dragLabel}

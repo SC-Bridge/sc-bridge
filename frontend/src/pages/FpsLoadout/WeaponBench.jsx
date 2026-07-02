@@ -15,7 +15,7 @@ function BenchDropZone({ slot, blueprint, activeDrag, equippedAtt, onToggle }) {
     id: `bench-${slot}`,
     data: { kind: 'bench-slot', slot },
   })
-  const valid = isValidTarget(activeDrag, { kind: 'bench-slot', slot }, blueprint)
+  const valid = isValidTarget(activeDrag, { kind: 'bench-slot', slot }, { benchWeapon: blueprint })
   const border = isOver && valid ? 'border-sc-accent bg-white/10 text-sc-accent'
     : valid ? 'border-sc-accent/60 bg-white/5 text-gray-300'
     : 'border-white/15 text-gray-400'

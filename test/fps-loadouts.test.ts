@@ -110,6 +110,20 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     expect(body4.items.find((l) => l.id === id)).toBeUndefined();
   });
 
+  it("accepts explicit weaponBuildId: null and config: null on slot PUT", async () => {
+    // Regression: .optional() without .nullable() rejected null with
+    // "expected number, received null", silently 400ing every
+    // drag-to-loadout save from the frontend.
+    const create = await post(sessionToken, { name: "Nulls Kit" });
+    const { id } = (await create.json()) as { id: number };
+    const putNulls = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/sidearm`, {
+      method: "PUT",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ itemUuid: "some-weapon-uuid", itemName: "Test Pistol", weaponBuildId: null, config: null }),
+    });
+    expect(putNulls.status).toBe(200);
+  });
+
   it("PATCH renames a loadout (owner-scoped)", async () => {
     const create = await post(sessionToken, { name: "Original Name" });
     const { id } = (await create.json()) as { id: number };

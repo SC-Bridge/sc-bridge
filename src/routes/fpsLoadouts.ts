@@ -159,11 +159,15 @@ export function fpsLoadoutRoutes() {
   routes.put(
     "/:id/slots/:slotKey",
     validate("param", SlotParams),
+    // nullable + optional: clients send explicit `weaponBuildId: null` /
+    // `config: null` for "no build / no config" — plain .optional() rejects
+    // null ("expected number, received null"), which silently broke every
+    // drag-to-loadout save.
     validate("json", z.object({
       itemUuid: z.string().trim().min(1).max(120).optional(),
       itemName: z.string().trim().min(1).max(200).optional(),
-      weaponBuildId: z.number().int().positive().optional(),
-      config: z.record(z.string(), z.unknown()).optional(),
+      weaponBuildId: z.number().int().positive().nullable().optional(),
+      config: z.record(z.string(), z.unknown()).nullable().optional(),
     })),
     async (c) => {
       const db = c.env.DB;
@@ -202,7 +206,7 @@ export function fpsLoadoutRoutes() {
           body.itemUuid ?? null,
           body.itemName ?? null,
           body.weaponBuildId ?? null,
-          body.config !== undefined ? JSON.stringify(body.config) : null,
+          body.config != null ? JSON.stringify(body.config) : null,
         )
         .run();
 

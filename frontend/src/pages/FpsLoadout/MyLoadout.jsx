@@ -135,7 +135,7 @@ function SlotBadge({ owned, wishlisted }) {
   return null
 }
 
-function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag }) {
+function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, dropCtx }) {
   const isWeapon = WEAPON_SLOTS.has(slotKey)
   const filled = Boolean(entry && entry.item_name)
   const owned = filled && Boolean(entry.owned)
@@ -150,7 +150,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag })
     data: { kind: 'loadout-slot', slotKey },
     disabled: !isWeapon && !isUtility,
   })
-  const validTarget = isValidTarget(activeDrag, { kind: 'loadout-slot', slotKey })
+  const validTarget = isValidTarget(activeDrag, { kind: 'loadout-slot', slotKey }, dropCtx)
 
   const nameColor = filled ? (owned ? OWN : wishlisted ? WANT : '#eafcff') : ICE_DIM
 
@@ -202,7 +202,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag })
   )
 }
 
-export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeDrag = null }) {
+export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeDrag = null, dropCtx = undefined }) {
   const bySlot = {}
   for (const s of loadout?.slots || []) {
     bySlot[s.slot_key] = s
@@ -223,6 +223,7 @@ export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeD
                 inert={i !== 0}
                 onSelectSlot={onSelectSlot}
                 activeDrag={activeDrag}
+                dropCtx={dropCtx}
               />
             ))}
           </div>
