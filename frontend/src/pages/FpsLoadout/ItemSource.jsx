@@ -1,5 +1,6 @@
 // frontend/src/pages/FpsLoadout/ItemSource.jsx
 import React, { useMemo, useState } from 'react'
+import { isCompatible, SLOT_LABEL } from './attachmentCompat'
 
 // Palette lifted from the FPS loadout visual system (see MyLoadout.jsx / mock v5).
 const CYAN = '#00e8ff'
@@ -140,7 +141,7 @@ function EmptyRow({ children }) {
   )
 }
 
-export default function ItemSource({ slotKey, weapons = [], attachments = [], builds = [], ownership = {}, onPick }) {
+export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], ownership = {}, onPick }) {
   const [type, setType] = useState(() => defaultTypeForSlot(slotKey))
   const [category, setCategory] = useState(WEAPON_CATEGORIES[0].label)
   const [search, setSearch] = useState('')
@@ -161,9 +162,13 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
     [builds, q],
   )
 
+  // Only show attachments the weapon on the bench can actually take (by port
+  // type/size/tags). Without a weapon selected, isCompatible is permissive so
+  // the full list still shows.
   const filteredAttachments = useMemo(
-    () => attachments.filter((a) => !q || a.name?.toLowerCase().includes(q)),
-    [attachments, q],
+    () => attachments.filter((a) =>
+      (!q || a.name?.toLowerCase().includes(q)) && isCompatible(weapon, a)),
+    [attachments, weapon, q],
   )
 
   const pick = (item) => onPick?.(item)
@@ -269,7 +274,7 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
               key={itemKey(a)}
               testId={`item-attach-${itemKey(a)}`}
               name={a.name}
-              sub={a.sub_type || a.manufacturer_name}
+              sub={SLOT_LABEL[a.slot] || a.sub_type || a.manufacturer_name}
               state={ownershipState(ownership, itemKey(a))}
               onClick={() => pick(a)}
               draggable

@@ -18,6 +18,7 @@ import SavedBuilds from './SavedBuilds'
 import ItemSource from './ItemSource'
 import LoadoutStats from './LoadoutStats'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
+import { attachmentSlot } from './attachmentCompat'
 
 // Palette lifted from the FPS loadout visual system (see MyLoadout.jsx / mock v5).
 const CYAN = '#00e8ff'
@@ -29,7 +30,6 @@ const PANEL = '#0b1218'
 const OWN = '#36e08a'
 const WANT = '#f3b03a'
 
-const SLOT_FROM_SUBTYPE = { barrel: 'barrel', optic: 'optic', scope: 'optic', underbarrel: 'underbarrel' }
 const WEAPON_SLOTS = new Set(['primary', 'secondary', 'sidearm'])
 const WEAPON_SLOT_LABEL = { primary: 'Primary', secondary: 'Secondary', sidearm: 'Sidearm' }
 const STAT_SLOT_KEYS = ['primary', 'secondary', 'sidearm']
@@ -142,10 +142,14 @@ export default function LoadoutContainer() {
       && b.sub_type !== '$templates'),
     [craftingQ.data],
   )
+  // Map each attachment onto one of the three modelled bench slots
+  // (optic/barrel/underbarrel) from its real port type. Magazines and other
+  // unmodelled port types resolve to null and are dropped — they'd otherwise
+  // all collapse into a single slot.
   const attachments = useMemo(
-    () => (benchQ.data?.attachments || []).map((a) => ({
-      ...a, uuid: a.uuid || String(a.id), slot: SLOT_FROM_SUBTYPE[a.sub_type] || 'barrel',
-    })),
+    () => (benchQ.data?.attachments || [])
+      .map((a) => ({ ...a, uuid: a.uuid || String(a.id), slot: attachmentSlot(a) }))
+      .filter((a) => a.slot != null),
     [benchQ.data],
   )
   const allBuilds = buildsQ.data?.items || []
@@ -393,7 +397,7 @@ export default function LoadoutContainer() {
             <span style={{ color: ICE_DIM, fontSize: 10 }}>for {slotLabel}</span>
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            <ItemSource key={selectedSlot} slotKey={selectedSlot} weapons={weapons} attachments={attachments}
+            <ItemSource key={selectedSlot} slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
               builds={buildsForSource} ownership={ownership} onPick={handlePick} />
           </div>
         </div>

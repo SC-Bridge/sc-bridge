@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsGrid from './StatsGrid'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
-import { isCompatible } from './attachmentCompat'
+import { isCompatible, weaponAttachmentSlots, SLOT_LABEL } from './attachmentCompat'
 import { resolveWeaponIcon } from './weaponIcon'
 
 const defaultQ = (slots) => Object.fromEntries((slots || []).map((_, i) => [i, 500]))
@@ -70,7 +70,10 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
     }
   }
 
-  const slotNames = [...new Set(attachments.map((a) => a.slot))]
+  // The attachment slots THIS weapon exposes (optic/barrel/underbarrel), from
+  // its ports — not the union of every attachment's slot. Falls back to the
+  // available attachments' slots when the weapon carries no port data.
+  const slotNames = weaponAttachmentSlots(blueprint, attachments)
   const diverged = baseline.current && !sameQualities(qualities, baseline.current.qualities)
 
   // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else placeholder text.
@@ -115,7 +118,7 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => { e.preventDefault(); dropOnSlot(slot, e.dataTransfer.getData('text/plain')) }}
                   className="min-w-[7rem] px-2.5 py-2 text-xs rounded border border-dashed border-white/15 text-gray-400">
-                  <div className="uppercase tracking-wide text-[9px] text-gray-600">{slot}</div>
+                  <div className="uppercase tracking-wide text-[9px] text-gray-600">{SLOT_LABEL[slot] || slot}</div>
                   {equippedAtt
                     ? <button type="button" onClick={() => toggle(equippedAtt)} className="text-sc-accent">{equippedAtt.name} ✕</button>
                     : <span className="text-gray-600">drop here</span>}

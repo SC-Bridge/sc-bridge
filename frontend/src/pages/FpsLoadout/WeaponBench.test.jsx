@@ -59,6 +59,27 @@ describe('WeaponBench', () => {
     expect(screen.getByText('760')).toBeInTheDocument()
   })
 
+  it('renders one drop-zone per attachment slot the weapon exposes (from its ports)', () => {
+    const ported = {
+      ...BLUEPRINT,
+      base_stats: {
+        ...BLUEPRINT.base_stats,
+        attachment_ports: [
+          { port_type: 'Magazine', size_min: 1, size_max: 1 },   // not a modelled slot
+          { port_type: 'IronSight', size_min: 1, size_max: 2 },
+          { port_type: 'Barrel', size_min: 2, size_max: 2 },
+          { port_type: 'BottomAttachment', size_min: 1, size_max: 3 },
+        ],
+      },
+    }
+    render(<WeaponBench blueprint={ported} attachments={[]} />)
+    expect(screen.getByTestId('dropzone-optic')).toBeInTheDocument()
+    expect(screen.getByTestId('dropzone-barrel')).toBeInTheDocument()
+    expect(screen.getByTestId('dropzone-underbarrel')).toBeInTheDocument()
+    // Magazine is not one of the three modelled slots.
+    expect(screen.queryByTestId('dropzone-magazine')).not.toBeInTheDocument()
+  })
+
   it('shows a placeholder banner when no blueprint', () => {
     render(<WeaponBench blueprint={null} attachments={[]} />)
     expect(screen.getByText(/select a weapon/i)).toBeInTheDocument()
