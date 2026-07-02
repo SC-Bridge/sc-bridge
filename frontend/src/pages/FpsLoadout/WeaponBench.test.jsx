@@ -25,6 +25,15 @@ const BLUEPRINT_2 = {
   ],
 }
 
+// Attachments now drag onto the bench from Item Source (a separate component,
+// covered by its own tests) — the bench only needs to handle the drop side, so
+// these helpers simulate the drop directly without a same-component drag source.
+function dropAttachmentOnSlot(zoneTestId, uuid) {
+  const zone = screen.getByTestId(zoneTestId)
+  const dt = { getData: () => uuid, setData: () => {} }
+  fireEvent.drop(zone, { dataTransfer: dt })
+}
+
 describe('WeaponBench', () => {
   it('renders the weapon, a slider per material slot, and a stats panel', () => {
     render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
@@ -33,11 +42,20 @@ describe('WeaponBench', () => {
     expect(screen.getByText('Damage')).toBeInTheDocument()
   })
 
-  it('recomputes fire rate when an attachment is equipped', () => {
+  // FIX 2: attachments no longer live under the bench as a flat chip list —
+  // they're picked from Item Source's Attach tab and dragged onto a dropzone.
+  it('does not render the old attachment chip list, but a dropzone still renders', () => {
+    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+    expect(screen.queryByText('Attachments')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Stark Compensator 1/ })).not.toBeInTheDocument()
+    expect(screen.getByTestId('dropzone-barrel')).toBeInTheDocument()
+  })
+
+  it('recomputes fire rate when an attachment is dragged onto its slot', () => {
     render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
     // At default Q500 the firerate curve interpolates to ×1.0, so build rpm = base (950).
     // Equipping the Stark Compensator (−20%) drops build rpm to 760 (unique in the DOM).
-    fireEvent.click(screen.getByRole('button', { name: /Stark Compensator 1/ }))
+    dropAttachmentOnSlot('dropzone-barrel', 'stark')
     expect(screen.getByText('760')).toBeInTheDocument()
   })
 
@@ -54,7 +72,7 @@ describe('WeaponBench', () => {
     // if equipped was NOT reset, Stark's ×0.8 would make it 480 instead.
     const { rerender } = render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
     // Equip the attachment on the first weapon; build rpm drops to 760
-    fireEvent.click(screen.getByRole('button', { name: /Stark Compensator 1/ }))
+    dropAttachmentOnSlot('dropzone-barrel', 'stark')
     expect(screen.getByText('760')).toBeInTheDocument()
 
     // Switch to a different weapon (2 slots → 1 slot)
@@ -75,13 +93,10 @@ describe('WeaponBench', () => {
     expect(img).toHaveAttribute('src', 'https://imagedelivery.net/x/lh86/public')
   })
 
-  it('equips an attachment by dragging it onto its slot drop-zone', () => {
+  it('equips an attachment dropped onto its slot drop-zone (e.g. dragged in from Item Source)', () => {
     render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
     const zone = screen.getByTestId('dropzone-barrel')
-    const card = screen.getByTestId('att-stark')
-    const dt = { getData: () => 'stark', setData: () => {} }
-    fireEvent.dragStart(card, { dataTransfer: dt })
-    fireEvent.drop(zone, { dataTransfer: dt })
+    dropAttachmentOnSlot('dropzone-barrel', 'stark')
     expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
   })
 

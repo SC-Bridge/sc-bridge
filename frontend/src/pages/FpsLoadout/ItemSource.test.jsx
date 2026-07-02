@@ -91,4 +91,27 @@ describe('ItemSource', () => {
     expect(screen.getByText('CQB Build')).toBeInTheDocument()
     expect(screen.getByText(/FS-9 LMG/)).toBeInTheDocument()
   })
+
+  // FIX 1: a design must be findable by its own name OR its weapon's friendly
+  // name — a crafting-page quality-sim design named "my sim" on the FS-9
+  // should still surface when the user searches "FS".
+  it('finds a design by its weapon name when the design name does not match the search', () => {
+    const designs = [{ id: 'bp-x-1', name: 'my sim', weaponUuid: 'x', weaponName: 'FS-9 LMG', config: {} }]
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={designs} ownership={{}} onPick={() => {}} />)
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'FS' } })
+    expect(screen.getByText('my sim')).toBeInTheDocument()
+  })
+
+  // FIX 2: attachments now drag out of Item Source onto the bench's drop-zones
+  // (the bench no longer has its own draggable chip list).
+  it('makes attachment rows draggable, carrying their uuid via dataTransfer', () => {
+    const attachments = [{ uuid: 'a1', name: 'Stark Barrel', sub_type: 'barrel' }]
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={attachments} builds={[]} ownership={{}} onPick={() => {}} />)
+    fireEvent.click(screen.getByTestId('type-attach'))
+    const row = screen.getByTestId('item-attach-a1')
+    expect(row).toHaveAttribute('draggable', 'true')
+    const setData = vi.fn()
+    fireEvent.dragStart(row, { dataTransfer: { setData } })
+    expect(setData).toHaveBeenCalledWith('text/plain', 'a1')
+  })
 })

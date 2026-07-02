@@ -22,6 +22,18 @@ const WEAPON_VARIANT = {
 const BUILD_SECONDARY = {
   id: 5, name: 'Stealth SMG', weapon_uuid: 'w-secondary', config: { qualities: { 0: 500 }, attachments: {} },
 }
+// The FS-9 LMG — used to verify the bench's default-weapon fallback (FIX 3).
+const WEAPON_FS9 = {
+  uuid: 'w-fs9', name: 'Behr Lmg Ballistic 01', type: 'weapons', sub_type: 'lmg',
+  base_stats: { item_name: 'FS-9 LMG', damage: 10, rounds_per_minute: 500, dps: 100, ammo_capacity: 50 },
+  slots: [{ name: 'Frame', resource_name: 'Titanium', slot_type: 'resource', modifiers: [] }],
+}
+// A crafting-page quality-sim design (user_blueprint_builds via createBlueprintBuild) —
+// FIX 1: these must surface in Item Source alongside user_weapon_builds designs.
+const CRAFTING_DESIGN_PRIMARY = {
+  blueprint_uuid: 'w-primary', blueprint_name: 'P4-AR Rifle', item_name: 'P4-AR Rifle', sub_type: 'rifle',
+  builds: [{ id: 9, name: 'Ranked Loadout', quality_config: { 0: 700 } }],
+}
 
 const LOADOUT = {
   id: 1,
@@ -40,9 +52,10 @@ vi.mock('../../hooks/useAPI', () => ({
   useFpsLoadouts: () => ({ data: { items: [LOADOUT] }, loading: false, error: null, refetch: refetchLoadouts }),
   createFpsLoadout: vi.fn(() => Promise.resolve({ id: 2 })),
   putLoadoutSlot: vi.fn(() => Promise.resolve({ ok: true })),
-  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT] }, loading: false, error: null }),
+  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9] }, loading: false, error: null }),
   useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
   useWeaponBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
+  useUserBlueprints: () => ({ data: { items: [CRAFTING_DESIGN_PRIMARY] }, loading: false, error: null }),
   createWeaponBuild: vi.fn(() => Promise.resolve({})),
   deleteWeaponBuild: vi.fn(() => Promise.resolve({})),
   useLootCollection: () => ({ data: [{ loot_uuid: 'w-primary', quantity: 1 }], loading: false }),
@@ -143,5 +156,28 @@ describe('LoadoutContainer', () => {
     fireEvent.click(buildRow)
 
     expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
+  })
+
+  // FIX 1: a build made in the Crafting page's quality sim (user_blueprint_builds,
+  // surfaced via useUserBlueprints) must appear in Item Source, not just designs
+  // saved from the bench itself (user_weapon_builds / useWeaponBuilds).
+  it("surfaces the user's crafting-page quality-sim designs in Item Source, and loads their config on pick", () => {
+    render(<LoadoutContainer />)
+    const row = screen.getByTestId('item-build-bp-w-primary-9')
+    expect(row).toHaveTextContent('Ranked Loadout')
+
+    fireEvent.click(row)
+
+    // Still the P4-AR (design's own weapon), but with the design's quality config applied.
+    expect(screen.getByRole('heading', { name: 'P4-AR Rifle' })).toBeInTheDocument()
+    expect(screen.getByRole('slider')).toHaveValue('700')
+  })
+
+  // FIX 3: an empty weapon slot (no saved item, nothing picked) should default
+  // the bench to the FS-9 LMG, not whatever weapon sorts first alphabetically.
+  it('defaults an empty weapon slot to the FS-9 LMG', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-sidearm')) // no saved slot in LOADOUT, nothing picked
+    expect(screen.getByRole('heading', { name: 'FS-9 LMG' })).toBeInTheDocument()
   })
 })

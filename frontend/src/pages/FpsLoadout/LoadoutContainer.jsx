@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useFpsLoadouts, createFpsLoadout, putLoadoutSlot,
   useCrafting, useWeaponBench, useWeaponBuilds, createWeaponBuild, deleteWeaponBuild,
+  useUserBlueprints,
   useLootCollection, useLootWishlist,
 } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
@@ -107,6 +108,7 @@ export default function LoadoutContainer() {
   const craftingQ = useCrafting()
   const benchQ = useWeaponBench()
   const buildsQ = useWeaponBuilds()
+  const blueprintsQ = useUserBlueprints()
   const collectionQ = useLootCollection(isAuthed)
   const wishlistQ = useLootWishlist(isAuthed)
 
@@ -148,6 +150,16 @@ export default function LoadoutContainer() {
   )
   const allBuilds = buildsQ.data?.items || []
 
+  // Default weapon for the bench when nothing is saved/picked yet — the FS-9
+  // LMG, so a fresh slot doesn't land on whatever weapon sorts first
+  // alphabetically (previously a crossbow).
+  const defaultWeapon = useMemo(() => {
+    const exact = weapons.find((w) => (w.base_stats?.item_name || '') === 'FS-9 LMG')
+    if (exact) return exact
+    const partial = weapons.find((w) => (w.base_stats?.item_name || '').includes('FS-9'))
+    return partial || weapons[0] || null
+  }, [weapons])
+
   const ownership = useMemo(() => {
     const owned = new Set((collectionQ.data || []).map((c) => c.loot_uuid))
     const wishlisted = new Set((wishlistQ.data || []).map((w) => w.uuid))
@@ -160,7 +172,7 @@ export default function LoadoutContainer() {
   // Resolve which blueprint the bench should show: a transient pick wins,
   // then the loadout's saved weapon for this slot, then just the first
   // available weapon so the bench isn't empty.
-  const activeWeaponUuid = pick?.weaponUuid ?? savedSlot?.item_uuid ?? weapons[0]?.uuid ?? null
+  const activeWeaponUuid = pick?.weaponUuid ?? savedSlot?.item_uuid ?? defaultWeapon?.uuid ?? null
   const blueprint = isWeaponSlot ? (weapons.find((w) => w.uuid === activeWeaponUuid) || null) : null
   // Memoized so WeaponBench (which resets its in-progress edits whenever this
   // reference changes) only resets when the selected slot's source item
@@ -179,10 +191,10 @@ export default function LoadoutContainer() {
     [allBuilds, blueprint],
   )
 
-  // All of the user's saved builds, enriched with their weapon's friendly name so a
-  // build for a weapon other than the one currently on the bench is still identifiable
-  // when it surfaces via Item Source search (see buildsForSource below).
-  const buildsForSource = useMemo(
+  // All of the user's saved weapon-bench builds, enriched with their weapon's friendly
+  // name so a build for a weapon other than the one currently on the bench is still
+  // identifiable when it surfaces via Item Source search (see buildsForSource below).
+  const weaponBuildsForSource = useMemo(
     () => allBuilds.map((b) => {
       const bp = weapons.find((w) => w.uuid === b.weapon_uuid)
       return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null }
@@ -190,13 +202,58 @@ export default function LoadoutContainer() {
     [allBuilds, weapons],
   )
 
+  // Quality-sim "designs" saved from the Crafting page (user_blueprint_builds via
+  // createBlueprintBuild) — these never appeared in the loadout's Item Source before,
+  // even though they're a legitimate saved config for a weapon. One entry per named
+  // build, plus the legacy top-level quality_config (pre-named-builds saves) if present.
+  const craftingDesigns = useMemo(() => {
+    const items = blueprintsQ.data?.items || []
+    const out = []
+    for (const item of items) {
+      const weaponName = item.item_name
+      for (const build of item.builds || []) {
+        out.push({
+          id: `bp-${item.blueprint_uuid}-${build.id}`,
+          name: build.name || weaponName,
+          weaponUuid: item.blueprint_uuid,
+          weaponName,
+          config: { qualities: build.quality_config, attachments: {} },
+        })
+      }
+      if (item.quality_config) {
+        out.push({
+          id: `bp-${item.blueprint_uuid}-legacy`,
+          name: weaponName,
+          weaponUuid: item.blueprint_uuid,
+          weaponName,
+          config: { qualities: item.quality_config, attachments: {} },
+        })
+      }
+    }
+    return out
+  }, [blueprintsQ.data])
+
+  // Combined list handed to ItemSource — crafting designs first (they're the newer,
+  // more-often-used source), weapon-bench builds after.
+  const buildsForSource = useMemo(
+    () => [...craftingDesigns, ...weaponBuildsForSource],
+    [craftingDesigns, weaponBuildsForSource],
+  )
+
   const onConfigChange = useCallback((cfg) => { liveConfigRef.current = cfg }, [])
 
   const handlePick = (item) => {
     if (!item) return
-    if (item.weapon_uuid) {
-      // A saved build — load its weapon + its exact config.
-      setPick({ weaponUuid: item.weapon_uuid, buildId: item.id, config: { ...(item.config || {}), name: item.name } })
+    // A saved design/build — either a user_weapon_builds row (weapon_uuid) or a
+    // crafting-page quality-sim build surfaced via useUserBlueprints (weaponUuid).
+    // Either way: load that design's own weapon into the bench (not whatever's
+    // currently loaded) plus its exact config.
+    const weaponUuid = item.weapon_uuid || item.weaponUuid
+    if (weaponUuid) {
+      // Only user_weapon_builds rows have a weapon_build_id worth persisting on
+      // "Set to loadout" — crafting designs aren't rows in that table.
+      const buildId = item.weapon_uuid ? item.id : null
+      setPick({ weaponUuid, buildId, config: { ...(item.config || {}), name: item.name } })
     } else if (item.uuid && item.base_stats) {
       // A plain weapon blueprint — reset to a fresh config.
       setPick({ weaponUuid: item.uuid, buildId: null, config: null })

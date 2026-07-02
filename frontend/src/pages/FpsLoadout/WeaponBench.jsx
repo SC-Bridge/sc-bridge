@@ -126,28 +126,6 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
         </div>
       )}
 
-      <div>
-        <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Attachments</h4>
-        <div className="flex flex-wrap gap-2">
-          {attachments.map((att) => {
-            const ok = isCompatible(blueprint, att)
-            const on = equipped[att.slot] === att.uuid
-            return (
-              <button key={att.uuid} type="button" disabled={!ok} draggable={ok}
-                data-testid={`att-${att.uuid}`}
-                onDragStart={(e) => e.dataTransfer.setData('text/plain', att.uuid)}
-                onClick={() => toggle(att)}
-                className={`px-2.5 py-1 text-xs rounded border transition-colors ${
-                  on ? 'border-sc-accent/40 text-sc-accent bg-sc-accent/10'
-                  : ok ? 'border-white/10 text-gray-400 hover:text-white'
-                  : 'border-white/5 text-gray-700 cursor-not-allowed'}`}>
-                {att.name}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       <StatsGrid baseStats={blueprint.base_stats} stats={stats} />
     </div>
   )

@@ -94,11 +94,13 @@ function OwnBadge({ state }) {
   return null
 }
 
-function Row({ testId, custom, ctag, name, sub, state, onClick }) {
+function Row({ testId, custom, ctag, name, sub, state, onClick, draggable, onDragStart }) {
   return (
     <div
       data-testid={testId}
       onClick={onClick}
+      draggable={draggable}
+      onDragStart={onDragStart}
       className="flex items-center gap-2.5 py-2 px-2 cursor-pointer"
       style={{
         borderBottom: `1px solid ${LINE}`,
@@ -151,8 +153,11 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
     [weapons, activeCategory, q],
   )
 
+  // Match a design by either its own name or its weapon's friendly name — a
+  // user searching "FS" should find a design saved on the FS-9 even if they
+  // named the design something else (e.g. "my sim").
   const filteredBuilds = useMemo(
-    () => builds.filter((b) => !q || b.name?.toLowerCase().includes(q)),
+    () => builds.filter((b) => !q || b.name?.toLowerCase().includes(q) || b.weaponName?.toLowerCase().includes(q)),
     [builds, q],
   )
 
@@ -238,7 +243,7 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
                 ctag={`◇ CUSTOM Q${buildQuality(b.config)}`}
                 name={b.name}
                 sub={b.weaponName ? `${b.weaponName} · your design` : 'your design'}
-                state={buildOwnershipState(ownership, b.weapon_uuid)}
+                state={buildOwnershipState(ownership, b.weapon_uuid || b.weaponUuid)}
                 onClick={() => pick(b)}
               />
             ))}
@@ -267,6 +272,8 @@ export default function ItemSource({ slotKey, weapons = [], attachments = [], bu
               sub={a.sub_type || a.manufacturer_name}
               state={ownershipState(ownership, itemKey(a))}
               onClick={() => pick(a)}
+              draggable
+              onDragStart={(e) => e.dataTransfer.setData('text/plain', a.uuid)}
             />
           ))}
           {filteredAttachments.length === 0 && <EmptyRow>No attachments match.</EmptyRow>}
