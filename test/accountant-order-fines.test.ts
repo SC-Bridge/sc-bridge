@@ -3,6 +3,8 @@ import { env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser } from "./helpers";
 import { catchUp } from "../src/lib/accountant/catchup";
+import { collectFineWork } from "../src/lib/accountant/fines";
+import { runCatchUpWork } from "../src/lib/accountant/accrual";
 import { privateScope } from "../src/lib/accountant/scope";
 
 // Insert an order row directly (the engine is pure of HTTP — the M2
@@ -130,13 +132,16 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     }
   });
 
-  it("zero-amount ticks ARE written (gapless sequence, anomaly flag — M2 doctrine)", async () => {
+  it("skips zero-amount fine ticks but advances the bookmark over them", async () => {
     const { userId } = await createTestUser(env.DB);
     const id = await seedOrder(userId, { quantity: 1, price_per_unit: 50, total: 50 }); // 0.5% of 50 → round(0.25) = 0
     await catchUp(env.DB, privateScope(userId), T("2026-06-02T00:00:01Z"));
     const rows = (await ticks(userId, id)).results;
-    expect(rows).toHaveLength(1);
-    expect(rows[0].amount).toBe(0);
+    expect(rows).toHaveLength(0); // 0 aUEC fine is ledger noise — skipped, not written
+    // bookmark still advances OVER the skipped tick so it never re-materializes
+    const order = await env.DB.prepare("SELECT last_fine_day FROM accountant_orders WHERE id = ?")
+      .bind(id).first<{ last_fine_day: number }>();
+    expect(order?.last_fine_day).toBe(1);
   });
 
   it("percent rounding: remainder 2,331 × 0.5% → round(11.655) = 12", async () => {
@@ -185,5 +190,25 @@ describe("M5 fine engine — lazy ticks, editable, never compounding", () => {
     await catchUp(env.DB, privateScope(userId), now);                             // same now → idempotent, adds neither
     expect((await loanTicks()).results).toHaveLength(2);
     expect((await ticks(userId, orderId)).results).toHaveLength(2);
+  });
+
+  it("concurrent fine catch-up: two collections of the same pending work — second commit is a clean no-op", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const id = await seedOrder(userId);                              // 0.5%/daily overdue from 2026-06-01
+    const now = T("2026-06-04T00:00:01Z");                           // 3 ticks
+
+    // Two readers cross the same boundary before either commits: both snapshot
+    // last_fine_day = 0 and collect the identical three fine ticks.
+    const workA = await collectFineWork(env.DB, privateScope(userId), now);
+    const workB = await collectFineWork(env.DB, privateScope(userId), now);
+
+    await runCatchUpWork(env.DB, workA);
+    const afterA = (await ticks(userId, id)).results;
+    expect(afterA.map((r) => r.amount)).toEqual([500, 500, 500]);
+
+    // The loser's identical INSERTs hit the unique (order_id, tick_index) index and
+    // are ignored (INSERT OR IGNORE) — no throw, no new/duplicate rows.
+    await runCatchUpWork(env.DB, workB);
+    expect((await ticks(userId, id)).results).toEqual(afterA);
   });
 });

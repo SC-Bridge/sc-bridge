@@ -7,7 +7,11 @@ import {
   elapsedTicks,
   nextTickAt,
   catchUpAccruals,
+  collectAccrualWork,
+  runCatchUpWork,
+  MAX_TICKS_PER_CATCHUP,
 } from "../src/lib/accountant/accrual";
+import { privateScope } from "../src/lib/accountant/scope";
 
 // Insert a loan row + principal entry directly. Returns the loan id.
 // The loan row always stores the absolute principal (production shape).
@@ -123,18 +127,113 @@ describe("accrual engine — pure tick math", () => {
     expect(rows.map((r) => r.amount)).toEqual([10000, 6000]);
   });
 
-  it("writes zero-amount ticks (does not skip them)", async () => {
+  it("skips zero-amount ticks but advances the bookmark over them", async () => {
     const { userId } = await createTestUser(env.DB);
     const loanId = await seedLoan(userId, { interest_rate: 10, interest_interval: "daily", principal: 100000 });
-    // fully repay before any tick
+    // fully repay before any tick → every tick's base is 0 → round(0) = 0
     await env.DB.prepare(
       `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, loan_id)
        VALUES (?, '2026-06-01T00:00:00Z', -100000, 'financial', 'loan_repayment', ?)`,
     ).bind(userId, loanId).run();
     await catchUpAccruals(env.DB, userId, new Date("2026-06-02T00:00:01Z").getTime());
     const rows = (await ticks(userId, loanId)).results;
-    expect(rows.length).toBe(1);
-    expect(rows[0].amount).toBe(0); // outstanding 0 → round(0)=0, STILL written (anomaly flag)
+    expect(rows.length).toBe(0); // 0 aUEC row is ledger noise — skipped, not written
+    // bookmark still advances OVER the skipped tick so it never re-materializes
+    const loan = await env.DB.prepare("SELECT last_accrued_tick FROM accountant_loans WHERE id = ?")
+      .bind(loanId).first<{ last_accrued_tick: number }>();
+    expect(loan?.last_accrued_tick).toBe(1);
+  });
+
+  it("rate-0 loan: elapsed ticks write no entries; repeated reads stay byte-identical", async () => {
+    const { userId } = await createTestUser(env.DB);
+    // rate 0 → every tick is round(outstanding * 0) = 0 → all skipped.
+    const loanId = await seedLoan(userId, { interest_rate: 0, interest_interval: "daily" });
+    const now = new Date("2026-06-06T00:00:01Z").getTime(); // 5 intervals elapsed
+    await catchUpAccruals(env.DB, userId, now);
+    const first = (await ticks(userId, loanId)).results;
+    expect(first).toHaveLength(0); // no zero rows materialized
+    const bm = await env.DB.prepare("SELECT last_accrued_tick FROM accountant_loans WHERE id = ?")
+      .bind(loanId).first<{ last_accrued_tick: number }>();
+    expect(bm?.last_accrued_tick).toBe(5); // bookmark advanced over all 5 skipped ticks
+    // A second read at the same now is a byte-identical no-op (determinism holds).
+    await catchUpAccruals(env.DB, userId, now);
+    expect((await ticks(userId, loanId)).results).toEqual(first);
+  });
+
+  it("caps catch-up at MAX_TICKS_PER_CATCHUP and converges to the exact total over reads", async () => {
+    const { userId } = await createTestUser(env.DB);
+    // Tiny rate keeps each hourly tick a bounded, NONZERO amount
+    // (round(100000 * 0.001/100) = 1) so compounding can't explode while the loan
+    // still owes thousands of REAL ticks — the self-DoS shape (backdated + hourly).
+    const started = "2026-01-01T00:00:00Z";
+    const startedMs = new Date(started).getTime();
+    const loanId = await seedLoan(userId, { interest_rate: 0.001, interest_interval: "hourly", started_at: started });
+    const totalDue = MAX_TICKS_PER_CATCHUP + 250; // owe more than one full cap
+    const now = startedMs + totalDue * 3600_000 + 1000;
+
+    // First read must NOT exceed the cap and must NOT throw despite the huge backlog.
+    await catchUpAccruals(env.DB, userId, now);
+    const firstRows = (await ticks(userId, loanId)).results;
+    expect(firstRows.length).toBeLessThanOrEqual(MAX_TICKS_PER_CATCHUP);
+    expect(firstRows.length).toBe(MAX_TICKS_PER_CATCHUP); // every hour ticks (nonzero)
+
+    // A subsequent read closes the remaining gap — convergence to the exact total.
+    await catchUpAccruals(env.DB, userId, now);
+    const rows = (await ticks(userId, loanId)).results;
+    expect(rows.length).toBe(totalDue);
+    const bm = await env.DB.prepare("SELECT last_accrued_tick FROM accountant_loans WHERE id = ?")
+      .bind(loanId).first<{ last_accrued_tick: number }>();
+    expect(bm?.last_accrued_tick).toBe(totalDue);
+    // Contiguous 1..totalDue — no gaps (every tick was nonzero) and no duplicates.
+    expect(rows.map((r) => r.tick_index)).toEqual(Array.from({ length: totalDue }, (_, k) => k + 1));
+  });
+
+  it("chunk ordering: a partial commit never leaves the bookmark ahead of materialized ticks, and resumes cleanly", async () => {
+    const { userId } = await createTestUser(env.DB);
+    // 250 nonzero hourly ticks → several BATCH_CHUNK (100) batches in one collection.
+    const started = "2026-03-01T00:00:00Z";
+    const startedMs = new Date(started).getTime();
+    const loanId = await seedLoan(userId, { interest_rate: 0.001, interest_interval: "hourly", started_at: started });
+    const now = startedMs + 250 * 3600_000 + 1000;
+
+    const work = await collectAccrualWork(env.DB, privateScope(userId), now);
+    expect(work.batches.length).toBeGreaterThan(1); // chunked across multiple batches
+
+    // Simulate a crash after ONLY the first chunk commits.
+    await env.DB.batch(work.batches[0]);
+    const bm1 = await env.DB.prepare("SELECT last_accrued_tick FROM accountant_loans WHERE id = ?")
+      .bind(loanId).first<{ last_accrued_tick: number }>();
+    const rows1 = (await ticks(userId, loanId)).results;
+    // Bookmark must NOT run ahead of committed ticks: it equals the max materialized
+    // index, and every tick up to it exists (all nonzero here).
+    expect(bm1?.last_accrued_tick).toBe(rows1.length);
+    expect(rows1[rows1.length - 1].tick_index).toBe(bm1?.last_accrued_tick);
+
+    // Resume: a fresh catch-up converges to the exact total, no dupes, no gaps.
+    await catchUpAccruals(env.DB, userId, now);
+    const rows2 = (await ticks(userId, loanId)).results;
+    expect(rows2.length).toBe(250);
+    expect(rows2.map((r) => r.tick_index)).toEqual(Array.from({ length: 250 }, (_, k) => k + 1));
+  });
+
+  it("concurrent catch-up: two collections of the same pending work — the second commit is a clean no-op", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const loanId = await seedLoan(userId, { interest_rate: 10, interest_interval: "daily", started_at: "2026-06-01T00:00:00Z" });
+    const now = new Date("2026-06-04T00:00:01Z").getTime(); // 3 ticks
+
+    // Two readers cross the same boundary before either commits: both snapshot
+    // last_accrued_tick = 0 and collect the identical three ticks.
+    const workA = await collectAccrualWork(env.DB, privateScope(userId), now);
+    const workB = await collectAccrualWork(env.DB, privateScope(userId), now);
+
+    await runCatchUpWork(env.DB, workA);
+    const afterA = (await ticks(userId, loanId)).results;
+    expect(afterA.map((r) => r.amount)).toEqual([10000, 11000, 12100]);
+
+    // The loser's identical INSERTs hit the unique (loan_id, tick_index) index and are
+    // ignored (INSERT OR IGNORE) — no throw, no new/duplicate rows.
+    await runCatchUpWork(env.DB, workB);
+    expect((await ticks(userId, loanId)).results).toEqual(afterA);
   });
 
   it("is idempotent within one now() — a second call posts no new ticks", async () => {

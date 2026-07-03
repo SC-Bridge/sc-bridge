@@ -18,7 +18,11 @@ const BASE = {
   interest_rate: 5,
   interest_interval: "monthly",
   fee_multiplier: 1.5,
-  started_at: "2026-06-01T00:00:00Z",
+  // Relative, not a fixed past date: a fixed started_at eventually crosses the monthly
+  // interval and materializes accrual ticks, rotting count/amount asserts (the settle
+  // write-off test). 5 days < 1 monthly interval → 0 elapsed ticks, forever.
+  // (wall-clock test time-bomb precedent — defused the same way 2026-06-11.)
+  started_at: new Date(Date.now() - 5 * 86400_000).toISOString(),
 };
 
 describe("Accountant — loan creation + list", () => {

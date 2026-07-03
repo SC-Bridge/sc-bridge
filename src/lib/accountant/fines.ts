@@ -5,14 +5,21 @@
  * (quantity − fulfilled qty as of that tick's deterministic timestamp) × price_per_unit;
  * prior fines never enter the base, structurally, in both rate modes.
  * Direction: purchase (counterparty owes delivery) → income (+); sale → expense (−).
- * Zero-amount ticks ARE written (gapless tick_index sequence — M2 doctrine).
- * Bookmark last_fine_day + the unique (order_id, tick_index) index make
- * double-posting structurally impossible. Plain INSERT (not OR IGNORE) —
- * re-posts fail loudly.
+ * Zero-amount ticks are NOT written — a flat rate or percent remainder that rounds to
+ * 0 is ledger noise; the INSERT is skipped but the bookmark still advances over the
+ * index (tick_index may gap; nothing relies on continuity). Mirrors accrual.ts.
+ * Bounded, chunked, resumable: at most `maxTicks` indexes advance per call, committed
+ * in BATCH_CHUNK-sized batches whose bookmark advance rides with the ticks it covers,
+ * so a backlog converges over reads and a crash between chunks simply resumes.
+ * Tick INSERTs are INSERT OR IGNORE: the bookmark last_fine_day + the unique
+ * (order_id, tick_index) index already make double-posting impossible on a single
+ * path; OR IGNORE additionally lets two CONCURRENT reads that cross the same tick
+ * boundary both succeed — determinism guarantees the colliding rows are byte-identical,
+ * so the loser's write is a safe no-op instead of a unique-constraint 500.
  */
 
-import { INTERVAL_SECONDS } from "./accrual";
-import type { CatchUpWork } from "./accrual";
+import { INTERVAL_SECONDS, BATCH_CHUNK, MAX_TICKS_PER_CATCHUP } from "./accrual";
+import type { CatchUpLog, CatchUpWork } from "./accrual";
 import type { Scope } from "./scope";
 
 // ─── pure math helpers ─────────────────────────────────────────────────────────
@@ -73,6 +80,7 @@ export async function collectFineWork(
   db: D1Database,
   scope: Scope,
   nowMs: number,
+  maxTicks: number = MAX_TICKS_PER_CATCHUP,
 ): Promise<CatchUpWork> {
   const orders = await db
     .prepare(
@@ -84,13 +92,24 @@ export async function collectFineWork(
     .bind(...scope.binds)
     .all<FineOrderRow>();
 
-  const stmts: D1PreparedStatement[] = [];
-  const logs: CatchUpWork["logs"] = [];
+  // Ordered atomic units (see CatchUpWork): each commits with one db.batch().
+  const batches: D1PreparedStatement[][] = [];
+  const logs: CatchUpLog[] = [];
+  // Per-call budget of tick indexes, shared across every order in this scope (and,
+  // via catchUp(), with loan accrual — fines get what accrual leaves).
+  let budget = maxTicks;
+  let ticksAdvanced = 0;
 
   for (const o of orders.results) {
+    if (budget <= 0) break; // cap reached — remaining orders converge on later reads
+
     const due = elapsedFineTicks(o, nowMs);
     const from = o.last_fine_day + 1;
     if (from > due) continue; // nothing to do for this order
+
+    // Cap this order's advance to the remaining budget; the next read resumes at
+    // cappedDue + 1. Fines never compound, so a resumed run is trivially identical.
+    const cappedDue = Math.min(due, from + budget - 1);
 
     // ONE fulfilment query per order regardless of tick count (accrual.ts lesson).
     // order_id alone scopes to one ledger (an order belongs to exactly one scope).
@@ -102,7 +121,22 @@ export async function collectFineWork(
       .bind(o.id)
       .all<{ quantity: number; occurred_at: string }>();
 
-    for (let i = from; i <= due; i++) {
+    // Chunking state: buffer INSERTs; each flush appends the bookmark UPDATE that
+    // covers them and closes an atomic batch. `lastFlushed` lets us skip a redundant
+    // final batch when the last chunk landed exactly on cappedDue.
+    let chunk: D1PreparedStatement[] = [];
+    let inserts = 0;
+    let lastFlushed = from - 1;
+    const bookmarkStmt = (index: number) =>
+      db.prepare("UPDATE accountant_orders SET last_fine_day = ? WHERE id = ?").bind(index, o.id);
+    const flush = (index: number) => {
+      chunk.push(bookmarkStmt(index));
+      batches.push(chunk);
+      chunk = [];
+      lastFlushed = index;
+    };
+
+    for (let i = from; i <= cappedDue; i++) {
       const ts = fineTickTimestamp(o.deliver_by, o.fine_interval, i);
       const tsMs = new Date(ts).getTime();
       let mag: number;
@@ -118,27 +152,39 @@ export async function collectFineWork(
         const remainingValue = Math.max(0, o.quantity - fulfilled) * o.price_per_unit;
         mag = Math.round((remainingValue * o.fine_rate) / 100);
       }
+
+      // Zero-amount ticks are ledger noise: skip the INSERT but let the bookmark
+      // advance over the index (below). Mirrors accrual.ts; determinism holds.
+      if (mag === 0) continue;
+
       // Purchase: the counterparty owes YOU delivery — their lateness is your income.
       const amount = o.type === "purchase" ? mag : -mag;
       // Fine rows carry the order's OWN scope (attribution + ledger), not the caller's.
-      stmts.push(
+      // INSERT OR IGNORE — see the concurrency note in this file's header.
+      chunk.push(
         db.prepare(
-          `INSERT INTO accountant_entries
+          `INSERT OR IGNORE INTO accountant_entries
              (user_id, org_id, occurred_at, amount, category, source, order_id, tick_index, description)
            VALUES (?, ?, ?, ?, 'financial', 'contract_fine', ?, ?, ?)`,
         ).bind(o.user_id, o.org_id, ts, amount, o.id, i, `Late fine tick #${i}`),
       );
+      inserts++;
+
+      // Leave one slot for the bookmark UPDATE that rides with this chunk.
+      if (chunk.length >= BATCH_CHUNK - 1) flush(i);
     }
 
-    // Advance the bookmark for this order (id is the PK — uniquely scoped).
-    stmts.push(
-      db.prepare(
-        "UPDATE accountant_orders SET last_fine_day = ? WHERE id = ?",
-      ).bind(due, o.id),
-    );
+    // Final bookmark to cappedDue — covers trailing zero-skips and the all-zero case.
+    if (chunk.length > 0 || lastFlushed < cappedDue) flush(cappedDue);
 
-    logs.push({ event: "accountant_fine_catchup", payload: { orderId: o.id, userId: o.user_id, orgId: o.org_id, from, to: due } });
+    budget -= cappedDue - from + 1;
+    ticksAdvanced += cappedDue - from + 1;
+
+    logs.push({
+      event: "accountant_fine_catchup",
+      payload: { orderId: o.id, userId: o.user_id, orgId: o.org_id, from, to: cappedDue, ticksWritten: inserts, capped: cappedDue < due },
+    });
   }
 
-  return { stmts, logs };
+  return { batches, logs, ticksAdvanced };
 }

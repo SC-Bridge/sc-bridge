@@ -6,10 +6,20 @@
  *  - Determinism: catch-up once after N intervals ≡ N on-time catch-ups
  *    (byte-identical tick rows — same amounts AND occurred_at timestamps).
  *  - Monthly = 30 days flat (no calendar arithmetic).
- *  - Zero-amount ticks ARE written (anomaly flag / preserves tick_index continuity).
- *  - One db.batch() per catchUpAccruals call (all inserts + bookmark update atomic).
- *  - The unique index on (loan_id, tick_index) enforces idempotency at the DB level;
- *    we guard at the application level too (only generate ticks > last_accrued_tick).
+ *  - Zero-amount ticks are NOT written — round(outstanding × rate) = 0 is ledger
+ *    noise. The INSERT is skipped but the bookmark still advances over the tick, so
+ *    tick_index may have gaps (nothing relies on continuity; the bookmark is a
+ *    high-water mark, not a count). Determinism is unaffected: a skipped zero row is
+ *    byte-identical to a skipped zero row on replay.
+ *  - Bounded, chunked, resumable writes (see collectAccrualWork): at most
+ *    MAX_TICKS_PER_CATCHUP indexes advance per call, committed in BATCH_CHUNK-sized
+ *    batches whose bookmark advance rides with the ticks it covers. A large backlog
+ *    converges over successive reads instead of one oversized batch — reads never
+ *    throw because the backlog is large.
+ *  - Tick INSERTs are INSERT OR IGNORE: the unique index on (loan_id, tick_index)
+ *    plus determinism (colliding rows are byte-identical) make a concurrent double
+ *    catch-up a clean no-op instead of a 500. We also guard at the application level
+ *    (only generate ticks > last_accrued_tick).
  */
 
 import { logEvent } from "../logger";
@@ -85,13 +95,55 @@ interface LoanRow {
 }
 
 /**
- * Prepared-but-unbatched catch-up output. The combined catchUp() (catchup.ts)
- * concatenates the accrual + fine work into ONE db.batch(); logs are emitted
- * only after the batch commits (no phantom events on failure).
+ * Per-call ceiling on the number of tick indexes a single catch-up advances
+ * (accrual + fines SHARE this budget — see catchUp() in catchup.ts). A loan
+ * backdated years with an hourly interval owes tens of thousands of ticks; writing
+ * them all at once risks an oversized D1 batch and a self-DoS on a plain read. We
+ * advance at most this many indexes per call and let the remainder converge on
+ * subsequent reads — the bookmark resumes exactly where we stopped. Convergence:
+ * each read closes ≤ MAX_TICKS_PER_CATCHUP of the gap, so after ⌈backlog / cap⌉
+ * reads the ledger holds the exact deterministic total. 1000 ≈ 10 batches of 100.
+ */
+export const MAX_TICKS_PER_CATCHUP = 1000;
+
+/**
+ * Max statements per db.batch() — the codebase's D1 chunking convention
+ * (companion.ts, ingest.ts). Each committed chunk carries at most BATCH_CHUNK-1
+ * tick INSERTs plus the one bookmark UPDATE that covers them.
+ */
+export const BATCH_CHUNK = 100;
+
+/** A telemetry entry emitted only after the work commits (no phantom events). */
+export type CatchUpLog = { event: string; payload: Record<string, unknown> };
+
+/**
+ * Prepared-but-unexecuted catch-up output. `batches` is an ordered list of atomic
+ * units: each is committed with ONE db.batch(), in order. Within a loan/order a
+ * chunk's tick INSERTs and the bookmark advance covering them share a batch, so a
+ * crash between chunks can never leave the bookmark ahead of materialized ticks —
+ * the next read simply resumes (ticks are append-only + INSERT OR IGNORE). The
+ * combined catchUp() concatenates accrual + fine batches; logs are emitted only
+ * after every batch commits. `ticksAdvanced` is the count of tick indexes consumed
+ * (zero-amount skips included) so the caller can share one cap across both engines.
  */
 export interface CatchUpWork {
-  stmts: D1PreparedStatement[];
-  logs: Array<{ event: string; payload: Record<string, unknown> }>;
+  batches: D1PreparedStatement[][];
+  logs: CatchUpLog[];
+  ticksAdvanced: number;
+}
+
+/**
+ * Execute prepared catch-up work: commit each batch in order, then (and only then)
+ * emit telemetry. Batches are ordered so tick INSERTs always commit before or with
+ * the bookmark that covers them; a mid-way throw leaves a resumable state and no
+ * phantom logs. Callers must NOT wrap this in try/catch — a throw is a 500, never
+ * silently stale numbers (design §4).
+ */
+export async function runCatchUpWork(db: D1Database, work: CatchUpWork): Promise<void> {
+  for (const batch of work.batches) {
+    await db.batch(batch);
+  }
+  for (const l of work.logs) logEvent(l.event, l.payload);
 }
 
 /**
@@ -122,6 +174,7 @@ export async function collectAccrualWork(
   db: D1Database,
   scope: Scope,
   nowMs: number,
+  maxTicks: number = MAX_TICKS_PER_CATCHUP,
 ): Promise<CatchUpWork> {
   // Only open loans accrue interest, scoped to the active ledger (private or corp).
   const loans = await db
@@ -134,20 +187,29 @@ export async function collectAccrualWork(
     .bind(...scope.binds)
     .all<LoanRow>();
 
-  // Accumulate statements across ALL loans — the caller batches once.
-  const allStmts: D1PreparedStatement[] = [];
-
-  // Accumulate log payloads; the caller emits them only after its batch succeeds.
-  const logs: CatchUpWork["logs"] = [];
+  // Ordered atomic units (see CatchUpWork): each commits with one db.batch().
+  const batches: D1PreparedStatement[][] = [];
+  // Accumulate log payloads; the caller emits them only after all batches succeed.
+  const logs: CatchUpLog[] = [];
+  // Per-call budget of tick indexes, shared across every loan in this scope.
+  let budget = maxTicks;
+  let ticksAdvanced = 0;
 
   for (const loan of loans.results) {
+    if (budget <= 0) break; // cap reached — remaining loans converge on later reads
+
     const due = elapsedTicks(loan, nowMs);
     const from = loan.last_accrued_tick + 1;
-
     if (from > due) continue; // nothing to do for this loan
 
-    // Fetch ALL committed entries for this loan once (principal + repayments).
-    // Avoids N sequential queries for catch-up batches with many ticks.
+    // Cap this loan's advance to the remaining budget. The bookmark stops at
+    // cappedDue and the next read resumes at cappedDue + 1 (already-committed ticks
+    // re-enter each tick's base via the committed-entries fetch below, so a resumed
+    // run is byte-identical to an uninterrupted one).
+    const cappedDue = Math.min(due, from + budget - 1);
+
+    // Fetch ALL committed entries for this loan once (principal + repayments +
+    // any accrual ticks committed by earlier reads). Avoids N sequential queries.
     // loan_id alone scopes to one ledger (a loan belongs to exactly one scope).
     const committedEntries = await db
       .prepare(
@@ -156,17 +218,33 @@ export async function collectAccrualWork(
       .bind(loan.id)
       .all<{ amount: number; occurred_at: string }>();
 
-    // Running accumulator: sum of tick amounts queued in this batch so far.
+    // Running accumulator: sum of tick amounts queued in this call so far.
     // Required for correct compounding — see flaw-fix comment above.
     let queuedSum = 0;
 
-    for (let i = from; i <= due; i++) {
+    // Chunking state: buffer INSERTs; each flush appends the bookmark UPDATE that
+    // covers them and closes an atomic batch. `lastFlushed` tracks the highest tick
+    // index a committed bookmark already covers, so we can skip a redundant final
+    // batch when the last chunk landed exactly on cappedDue.
+    let chunk: D1PreparedStatement[] = [];
+    let inserts = 0;
+    let lastFlushed = from - 1;
+    const bookmarkStmt = (index: number) =>
+      db.prepare(`UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ?`).bind(index, loan.id);
+    const flush = (index: number) => {
+      chunk.push(bookmarkStmt(index));
+      batches.push(chunk);
+      chunk = [];
+      lastFlushed = index;
+    };
+
+    for (let i = from; i <= cappedDue; i++) {
       const ts = tickTimestamp(loan.started_at, loan.interest_interval, i);
       const tsMs = new Date(ts).getTime();
 
       // Committed outstanding as of this tick's timestamp.
-      // Includes: principal entry + any repayments with occurred_at <= tsMs.
-      // Does NOT yet include the in-batch ticks (they are uncommitted).
+      // Includes: principal + repayments + prior committed ticks with occurred_at <= tsMs.
+      // Does NOT include ticks queued but not yet committed in THIS call (queuedSum does).
       // Use epoch ms comparison — string comparison is unreliable across ISO formats
       // that differ in millisecond precision (.000Z vs no-millis Z).
       let committedSum = 0;
@@ -176,7 +254,7 @@ export async function collectAccrualWork(
         }
       }
 
-      // True outstanding = committed rows + ticks queued in this batch.
+      // True outstanding = committed rows + ticks queued in this call.
       // For tick 1 queuedSum is 0; for tick 2 it includes tick 1's amount, etc.
       const outstanding = committedSum + queuedSum;
 
@@ -185,15 +263,23 @@ export async function collectAccrualWork(
       // interest rate directly preserves that sign — no direction multiplier needed.
       const amount = Math.round(outstanding * (loan.interest_rate / 100));
 
-      // Advance the in-memory accumulator BEFORE next tick computes its base.
+      // Advance the in-memory accumulator BEFORE the next tick computes its base —
+      // unconditionally, even for a skipped zero, so compounding stays exact.
       queuedSum += amount;
+
+      // Zero-amount ticks are ledger noise: skip the INSERT but let the bookmark
+      // advance over the index (below). Determinism holds — a skipped zero replays
+      // as a skipped zero.
+      if (amount === 0) continue;
 
       // Tick rows carry the loan's OWN scope (user_id for attribution, org_id for
       // the ledger) — not the triggering caller's — so corp catch-up triggered by
-      // any member stamps the corp ledger correctly.
-      allStmts.push(
+      // any member stamps the corp ledger correctly. INSERT OR IGNORE: a concurrent
+      // catch-up crossing the same boundary posts byte-identical rows; the unique
+      // (loan_id, tick_index) index turns the loser's write into a no-op, not a 500.
+      chunk.push(
         db.prepare(
-          `INSERT INTO accountant_entries
+          `INSERT OR IGNORE INTO accountant_entries
              (user_id, org_id, occurred_at, amount, category, source, loan_id, tick_index, description)
            VALUES (?, ?, ?, ?, 'financial', 'accrual_tick', ?, ?, ?)`,
         ).bind(
@@ -206,22 +292,29 @@ export async function collectAccrualWork(
           `Interest tick #${i}`,
         ),
       );
+      inserts++;
+
+      // Leave one slot for the bookmark UPDATE that rides with this chunk.
+      if (chunk.length >= BATCH_CHUNK - 1) flush(i);
     }
 
-    // Advance the bookmark for this loan (id is the PK — uniquely scoped).
-    allStmts.push(
-      db.prepare(
-        `UPDATE accountant_loans SET last_accrued_tick = ? WHERE id = ?`,
-      ).bind(due, loan.id),
-    );
+    // Final bookmark to cappedDue — covers trailing zero-skips and the all-zero
+    // case. Skip only when the last chunk already committed a bookmark AT cappedDue.
+    if (chunk.length > 0 || lastFlushed < cappedDue) flush(cappedDue);
+
+    budget -= cappedDue - from + 1;
+    ticksAdvanced += cappedDue - from + 1;
 
     logs.push({
       event: "accrual.catchUp",
-      payload: { loanId: loan.id, userId: loan.user_id, orgId: loan.org_id, from, to: due, ticksWritten: due - from + 1 },
+      payload: {
+        loanId: loan.id, userId: loan.user_id, orgId: loan.org_id,
+        from, to: cappedDue, ticksWritten: inserts, capped: cappedDue < due,
+      },
     });
   }
 
-  return { stmts: allStmts, logs };
+  return { batches, logs, ticksAdvanced };
 }
 
 /**
@@ -234,14 +327,6 @@ export async function catchUpAccruals(
   userId: string,
   nowMs: number = Date.now(),
 ): Promise<void> {
-  const { stmts, logs } = await collectAccrualWork(db, privateScope(userId), nowMs);
-
-  // One atomic batch for the entire catch-up call (all loans combined).
-  if (stmts.length > 0) {
-    await db.batch(stmts);
-    // Emit telemetry only after the batch commits — no phantom events on failure.
-    for (const l of logs) {
-      logEvent(l.event, l.payload);
-    }
-  }
+  const work = await collectAccrualWork(db, privateScope(userId), nowMs);
+  await runCatchUpWork(db, work);
 }
