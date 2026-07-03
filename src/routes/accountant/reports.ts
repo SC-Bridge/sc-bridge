@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getAuthUser, type HonoEnv } from "../../lib/types";
+import type { HonoEnv } from "../../lib/types";
 import { catchUp } from "../../lib/accountant/catchup";
 import {
   RESERVE_NEUTRAL_SQL,
@@ -23,9 +23,9 @@ export function reportsRoutes() {
   // GET /reports/pl?from&to — revenue/expense rollup by STATEMENT_LINES (+ per-tag).
   routes.get("/pl", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     // Design §4.4 / §6: no try/catch — a throw becomes a 500, never stale numbers.
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -39,10 +39,10 @@ export function reportsRoutes() {
                 COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS pos,
                 COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS neg
          FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+         WHERE ${scope.sql} AND occurred_at >= ? AND occurred_at < ?
          GROUP BY category, source, tag`,
       )
-      .bind(userID, from, to)
+      .bind(...scope.binds, from, to)
       .all<{ category: string | null; source: string; tag: string | null; pos: number; neg: number }>();
 
     // Bucket the grouped rows into STATEMENT_LINES. classifyPLLine is the single
@@ -122,8 +122,8 @@ export function reportsRoutes() {
   //   assets      = equity + liabilities — so Assets − Liabilities = Equity holds by construction.
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
 
     // Normalized to UTC (isoDatetime) — the cutoff is a raw-string compare
     // against stored normalized timestamps.
@@ -141,9 +141,9 @@ export function reportsRoutes() {
              COALESCE(-SUM(CASE WHEN category = 'assets' THEN amount ELSE 0 END), 0) AS holdings,
              COALESCE(-SUM(CASE WHEN source IN ('po_reserve', 'po_reserve_release') THEN amount ELSE 0 END), 0) AS locked
            FROM accountant_entries
-           WHERE user_id = ? AND occurred_at < ?`,
+           WHERE ${scope.sql} AND occurred_at < ?`,
         )
-        .bind(userID, at)
+        .bind(...scope.binds, at)
         .first<{ cash: number; holdings: number; locked: number }>(),
       db
         .prepare(
@@ -151,11 +151,11 @@ export function reportsRoutes() {
            FROM (
              SELECT SUM(amount) AS net
              FROM accountant_entries
-             WHERE user_id = ? AND loan_id IS NOT NULL AND occurred_at < ?
+             WHERE ${scope.sql} AND loan_id IS NOT NULL AND occurred_at < ?
              GROUP BY loan_id
            ) WHERE net < 0`,
         )
-        .bind(userID, at)
+        .bind(...scope.binds, at)
         .first<{ liabilities: number }>(),
     ]);
 
@@ -194,8 +194,8 @@ export function reportsRoutes() {
   // GET /reports/cash-flow?from&to&interval — in/out/net liquidity per bucket.
   routes.get("/cash-flow", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -209,11 +209,11 @@ export function reportsRoutes() {
                 COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS in_sum,
                 COALESCE(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 0) AS out_sum
          FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+         WHERE ${scope.sql} AND occurred_at >= ? AND occurred_at < ?
            AND source != 'adjustment' AND ${RESERVE_NEUTRAL_SQL}
          GROUP BY bucket ORDER BY bucket ASC`,
       )
-      .bind(userID, period.from, period.to)
+      .bind(...scope.binds, period.from, period.to)
       .all<{ bucket: string; in_sum: number; out_sum: number }>();
 
     return c.json({
@@ -233,8 +233,8 @@ export function reportsRoutes() {
   // every bucket cutoff.
   routes.get("/net-worth", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
 
     const period = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
     if (!period) return c.json({ error: "from and to are required ISO timestamps" }, 400);
@@ -248,10 +248,10 @@ export function reportsRoutes() {
       .prepare(
         `SELECT COALESCE(SUM(amount),0) AS bal
          FROM accountant_entries
-         WHERE user_id = ? AND occurred_at < ?
+         WHERE ${scope.sql} AND occurred_at < ?
            AND (category IS NULL OR category != 'assets') AND ${RESERVE_NEUTRAL_SQL}`,
       )
-      .bind(userID, from)
+      .bind(...scope.binds, from)
       .first<{ bal: number }>();
 
     // Per-bucket non-asset, non-reserve deltas within the window.
@@ -259,11 +259,11 @@ export function reportsRoutes() {
       .prepare(
         `SELECT strftime('${fmt}', occurred_at) AS bucket, COALESCE(SUM(amount),0) AS delta
          FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+         WHERE ${scope.sql} AND occurred_at >= ? AND occurred_at < ?
            AND (category IS NULL OR category != 'assets') AND ${RESERVE_NEUTRAL_SQL}
          GROUP BY bucket ORDER BY bucket ASC`,
       )
-      .bind(userID, from, to)
+      .bind(...scope.binds, from, to)
       .all<{ bucket: string; delta: number }>();
 
     let running = opening?.bal ?? 0;
@@ -285,8 +285,8 @@ export function reportsRoutes() {
   // GET /reports/investment-option?from&to — advisory surplus (Module3; hidden when ≤ 0).
   routes.get("/investment-option", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
 
     // Default window = current calendar month (owner decision 2026-06-11). Explicit from&to override.
     const explicit = parsePeriod({ from: c.req.query("from"), to: c.req.query("to") });
@@ -297,10 +297,10 @@ export function reportsRoutes() {
     const row = await db
       .prepare(
         `SELECT COALESCE(SUM(amount),0) AS net FROM accountant_entries
-         WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
+         WHERE ${scope.sql} AND occurred_at >= ? AND occurred_at < ?
            AND source != 'adjustment' AND ${RESERVE_NEUTRAL_SQL}`,
       )
-      .bind(userID, from, to)
+      .bind(...scope.binds, from, to)
       .first<{ net: number }>();
 
     const cashFlowNet = row?.net ?? 0;

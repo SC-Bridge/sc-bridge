@@ -1,10 +1,17 @@
 import { ORDER_TEMPLATE } from "../../lib/accountant/constants";
+import { scopeWhere, type Scope } from "../../lib/accountant/scope";
 
 /**
  * Shared order machinery (design accountant-m5-design.md §5.0–§5.3) — used by
  * orders.ts and reused by workorders (Task 8). Orders are agreement state;
  * every aUEC movement is an order_id-linked accountant_entries row, so the
  * fund check and reserve math are plain SUM(amount) queries over the ledger.
+ *
+ * M4-A corp scope: every helper takes the resolved `scope` so reads/writes hit
+ * the active ledger (private `user_id = ? AND org_id IS NULL` or corp `org_id = ?`).
+ * Rows still stamp the acting `userID` for attribution; `org_id` = scope.orgId.
+ * Queries keyed by a unique `order_id`/`workorder_id` need no user/org predicate —
+ * an order (and its entries) belongs to exactly one scope by construction.
  */
 
 /** Validated POST /orders body (CreateOrderSchema output, after Zod defaults). */
@@ -30,21 +37,21 @@ export interface ValidatedOrderBody {
 /** `quantity` is REAL (SCU can be fractional) — every remaining/closing comparison uses this epsilon. */
 export const QTY_EPSILON = 1e-9;
 
-/** Σ open reserve across the user (positive number). Closed orders net to 0 by invariant. */
-export async function lockedInPOs(db: D1Database, userID: string): Promise<number> {
+/** Σ open reserve across the active scope (positive number). Closed orders net to 0 by invariant. */
+export async function lockedInPOs(db: D1Database, scope: Scope): Promise<number> {
   const row = await db.prepare(
     `SELECT COALESCE(-SUM(amount), 0) AS locked FROM accountant_entries
-     WHERE user_id = ? AND source IN ('po_reserve', 'po_reserve_release')`,
-  ).bind(userID).first<{ locked: number }>();
+     WHERE ${scope.sql} AND source IN ('po_reserve', 'po_reserve_release')`,
+  ).bind(...scope.binds).first<{ locked: number }>();
   return row?.locked ?? 0;
 }
 
 /** Σ open reserve for ONE order (positive). −(Σ po_reserve + Σ po_reserve_release). */
-export async function openReserve(db: D1Database, userID: string, orderId: number): Promise<number> {
+export async function openReserve(db: D1Database, orderId: number): Promise<number> {
   const row = await db.prepare(
     `SELECT COALESCE(-SUM(amount), 0) AS locked FROM accountant_entries
-     WHERE user_id = ? AND order_id = ? AND source IN ('po_reserve', 'po_reserve_release')`,
-  ).bind(userID, orderId).first<{ locked: number }>();
+     WHERE order_id = ? AND source IN ('po_reserve', 'po_reserve_release')`,
+  ).bind(orderId).first<{ locked: number }>();
   return row?.locked ?? 0;
 }
 
@@ -63,8 +70,11 @@ export interface OrderCreateResult { id?: number; fundError?: { balance: number;
 /**
  * Insert an order; for purchases, book the reserve through the balance-guarded
  * INSERT…SELECT (§5.0). The guard subquery is the SAME SUM(amount) that defines
- * balance — reserves already in the ledger are inherently counted, so concurrent
- * POs cannot jointly overdraw. Zero rows written → compensating DELETE + fundError.
+ * the active scope's balance — reserves already in the ledger are inherently
+ * counted, so concurrent POs cannot jointly overdraw. In corp mode the guard
+ * reads the CORP wallet (scope predicate on the SUM), so a member's private
+ * balance can neither fund nor block a corp PO. Zero rows written →
+ * compensating DELETE + fundError.
  *
  * `publisher` is the posting account's display name SNAPSHOTTED at creation
  * (owner spec 2026-06-13; design §10 — the only identity the future public
@@ -72,19 +82,21 @@ export interface OrderCreateResult { id?: number; fundError?: { balance: number;
  * historical orders. Immutable after creation (PUT is notes-only).
  */
 export async function insertOrder(
-  db: D1Database, userID: string, b: ValidatedOrderBody, workorderId: number | null, publisher: string,
+  db: D1Database, scope: Scope, userID: string, b: ValidatedOrderBody, workorderId: number | null, publisher: string,
 ): Promise<OrderCreateResult> {
   const total = Math.round(b.quantity * b.price_per_unit);
   const mods = JSON.stringify(modifiedFields(b));
-  // vis_corp/vis_public NOT in the column list — they keep their DEFAULT 0 (private-only).
+  // vis_corp/vis_public NOT in the column list — they keep their DEFAULT 0 (private market).
+  // org_id = scope.orgId (NULL private); user_id = the acting member (attribution).
   const orderRes = await db.prepare(
     `INSERT INTO accountant_orders
-       (user_id, publisher, type, category, tag, item, quantity, price_per_unit, total, counterparty, workorder_id,
+       (user_id, org_id, publisher, type, category, tag, item, quantity, price_per_unit, total, counterparty, workorder_id,
         start_at, deliver_by, fine_interval, fine_rate_type, fine_rate,
         rate_change_condition, rate_change_pct, termination_clause, modified_fields, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     userID,
+    scope.orgId,
     publisher,
     b.type,
     b.category,
@@ -113,41 +125,41 @@ export async function insertOrder(
     let reserveWritten = 0;
     try {
       const guard = await db.prepare(
-        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-         SELECT ?1, ?2, ?3, NULL, 'po_reserve', ?4, ?5
-         WHERE (SELECT COALESCE(SUM(amount), 0) FROM accountant_entries WHERE user_id = ?1) >= ?6`,
-      ).bind(userID, now, -total, orderId, `PO reserve · O-${orderId}`, total).run();
+        `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, order_id, description)
+         SELECT ?, ?, ?, ?, NULL, 'po_reserve', ?, ?
+         WHERE (SELECT COALESCE(SUM(amount), 0) FROM accountant_entries WHERE ${scope.sql}) >= ?`,
+      ).bind(userID, scope.orgId, now, -total, orderId, `PO reserve · O-${orderId}`, ...scope.binds, total).run();
       reserveWritten = guard.meta.changes ?? 0;
     } catch (err) {
       // A throw here would leave an open PO with NO reserve row — its closing
       // fulfilment would then release money that was never locked. Compensate
       // (loans.ts pattern — D1 has no interactive tx) and rethrow.
-      await db.prepare("DELETE FROM accountant_orders WHERE id = ? AND user_id = ?").bind(orderId, userID).run();
+      await db.prepare(`DELETE FROM accountant_orders WHERE id = ? AND ${scope.sql}`).bind(orderId, ...scope.binds).run();
       throw err;
     }
     if (reserveWritten === 0) {
       // Whole creation "rolls back": compensating delete (loans.ts pattern — D1 has no interactive tx).
-      await db.prepare("DELETE FROM accountant_orders WHERE id = ? AND user_id = ?").bind(orderId, userID).run();
-      const balRow = await db.prepare("SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE user_id = ?")
-        .bind(userID).first<{ bal: number }>();
-      return { fundError: { balance: balRow?.bal ?? 0, lockedInPOs: await lockedInPOs(db, userID), required: total } };
+      await db.prepare(`DELETE FROM accountant_orders WHERE id = ? AND ${scope.sql}`).bind(orderId, ...scope.binds).run();
+      const balRow = await db.prepare(`SELECT COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE ${scope.sql}`)
+        .bind(...scope.binds).first<{ bal: number }>();
+      return { fundError: { balance: balRow?.bal ?? 0, lockedInPOs: await lockedInPOs(db, scope), required: total } };
     }
   }
   return { id: orderId };
 }
 
 /**
- * One workorder per order: attachable = mine + status 'open' + not already
+ * One workorder per order: attachable = in-scope + status 'open' + not already
  * in a workorder. Friendly pre-validation read for precise error messages —
  * attachOrder's UPDATE re-checks the invariant atomically (TOCTOU guard).
  * Returns the error response payload or null when OK.
  */
 export async function attachError(
-  db: D1Database, userID: string, orderId: number,
+  db: D1Database, scope: Scope, orderId: number,
 ): Promise<{ error: string; status: 400 | 404 } | null> {
   const order = await db
-    .prepare("SELECT status, workorder_id FROM accountant_orders WHERE id = ? AND user_id = ?")
-    .bind(orderId, userID)
+    .prepare(`SELECT status, workorder_id FROM accountant_orders WHERE id = ? AND ${scope.sql}`)
+    .bind(orderId, ...scope.binds)
     .first<{ status: string; workorder_id: number | null }>();
   if (!order) return { error: "Order not found", status: 404 };
   if (order.workorder_id !== null) return { error: "Order already belongs to a workorder", status: 400 };
@@ -157,17 +169,18 @@ export async function attachError(
 
 /**
  * Hardened attach (one workorder per order, design §4.2): the UPDATE itself
- * re-checks `workorder_id IS NULL AND status = 'open'`, so an attach that
- * raced past the friendly pre-validation read (TOCTOU) changes 0 rows instead
- * of silently re-parenting. Returns whether the order was attached.
+ * re-checks `workorder_id IS NULL AND status = 'open'` within scope, so an
+ * attach that raced past the friendly pre-validation read (TOCTOU) changes 0
+ * rows instead of silently re-parenting (or crossing scopes). Returns whether
+ * the order was attached.
  */
 export async function attachOrder(
-  db: D1Database, userID: string, orderId: number, workorderId: number,
+  db: D1Database, scope: Scope, orderId: number, workorderId: number,
 ): Promise<boolean> {
   const res = await db.prepare(
     `UPDATE accountant_orders SET workorder_id = ?
-     WHERE id = ? AND user_id = ? AND workorder_id IS NULL AND status = 'open'`,
-  ).bind(workorderId, orderId, userID).run();
+     WHERE id = ? AND ${scope.sql} AND workorder_id IS NULL AND status = 'open'`,
+  ).bind(workorderId, orderId, ...scope.binds).run();
   return (res.meta.changes ?? 0) > 0;
 }
 
@@ -178,22 +191,22 @@ export async function attachOrder(
  * (and their reserve entries), then drop those and the workorder row.
  */
 export async function rollbackWorkorderCreation(
-  db: D1Database, userID: string, workorderId: number, detachIds: number[] = [],
+  db: D1Database, scope: Scope, workorderId: number, detachIds: number[] = [],
 ): Promise<void> {
   const stmts: D1PreparedStatement[] = [];
   if (detachIds.length > 0) {
     stmts.push(db.prepare(
       `UPDATE accountant_orders SET workorder_id = NULL
-       WHERE user_id = ? AND workorder_id = ? AND id IN (${detachIds.map(() => "?").join(", ")})`,
-    ).bind(userID, workorderId, ...detachIds));
+       WHERE ${scope.sql} AND workorder_id = ? AND id IN (${detachIds.map(() => "?").join(", ")})`,
+    ).bind(...scope.binds, workorderId, ...detachIds));
   }
   stmts.push(
     db.prepare(
-      `DELETE FROM accountant_entries WHERE user_id = ?1
-       AND order_id IN (SELECT id FROM accountant_orders WHERE workorder_id = ?2 AND user_id = ?1)`,
-    ).bind(userID, workorderId),
-    db.prepare("DELETE FROM accountant_orders WHERE workorder_id = ? AND user_id = ?").bind(workorderId, userID),
-    db.prepare("DELETE FROM accountant_workorders WHERE id = ? AND user_id = ?").bind(workorderId, userID),
+      `DELETE FROM accountant_entries
+       WHERE order_id IN (SELECT id FROM accountant_orders WHERE workorder_id = ? AND ${scope.sql})`,
+    ).bind(workorderId, ...scope.binds),
+    db.prepare(`DELETE FROM accountant_orders WHERE workorder_id = ? AND ${scope.sql}`).bind(workorderId, ...scope.binds),
+    db.prepare(`DELETE FROM accountant_workorders WHERE id = ? AND ${scope.sql}`).bind(workorderId, ...scope.binds),
   );
   await db.batch(stmts);
 }
@@ -211,49 +224,51 @@ export async function rollbackWorkorderCreation(
  *   `workorder_summary` entry + status 'complete' with completed_at stamped.
  * The 0-amount summary is informational: components already posted as they
  * fulfilled — a valued summary would double-count (the M3 loan-equity trap).
+ *
+ * Component subqueries key on `workorder_id` alone (org-wide by construction);
+ * the workorder row itself is scope-guarded so a corp WO summary carries org_id.
  */
 export async function completionStatements(
-  db: D1Database, userID: string, workorderId: number,
+  db: D1Database, scope: Scope, userID: string, workorderId: number,
 ): Promise<D1PreparedStatement[]> {
   const now = new Date().toISOString();
   return [
     db.prepare(
       `UPDATE accountant_workorders SET status = 'in_progress'
-       WHERE id = ?1 AND user_id = ?2 AND status = 'open'
+       WHERE id = ? AND ${scope.sql} AND status = 'open'
          AND EXISTS (SELECT 1 FROM accountant_entries e
                      JOIN accountant_orders o ON e.order_id = o.id
-                     WHERE o.workorder_id = ?1 AND e.user_id = ?2
-                       AND e.source = 'order_fulfillment')`,
-    ).bind(workorderId, userID),
+                     WHERE o.workorder_id = ? AND e.source = 'order_fulfillment')`,
+    ).bind(workorderId, ...scope.binds, workorderId),
     // Auto-generated text "W-0007 · 2 orders · net +412,000" — net is computed
     // by SQLite at execution time (printf's ',' flag does the en-US grouping).
     // It lands in `description` like every other engine-written row (fines,
     // accruals, fulfilments); `notes` is reserved for user prose.
     db.prepare(
-      `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, description)
-       SELECT ?2, ?3, 0, NULL, 'workorder_summary', ?1,
-              'W-' || printf('%04d', ?1) || ' · ' || n.cnt || ' orders · net '
+      `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, workorder_id, description)
+       SELECT ?, ?, ?, 0, NULL, 'workorder_summary', ?,
+              'W-' || printf('%04d', ?) || ' · ' || n.cnt || ' orders · net '
                 || CASE WHEN n.net >= 0 THEN '+' ELSE '' END || printf('%,d', n.net)
        FROM (SELECT
                (SELECT COUNT(*) FROM accountant_orders
-                WHERE workorder_id = ?1 AND user_id = ?2) AS cnt,
+                WHERE workorder_id = ?) AS cnt,
                (SELECT COALESCE(SUM(e.amount), 0) FROM accountant_entries e
                 JOIN accountant_orders o ON e.order_id = o.id
-                WHERE o.workorder_id = ?1 AND e.user_id = ?2
+                WHERE o.workorder_id = ?
                   AND e.source = 'order_fulfillment') AS net) n
        WHERE NOT EXISTS (SELECT 1 FROM accountant_orders
-                         WHERE workorder_id = ?1 AND user_id = ?2
+                         WHERE workorder_id = ?
                            AND status IN ('open', 'in_progress'))
-         AND (SELECT status FROM accountant_workorders WHERE id = ?1 AND user_id = ?2)
+         AND (SELECT status FROM accountant_workorders WHERE id = ? AND ${scope.sql})
              IN ('open', 'in_progress')`,
-    ).bind(workorderId, userID, now),
+    ).bind(userID, scope.orgId, now, workorderId, workorderId, workorderId, workorderId, workorderId, workorderId, ...scope.binds),
     db.prepare(
-      `UPDATE accountant_workorders SET status = 'complete', completed_at = ?3
-       WHERE id = ?1 AND user_id = ?2 AND status IN ('open', 'in_progress')
+      `UPDATE accountant_workorders SET status = 'complete', completed_at = ?
+       WHERE id = ? AND ${scope.sql} AND status IN ('open', 'in_progress')
          AND NOT EXISTS (SELECT 1 FROM accountant_orders
-                         WHERE workorder_id = ?1 AND user_id = ?2
+                         WHERE workorder_id = ?
                            AND status IN ('open', 'in_progress'))`,
-    ).bind(workorderId, userID, now),
+    ).bind(now, workorderId, ...scope.binds, workorderId),
   ];
 }
 
@@ -263,20 +278,21 @@ export async function completionStatements(
  * with the amount computed BY SQLITE at batch-execution time. Self-guarding —
  * writes nothing when the reserve is already net 0 or the order is no longer
  * open/in_progress, so double releases are structurally impossible. Must be
- * batched BEFORE the statement that closes the order's status.
+ * batched BEFORE the statement that closes the order's status. The release row
+ * carries the acting member (`userID`) + `scope.orgId` for attribution.
  */
 export function releaseOpenReserveStmt(
-  db: D1Database, userID: string, orderId: number, now: string,
+  db: D1Database, scope: Scope, userID: string, orderId: number, now: string,
 ): D1PreparedStatement {
   return db.prepare(
-    `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-     SELECT ?1, ?2, r.open, NULL, 'po_reserve_release', ?3, ?4
+    `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, order_id, description)
+     SELECT ?, ?, ?, r.open, NULL, 'po_reserve_release', ?, ?
      FROM (SELECT COALESCE(-SUM(amount), 0) AS open FROM accountant_entries
-           WHERE user_id = ?1 AND order_id = ?3 AND source IN ('po_reserve', 'po_reserve_release')) r
+           WHERE order_id = ? AND source IN ('po_reserve', 'po_reserve_release')) r
      WHERE r.open > 0
        AND EXISTS (SELECT 1 FROM accountant_orders
-                   WHERE id = ?3 AND user_id = ?1 AND status IN ('open', 'in_progress'))`,
-  ).bind(userID, now, orderId, `PO reserve release · O-${orderId}`);
+                   WHERE id = ? AND status IN ('open', 'in_progress'))`,
+  ).bind(userID, scope.orgId, now, orderId, `PO reserve release · O-${orderId}`, orderId, orderId);
 }
 
 /**
@@ -284,7 +300,9 @@ export function releaseOpenReserveStmt(
  * at batch-execution time (TOCTOU): the order must still be open/in_progress
  * AND the new quantity must still fit Σ(fulfilled) + qty ≤ quantity + ε. A
  * raced cancel or closing fulfilment makes EVERY statement write zero rows —
- * the caller checks `results[fulfilmentIndex].meta.changes` and 409s.
+ * the caller checks `results[fulfilmentIndex].meta.changes` and 409s. The GATE
+ * keys on the unique `order_id`, so an order's fulfilments are org-wide (any
+ * corp member's fulfilment counts); the new rows carry `userID` + `scope.orgId`.
  *
  * Purchase releases: partial = floor((total × qty) / quantity), so Σ(partials)
  * ≤ total structurally (rounding could overshoot and drive the closing release
@@ -297,35 +315,38 @@ export function releaseOpenReserveStmt(
  */
 export function fulfillmentStatements(
   db: D1Database,
+  scope: Scope,
   userID: string,
   order: { id: number; type: string; category: string; tag: string | null; quantity: number; total: number },
   f: { quantity: number; occurredAt: string; amount: number; rate: number; location: string | null; closing: boolean },
 ): { stmts: D1PreparedStatement[]; fulfilmentIndex: number } {
-  // Shared gate — binds ?1 userID, ?2 occurredAt, ?3 orderId, ?4 qty, ?5 order quantity, ?6 ε.
+  // Shared gate on the unique order_id: order still open/in_progress AND the new
+  // qty still fits. Binds (in order): orderId, orderId, qty, order quantity, ε.
   const GATE = `EXISTS (SELECT 1 FROM accountant_orders
-                  WHERE id = ?3 AND user_id = ?1 AND status IN ('open', 'in_progress'))
+                  WHERE id = ? AND status IN ('open', 'in_progress'))
     AND (SELECT COALESCE(SUM(quantity), 0) FROM accountant_entries
-         WHERE order_id = ?3 AND user_id = ?1 AND source = 'order_fulfillment') + ?4 <= ?5 + ?6`;
+         WHERE order_id = ? AND source = 'order_fulfillment') + ? <= ? + ?`;
+  const gateBinds = [order.id, order.id, f.quantity, order.quantity, QTY_EPSILON];
   const stmts: D1PreparedStatement[] = [];
 
   if (order.type === "purchase") {
     const desc = `PO reserve release · O-${order.id}`;
     if (f.closing) {
       stmts.push(db.prepare(
-        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-         SELECT ?1, ?2, r.open, NULL, 'po_reserve_release', ?3, ?7
+        `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, order_id, description)
+         SELECT ?, ?, ?, r.open, NULL, 'po_reserve_release', ?, ?
          FROM (SELECT COALESCE(-SUM(amount), 0) AS open FROM accountant_entries
-               WHERE user_id = ?1 AND order_id = ?3 AND source IN ('po_reserve', 'po_reserve_release')) r
+               WHERE order_id = ? AND source IN ('po_reserve', 'po_reserve_release')) r
          WHERE r.open > 0 AND ${GATE}`,
-      ).bind(userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON, desc));
+      ).bind(userID, scope.orgId, f.occurredAt, order.id, desc, order.id, ...gateBinds));
     } else {
       const partial = Math.floor((order.total * f.quantity) / order.quantity);
       if (partial > 0) {
         stmts.push(db.prepare(
-          `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, order_id, description)
-           SELECT ?1, ?2, ?7, NULL, 'po_reserve_release', ?3, ?8
+          `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, order_id, description)
+           SELECT ?, ?, ?, ?, NULL, 'po_reserve_release', ?, ?
            WHERE ${GATE}`,
-        ).bind(userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON, partial, desc));
+        ).bind(userID, scope.orgId, f.occurredAt, partial, order.id, desc, ...gateBinds));
       }
     }
   }
@@ -333,23 +354,23 @@ export function fulfillmentStatements(
   const fulfilmentIndex = stmts.length;
   stmts.push(db.prepare(
     `INSERT INTO accountant_entries
-       (user_id, occurred_at, amount, category, tag, source, quantity, price_per_unit, location, order_id, description)
-     SELECT ?1, ?2, ?7, ?8, ?9, 'order_fulfillment', ?4, ?10, ?11, ?3, ?12
+       (user_id, org_id, occurred_at, amount, category, tag, source, quantity, price_per_unit, location, order_id, description)
+     SELECT ?, ?, ?, ?, ?, ?, 'order_fulfillment', ?, ?, ?, ?, ?
      WHERE ${GATE}`,
   ).bind(
-    userID, f.occurredAt, order.id, f.quantity, order.quantity, QTY_EPSILON,
-    f.amount, order.category, order.tag, f.rate, f.location, `Order fulfilment · O-${order.id}`,
+    userID, scope.orgId, f.occurredAt, f.amount, order.category, order.tag,
+    f.quantity, f.rate, f.location, order.id, `Order fulfilment · O-${order.id}`, ...gateBinds,
   ));
 
   stmts.push(db.prepare(
     `UPDATE accountant_orders SET status = CASE
        WHEN quantity - (SELECT COALESCE(SUM(quantity), 0) FROM accountant_entries
-                        WHERE order_id = ?1 AND user_id = ?2 AND source = 'order_fulfillment') <= ?3
+                        WHERE order_id = ? AND source = 'order_fulfillment') <= ?
        THEN 'complete' ELSE 'in_progress' END
-     WHERE id = ?1 AND user_id = ?2 AND status IN ('open', 'in_progress')
+     WHERE id = ? AND status IN ('open', 'in_progress')
        AND EXISTS (SELECT 1 FROM accountant_entries
-                   WHERE order_id = ?1 AND user_id = ?2 AND source = 'order_fulfillment')`,
-  ).bind(order.id, userID, QTY_EPSILON));
+                   WHERE order_id = ? AND source = 'order_fulfillment')`,
+  ).bind(order.id, QTY_EPSILON, order.id, order.id));
 
   return { stmts, fulfilmentIndex };
 }
@@ -361,16 +382,16 @@ export function fulfillmentStatements(
  * 'cancelled'; partially-fulfilled (in_progress) closes 'complete'-as-is.
  */
 export function closeComponentStatements(
-  db: D1Database, userID: string, targets: { id: number; status: string }[], now: string,
+  db: D1Database, scope: Scope, userID: string, targets: { id: number; status: string }[], now: string,
 ): D1PreparedStatement[] {
   const stmts: D1PreparedStatement[] = [];
   for (const o of targets) {
-    stmts.push(releaseOpenReserveStmt(db, userID, o.id, now));
+    stmts.push(releaseOpenReserveStmt(db, scope, userID, o.id, now));
     stmts.push(
       db.prepare(
         `UPDATE accountant_orders SET status = ?
-         WHERE id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
-      ).bind(o.status === "in_progress" ? "complete" : "cancelled", o.id, userID),
+         WHERE id = ? AND ${scope.sql} AND status IN ('open', 'in_progress')`,
+      ).bind(o.status === "in_progress" ? "complete" : "cancelled", o.id, ...scope.binds),
     );
   }
   return stmts;
@@ -378,12 +399,13 @@ export function closeComponentStatements(
 
 /**
  * Your incurred costs per component (design §5.4; Task 9's settlement
- * suggestion reuses this scope-agnostic helper): what you paid out on purchase
- * fulfilments plus fines you paid (negative `contract_fine` rows — those live
- * on sale orders; purchase fines are income and don't count).
+ * suggestion reuses this scope-aware helper): what was paid out on purchase
+ * fulfilments plus fines paid (negative `contract_fine` rows — those live on
+ * sale orders; purchase fines are income and don't count). Entry subqueries key
+ * on order_id (org-wide by construction — any corp member's fulfilment counts).
  */
 export async function incurredCosts(
-  db: D1Database, userID: string, orderIds: number[],
+  db: D1Database, scope: Scope, orderIds: number[],
 ): Promise<Map<number, number>> {
   if (orderIds.length === 0) return new Map();
   const placeholders = orderIds.map(() => "?").join(", ");
@@ -391,14 +413,14 @@ export async function incurredCosts(
     `SELECT o.id,
        (CASE WHEN o.type = 'purchase'
              THEN ABS(COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
-                                WHERE e.order_id = o.id AND e.user_id = o.user_id
+                                WHERE e.order_id = o.id
                                   AND e.source = 'order_fulfillment'), 0))
              ELSE 0 END)
        + ABS(COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
-                       WHERE e.order_id = o.id AND e.user_id = o.user_id
+                       WHERE e.order_id = o.id
                          AND e.source = 'contract_fine' AND e.amount < 0), 0)) AS incurred
-     FROM accountant_orders o WHERE o.user_id = ? AND o.id IN (${placeholders})`,
-  ).bind(userID, ...orderIds).all<{ id: number; incurred: number }>();
+     FROM accountant_orders o WHERE ${scopeWhere(scope, "o")} AND o.id IN (${placeholders})`,
+  ).bind(...scope.binds, ...orderIds).all<{ id: number; incurred: number }>();
   return new Map(rows.results.map((r) => [r.id, r.incurred]));
 }
 

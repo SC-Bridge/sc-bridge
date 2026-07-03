@@ -21,6 +21,7 @@ import {
   rollbackWorkorderCreation,
 } from "./order-helpers";
 import { CreateOrderSchema } from "./orders";
+import { assertManager, scopeWhere, type Scope } from "../../lib/accountant/scope";
 import { isoDatetime, parseIdParam } from "./schemas";
 
 // Same contract-term fields/defaults as orders; .strict() rejects
@@ -88,11 +89,11 @@ interface ComponentRow {
   [key: string]: unknown;
 }
 
-/** Workorder status for the :id routes — null when missing/foreign (→ 404). */
-async function woStatus(db: D1Database, userID: string, id: number): Promise<string | null> {
+/** Workorder status for the :id routes — null when missing/out-of-scope (→ 404). */
+async function woStatus(db: D1Database, scope: Scope, id: number): Promise<string | null> {
   const row = await db
-    .prepare("SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?")
-    .bind(id, userID)
+    .prepare(`SELECT status FROM accountant_workorders WHERE id = ? AND ${scope.sql}`)
+    .bind(id, ...scope.binds)
     .first<{ status: string }>();
   return row?.status ?? null;
 }
@@ -114,26 +115,29 @@ export function workordersRoutes() {
     const db = c.env.DB;
     const user = getAuthUser(c);
     const userID = user.id;
+    const scope = c.get("acctScope")!;
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const b = c.req.valid("json");
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
     // lazy fine ticks before any inline order's guarded reserve INSERT.
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
     // Pre-validate attachments before writing anything — cheaper than compensating.
     for (const orderId of b.order_ids ?? []) {
-      const err = await attachError(db, userID, orderId);
+      const err = await attachError(db, scope, orderId);
       if (err) return c.json({ error: err.error }, err.status);
     }
 
     const woRes = await db.prepare(
       `INSERT INTO accountant_workorders
-         (user_id, title, description, counterparty, start_at, deliver_by,
+         (user_id, org_id, title, description, counterparty, start_at, deliver_by,
           fine_interval, fine_rate_type, fine_rate, rate_change_condition,
           rate_change_pct, termination_clause, modified_fields)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       userID,
+      scope.orgId,
       b.title,
       b.description ?? null,
       b.counterparty ?? null,
@@ -156,9 +160,9 @@ export function workordersRoutes() {
       // Components are real orders on the Market list — they snapshot the
       // poster's name as publisher exactly like standalone creation.
       for (const orderBody of b.orders ?? []) {
-        const result = await insertOrder(db, userID, orderBody, woId, user.name);
+        const result = await insertOrder(db, scope, userID, orderBody, woId, user.name);
         if (result.fundError) {
-          await rollbackWorkorderCreation(db, userID, woId);
+          await rollbackWorkorderCreation(db, scope, woId);
           return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
         }
       }
@@ -168,8 +172,8 @@ export function workordersRoutes() {
       // re-checks the one-WO-per-order invariant itself: a raced/duplicate attach
       // changes 0 rows → compensate the whole creation (detach-first).
       for (const orderId of b.order_ids ?? []) {
-        if (!(await attachOrder(db, userID, orderId, woId))) {
-          await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
+        if (!(await attachOrder(db, scope, orderId, woId))) {
+          await rollbackWorkorderCreation(db, scope, woId, b.order_ids);
           return c.json({ error: "Order already attached or no longer open" }, 400);
         }
       }
@@ -177,7 +181,7 @@ export function workordersRoutes() {
       // An unexpected throw mid-composition (e.g. a D1 failure between sibling
       // inserts) must not leave a half-built workorder behind — same
       // compensation as the validated failure paths, then rethrow → 500.
-      await rollbackWorkorderCreation(db, userID, woId, b.order_ids);
+      await rollbackWorkorderCreation(db, scope, woId, b.order_ids);
       throw err;
     }
 
@@ -187,12 +191,12 @@ export function workordersRoutes() {
   // GET /workorders?status&page — status is repeatable (orders-list pattern).
   routes.get("/", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
-    const where: string[] = ["w.user_id = ?"];
-    const binds: (string | number)[] = [userID];
+    const where: string[] = [scopeWhere(scope, "w")];
+    const binds: (string | number)[] = [...scope.binds];
     const statuses = (c.req.queries("status") ?? []).filter((x) =>
       (WORKORDER_STATUSES as readonly string[]).includes(x),
     );
@@ -202,17 +206,18 @@ export function workordersRoutes() {
     }
     const whereSql = where.join(" AND ");
 
+    // Component subqueries key on workorder_id (org-wide by construction).
     const [workorders, totalRow] = await Promise.all([
       db.prepare(
         `SELECT w.*,
            (SELECT COUNT(*) FROM accountant_orders o
-            WHERE o.workorder_id = w.id AND o.user_id = w.user_id) AS component_count,
+            WHERE o.workorder_id = w.id) AS component_count,
            (SELECT COUNT(*) FROM accountant_orders o
-            WHERE o.workorder_id = w.id AND o.user_id = w.user_id
+            WHERE o.workorder_id = w.id
               AND o.status = 'complete') AS completed_count,
            COALESCE((SELECT SUM(CASE WHEN o.type = 'sale' THEN o.total ELSE -o.total END)
                      FROM accountant_orders o
-                     WHERE o.workorder_id = w.id AND o.user_id = w.user_id), 0) AS net_total
+                     WHERE o.workorder_id = w.id), 0) AS net_total
          FROM accountant_workorders w WHERE ${whereSql}
          ORDER BY w.created_at DESC, w.id DESC LIMIT ? OFFSET ?`,
       ).bind(...binds, PER_PAGE, (page - 1) * PER_PAGE).all<WorkorderListRow>(),
@@ -238,29 +243,30 @@ export function workordersRoutes() {
   // sum, §5.4 — Task 9's termination endpoint reuses the same helper).
   routes.get("/:id", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
     const workorder = await db
-      .prepare("SELECT * FROM accountant_workorders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT * FROM accountant_workorders WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<WorkorderRow>();
     if (!workorder) return c.json({ error: "Not found" }, 404);
 
+    // Components + their entry sums key on workorder_id/order_id (org-wide).
     const comps = await db.prepare(
       `SELECT o.*,
          COALESCE((SELECT SUM(e.quantity) FROM accountant_entries e
-                   WHERE e.order_id = o.id AND e.user_id = o.user_id
+                   WHERE e.order_id = o.id
                      AND e.source = 'order_fulfillment'), 0) AS fulfilled_qty,
          COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
-                   WHERE e.order_id = o.id AND e.user_id = o.user_id
+                   WHERE e.order_id = o.id
                      AND e.source = 'order_fulfillment'), 0) AS fulfilled_net
-       FROM accountant_orders o WHERE o.workorder_id = ? AND o.user_id = ?
+       FROM accountant_orders o WHERE o.workorder_id = ?
        ORDER BY o.id ASC`,
-    ).bind(id, userID).all<ComponentRow>();
-    const incurred = await incurredCosts(db, userID, comps.results.map((o) => o.id));
+    ).bind(id).all<ComponentRow>();
+    const incurred = await incurredCosts(db, scope, comps.results.map((o) => o.id));
 
     const components = comps.results.map((o) => ({
       ...o,
@@ -287,29 +293,31 @@ export function workordersRoutes() {
     const db = c.env.DB;
     const user = getAuthUser(c);
     const userID = user.id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const b = c.req.valid("json");
     // §5.0 fund guard must read a caught-up balance (inline-order path below).
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
-    const status = await woStatus(db, userID, id);
+    const status = await woStatus(db, scope, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
     if (status !== "draft" && status !== "open") {
       return c.json({ error: "Components can only be added to a draft or open workorder" }, 400);
     }
 
     if (b.order_id !== undefined) {
-      const err = await attachError(db, userID, b.order_id);
+      const err = await attachError(db, scope, b.order_id);
       if (err) return c.json({ error: err.error }, err.status);
       // The friendly pre-read above can race — the UPDATE enforces the invariant.
-      if (!(await attachOrder(db, userID, b.order_id, id))) {
+      if (!(await attachOrder(db, scope, b.order_id, id))) {
         return c.json({ error: "Order already attached or no longer open" }, 400);
       }
       return c.json({ ok: true, id: b.order_id });
     }
 
-    const result = await insertOrder(db, userID, b.order!, id, user.name);
+    const result = await insertOrder(db, scope, userID, b.order!, id, user.name);
     if (result.fundError) {
       return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
     }
@@ -321,25 +329,27 @@ export function workordersRoutes() {
   routes.delete("/:id/orders/:orderId", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     const orderId = parseIdParam(c.req.param("orderId"));
     if (id === null || orderId === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
 
-    const status = await woStatus(db, userID, id);
+    const status = await woStatus(db, scope, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
     if (status !== "draft") {
       return c.json({ error: "Components can only be detached from a draft workorder" }, 400);
     }
 
     const order = await db
-      .prepare("SELECT id FROM accountant_orders WHERE id = ? AND user_id = ? AND workorder_id = ?")
-      .bind(orderId, userID, id)
+      .prepare(`SELECT id FROM accountant_orders WHERE id = ? AND ${scope.sql} AND workorder_id = ?`)
+      .bind(orderId, ...scope.binds, id)
       .first<{ id: number }>();
     if (!order) return c.json({ error: "Not found" }, 404);
 
     await db.prepare(
-      "UPDATE accountant_orders SET workorder_id = NULL WHERE id = ? AND user_id = ?",
-    ).bind(orderId, userID).run();
+      `UPDATE accountant_orders SET workorder_id = NULL WHERE id = ? AND ${scope.sql}`,
+    ).bind(orderId, ...scope.binds).run();
     return c.json({ ok: true });
   });
 
@@ -347,27 +357,30 @@ export function workordersRoutes() {
   routes.post("/:id/publish", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
 
-    const status = await woStatus(db, userID, id);
+    const status = await woStatus(db, scope, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
     if (status !== "draft") {
       return c.json({ error: "Only a draft workorder can be published" }, 400);
     }
     // Only OPEN components count — a dead (cancelled/closed) row must not
     // satisfy the gate (mirrors the cancel route's draft-component block).
+    // Keyed on workorder_id (org-wide by construction).
     const count = await db
-      .prepare("SELECT COUNT(*) AS n FROM accountant_orders WHERE workorder_id = ? AND user_id = ? AND status = 'open'")
-      .bind(id, userID)
+      .prepare("SELECT COUNT(*) AS n FROM accountant_orders WHERE workorder_id = ? AND status = 'open'")
+      .bind(id)
       .first<{ n: number }>();
     if ((count?.n ?? 0) < 2) {
       return c.json({ error: "A workorder needs at least 2 open component orders to publish" }, 400);
     }
 
     await db.prepare(
-      "UPDATE accountant_workorders SET status = 'open' WHERE id = ? AND user_id = ?",
-    ).bind(id, userID).run();
+      `UPDATE accountant_workorders SET status = 'open' WHERE id = ? AND ${scope.sql}`,
+    ).bind(id, ...scope.binds).run();
     return c.json({ ok: true });
   });
 
@@ -377,13 +390,15 @@ export function workordersRoutes() {
   routes.post("/:id/cancel", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
 
     // Fines accrued while open must land before the close stops the clock.
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
-    const status = await woStatus(db, userID, id);
+    const status = await woStatus(db, scope, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
     if (status !== "draft" && status !== "open") {
       return c.json({
@@ -393,25 +408,26 @@ export function workordersRoutes() {
       }, 400);
     }
 
+    // Open components key on workorder_id (org-wide by construction).
     const open = await db.prepare(
       `SELECT id FROM accountant_orders
-       WHERE workorder_id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
-    ).bind(id, userID).all<{ id: number }>();
+       WHERE workorder_id = ? AND status IN ('open', 'in_progress')`,
+    ).bind(id).all<{ id: number }>();
 
     // Release amounts are computed in SQL at batch-execution time — no
     // per-component pre-reads; releases must precede the closing UPDATE.
     const now = new Date().toISOString();
     const stmts: D1PreparedStatement[] = open.results.map((o) =>
-      releaseOpenReserveStmt(db, userID, o.id, now),
+      releaseOpenReserveStmt(db, scope, userID, o.id, now),
     );
     stmts.push(
       db.prepare(
         `UPDATE accountant_orders SET status = 'cancelled'
-         WHERE workorder_id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
-      ).bind(id, userID),
+         WHERE workorder_id = ? AND status IN ('open', 'in_progress')`,
+      ).bind(id),
       db.prepare(
-        "UPDATE accountant_workorders SET status = 'cancelled' WHERE id = ? AND user_id = ?",
-      ).bind(id, userID),
+        `UPDATE accountant_workorders SET status = 'cancelled' WHERE id = ? AND ${scope.sql}`,
+      ).bind(id, ...scope.binds),
     );
 
     await db.batch(stmts);
@@ -424,22 +440,25 @@ export function workordersRoutes() {
   routes.post("/:id/terminate", validate("json", TerminateSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const b = c.req.valid("json");
 
     // Fines accrued while open must land before the close stops the clock.
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
-    const status = await woStatus(db, userID, id);
+    const status = await woStatus(db, scope, id);
     if (status === null) return c.json({ error: "Not found" }, 404);
     if (status !== "in_progress") {
       return c.json({ error: "Only an in-progress workorder can be terminated" }, 400);
     }
 
+    // Components key on workorder_id (org-wide by construction).
     const comps = await db.prepare(
-      "SELECT id, status FROM accountant_orders WHERE workorder_id = ? AND user_id = ? ORDER BY id",
-    ).bind(id, userID).all<{ id: number; status: string }>();
+      "SELECT id, status FROM accountant_orders WHERE workorder_id = ? ORDER BY id",
+    ).bind(id).all<{ id: number; status: string }>();
     const isOpen = (o: { status: string }) => o.status === "open" || o.status === "in_progress";
 
     // order_ids absent → FULL (all components; only open ones close); present →
@@ -458,7 +477,7 @@ export function workordersRoutes() {
     const scopeIds = full ? comps.results.map((o) => o.id) : b.order_ids!;
     let suggestion: number | null = null;
     if (b.terminated_by === "counterparty") {
-      const incurred = await incurredCosts(db, userID, scopeIds);
+      const incurred = await incurredCosts(db, scope, scopeIds);
       suggestion = scopeIds.reduce((s, oid) => s + (incurred.get(oid) ?? 0), 0);
     } else if (b.settlement_amount === undefined) {
       // Counterparty's costs aren't on your books — no suggestion possible.
@@ -468,30 +487,30 @@ export function workordersRoutes() {
     const signed = b.terminated_by === "counterparty" ? amount : -amount;
 
     const now = new Date().toISOString();
-    const stmts = closeComponentStatements(db, userID, targets, now);
+    const stmts = closeComponentStatements(db, scope, userID, targets, now);
     stmts.push(
       // ONE wo_settlement per event — the entry sequence IS the audit trail.
       db.prepare(
-        `INSERT INTO accountant_entries (user_id, occurred_at, amount, category, source, workorder_id, notes, description)
-         VALUES (?, ?, ?, 'financial', 'wo_settlement', ?, ?, ?)`,
-      ).bind(userID, now, signed, id, b.note, `Termination settlement · ${b.terminated_by}`),
+        `INSERT INTO accountant_entries (user_id, org_id, occurred_at, amount, category, source, workorder_id, notes, description)
+         VALUES (?, ?, ?, ?, 'financial', 'wo_settlement', ?, ?, ?)`,
+      ).bind(userID, scope.orgId, now, signed, id, b.note, `Termination settlement · ${b.terminated_by}`),
     );
     if (full) {
       stmts.push(
         db.prepare(
           `UPDATE accountant_workorders SET status = 'terminated', terminated_by = ?, termination_note = ?
-           WHERE id = ? AND user_id = ?`,
-        ).bind(b.terminated_by, b.note, id, userID),
+           WHERE id = ? AND ${scope.sql}`,
+        ).bind(b.terminated_by, b.note, id, ...scope.binds),
       );
     } else {
       // A partial that closed the LAST open component completes the workorder
       // NORMALLY ('terminated' is reserved for full) — SQL guards self-arbitrate.
-      stmts.push(...(await completionStatements(db, userID, id)));
+      stmts.push(...(await completionStatements(db, scope, userID, id)));
     }
 
     await db.batch(stmts);
     // Partial may have closed the last open component (→ 'complete') — requery.
-    const after = full ? "terminated" : await woStatus(db, userID, id);
+    const after = full ? "terminated" : await woStatus(db, scope, id);
     return c.json({ ok: true, settlement: amount, suggestion, scope: scopeIds, workorderStatus: after });
   });
 

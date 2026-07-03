@@ -168,7 +168,7 @@ describe("M5 — workorder lifecycle", () => {
     const rivalWo = await createWO(sessionToken, { title: "Rival" });
 
     // Direct helper call = the friendly pre-validation read never ran (raced path).
-    expect(await attachOrder(env.DB, userId, takenId, rivalWo)).toBe(false);
+    expect(await attachOrder(env.DB, privateScope(userId), takenId, rivalWo)).toBe(false);
     const row = await env.DB.prepare("SELECT workorder_id FROM accountant_orders WHERE id = ?")
       .bind(takenId).first<{ workorder_id: number | null }>();
     expect(row?.workorder_id).toBe(homeWo);                         // silent re-parent impossible
@@ -176,7 +176,7 @@ describe("M5 — workorder lifecycle", () => {
     // A no-longer-open order is equally unattachable at the UPDATE itself.
     const startedId = await createOrder(sessionToken, SALE);
     expect((await fulfil(sessionToken, startedId, { quantity: 10, occurred_at: "2026-06-12T00:00:00Z" })).status).toBe(200);
-    expect(await attachOrder(env.DB, userId, startedId, rivalWo)).toBe(false);
+    expect(await attachOrder(env.DB, privateScope(userId), startedId, rivalWo)).toBe(false);
   });
 
   it("fulfilment on a DRAFT workorder's component → 400; publish → fulfil works (master-doc lifecycle)", async () => {

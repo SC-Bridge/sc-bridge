@@ -21,6 +21,7 @@ import {
   openReserve,
   releaseOpenReserveStmt,
 } from "./order-helpers";
+import { assertManager, scopeWhere } from "../../lib/accountant/scope";
 import { isoDatetime, parseIdParam } from "./schemas";
 
 // .strict() doubles as the private-market enforcement: vis_corp/vis_public are
@@ -108,15 +109,17 @@ export function ordersRoutes() {
     const db = c.env.DB;
     const user = getAuthUser(c);
     const userID = user.id;
+    const scope = c.get("acctScope")!;
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated (D3/D13)
     const b = c.req.valid("json");
 
     // The §5.0 fund guard must read a CAUGHT-UP balance — materialize pending
     // lazy fine ticks before insertOrder's guarded reserve INSERT sums the ledger.
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
     // Standalone orders never auto-attach to workorders (composition is Task 8).
     // user.name is snapshotted as the order's publisher (owner spec 2026-06-13).
-    const result = await insertOrder(db, userID, b, null, user.name);
+    const result = await insertOrder(db, scope, userID, b, null, user.name);
     if (result.fundError) {
       return c.json({ error: "Insufficient funds", ...result.fundError }, 400);
     }
@@ -127,13 +130,13 @@ export function ordersRoutes() {
   // category pattern). balance is ALWAYS the unfiltered sum (≡ available, §5.0).
   routes.get("/", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    await catchUp(db, c.get("acctScope")!);
+    const scope = c.get("acctScope")!;
+    await catchUp(db, scope);
     // Upper clamp prevents hostile huge OFFSETs from forcing full-table scans.
     const page = Math.min(10000, Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1));
 
-    const where: string[] = ["o.user_id = ?"];
-    const binds: (string | number)[] = [userID];
+    const where: string[] = [scopeWhere(scope, "o")];
+    const binds: (string | number)[] = [...scope.binds];
     // type/category/status are ALL repeatable — the Market filter renders each as
     // a multi-select checkbox group (getAll/append). Reading type/category as a
     // single value honored only the first checkbox; mirror status's IN pattern.
@@ -174,10 +177,10 @@ export function ordersRoutes() {
         .prepare(
           `SELECT o.*,
              COALESCE((SELECT SUM(e.quantity) FROM accountant_entries e
-                       WHERE e.order_id = o.id AND e.user_id = o.user_id
+                       WHERE e.order_id = o.id
                          AND e.source = 'order_fulfillment'), 0) AS fulfilled_qty,
              COALESCE((SELECT SUM(e.amount) FROM accountant_entries e
-                       WHERE e.order_id = o.id AND e.user_id = o.user_id
+                       WHERE e.order_id = o.id
                          AND e.source = 'contract_fine'), 0) AS accrued_fines
            FROM accountant_orders o WHERE ${whereSql}
            ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?`,
@@ -189,10 +192,10 @@ export function ordersRoutes() {
         .bind(...binds)
         .first<{ n: number }>(),
       db
-        .prepare("SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE user_id = ?")
-        .bind(userID)
+        .prepare(`SELECT COALESCE(SUM(amount), 0) AS balance FROM accountant_entries WHERE ${scope.sql}`)
+        .bind(...scope.binds)
         .first<{ balance: number }>(),
-      lockedInPOs(db, userID),
+      lockedInPOs(db, scope),
     ]);
 
     const nowMs = Date.now();
@@ -216,34 +219,35 @@ export function ordersRoutes() {
   // GET /orders/:id — contract + fulfilment/fine history + reserve state.
   routes.get("/:id", async (c) => {
     const db = c.env.DB;
-    const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
-    await catchUp(db, c.get("acctScope")!);
+    await catchUp(db, scope);
 
     const order = await db
-      .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT * FROM accountant_orders WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<OrderRow>();
     if (!order) return c.json({ error: "Not found" }, 404);
 
+    // Sub-histories key on the unique order_id — order-scoped, so no user/org filter.
     const [fulfillments, fines, reserveRow] = await Promise.all([
       db.prepare(
         `SELECT id, amount, quantity, price_per_unit, location, occurred_at FROM accountant_entries
-         WHERE order_id = ? AND user_id = ? AND source = 'order_fulfillment'
+         WHERE order_id = ? AND source = 'order_fulfillment'
          ORDER BY occurred_at ASC, id ASC`,
-      ).bind(id, userID).all<{ quantity: number; amount: number }>(),
+      ).bind(id).all<{ quantity: number; amount: number }>(),
       db.prepare(
         `SELECT id, amount, occurred_at, tick_index FROM accountant_entries
-         WHERE order_id = ? AND user_id = ? AND source = 'contract_fine'
+         WHERE order_id = ? AND source = 'contract_fine'
          ORDER BY occurred_at ASC, id ASC`,
-      ).bind(id, userID).all<{ amount: number }>(),
+      ).bind(id).all<{ amount: number }>(),
       db.prepare(
         `SELECT
            COALESCE(-SUM(CASE WHEN source = 'po_reserve' THEN amount END), 0) AS reserved,
            COALESCE(SUM(CASE WHEN source = 'po_reserve_release' THEN amount END), 0) AS released
-         FROM accountant_entries WHERE order_id = ? AND user_id = ?`,
-      ).bind(id, userID).first<{ reserved: number; released: number }>(),
+         FROM accountant_entries WHERE order_id = ?`,
+      ).bind(id).first<{ reserved: number; released: number }>(),
     ]);
 
     const fulfilledQty = fulfillments.results.reduce((s, f) => s + f.quantity, 0);
@@ -269,16 +273,18 @@ export function ordersRoutes() {
   routes.post("/:id/fulfillments", validate("json", FulfillmentSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const b = c.req.valid("json");
 
-    // Fines must be current before the fulfilment lands (Task 6 swaps to combined catchUp).
-    await catchUp(db, c.get("acctScope")!);
+    // Fines must be current before the fulfilment lands.
+    await catchUp(db, scope);
 
     const order = await db
-      .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT * FROM accountant_orders WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<OrderRow>();
     if (!order) return c.json({ error: "Not found" }, 404);
     if (order.status === "complete" || order.status === "cancelled") {
@@ -289,17 +295,18 @@ export function ordersRoutes() {
     // started" gate and the publish component count honest.
     if (order.workorder_id !== null) {
       const wo = await db.prepare(
-        "SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?",
-      ).bind(order.workorder_id, userID).first<{ status: string }>();
+        `SELECT status FROM accountant_workorders WHERE id = ? AND ${scope.sql}`,
+      ).bind(order.workorder_id, ...scope.binds).first<{ status: string }>();
       if (wo?.status === "draft") {
         return c.json({ error: "Workorder is draft - publish it before recording work" }, 400);
       }
     }
 
+    // fulfilled_qty is order-scoped (unique order_id) — org-wide across members.
     const sums = await db.prepare(
       `SELECT COALESCE(SUM(quantity), 0) AS fulfilled_qty FROM accountant_entries
-       WHERE order_id = ? AND user_id = ? AND source = 'order_fulfillment'`,
-    ).bind(id, userID).first<{ fulfilled_qty: number }>();
+       WHERE order_id = ? AND source = 'order_fulfillment'`,
+    ).bind(id).first<{ fulfilled_qty: number }>();
     const fulfilledQty = sums?.fulfilled_qty ?? 0;
     const remaining = order.quantity - fulfilledQty;
     if (b.quantity > remaining + QTY_EPSILON) {
@@ -320,16 +327,16 @@ export function ordersRoutes() {
     let release: number | undefined;
     if (order.type === "purchase") {
       release = closing
-        ? await openReserve(db, userID, id)
+        ? await openReserve(db, id)
         : Math.floor((order.total * b.quantity) / order.quantity);
     }
 
-    const { stmts, fulfilmentIndex } = fulfillmentStatements(db, userID, order, {
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(db, scope, userID, order, {
       quantity: b.quantity, occurredAt, amount, rate: Math.round(rate),
       location: b.location ?? null, closing,
     });
     if (order.workorder_id !== null) {
-      stmts.push(...(await completionStatements(db, userID, order.workorder_id)));
+      stmts.push(...(await completionStatements(db, scope, userID, order.workorder_id)));
     }
 
     const results = await db.batch(stmts);
@@ -346,16 +353,17 @@ export function ordersRoutes() {
   routes.post("/:id/cancel", async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
 
-    // Fines accrued while open must land before the close stops the clock
-    // (Task 6 swaps to combined catchUp).
-    await catchUp(db, c.get("acctScope")!);
+    // Fines accrued while open must land before the close stops the clock.
+    await catchUp(db, scope);
 
     const order = await db
-      .prepare("SELECT * FROM accountant_orders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT * FROM accountant_orders WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<OrderRow>();
     if (!order) return c.json({ error: "Not found" }, 404);
     if (order.status === "complete" || order.status === "cancelled") {
@@ -365,8 +373,8 @@ export function ordersRoutes() {
     // component would silently shrink the publish gate's open-component count.
     if (order.workorder_id !== null) {
       const wo = await db.prepare(
-        "SELECT status FROM accountant_workorders WHERE id = ? AND user_id = ?",
-      ).bind(order.workorder_id, userID).first<{ status: string }>();
+        `SELECT status FROM accountant_workorders WHERE id = ? AND ${scope.sql}`,
+      ).bind(order.workorder_id, ...scope.binds).first<{ status: string }>();
       if (wo?.status === "draft") {
         return c.json({ error: "Workorder is draft - detach the component instead of cancelling it" }, 400);
       }
@@ -374,19 +382,19 @@ export function ordersRoutes() {
 
     // Response figure only — the batched release computes the actual amount in
     // SQL at execution time and self-guards against a raced close (net 0 stays 0).
-    const open = await openReserve(db, userID, id);
+    const open = await openReserve(db, id);
     const stmts: D1PreparedStatement[] = [
-      releaseOpenReserveStmt(db, userID, id, new Date().toISOString()),
+      releaseOpenReserveStmt(db, scope, userID, id, new Date().toISOString()),
       db.prepare(
         `UPDATE accountant_orders SET status = 'cancelled'
-         WHERE id = ? AND user_id = ? AND status IN ('open', 'in_progress')`,
-      ).bind(id, userID),
+         WHERE id = ? AND ${scope.sql} AND status IN ('open', 'in_progress')`,
+      ).bind(id, ...scope.binds),
     ];
     const statusIndex = 1;
     // Finding 18: cancelling the last open component must advance the parent
-    // workorder — same completion check the fulfilment path runs (Task 8 fills it).
+    // workorder — same completion check the fulfilment path runs.
     if (order.workorder_id !== null) {
-      stmts.push(...(await completionStatements(db, userID, order.workorder_id)));
+      stmts.push(...(await completionStatements(db, scope, userID, order.workorder_id)));
     }
 
     const results = await db.batch(stmts);
@@ -402,20 +410,22 @@ export function ordersRoutes() {
   routes.put("/:id", validate("json", UpdateOrderSchema), async (c) => {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    const scope = c.get("acctScope")!;
     const id = parseIdParam(c.req.param("id"));
     if (id === null) return c.json({ error: "Not found" }, 404);
+    if (scope.orgId) await assertManager(db, scope.orgId, userID); // corp writes are manager-gated
     const body = c.req.valid("json");
 
     const exists = await db
-      .prepare("SELECT id FROM accountant_orders WHERE id = ? AND user_id = ?")
-      .bind(id, userID)
+      .prepare(`SELECT id FROM accountant_orders WHERE id = ? AND ${scope.sql}`)
+      .bind(id, ...scope.binds)
       .first<{ id: number }>();
     if (!exists) return c.json({ error: "Not found" }, 404);
 
     if (body.notes === undefined) return c.json({ ok: true });
     await db
-      .prepare("UPDATE accountant_orders SET notes = ? WHERE id = ? AND user_id = ?")
-      .bind(body.notes ?? null, id, userID)
+      .prepare(`UPDATE accountant_orders SET notes = ? WHERE id = ? AND ${scope.sql}`)
+      .bind(body.notes ?? null, id, ...scope.binds)
       .run();
     return c.json({ ok: true });
   });

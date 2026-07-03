@@ -3,6 +3,7 @@ import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
 import { fulfillmentStatements } from "../src/routes/accountant/order-helpers";
+import { privateScope } from "../src/lib/accountant/scope";
 
 async function post(token: string, path: string, body: Record<string, unknown>) {
   return SELF.fetch(`http://localhost/api/accountant${path}`, {
@@ -518,7 +519,7 @@ describe("M5 — fulfilment SQL guards (raced-batch pins)", () => {
     })).status).toBe(200);                                        // order now 'complete'
     const before = await entryCounts(id);
 
-    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, userId, await orderRow(id), {
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, privateScope(userId), userId, await orderRow(id), {
       quantity: 10, occurredAt: "2026-06-12T01:00:00Z", amount: -10000, rate: 1000,
       location: null, closing: false,
     });
@@ -542,7 +543,7 @@ describe("M5 — fulfilment SQL guards (raced-batch pins)", () => {
 
     // A raced request that pre-validated against remaining=100 and now tries
     // to CLOSE with qty 100: the gate must refuse fulfilment AND release.
-    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, userId, await orderRow(id), {
+    const { stmts, fulfilmentIndex } = fulfillmentStatements(env.DB, privateScope(userId), userId, await orderRow(id), {
       quantity: 100, occurredAt: "2026-06-12T01:00:00Z", amount: -100000, rate: 1000,
       location: null, closing: true,
     });
