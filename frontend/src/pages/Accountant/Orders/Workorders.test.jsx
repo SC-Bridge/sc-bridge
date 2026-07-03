@@ -113,4 +113,30 @@ describe('Workorders list page', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('workorders exploded'))
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
+
+  it('hides the pager when workorders fit on one page', async () => {
+    renderPage() // default mock: total 2
+    await waitFor(() => expect(screen.getByText('W-0007')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a pager when total exceeds the page size; Next drives the page param', async () => {
+    mockApi({ total: 120 })
+    renderPage()
+    await waitFor(() => expect(screen.getByText('W-0007')).toBeInTheDocument())
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /next page/i }))
+    expect(screen.getByTestId('location-probe').textContent).toContain('page=2')
+    await waitFor(() =>
+      expect(globalThis.fetch.mock.calls.some(([u]) => String(u).includes('page=2'))).toBe(true),
+    )
+  })
+
+  it('changing a filter resets pagination to page 1', async () => {
+    mockApi({ total: 120 })
+    renderPage('/accountant/orders/workorders?page=3')
+    await waitFor(() => expect(screen.getByText('W-0007')).toBeInTheDocument())
+    await userEvent.click(within(screen.getByTestId('workorder-filters')).getByLabelText('Draft'))
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('page=3')
+  })
 })

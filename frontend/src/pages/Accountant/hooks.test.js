@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useLedger, useBadges, useSorting, addEntry, categorizeEntries, useLoans, useLoan, createLoan, updateLoan, recordRepayment, settleLoan, useOrders, createOrder, recordFulfillment, terminateWorkorder, forgiveLoan } from './hooks'
 
 beforeEach(() => {
@@ -194,6 +194,37 @@ describe('order + workorder hooks (M5)', () => {
     await waitFor(() => expect(result.current.data?.total).toBe(2))
 
     releaseStale()                                         // stale response lands late
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current.data.total).toBe(2)              // never 99
+  })
+
+  it('a late MANUAL refetch for a superseded path cannot overwrite newer data', async () => {
+    // Same race as above, but the orphaned request comes from a manual
+    // refetch() call (e.g. an onSaved handler) rather than an event. Its cancel
+    // token is no longer discarded, so a stale manual response is dropped.
+    let releaseStale
+    const stale = new Promise((resolve) => { releaseStale = resolve })
+    let saleCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const s = String(url)
+      if (s.includes('type=sale')) {
+        saleCalls += 1
+        const stalePayload = saleCalls > 1
+        if (stalePayload) await stale
+        return { ok: true, status: 200, json: async () => ({ total: stalePayload ? 99 : 1 }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ total: 2 }) }
+    })
+
+    const { result, rerender } = renderHook(({ qs }) => useOrders(qs), { initialProps: { qs: 'type=sale' } })
+    await waitFor(() => expect(result.current.data?.total).toBe(1))
+
+    act(() => { result.current.refetch() })                // manual refetch for type=sale starts (hangs)
+    await waitFor(() => expect(saleCalls).toBe(2))
+    rerender({ qs: 'type=purchase' })                      // user switches filters
+    await waitFor(() => expect(result.current.data?.total).toBe(2))
+
+    releaseStale()                                         // stale manual response lands late
     await new Promise((r) => setTimeout(r, 0))
     expect(result.current.data.total).toBe(2)              // never 99
   })

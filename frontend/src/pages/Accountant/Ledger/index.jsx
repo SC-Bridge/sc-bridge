@@ -10,6 +10,7 @@ import EntryTable from './EntryTable'
 import EntryDetail from './EntryDetail'
 import AddEntryModal from './AddEntryModal'
 import SummaryCards from '../components/SummaryCards'
+import Pager from '../components/Pager'
 
 // Mirrors the backend PER_PAGE in routes/accountant/ledger.ts — the server
 // pages at 50 and only echoes the requested page, so the client derives the
@@ -126,31 +127,7 @@ export default function Ledger() {
                 ? 'No entries'
                 : `Showing ${rangeStart}–${rangeEnd} of ${total} entries`}
             </p>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-sm">
-                <button
-                  type="button"
-                  aria-label="Previous page"
-                  onClick={() => goToPage(page - 1)}
-                  disabled={page <= 1}
-                  className="px-2 py-1 rounded border border-sc-border text-gray-300 hover:bg-sc-darker disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Prev
-                </button>
-                <span className="text-gray-400 tabular-nums">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Next page"
-                  onClick={() => goToPage(page + 1)}
-                  disabled={page >= totalPages}
-                  className="px-2 py-1 rounded border border-sc-border text-gray-300 hover:bg-sc-darker disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            )}
+            <Pager page={page} totalPages={totalPages} onPage={goToPage} />
           </div>
         </div>
       </div>

@@ -6,6 +6,11 @@ import { STATUS_LABELS, WORKORDER_STATUSES } from '../constants'
 import { formatAUEC, signClass } from '../formatAUEC'
 import { useWorkorders } from '../hooks'
 import { woRef } from '../orderMath'
+import Pager from '../components/Pager'
+
+// Mirrors the backend PER_PAGE for the workorders list — the server pages at 50
+// and echoes only the requested page, so the client derives page count.
+const PAGE_SIZE = 50
 
 function StatusFilter({ params, onChange }) {
   function toggle(value, active) {
@@ -72,6 +77,20 @@ export default function Workorders() {
   const [params, setParams] = useSearchParams()
   const { data, error, loading, refetch } = useWorkorders(params.toString())
 
+  // Any filter change returns to page 1 so a trimmed result set never lands on
+  // an empty page. replace: filtering/paging shouldn't stack Back history.
+  function changeFilters(next) {
+    next.delete('page')
+    setParams(next, { replace: true })
+  }
+
+  function goToPage(p) {
+    const next = new URLSearchParams(params)
+    if (p <= 1) next.delete('page')
+    else next.set('page', String(p))
+    setParams(next, { replace: true })
+  }
+
   if (loading && !data) return <LoadingState />
   if (error) {
     return (
@@ -88,6 +107,9 @@ export default function Workorders() {
   // filtered-empty heuristic, mirrored).
   const filtered = params.getAll('status').length > 0
 
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
@@ -101,8 +123,8 @@ export default function Workorders() {
         }
       />
 
-      {/* replace: status-filter toggles shouldn't stack Back-button history. */}
-      <StatusFilter params={params} onChange={(next) => setParams(next, { replace: true })} />
+      {/* replace + page reset live in changeFilters. */}
+      <StatusFilter params={params} onChange={changeFilters} />
 
       {total === 0 && filtered ? (
         <div className="panel p-10 text-center text-gray-400">
@@ -116,7 +138,12 @@ export default function Workorders() {
           </Link>
         </div>
       ) : (
-        <WorkorderTable workorders={workorders} />
+        <>
+          <WorkorderTable workorders={workorders} />
+          <div className="mt-3 flex justify-end">
+            <Pager page={page} totalPages={totalPages} onPage={goToPage} />
+          </div>
+        </>
       )}
     </div>
   )

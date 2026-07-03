@@ -22,6 +22,7 @@ export default function BalanceSheet() {
       query={query}
       params={params}
       onParams={(next) => setParams(next, { replace: true })}
+      periodToOnly
     >
       {(data) => (
         <>

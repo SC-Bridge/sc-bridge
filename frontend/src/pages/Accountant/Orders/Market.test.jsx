@@ -186,4 +186,34 @@ describe('Market page', () => {
     expect(screen.queryByText('Corporation')).not.toBeInTheDocument()
     expect(screen.queryByText('Public')).not.toBeInTheDocument()
   })
+
+  it('hides the pager when the orders fit on one page', async () => {
+    renderMarket() // default mock: total 2
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a pager when total exceeds the page size; Next drives the page param', async () => {
+    mockApi({ total: 120 })
+    renderMarket()
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument()
+    const prev = screen.getByRole('button', { name: /previous page/i })
+    const next = screen.getByRole('button', { name: /next page/i })
+    expect(prev).toBeDisabled()
+    expect(next).toBeEnabled()
+    await userEvent.click(next)
+    expect(screen.getByTestId('location-search').textContent).toContain('page=2')
+    await waitFor(() =>
+      expect(globalThis.fetch.mock.calls.some(([u]) => String(u).includes('page=2'))).toBe(true),
+    )
+  })
+
+  it('changing a filter resets pagination to page 1', async () => {
+    mockApi({ total: 120 })
+    renderMarket('/accountant/orders/market?page=3')
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    await userEvent.click(within(screen.getByTestId('market-filters')).getByLabelText('Sales'))
+    expect(screen.getByTestId('location-search').textContent).not.toContain('page=3')
+  })
 })

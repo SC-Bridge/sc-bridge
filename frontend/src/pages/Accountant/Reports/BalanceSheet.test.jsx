@@ -59,6 +59,16 @@ describe('Balance Sheet page', () => {
     expect(screen.getAllByText('1,800,000 aUEC').length).toBeGreaterThan(0)
   })
 
+  // The balance sheet is a point-in-time report — only the upper bound matters.
+  // The period selector must render in as-of mode: no From input, To relabelled.
+  it('shows the period selector in as-of (to-only) mode — no From input', async () => {
+    render(<MemoryRouter><BalanceSheet /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
+    expect(screen.queryByLabelText(/^from$/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/as of/i)).toBeInTheDocument()
+  })
+
   // Loop-regression test: with no URL params the `at` value must be stable across
   // renders so useGet never fires a loop of fetches for /reports/balance.
   // We assert ≤ 2 (accounting for React double-invoke edge cases in test environments)

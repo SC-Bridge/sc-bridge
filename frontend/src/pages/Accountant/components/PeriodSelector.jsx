@@ -1,4 +1,4 @@
-import { useState, useId } from 'react'
+import { useEffect, useState, useId } from 'react'
 
 // ---------------------------------------------------------------------------
 // Date boundary helpers — all boundaries in local time, emitted as UTC ISO.
@@ -95,9 +95,28 @@ function deriveInitialPreset(params) {
 
 // FilterPanel contract: params (URLSearchParams) in; construct new URLSearchParams,
 // mutate, call onChange(next).
-export default function PeriodSelector({ params, onChange }) {
+// toOnly renders the selector in "as of" mode (Balance Sheet): only the upper
+// bound is meaningful, so the custom From input is hidden and To is relabelled.
+export default function PeriodSelector({ params, onChange, toOnly = false }) {
   const groupId = useId()
   const [selected, setSelected] = useState(() => deriveInitialPreset(params))
+
+  // Resync the active preset when the URL window changes from outside this
+  // component (browser back/forward, deep link). Without this the radio keeps
+  // showing the old preset while the data has already reverted.
+  //   - No from/to → all-time, whatever was selected before.
+  //   - A window present while we were on all-time means the change came from
+  //     outside; reflect it as Custom (a bare window is indistinguishable from a
+  //     preset, so deep-linked windows always read as Custom — matching mount).
+  //   - Otherwise keep the active preset: today/this-week/this-month/custom all
+  //     emit a window, so our own preset clicks must not be clobbered.
+  useEffect(() => {
+    const hasRange = params.get('from') || params.get('to')
+    setSelected((prev) => {
+      if (!hasRange) return 'all-time'
+      return prev === 'all-time' ? 'custom' : prev
+    })
+  }, [params])
 
   function selectPreset(preset) {
     setSelected(preset)
@@ -160,17 +179,19 @@ export default function PeriodSelector({ params, onChange }) {
 
       {showCustomInputs && (
         <div className="flex gap-3 items-end">
+          {!toOnly && (
+            <label className="flex flex-col gap-1 text-xs text-gray-500">
+              From
+              <input
+                type="date"
+                defaultValue={isoToDateInput(params.get('from'))}
+                onChange={(e) => handleCustomDate('from', e.target.value)}
+                className="bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm text-white"
+              />
+            </label>
+          )}
           <label className="flex flex-col gap-1 text-xs text-gray-500">
-            From
-            <input
-              type="date"
-              defaultValue={isoToDateInput(params.get('from'))}
-              onChange={(e) => handleCustomDate('from', e.target.value)}
-              className="bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm text-white"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-gray-500">
-            To
+            {toOnly ? 'As of' : 'To'}
             <input
               type="date"
               defaultValue={isoToDateInputExclusive(params.get('to'))}

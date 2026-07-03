@@ -9,6 +9,11 @@ import { useBadges, useOrders } from '../hooks'
 import NewOrderModal from './NewOrderModal'
 import OrderDetail from './OrderDetail'
 import OrderTable from './OrderTable'
+import Pager from '../components/Pager'
+
+// Mirrors the backend PER_PAGE for the orders list — the server pages at 50 and
+// echoes only the requested page, so the client derives page count from total.
+const PAGE_SIZE = 50
 
 // Order statuses offered as filters (draft/terminated are workorder-only).
 const FILTER_STATUSES = ['open', 'in_progress', 'complete', 'cancelled']
@@ -74,6 +79,21 @@ export default function Market() {
     setParams(next)
   }
 
+  // Any filter change must return to page 1 — staying on page 7 after a filter
+  // trims the result to fewer pages would show an empty list.
+  // replace: filtering/paging shouldn't stack Back-button history entries.
+  function changeFilters(next) {
+    next.delete('page')
+    setParams(next, { replace: true })
+  }
+
+  function goToPage(p) {
+    const next = new URLSearchParams(params)
+    if (p <= 1) next.delete('page')
+    else next.set('page', String(p))
+    setParams(next, { replace: true })
+  }
+
   if (loading && !data) return <LoadingState />
   if (error) {
     return (
@@ -89,6 +109,9 @@ export default function Market() {
   // account — the CTA hero only makes sense for the latter. Client heuristic
   // on the filter params; `order`/paging params don't narrow the list.
   const filtered = FILTER_GROUPS.some(({ key }) => params.getAll(key).length > 0)
+
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -106,8 +129,8 @@ export default function Market() {
       <OverdueBanner />
 
       <div className="flex gap-6">
-        {/* replace: filter toggles shouldn't stack Back-button history. */}
-        <Filters params={params} onChange={(next) => setParams(next, { replace: true })} />
+        {/* replace + page reset live in changeFilters. */}
+        <Filters params={params} onChange={changeFilters} />
         <div className="flex-1 min-w-0">
           {total === 0 && filtered ? (
             <div className="panel p-10 text-center text-gray-400">
@@ -123,9 +146,12 @@ export default function Market() {
           ) : (
             <OrderTable orders={orders} onSelect={setOrderParam} />
           )}
-          <p className="mt-3 text-sm text-gray-500">
-            Available balance: {formatAUEC(balance)} (locked in POs: {formatAUEC(lockedInPOs)})
-          </p>
+          <div className="mt-3 flex items-center justify-between gap-4">
+            <p className="text-sm text-gray-500">
+              Available balance: {formatAUEC(balance)} (locked in POs: {formatAUEC(lockedInPOs)})
+            </p>
+            <Pager page={page} totalPages={totalPages} onPage={goToPage} />
+          </div>
         </div>
       </div>
 

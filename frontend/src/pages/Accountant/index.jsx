@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import PanelSection from '../../components/PanelSection'
-import { setPreferences } from '../../hooks/useAPI'
+import { setPreferences, usePreferences } from '../../hooks/useAPI'
 import {
   ACCOUNTANT_TIERS,
   ACCOUNTANT_MODULES,
@@ -9,41 +9,30 @@ import {
   isModuleAvailable,
 } from './constants'
 
-const PREF_ENDPOINT = '/api/settings/preferences'
-
-async function fetchPreferences() {
-  const res = await fetch(PREF_ENDPOINT, { credentials: 'same-origin' })
-  if (!res.ok) throw new Error(`GET preferences failed: ${res.status}`)
-  return res.json()
-}
-
 /**
  * AccountantSettingsSection — standalone content block (no PageHeader).
  * Consumed by the site Settings page at the bottom of the page.
- * Manages its own preferences fetch so it is self-contained.
+ * Reads preferences through the shared usePreferences hook so writes elsewhere
+ * (the preferences:changed event) live-refresh this section too.
  */
 export function AccountantSettingsSection() {
+  const { data: prefs, loading } = usePreferences()
   const [tier, setTier] = useState(null) // null while loading
   const [verifyThreshold, setVerifyThreshold] = useState(10)
   const [savingError, setSavingError] = useState(null)
 
+  // Hydrate the editable state from the fetched preferences (or on live
+  // refresh). When the fetch settles without data (error/401) fall back to the
+  // 'easy' default so the section renders rather than hanging on the skeleton —
+  // matching the old raw-fetch catch.
   useEffect(() => {
-    let cancelled = false
-    fetchPreferences()
-      .then((prefs) => {
-        if (cancelled) return
-        setTier(prefs.accountantTier ?? 'easy')
-        setVerifyThreshold(parseInt(prefs.accountantVerifyThreshold ?? '10', 10))
-      })
-      .catch(() => {
-        if (cancelled) return
-        setTier('easy') // graceful default on fetch failure
-        setVerifyThreshold(10)
-      })
-    return () => {
-      cancelled = true
+    if (prefs) {
+      setTier(prefs.accountantTier ?? 'easy')
+      setVerifyThreshold(parseInt(prefs.accountantVerifyThreshold ?? '10', 10))
+    } else if (!loading) {
+      setTier((t) => t ?? 'easy')
     }
-  }, [])
+  }, [prefs, loading])
 
   async function handleThresholdChange(raw) {
     const value = Math.max(10, parseInt(raw, 10) || 10)

@@ -1,18 +1,33 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import PageHeader from '../../../components/PageHeader'
 import LoadingState from '../../../components/LoadingState'
 import { useLedger } from '../hooks'
 import { formatAUEC, signClass } from '../formatAUEC'
 import AddEntryModal from '../Ledger/AddEntryModal'
+import Pager from '../components/Pager'
 
 // Tactical investments are plain financial/tactical ledger entries (design §4.3) —
 // this page is a filtered view + a preset AddEntryModal. No dedicated endpoints.
-const QUERY = 'category=financial&tag=tactical'
+const BASE_QUERY = 'category=financial&tag=tactical'
+
+// Mirrors the backend ledger PER_PAGE — the underlying ledger query pages at 50.
+const PAGE_SIZE = 50
 
 export default function Tactical() {
-  const { data, error, loading, refetch } = useLedger(QUERY)
+  const [params, setParams] = useSearchParams()
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1)
+  const query = page > 1 ? `${BASE_QUERY}&page=${page}` : BASE_QUERY
+  const { data, error, loading, refetch } = useLedger(query)
   const [adding, setAdding] = useState(false)
+
+  function goToPage(p) {
+    const next = new URLSearchParams(params)
+    if (p <= 1) next.delete('page')
+    else next.set('page', String(p))
+    setParams(next, { replace: true })
+  }
 
   if (loading && !data) return <LoadingState />
   if (error) {
@@ -25,6 +40,8 @@ export default function Tactical() {
   }
 
   const entries = data.entries ?? []
+  const total = data.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -63,6 +80,12 @@ export default function Tactical() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {entries.length > 0 && (
+        <div className="flex justify-end">
+          <Pager page={page} totalPages={totalPages} onPage={goToPage} />
+        </div>
       )}
 
       {adding && (

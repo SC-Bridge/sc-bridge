@@ -49,6 +49,7 @@ function mockApi({
   components = COMPONENTS,
   netFulfilled = 412000,
   openOrders = OPEN_STANDALONE,
+  openTotal = openOrders.length,
   mutation = ok({ ok: true }),
 } = {}) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts = {}) => {
@@ -63,7 +64,7 @@ function mockApi({
       })
     }
     if (s.includes('/api/accountant/orders')) {
-      return ok({ orders: openOrders, total: openOrders.length, balance: 0, lockedInPOs: 0, page: 1 })
+      return ok({ orders: openOrders, total: openTotal, balance: 0, lockedInPOs: 0, page: 1 })
     }
     return ok({})
   })
@@ -151,6 +152,14 @@ describe('WorkorderDetail route page', () => {
     await waitFor(() => expect(screen.getByText(/W-0007/)).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /detach/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('attach-section')).not.toBeInTheDocument()
+  })
+
+  it('attach section warns when open orders exceed the first page (list is not paged)', async () => {
+    mockApi({ wo: workorder({ status: 'draft' }), components: [TWO_OPEN[0]], openTotal: 60 })
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/W-0007/)).toBeInTheDocument())
+    const attach = await screen.findByTestId('attach-section')
+    expect(within(attach).getByText(/first 2 of 60 open orders/i)).toBeInTheDocument()
   })
 
   it('in_progress: shows [Terminate…]; draft/open: shows [Cancel]', async () => {

@@ -15,11 +15,11 @@ function ok(body) {
   return { ok: true, status: 200, json: async () => body }
 }
 
-function mockApi({ create = ok({ ok: true, id: 12 }), orders = OPEN_ORDERS } = {}) {
+function mockApi({ create = ok({ ok: true, id: 12 }), orders = OPEN_ORDERS, total = orders.length } = {}) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts = {}) => {
     const s = String(url)
     if (opts.method === 'POST' && s.endsWith('/api/accountant/workorders')) return create
-    if (s.includes('/api/accountant/orders')) return ok({ orders, total: orders.length, balance: 0, lockedInPOs: 0, page: 1 })
+    if (s.includes('/api/accountant/orders')) return ok({ orders, total, balance: 0, lockedInPOs: 0, page: 1 })
     return ok({})
   })
 }
@@ -89,6 +89,19 @@ describe('NewWorkorder composition route', () => {
     expect(sent).not.toHaveProperty('rate_change_condition')
     // Private market enforcement: visibility keys never leave the client.
     expect(Object.keys(sent).filter((k) => k.startsWith('vis_'))).toEqual([])
+  })
+
+  it('warns that the attach picker only shows the first page of open orders when there are more', async () => {
+    mockApi({ total: 60 }) // 2 returned, 60 open in total → the rest are unreachable here
+    renderPage()
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    expect(within(screen.getByTestId('attach-picker')).getByText(/first 2 of 60 open orders/i)).toBeInTheDocument()
+  })
+
+  it('does not warn when every open order fits on one page', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('O-82')).toBeInTheDocument())
+    expect(within(screen.getByTestId('attach-picker')).queryByText(/open orders/i)).not.toBeInTheDocument()
   })
 
   it('workorder-level contract section uses the same template + change marking', async () => {

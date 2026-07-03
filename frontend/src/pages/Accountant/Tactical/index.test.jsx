@@ -44,4 +44,24 @@ describe('Tactical page', () => {
     renderTactical()
     await waitFor(() => expect(screen.getByText(/no tactical investments/i)).toBeInTheDocument())
   })
+
+  it('hides the pager when entries fit on one page', async () => {
+    renderTactical() // default mock: total 1
+    await waitFor(() => expect(screen.getByText('Headhunter fee')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a pager when total exceeds the page size; Next drives the page param', async () => {
+    globalThis.fetch.mockImplementation(async (url) => ({
+      ok: true, status: 200,
+      json: async () => (String(url).includes('/api/accountant/ledger') ? { entries: TACTICAL, total: 120, balance: -80000, page: 1 } : { ok: true, id: 9 }),
+    }))
+    renderTactical()
+    await waitFor(() => expect(screen.getByText('Headhunter fee')).toBeInTheDocument())
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /next page/i }))
+    await waitFor(() =>
+      expect(globalThis.fetch.mock.calls.some(([u]) => String(u).includes('page=2'))).toBe(true),
+    )
+  })
 })

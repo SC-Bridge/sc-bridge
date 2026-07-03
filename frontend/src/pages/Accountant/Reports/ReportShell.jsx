@@ -16,6 +16,7 @@ export default function ReportShell({
   params,
   onParams,
   withInterval = false,
+  periodToOnly = false, // as-of mode for point-in-time reports (Balance Sheet)
   children,
 }) {
   const { data, error, loading, refetch } = query
@@ -35,7 +36,7 @@ export default function ReportShell({
     <div className="space-y-6 animate-fade-in-up">
       {header}
       <div className={withInterval ? 'panel p-4 space-y-3' : 'panel p-4'}>
-        <PeriodSelector params={params} onChange={onParams} />
+        <PeriodSelector params={params} onChange={onParams} toOnly={periodToOnly} />
         {withInterval && (
           <div className="border-t border-sc-border pt-2">
             <span className="text-xs text-gray-500 uppercase tracking-wider mr-2">Interval</span>

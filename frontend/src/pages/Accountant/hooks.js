@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -52,34 +52,38 @@ function useGet(path, { refreshOn } = {}) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Cancel handle of the most recent in-flight request, whatever triggered it
+  // (mount, a refreshOn event, or a manual refetch() call). Every new request
+  // — and every path change — cancels the previous one, so a slow response
+  // from a superseded path can never overwrite newer data. Manual refetches
+  // participate in the same scheme by going through this ref.
+  const inflightCancel = useRef(null)
+
   const refetch = useCallback(() => {
+    inflightCancel.current?.()
     let cancelled = false
+    const cancel = () => { cancelled = true }
+    inflightCancel.current = cancel
     setLoading(true)
     getJSON(path)
       .then((d) => { if (!cancelled) { setData(d); setError(null) } })
       .catch((e) => { if (!cancelled) setError(e) })
       .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+    return cancel
   }, [path])
 
-  useEffect(() => refetch(), [refetch])
+  useEffect(() => {
+    refetch()
+    // Path change (refetch identity changes) cancels the in-flight request for
+    // the old path, so its late response can never land on the new path's data.
+    return () => { inflightCancel.current?.() }
+  }, [refetch])
 
   useEffect(() => {
     if (!refreshOn) return undefined
-    // Keep the cancel from event-triggered refetches: when the path changes
-    // (refetch identity changes) this effect re-runs and the cleanup cancels
-    // any in-flight event refetch, so its late response can never overwrite
-    // newer data fetched for the new path.
-    let cancel
-    const handler = () => {
-      cancel?.()
-      cancel = refetch()
-    }
+    const handler = () => refetch()
     window.addEventListener(refreshOn, handler)
-    return () => {
-      cancel?.()
-      window.removeEventListener(refreshOn, handler)
-    }
+    return () => window.removeEventListener(refreshOn, handler)
   }, [refreshOn, refetch])
 
   return { data, error, loading, refetch }

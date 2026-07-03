@@ -239,4 +239,38 @@ describe('PeriodSelector', () => {
       expect(emitted.getMilliseconds()).toBe(0)
     })
   })
+
+  describe('resync on external param change (browser back/forward)', () => {
+    it('reverts to All time when the window is cleared externally', () => {
+      const withRange = makeParams({ from: '2026-06-01T00:00:00.000Z', to: '2026-06-08T00:00:00.000Z' })
+      const { rerender } = render(<PeriodSelector params={withRange} onChange={() => {}} />)
+      // A deep-linked window reads as Custom on mount.
+      expect(screen.getByRole('radio', { name: /custom/i })).toBeChecked()
+      // Back clears from/to: the radio must follow the URL, not stay on Custom.
+      rerender(<PeriodSelector params={makeParams()} onChange={() => {}} />)
+      expect(screen.getByRole('radio', { name: /all time/i })).toBeChecked()
+      expect(screen.getByRole('radio', { name: /custom/i })).not.toBeChecked()
+    })
+
+    it('reflects an externally-applied window as Custom when previously All time', () => {
+      const { rerender } = render(<PeriodSelector params={makeParams()} onChange={() => {}} />)
+      expect(screen.getByRole('radio', { name: /all time/i })).toBeChecked()
+      rerender(
+        <PeriodSelector
+          params={makeParams({ from: '2026-06-01T00:00:00.000Z', to: '2026-06-08T00:00:00.000Z' })}
+          onChange={() => {}}
+        />,
+      )
+      expect(screen.getByRole('radio', { name: /custom/i })).toBeChecked()
+    })
+  })
+
+  describe('to-only (as-of) mode', () => {
+    it('hides the From input and labels the bound "As of"', async () => {
+      render(<PeriodSelector params={makeParams()} onChange={() => {}} toOnly />)
+      await userEvent.click(screen.getByRole('radio', { name: /custom/i }))
+      expect(screen.queryByLabelText(/^from$/i)).not.toBeInTheDocument()
+      expect(screen.getByLabelText(/as of/i)).toBeInTheDocument()
+    })
+  })
 })

@@ -28,6 +28,10 @@ function AttachPicker({ checked, onToggle }) {
     return <p className="text-sm text-gray-500">No standalone open orders to attach.</p>
   }
 
+  // The list endpoint pages at 50; this picker isn't paged, so warn honestly
+  // when open orders beyond the first page can't be reached from here.
+  const capped = (data.total ?? 0) > (data.orders?.length ?? 0)
+
   return (
     <div className="space-y-1" data-testid="attach-picker">
       {standalone.map((o) => (
@@ -39,6 +43,11 @@ function AttachPicker({ checked, onToggle }) {
           <span className="ml-auto tabular-nums">{formatAUEC(o.total)}</span>
         </label>
       ))}
+      {capped && (
+        <p className="text-xs text-gray-500 pt-1">
+          Showing the first {data.orders.length} of {data.total} open orders — refine or complete orders to see more.
+        </p>
+      )}
     </div>
   )
 }
