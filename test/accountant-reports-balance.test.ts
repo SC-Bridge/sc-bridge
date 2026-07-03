@@ -164,4 +164,30 @@ describe("Accountant — GET /reports/balance", () => {
     const body = (await (await balance(sessionToken)).json()) as { liabilities: number };
     expect(body.liabilities).toBe(75000);
   });
+
+  // Module3 derived-values table (amendment 2026-06-11): "settled/outgoing flows are
+  // not liabilities". POST /settle writes NO ledger entry (M2 write-off), so the residual
+  // stays inside cash — but the loan must drop out of the liabilities figure once settled.
+  it("settled loan with a residual is excluded from liabilities (write-off), identities still hold", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const loanId = await seedLoan(userId, { direction: "incoming", principal: 100000 });
+    await seedRepayment(userId, loanId, 40000); // net = −60k, outstanding 60k while open
+    // Settle = write off the remaining 60k. No synthetic entry (design; loan test pins it).
+    await env.DB.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(loanId).run();
+    const body = (await (await balance(sessionToken)).json()) as { cash: number; holdings: number; liabilities: number; equity: number; assets: number };
+    expect(body.liabilities).toBe(0);   // written off — no longer a liability
+    expect(body.cash).toBe(-60000);     // residual stays in cash (settle posts no entry)
+    expect(body.equity).toBe(-60000);   // cash + holdings, unchanged by the write-off
+    expect(body.assets).toBe(-60000);   // equity + liabilities → Assets − Liabilities = Equity holds
+  });
+
+  it("an OPEN loan still counts toward liabilities (settle filter does not over-exclude)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const openId = await seedLoan(userId, { direction: "incoming", principal: 100000 });
+    await seedRepayment(userId, openId, 40000); // net −60k, status stays 'open'
+    const settledId = await seedLoan(userId, { direction: "incoming", principal: 30000 });
+    await env.DB.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(settledId).run();
+    const body = (await (await balance(sessionToken)).json()) as { liabilities: number };
+    expect(body.liabilities).toBe(60000); // only the open loan; the settled 30k is excluded
+  });
 });

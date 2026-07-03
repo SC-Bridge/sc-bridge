@@ -257,6 +257,62 @@ describe("Accountant — /api/accountant/ledger", () => {
       expect(row?.notes).toBe("actually a salvage sale");
     });
 
+    it("rejects nulling the category of a manual entry (would orphan it — not in any slice nor the Sorting queue)", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      const id = await createManual(sessionToken); // source='manual', category='running_cost'
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ category: null }),
+      });
+      expect(res.status).toBe(400);
+      // Category is untouched — the manual entry keeps its slice membership.
+      const row = await env.DB.prepare("SELECT category FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ category: string | null }>();
+      expect(row?.category).toBe("running_cost");
+    });
+
+    it("allows nulling the category of a parsed entry (re-sort back into the Sorting queue)", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      // A categorized parsed entry (source='parsed', category set) — the legitimate re-sort case.
+      await env.DB.prepare(
+        `INSERT INTO accountant_entries (user_id, occurred_at, amount, source, category)
+         VALUES (?, '2026-06-01T00:00:00Z', -100, 'parsed', 'trading')`,
+      ).bind(userId).run();
+      const row = await env.DB.prepare("SELECT id FROM accountant_entries WHERE user_id = ?")
+        .bind(userId).first<{ id: number }>();
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${row!.id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ category: null }),
+      });
+      expect(res.status).toBe(200);
+      const after = await env.DB.prepare("SELECT category FROM accountant_entries WHERE id = ?")
+        .bind(row!.id).first<{ category: string | null }>();
+      expect(after?.category).toBeNull(); // back in the Sorting queue
+    });
+
+    it("allows editing an adjustment (NULL category) — sending category:null is a no-op, not a rejection", async () => {
+      const { sessionToken } = await createTestUser(env.DB);
+      // Adjustments legitimately carry a NULL category; the edit UI still sends category:null.
+      const created = await SELF.fetch("http://localhost/api/accountant/ledger", {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: 12000000, occurred_at: "2026-06-01T00:00:00Z", adjustment: true }),
+      });
+      const { id } = (await created.json()) as { id: number };
+      const res = await SELF.fetch(`http://localhost/api/accountant/ledger/${id}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ category: null, notes: "reconciled" }),
+      });
+      expect(res.status).toBe(200);
+      const row = await env.DB.prepare("SELECT category, notes FROM accountant_entries WHERE id = ?")
+        .bind(id).first<{ category: string | null; notes: string | null }>();
+      expect(row?.category).toBeNull();
+      expect(row?.notes).toBe("reconciled");
+    });
+
     it("rejects amount edits on parsed entries with 400", async () => {
       const { userId, sessionToken } = await createTestUser(env.DB);
       await env.DB.prepare(

@@ -204,6 +204,14 @@ export function ledgerRoutes() {
     if (!isUserAuthored && RESTRICTED_FIELDS.some((f) => body[f] !== undefined)) {
       return c.json({ error: "Only category, tag, and notes are editable on imported entries" }, 400);
     }
+    // A manual entry is created with a required category (ManualEntrySchema). Nulling it
+    // would orphan the row: it belongs to no category slice AND (source='manual') never
+    // surfaces in the Sorting queue (category IS NULL AND source='parsed'). Adjustments
+    // legitimately carry NULL category, and a parsed entry may be uncategorized back into
+    // the Sorting queue — so this bites `manual` only.
+    if (body.category === null && row.source === "manual") {
+      return c.json({ error: "A manual entry must keep a category" }, 400);
+    }
 
     const sets: string[] = [];
     const binds: (string | number | null)[] = [];

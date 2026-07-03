@@ -118,7 +118,12 @@ export function reportsRoutes() {
   //                 same decision class as the loan self-netting ruling. By construction
   //                 equity = SUM(non-asset, non-reserve-neutral), which is exactly what
   //                 /net-worth computes, so balance.equity == net-worth last point holds.
-  //   liabilities = per-loan negative nets (display figure, unchanged).
+  //   liabilities = per-loan negative nets over OPEN loans only (display figure).
+  //                 A settled loan is an explicit write-off (POST /settle posts no ledger
+  //                 entry — the residual stays in cash), so it must drop out of the
+  //                 liabilities figure: Module3 derived-values, "settled flows are not
+  //                 liabilities" (amendment 2026-06-11). The residual living on in cash is
+  //                 the owner's no-entry settle design, not a double-count to "fix" here.
   //   assets      = equity + liabilities — so Assets − Liabilities = Equity holds by construction.
   routes.get("/balance", async (c) => {
     const db = c.env.DB;
@@ -152,6 +157,7 @@ export function reportsRoutes() {
              SELECT SUM(amount) AS net
              FROM accountant_entries
              WHERE ${scope.sql} AND loan_id IS NOT NULL AND occurred_at < ?
+               AND loan_id IN (SELECT id FROM accountant_loans WHERE status != 'settled')
              GROUP BY loan_id
            ) WHERE net < 0`,
         )

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders } from "./helpers";
+import { guardedLoanReductionStmt } from "../src/routes/accountant/loans";
+import { privateScope } from "../src/lib/accountant/scope";
 
 async function newLoan(sessionToken: string, body: Record<string, unknown>) {
   return SELF.fetch("http://localhost/api/accountant/loans", {
@@ -288,6 +290,60 @@ describe("Accountant — loan creation + list", () => {
       expect(second.status).toBe(400);
       const secondBody = (await second.json()) as { error: string };
       expect(secondBody.error).toBe("Loan already settled");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reduction SQL guard (TOCTOU): the route's `amount > outstanding` pre-read is a
+  // friendly error only — the INSERT re-validates in SQL. This pin drives the
+  // guarded statement DIRECTLY, exactly like a request whose pre-read won the race
+  // but whose batch lost it (orders "raced-batch pins" convention).
+  // ---------------------------------------------------------------------------
+  describe("loan reduction SQL guard (raced-batch pin)", () => {
+    async function repayDirect(sessionToken: string, id: number, body: Record<string, unknown>) {
+      return SELF.fetch(`http://localhost/api/accountant/loans/${id}/repayments`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("a repayment that would overshoot after a concurrent one writes zero rows — ledger unchanged", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      // outgoing, no interest/fee → outstanding == principal exactly.
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      // A real repayment reduces outstanding 100k → 20k.
+      expect((await repayDirect(sessionToken, id, { amount: 80000, occurred_at: "2026-06-10T00:00:00Z" })).status).toBe(200);
+      const before = await env.DB.prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ?",
+      ).bind(id).first<{ n: number; bal: number }>();
+
+      // Simulate a request that pre-read outstanding=100k (won the race) and now tries to
+      // repay 50k against the current 20k: the guarded INSERT must write ZERO rows.
+      const stmt = guardedLoanReductionStmt(env.DB, privateScope(userId), id, {
+        userID: userId, occurredAt: "2026-06-11T00:00:00Z", source: "loan_repayment",
+        description: "Loan repayment", signedAmount: -50000, amount: 50000, notes: null,
+      });
+      const results = await env.DB.batch([stmt]);
+      expect(results[0].meta.changes ?? 0).toBe(0);
+
+      const after = await env.DB.prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS bal FROM accountant_entries WHERE loan_id = ?",
+      ).bind(id).first<{ n: number; bal: number }>();
+      expect(after).toEqual(before); // no entry written, outstanding sign never flipped
+    });
+
+    it("a repayment for exactly the current outstanding still lands (guard is >=)", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const create = await newLoan(sessionToken, { ...BASE, fee_multiplier: 0, interest_rate: 0 });
+      const { id } = (await create.json()) as { id: number };
+      const stmt = guardedLoanReductionStmt(env.DB, privateScope(userId), id, {
+        userID: userId, occurredAt: "2026-06-11T00:00:00Z", source: "loan_repayment",
+        description: "Loan repayment", signedAmount: -100000, amount: 100000, notes: null,
+      });
+      const results = await env.DB.batch([stmt]);
+      expect(results[0].meta.changes ?? 0).toBe(1);
     });
   });
 

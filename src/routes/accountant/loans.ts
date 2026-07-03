@@ -58,6 +58,55 @@ interface LoanListRow {
 }
 
 /**
+ * Guarded INSERT…SELECT for a repayment/forgiveness — the reduction row lands ONLY
+ * while the loan's current |outstanding| still covers `amount`, computed by SQLite at
+ * batch-execution time (order-helpers `insertOrder` / `fulfillmentStatements` pattern).
+ * The route's `amount > outstanding` pre-read is a friendly early error; this is the
+ * TOCTOU backstop: two concurrent reductions that both pass the pre-read can no longer
+ * jointly overshoot and flip the obligation's sign — the loser writes ZERO rows and the
+ * caller returns the same 400 + outstanding echo. `loan_id` uniquely scopes its entries.
+ */
+export function guardedLoanReductionStmt(
+  db: D1Database,
+  scope: Scope,
+  loanId: number,
+  r: {
+    userID: string;
+    occurredAt: string;
+    source: "loan_repayment" | "loan_forgiveness";
+    description: string;
+    signedAmount: number;
+    amount: number;
+    notes: string | null;
+  },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO accountant_entries
+         (user_id, org_id, occurred_at, amount, category, source, loan_id, notes, description)
+       SELECT ?, ?, ?, ?, 'financial', ?, ?, ?, ?
+       WHERE (SELECT ABS(COALESCE(SUM(amount), 0)) FROM accountant_entries WHERE loan_id = ?) >= ?`,
+    )
+    .bind(r.userID, scope.orgId, r.occurredAt, r.signedAmount, r.source, loanId, r.notes, r.description, loanId, r.amount);
+}
+
+/**
+ * Guarded auto-settle: flips status to 'settled' ONLY when the loan's outstanding is
+ * exactly 0 after the reduction insert in the same batch. Reading the post-insert sum
+ * (D1 batch statements see earlier writes) means a reduction guarded out above never
+ * spuriously settles the loan, and the sole full-repayment/forgiveness settles it.
+ */
+function autoSettleStmt(db: D1Database, loanId: number): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE accountant_loans SET status = 'settled'
+       WHERE id = ? AND status != 'settled'
+         AND (SELECT COALESCE(SUM(amount), 0) FROM accountant_entries WHERE loan_id = ?) = 0`,
+    )
+    .bind(loanId, loanId);
+}
+
+/**
  * /api/accountant/loans — loan lifecycle (design §4.3). Loans are agreement state;
  * every economic event is a loan_id-linked ledger row. Outstanding is never stored.
  * Catch-up accrual runs at the top of every read (design §4.4) so views are current.
@@ -149,10 +198,11 @@ export function loansRoutes() {
     } catch (err) {
       // Compensate: the loan row was inserted before the batch; remove it so we
       // don't leave an orphan loan with no entries. Then rethrow so the caller
-      // sees a 500 rather than a silently broken loan.
+      // sees a 500 rather than a silently broken loan. Scope-guarded (order-helpers
+      // `insertOrder` pattern) — a bare `user_id = ?` is a M4 grep-audit finding.
       await db
-        .prepare("DELETE FROM accountant_loans WHERE id = ? AND user_id = ?")
-        .bind(loanId, userID)
+        .prepare(`DELETE FROM accountant_loans WHERE id = ? AND ${scope.sql}`)
+        .bind(loanId, ...scope.binds)
         .run();
       throw err;
     }
@@ -263,22 +313,23 @@ export function loansRoutes() {
 
     // Repayment carries the OPPOSITE sign of the obligation (reduces it).
     const sign = loaded.signedOutstanding < 0 ? 1 : -1;
-    const stmts: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `INSERT INTO accountant_entries
-             (user_id, org_id, occurred_at, amount, category, source, loan_id, notes, description)
-           VALUES (?, ?, ?, ?, 'financial', 'loan_repayment', ?, ?, 'Loan repayment')`,
-        )
-        .bind(userID, scope.orgId, occurred_at, sign * amount, id, notes ?? null),
-    ];
     const settled = amount === outstanding;
-    if (settled) {
-      stmts.push(
-        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(id),
-      );
+    // Guarded reduction + guarded auto-settle (both re-validate in SQL — TOCTOU backstop).
+    const results = await db.batch([
+      guardedLoanReductionStmt(db, scope, id, {
+        userID, occurredAt: occurred_at, source: "loan_repayment",
+        description: "Loan repayment", signedAmount: sign * amount, amount, notes: notes ?? null,
+      }),
+      autoSettleStmt(db, id),
+    ]);
+    if ((results[0].meta.changes ?? 0) === 0) {
+      // Lost the race: a concurrent reduction landed first. Echo the CURRENT outstanding (§6).
+      const cur = await db
+        .prepare("SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ?")
+        .bind(id)
+        .first<{ bal: number }>();
+      return c.json({ error: "Repayment exceeds outstanding", outstanding: Math.abs(cur?.bal ?? 0) }, 400);
     }
-    await db.batch(stmts);
     return c.json({ ok: true, settled, outstanding: outstanding - amount });
   });
 
@@ -308,22 +359,22 @@ export function loansRoutes() {
 
     // Forgiveness carries the OPPOSITE sign of the obligation (same rule as repayments).
     const sign = loaded.signedOutstanding < 0 ? 1 : -1;
-    const stmts: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `INSERT INTO accountant_entries
-             (user_id, org_id, occurred_at, amount, category, source, loan_id, notes, description)
-           VALUES (?, ?, ?, ?, 'financial', 'loan_forgiveness', ?, ?, 'Loan forgiveness')`,
-        )
-        .bind(userID, scope.orgId, new Date().toISOString(), sign * amount, id, notes ?? null),
-    ];
     const settled = amount === outstanding;
-    if (settled) {
-      stmts.push(
-        db.prepare("UPDATE accountant_loans SET status = 'settled' WHERE id = ?").bind(id),
-      );
+    // Guarded reduction + guarded auto-settle (both re-validate in SQL — TOCTOU backstop).
+    const results = await db.batch([
+      guardedLoanReductionStmt(db, scope, id, {
+        userID, occurredAt: new Date().toISOString(), source: "loan_forgiveness",
+        description: "Loan forgiveness", signedAmount: sign * amount, amount, notes: notes ?? null,
+      }),
+      autoSettleStmt(db, id),
+    ]);
+    if ((results[0].meta.changes ?? 0) === 0) {
+      const cur = await db
+        .prepare("SELECT COALESCE(SUM(amount), 0) AS bal FROM accountant_entries WHERE loan_id = ?")
+        .bind(id)
+        .first<{ bal: number }>();
+      return c.json({ error: "Forgiveness exceeds outstanding", outstanding: Math.abs(cur?.bal ?? 0) }, 400);
     }
-    await db.batch(stmts);
     return c.json({ ok: true, settled, outstanding: outstanding - amount });
   });
 
@@ -366,12 +417,12 @@ export function loansRoutes() {
     if (!exists) return c.json({ error: "Not found" }, 404);
 
     const sets: string[] = [];
-    const binds: (string | null)[] = [];
+    const binds: (string | number | null)[] = [];
     for (const key of ["notes", "due_at"] as const) {
       if (body[key] !== undefined) { sets.push(`${key} = ?`); binds.push(body[key] ?? null); }
     }
     if (sets.length === 0) return c.json({ ok: true });
-    binds.push(String(id));
+    binds.push(id);
     await db
       .prepare(`UPDATE accountant_loans SET ${sets.join(", ")} WHERE id = ?`)
       .bind(...binds)
