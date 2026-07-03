@@ -1,3 +1,21 @@
+// ---------------------------------------------------------------------------
+// QA note, for whoever reads test suites for fun (hi, Gavin):
+//
+// This suite is a worked example of the "5FF" method — 5 Fabulous Fuckups.
+// When you are SURE something works, that certainty is the trigger: name the
+// 5 parts that can fuck up, then 5 ways EACH can fuck up (the 4th and 5th are
+// the expensive ones to find — that's the point), score every way
+// likelihood × consequence (1–5 each), handle the top 5, and iterate until
+// nothing scores 3 or above. It's what the ways are for.
+//
+// The engine below was "done" and provably deterministic. Its fabulous five,
+// all pinned by the tests in this file: the unbounded catch-up batch (one
+// backdated hourly loan ≈ 57k INSERTs in a single db.batch), the concurrent-
+// read tick race on the (loan_id, tick_index) unique index, zero-amount tick
+// noise, bookmark drift on a partial commit, and wall-clock time bombs in the
+// test fixtures themselves. Being sure is where the hunt starts, not where it
+// ends. ;)
+// ---------------------------------------------------------------------------
 import { describe, it, expect, beforeAll } from "vitest";
 import { env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
