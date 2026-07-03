@@ -106,7 +106,8 @@ export default function Market() {
       <OverdueBanner />
 
       <div className="flex gap-6">
-        <Filters params={params} onChange={setParams} />
+        {/* replace: filter toggles shouldn't stack Back-button history. */}
+        <Filters params={params} onChange={(next) => setParams(next, { replace: true })} />
         <div className="flex-1 min-w-0">
           {total === 0 && filtered ? (
             <div className="panel p-10 text-center text-gray-400">

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useLedger, useBadges, useSorting, addEntry, categorizeEntries, useLoans, useLoan, createLoan, updateLoan, recordRepayment, settleLoan, useOrders, createOrder, recordFulfillment, terminateWorkorder, forgiveLoan } from './hooks'
 
@@ -196,5 +196,39 @@ describe('order + workorder hooks (M5)', () => {
     releaseStale()                                         // stale response lands late
     await new Promise((r) => setTimeout(r, 0))
     expect(result.current.data.total).toBe(2)              // never 99
+  })
+})
+
+describe('api() 401 session-expiry handling', () => {
+  // jsdom's real window.location throws on href assignment; swap in a plain
+  // object we can read back, and restore it (defineProperty isn't a vi mock,
+  // so restoreAllMocks won't undo it).
+  const realLocation = window.location
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { href: '' } })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: realLocation })
+    Object.defineProperty(document, 'cookie', { configurable: true, writable: true, value: '' })
+  })
+
+  function mockCookie(value) {
+    Object.defineProperty(document, 'cookie', { configurable: true, get: () => value })
+  }
+
+  it('redirects to /login on 401 when a session cookie is present', async () => {
+    mockCookie('better-auth.session_token=abc')
+    mockFetch({ error: 'Unauthorized' }, false, 401)
+    await expect(addEntry({ amount: 1 })).rejects.toThrow('Unauthorized')
+    expect(window.location.href).toBe('/login')
+  })
+
+  it('does not redirect on 401 without a session cookie (public visitor)', async () => {
+    mockCookie('')
+    mockFetch({ error: 'Unauthorized' }, false, 401)
+    await expect(addEntry({ amount: 1 })).rejects.toThrow('Unauthorized')
+    expect(window.location.href).toBe('')
   })
 })

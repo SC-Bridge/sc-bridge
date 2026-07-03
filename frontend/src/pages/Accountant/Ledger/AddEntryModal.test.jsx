@@ -49,6 +49,35 @@ describe('AddEntryModal', () => {
     expect(body.category).toBeUndefined()
   })
 
+  it('rejects scientific-notation input — 1e5 can never post as amount 1', async () => {
+    // HTML number inputs accept '1e5' (a valid float string), but parseInt('1e5')
+    // === 1: the entry would book 1 aUEC. parseAUEC's strict contract rejects it.
+    const onSaved = vi.fn()
+    const { container } = render(<AddEntryModal onClose={() => {}} onSaved={onSaved} />)
+    // fireEvent.change: '1e5' is a valid FINAL float string a real number input holds.
+    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '1e5' } })
+    await userEvent.selectOptions(screen.getByLabelText(/category/i), 'trading')
+    fireEvent.submit(container.querySelector('form'))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('balance-adjustment mode preserves and posts a negative amount', async () => {
+    // Downward correction (ledger says 5M, game says 4M) — the backend
+    // ManualEntrySchema accepts negative adjustments; the sign must survive.
+    const onSaved = vi.fn()
+    const { container } = render(<AddEntryModal onClose={() => {}} onSaved={onSaved} />)
+    await userEvent.click(screen.getByLabelText(/balance adjustment/i))
+    // fireEvent.change so the negative value bypasses any native min constraint.
+    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '-1000000' } })
+    fireEvent.submit(container.querySelector('form'))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body)
+    expect(body.amount).toBe(-1000000)
+    expect(body.adjustment).toBe(true)
+  })
+
   it('shows the server error and keeps the modal open on failure', async () => {
     globalThis.fetch.mockResolvedValue({
       ok: false, status: 400, json: async () => ({ error: 'amount must be non-zero' }),

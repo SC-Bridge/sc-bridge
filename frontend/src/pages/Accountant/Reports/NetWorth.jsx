@@ -19,7 +19,7 @@ export default function NetWorth() {
       subtitle="Cumulative equity over time"
       query={query}
       params={params}
-      onParams={setParams}
+      onParams={(next) => setParams(next, { replace: true })}
       withInterval
     >
       {(data) => {

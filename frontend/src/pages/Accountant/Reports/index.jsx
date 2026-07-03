@@ -5,8 +5,9 @@ import { formatAUEC } from '../formatAUEC'
 import { useReportPL, useReportBalance, useReportCashFlow } from '../hooks'
 import { DEFAULT_FROM, DEFAULT_TO } from './reportWindow'
 
-// All-time window: epoch start → tomorrow. Shared with the report pages via
-// reportWindow.js so there is exactly one source of truth for this constant.
+// All-time window: epoch start → a fixed far-future sentinel (DEFAULT_TO is the
+// 2999-01-01 constant, not a runtime-relative date). Shared with the report
+// pages via reportWindow.js so there is exactly one source of truth for it.
 const WIDE_QS = new URLSearchParams({ from: DEFAULT_FROM, to: DEFAULT_TO }).toString()
 const BAL_QS = new URLSearchParams({ at: DEFAULT_TO }).toString()
 

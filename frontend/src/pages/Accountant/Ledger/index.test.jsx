@@ -200,6 +200,19 @@ describe('Ledger page', () => {
     })
   })
 
+  it('debounces the search input — a keystroke burst coalesces into one fetch', async () => {
+    renderLedger()
+    await waitFor(() => expect(screen.getByText('Laranite sell')).toBeInTheDocument())
+    await userEvent.type(screen.getByPlaceholderText(/Description/i), 'ore')
+    // The settled value reaches the URL...
+    await waitFor(() => {
+      expect(globalThis.fetch.mock.calls.some(([u]) => String(u).includes('q=ore'))).toBe(true)
+    })
+    // ...but only once — intermediate 'q=o' / 'q=or' never fired their own fetch.
+    const searchCalls = globalThis.fetch.mock.calls.filter(([u]) => String(u).includes('q='))
+    expect(searchCalls).toHaveLength(1)
+  })
+
   it('clicking All time after Today removes from= and to= from fetch URL', async () => {
     renderLedger()
     await waitFor(() => expect(screen.getByText('Today')).toBeInTheDocument())

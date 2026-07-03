@@ -101,7 +101,8 @@ export default function Workorders() {
         }
       />
 
-      <StatusFilter params={params} onChange={setParams} />
+      {/* replace: status-filter toggles shouldn't stack Back-button history. */}
+      <StatusFilter params={params} onChange={(next) => setParams(next, { replace: true })} />
 
       {total === 0 && filtered ? (
         <div className="panel p-10 text-center text-gray-400">

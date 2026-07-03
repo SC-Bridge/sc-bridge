@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LOAN_INTERVALS, LOAN_DIRECTIONS } from '../constants'
 import { INTERVAL_LABELS } from '../loanMath'
 import { createLoan } from '../hooks'
+import { parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 
 // Loan terms (direction, counterparty, principal, rate, interval, fee, started_at) are
@@ -21,12 +22,18 @@ export default function NewLoanModal({ onClose, onSaved }) {
 
   async function submit(e) {
     e.preventDefault()
+    // Strict money parse — parseAUEC nulls anything parseInt would truncate ('1e5' → 1).
+    const principalValue = parseAUEC(principal)
+    if (principalValue === null || principalValue < 1) {
+      setError('Principal must be a whole number of aUEC (digits only)')
+      return
+    }
     setSaving(true)
     setError(null)
     const body = {
       direction,
       counterparty: counterparty.trim(),
-      principal: parseInt(principal, 10),
+      principal: principalValue,
       interest_rate: parseFloat(interestRate),
       interest_interval: interestInterval,
       fee_multiplier: parseFloat(feeMultiplier) || 0,

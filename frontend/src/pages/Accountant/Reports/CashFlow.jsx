@@ -19,7 +19,7 @@ export default function CashFlow() {
       subtitle="In, out, and net liquidity over a period"
       query={query}
       params={params}
-      onParams={setParams}
+      onParams={(next) => setParams(next, { replace: true })}
       withInterval
     >
       {(data) => {

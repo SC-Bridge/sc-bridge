@@ -32,7 +32,8 @@ export default function Loans() {
   function setTab(next) {
     const p = new URLSearchParams(params)
     p.set('tab', next)
-    setParams(p)
+    // replace: switching tabs shouldn't stack Back-button history entries.
+    setParams(p, { replace: true })
   }
 
   return (

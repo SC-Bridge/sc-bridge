@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { LEDGER_CATEGORIES, CATEGORY_LABELS, DEFAULT_TAGS, TAG_LABELS } from '../constants'
 import { addEntry } from '../hooks'
+import { parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 
 // Manual entry per UX doc B.1; "Balance adjustment" mode posts a category-less
@@ -20,14 +21,23 @@ export default function AddEntryModal({ onClose, onSaved, preset = {} }) {
 
   async function submit(e) {
     e.preventDefault()
-    const magnitude = Math.abs(parseInt(amount, 10) || 0)
-    if (magnitude === 0) {
+    // Strict money parse — parseAUEC nulls anything parseInt would truncate ('1e5' → 1).
+    const parsed = parseAUEC(amount)
+    if (parsed === null) {
+      setError('Amount must be a whole number of aUEC (digits only)')
+      return
+    }
+    if (parsed === 0) {
       setError('Amount must be at least 1')
       return
     }
     setSaving(true)
     setError(null)
-    const signed = direction === 'expense' && !adjustment ? -magnitude : magnitude
+    // Adjustments may be negative (downward correction: ledger 5M, game 4M);
+    // expense/income use magnitude with a direction-driven sign.
+    const signed = adjustment
+      ? parsed
+      : (direction === 'expense' ? -Math.abs(parsed) : Math.abs(parsed))
     const body = {
       amount: signed,
       occurred_at: new Date(occurredAt).toISOString(),
@@ -80,7 +90,8 @@ export default function AddEntryModal({ onClose, onSaved, preset = {} }) {
 
         <div>
           <label htmlFor="amount" className="block text-sm text-gray-400 mb-1">Amount (aUEC)</label>
-          <input id="amount" type="number" min="1" required value={amount}
+          {/* Adjustments accept negative corrections, so no min floor in that mode. */}
+          <input id="amount" type="number" min={adjustment ? undefined : '1'} required value={amount}
             onChange={(e) => setAmount(e.target.value)}
             className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm" />
         </div>

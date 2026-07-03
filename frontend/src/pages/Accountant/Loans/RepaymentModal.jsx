@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { recordRepayment } from '../hooks'
-import { formatAUEC } from '../formatAUEC'
+import { formatAUEC, parseAUEC } from '../formatAUEC'
 import { localDatetimeNow } from '../datetime'
 
 export default function RepaymentModal({ loan, onClose, onSaved }) {
@@ -12,7 +12,8 @@ export default function RepaymentModal({ loan, onClose, onSaved }) {
 
   async function submit(e) {
     e.preventDefault()
-    const parsed = parseInt(amount, 10)
+    // Strict money parse — parseAUEC nulls anything parseInt would truncate.
+    const parsed = parseAUEC(amount)
     if (!parsed || parsed < 1) {
       setError('Amount must be at least 1')
       return

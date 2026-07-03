@@ -34,16 +34,17 @@ export default function Ledger() {
 
   // Any filter/period/search change must return to page 1 — staying on page 7
   // after a filter trims the result set to one page would show an empty list.
+  // replace: filtering/paging shouldn't stack Back-button history entries.
   function changeFilters(next) {
     next.delete('page')
-    setParams(next)
+    setParams(next, { replace: true })
   }
 
   function goToPage(p) {
     const next = new URLSearchParams(params)
     if (p <= 1) next.delete('page')
     else next.set('page', String(p))
-    setParams(next)
+    setParams(next, { replace: true })
   }
 
   if (loading && !data) return <LoadingState />

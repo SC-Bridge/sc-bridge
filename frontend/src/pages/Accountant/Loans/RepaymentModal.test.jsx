@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import RepaymentModal from './RepaymentModal'
 
@@ -18,6 +18,20 @@ describe('RepaymentModal', () => {
     await userEvent.click(screen.getByRole('button', { name: /record repayment/i }))
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(fetchMock).toHaveBeenCalledWith('/api/accountant/loans/7/repayments', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('rejects scientific-notation input — 1e5 can never post as amount 1', async () => {
+    // HTML number inputs accept '1e5' (a valid float string), but parseInt('1e5')
+    // === 1: the repayment would book 1 aUEC. parseAUEC's strict contract rejects it.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) })
+    const onSaved = vi.fn()
+    render(<RepaymentModal loan={LOAN} onClose={() => {}} onSaved={onSaved} />)
+    // fireEvent.change: '1e5' is a valid FINAL float string a real number input holds.
+    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '1e5' } })
+    await userEvent.click(screen.getByRole('button', { name: /record repayment/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(onSaved).not.toHaveBeenCalled()
   })
 
   it('shows the echoed outstanding when the API rejects an over-payment', async () => {

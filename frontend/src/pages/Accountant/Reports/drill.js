@@ -2,12 +2,10 @@
 // The M1 ledger GET reads category/source as REPEATABLE params (c.req.queries),
 // so comma-lists are expanded into repeated keys.
 //
-// BOUNDARY NOTE (owner decision 2026-06-11): report periods are half-open
-// (occurred_at >= from AND < to) while the M1 ledger GET treats `to` as
-// INCLUSIVE (<= to). The same from/to are passed through unchanged, so a
-// drilled-into Ledger view can include one extra entry occurring at exactly
-// the ISO `to` instant that the report total excluded. Accepted; aligning the
-// M1 ledger semantic is noted future work — do NOT change ledger.ts here.
+// BOUNDARY NOTE: report periods and the ledger GET are both half-open on `to`
+// (occurred_at >= from AND < to — see routes/accountant/ledger.ts, which pins
+// its upper bound to report-period.ts). The same from/to pass through unchanged,
+// so a drilled-into Ledger view and the report total agree at window boundaries.
 export function drillToLedger(drill) {
   const p = new URLSearchParams()
   for (const [key, val] of Object.entries(drill)) {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { LEDGER_CATEGORIES, CATEGORY_LABELS, SOURCE_LABELS } from '../constants'
 import PeriodSelector from '../components/PeriodSelector'
 
@@ -15,19 +16,28 @@ export default function FilterPanel({ params, onChange }) {
   const activeCategories = params.getAll('category')
   const activeSources = params.getAll('source').length ? params.getAll('source') : DEFAULT_SOURCES
 
+  // Local search state so typing is instant; the debounced effect below pushes
+  // the settled value to the URL once, not one API refetch per keystroke.
+  const [search, setSearch] = useState(params.get('q') ?? '')
+
+  useEffect(() => {
+    const current = params.get('q') ?? ''
+    if (search === current) return undefined
+    const t = setTimeout(() => {
+      const next = new URLSearchParams(params)
+      if (search) next.set('q', search)
+      else next.delete('q')
+      onChange(next)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [search, params, onChange])
+
   function toggle(key, value, active) {
     const next = new URLSearchParams(params)
     const current = key === 'source' ? activeSources : next.getAll(key)
     next.delete(key)
     const updated = active ? current.filter((v) => v !== value) : [...current, value]
     for (const v of updated) next.append(key, v)
-    onChange(next)
-  }
-
-  function setText(key, value) {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
     onChange(next)
   }
 
@@ -65,8 +75,8 @@ export default function FilterPanel({ params, onChange }) {
         <h3 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Search</h3>
         <input
           type="search"
-          defaultValue={params.get('q') ?? ''}
-          onChange={(e) => setText('q', e.target.value)}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Description, location…"
           className="w-full bg-sc-darker border border-sc-border rounded px-2 py-1.5 text-sm"
         />

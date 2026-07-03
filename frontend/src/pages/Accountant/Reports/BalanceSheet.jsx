@@ -21,7 +21,7 @@ export default function BalanceSheet() {
       subtitle="Assets, liabilities, and equity at a point in time"
       query={query}
       params={params}
-      onParams={setParams}
+      onParams={(next) => setParams(next, { replace: true })}
     >
       {(data) => (
         <>

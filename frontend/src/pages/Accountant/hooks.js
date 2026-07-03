@@ -7,6 +7,14 @@ async function api(method, path, body) {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
+  if (res.status === 401) {
+    // Session expired — redirect only if a session cookie exists, so public
+    // pages that legitimately 401 for anonymous visitors aren't bounced (mirrors useAPI.js).
+    if (document.cookie.includes('better-auth.session_token')) {
+      window.location.href = '/login'
+    }
+    throw new Error('Unauthorized')
+  }
   if (!res.ok) {
     let message = `${method} ${path} failed: ${res.status}`
     let details
