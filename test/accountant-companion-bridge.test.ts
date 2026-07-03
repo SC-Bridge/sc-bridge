@@ -10,7 +10,7 @@ describe("bridgeEconomyEvent", () => {
       RECEIVED,
     );
     expect(draft).toEqual({
-      occurredAt: "2026-06-10T10:00:00Z",
+      occurredAt: "2026-06-10T10:00:00.000Z", // normalized to UTC .toISOString()
       amount: -5000,
       category: null,
       tag: null,
@@ -18,8 +18,18 @@ describe("bridgeEconomyEvent", () => {
       location: null,
       quantity: null,
       pricePerUnit: null,
-      sourceRef: "companion:fined:2026-06-10T10:00:00Z",
+      sourceRef: "companion:fined:2026-06-10T10:00:00Z", // idempotency key keeps the raw stamp
     });
+  });
+
+  it("normalizes an offset timestamp to the UTC Z form (so ORDER BY / cutoffs compare correctly)", () => {
+    const draft = bridgeEconomyEvent(
+      { type: "fined", timestamp: "2026-07-03T12:00:00+12:00", data: { amount: "100" } },
+      RECEIVED,
+    );
+    // +12:00 noon is 00:00Z the same day — the stored value must be the folded Z string,
+    // never the raw offset (raw-string comparisons elsewhere would mis-order it).
+    expect(draft?.occurredAt).toBe("2026-07-03T00:00:00.000Z");
   });
 
   it("maps an enriched purchase to a negative, auto-categorized asset", () => {

@@ -53,9 +53,18 @@ function sourceRef(evt: CompanionEvent): string {
   return `companion:${key}`;
 }
 
-/** ISO occurred_at, falling back to receivedAt when the log timestamp is unparseable. */
+/**
+ * ISO occurred_at, falling back to receivedAt when the log timestamp is unparseable.
+ * Normalizes to UTC .toISOString() — the same shape isoDatetime (routes/accountant/
+ * schemas.ts) gives every other accountant datetime. Report windows, the /balance
+ * cutoff, badge queries and ORDER BY compare RAW strings, so a log timestamp carrying
+ * an offset (e.g. "…+12:00") must be folded to Z or it mis-orders and mis-buckets.
+ * Date.parse already validated it, so new Date(...) cannot be Invalid here.
+ */
 function occurredAt(evt: CompanionEvent, receivedAt: string): string {
-  return Number.isNaN(Date.parse(evt.timestamp)) ? receivedAt : evt.timestamp;
+  return Number.isNaN(Date.parse(evt.timestamp))
+    ? receivedAt
+    : new Date(evt.timestamp).toISOString();
 }
 
 /**
