@@ -215,6 +215,19 @@ function resolveKey(candidate: string, validKeys?: Map<string, string>): string 
 }
 
 /**
+ * Ordered global.ini key candidates for an item.
+ *
+ * CIG writes item labels under two conventions, and which one an item uses is
+ * not derivable from anything we store:
+ *   item_Name<class>   — weapons, most vehicle components
+ *   item_Name_<class>  — armour, helmets (note the underscore)
+ * The bare form comes first so existing matches keep their exact behaviour.
+ */
+function itemKeyCandidates(className: string): string[] {
+  return [`item_Name${className}`, `item_Name_${className}`];
+}
+
+/**
  * Generate item label overrides. Only produces overrides for keys that
  * exist in validKeys (the actual global.ini key set). This prevents
  * phantom keys from colliding with unrelated entries.
@@ -227,13 +240,34 @@ export function generateItemLabels(
   const overrides: LabelOverride[] = [];
   for (const row of rows) {
     if (!row.className) continue;
-    const key = resolveKey(`item_Name${row.className}`, validKeys);
+    const key = itemKeyCandidates(row.className)
+      .map((c) => resolveKey(c, validKeys))
+      .find(Boolean);
     if (!key) continue;
     const tag = buildDetailTag(row, catFormat.fields);
     overrides.push({
       key,
       value: formatLabel(row.name, tag, catFormat.format),
       original: row.name,
+    });
+
+    // The game ships a second, shorter string for many items
+    // (item_Name<class>_short — 715 of them in the 4.9 base) used in compact UI.
+    // Only the base knows that short text, so tag it at merge time via a
+    // sentinel rather than reusing our long name. Requires validKeys: without
+    // the real key set we cannot know a _short key exists, and inventing one
+    // would add a phantom key.
+    if (!validKeys || !tag) continue;
+    // Derive the short key from the convention that actually resolved above,
+    // so the two can never diverge.
+    const shortKey = resolveKey(`${key}_short`, validKeys);
+    if (!shortKey) continue;
+    overrides.push({
+      key: shortKey,
+      value:
+        catFormat.format === "prefix"
+          ? `${BP_PREPEND_SENTINEL}[${tag}] `
+          : `${BP_APPEND_SENTINEL} [${tag}]`,
     });
   }
   return overrides;
@@ -243,6 +277,63 @@ export function generateItemLabels(
 // Enhancements — server-generated overrides from our own data
 // ---------------------------------------------------------------------------
 
+/** A trailing "(Raw)"/"(R)" marker on a commodity's display name. */
+const RAW_SUFFIX = /\(\s*(?:raw|r)\s*\)\s*$/i;
+
+/** Normalise a display name into a global.ini key token (lowercase alphanumerics). */
+function keyToken(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Ordered global.ini key candidates for a commodity.
+ *
+ * `trade_commodities.class_name` is the p4k entity stem and does NOT always
+ * match the game's own key. Real 4.9 cases:
+ *   class "quantanium"              -> items_commodities_quantainium    (class misspelt)
+ *   class "raw_quantainium"         -> items_commodities_quantainium_raw (prefix vs suffix)
+ *   class "medicalSupplies_medPens" -> items_commodities_medpens
+ * The DB `name` matches the base value verbatim, so it drives the fallbacks.
+ *
+ * A RAW item never offers the bare/refined key: "Hephaestanite (R)" has no
+ * _raw key, and matching items_commodities_hephaestanite would stamp the raw
+ * item's label onto a different commodity. Callers resolve against the base's
+ * real key set, so a candidate that doesn't exist simply yields no override.
+ */
+export function commodityKeyCandidates(className: string, name: string): string[] {
+  const out = [`items_commodities_${className}`];
+  const isRaw = /^raw_/i.test(className) || RAW_SUFFIX.test(name);
+  const stem = name.replace(RAW_SUFFIX, "").trim();
+  if (isRaw) {
+    if (/^raw_/i.test(className)) out.push(`items_commodities_${className.slice(4)}_raw`);
+    out.push(`items_commodities_${keyToken(stem)}_raw`);
+  } else {
+    out.push(`items_commodities_${keyToken(stem)}`);
+  }
+  return out;
+}
+
+/**
+ * Resolve a commodity to its real global.ini key, trying each candidate in
+ * order as both the bare key and its `,P` parameter variant (some commodities
+ * only ship the ,P form — 4.9 has items_commodities_hephaestanite_raw,P but no
+ * bare equivalent). Candidate order is preserved, so a raw item still never
+ * reaches a refined key.
+ */
+function resolveCommodityKey(
+  className: string,
+  name: string,
+  validKeys?: Map<string, string>,
+): string | undefined {
+  for (const candidate of commodityKeyCandidates(className, name)) {
+    const direct = resolveKey(candidate, validKeys);
+    if (direct) return direct;
+    const asParam = validKeys?.get(`${candidate.toLowerCase()},p`);
+    if (asParam) return asParam;
+  }
+  return undefined;
+}
+
 /** Contraband warnings: prefix illegal commodity names with [!] */
 export function generateContrabandWarnings(
   rows: Array<{ className: string; name: string }>,
@@ -251,7 +342,7 @@ export function generateContrabandWarnings(
   const overrides: LabelOverride[] = [];
   for (const row of rows) {
     if (!row.className) continue;
-    const key = resolveKey(`items_commodities_${row.className}`, validKeys);
+    const key = resolveCommodityKey(row.className, row.name, validKeys);
     if (!key) continue;
     overrides.push({
       key,
@@ -298,11 +389,9 @@ export function generateMaterialShortNames(
     }
     if (!shortened) continue;
 
-    const candidates = [
-      `items_commodities_${row.className}`,
-      `item_Name${row.className}`,
-    ];
-    const key = candidates.map((c) => resolveKey(c, validKeys)).find(Boolean);
+    const key =
+      resolveCommodityKey(row.className, row.name, validKeys) ??
+      resolveKey(`item_Name${row.className}`, validKeys);
     if (!key) continue;
     overrides.push({
       key,
@@ -320,6 +409,13 @@ export function generateMaterialShortNames(
  * base string at override-generation time.
  */
 export const BP_APPEND_SENTINEL = "\0BP_APPEND\0";
+
+/**
+ * Sibling of BP_APPEND_SENTINEL: the /download endpoint emits the remainder
+ * BEFORE the untouched base value. Used for prefix-format short labels, where
+ * the tag leads and only the base knows the short text.
+ */
+export const BP_PREPEND_SENTINEL = "\0BP_PREPEND\0";
 
 /**
  * PascalCase vehicle_components.type → readable noun for a blueprint's
@@ -505,6 +601,87 @@ export function generateContractOverrides(
 // ---------------------------------------------------------------------------
 // Merge engine
 // ---------------------------------------------------------------------------
+
+/**
+ * Merge overrides into a base global.ini given as raw BYTES — the form the
+ * /download endpoint serves.
+ *
+ * Works byte-wise on purpose: the base is ~10MB and its values may hold
+ * non-ASCII text, so only keys (always ASCII, before the '=') are decoded and
+ * untouched lines are copied through verbatim. That keeps every byte we don't
+ * deliberately change bit-identical to CIG's file.
+ *
+ * An override value starting with BP_APPEND_SENTINEL / BP_PREPEND_SENTINEL
+ * keeps the base value and adds the remainder after / before it — the base is
+ * the only source of those strings (contract bodies, short-form item names).
+ * Any other value replaces the base value outright.
+ *
+ * `overrideMap` is keyed by LOWERCASE key; matching is case-insensitive and the
+ * file's original key casing is preserved on output.
+ */
+export function mergeGlobalIniBytes(
+  raw: Uint8Array,
+  overrideMap: Map<string, string>,
+): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  const te = new TextEncoder();
+  let lineStart = 0;
+  for (let i = 0; i <= raw.length; i++) {
+    if (i === raw.length || raw[i] === 0x0A) {
+      const lineEnd = i;
+      let eqPos = -1;
+      for (let j = lineStart; j < lineEnd; j++) {
+        if (raw[j] === 0x3D) { eqPos = j; break; }
+      }
+      if (eqPos > lineStart) {
+        let keyEnd = eqPos;
+        while (keyEnd > lineStart && raw[keyEnd - 1] === 0x20) keyEnd--;
+        const keyBytes = raw.slice(lineStart, keyEnd);
+        // Skip the UTF-8 BOM on the first line.
+        const keyStr = String.fromCharCode(
+          ...(lineStart === 0 && keyBytes[0] === 0xEF ? keyBytes.slice(3) : keyBytes),
+        );
+        const override = overrideMap.get(keyStr.toLowerCase());
+        if (override !== undefined) {
+          chunks.push(raw.slice(lineStart, eqPos + 1));
+          if (override.startsWith(BP_APPEND_SENTINEL) || override.startsWith(BP_PREPEND_SENTINEL)) {
+            const prepend = override.startsWith(BP_PREPEND_SENTINEL);
+            const sentinel = prepend ? BP_PREPEND_SENTINEL : BP_APPEND_SENTINEL;
+            const addText = override.slice(sentinel.length);
+            let valEnd = lineEnd;
+            if (valEnd > 0 && raw[valEnd - 1] === 0x0D) valEnd--;
+            const origValBytes = raw.slice(eqPos + 1, valEnd);
+            if (prepend) {
+              chunks.push(te.encode(addText));
+              chunks.push(origValBytes);
+            } else {
+              chunks.push(origValBytes);
+              chunks.push(te.encode(addText));
+            }
+          } else {
+            chunks.push(te.encode(override));
+          }
+          if (lineEnd > 0 && raw[lineEnd - 1] === 0x0D) chunks.push(new Uint8Array([0x0D]));
+          if (i < raw.length) chunks.push(new Uint8Array([0x0A]));
+          lineStart = i + 1;
+          continue;
+        }
+      }
+      // Untouched line: emit original bytes verbatim.
+      chunks.push(raw.slice(lineStart, i < raw.length ? i + 1 : i));
+      lineStart = i + 1;
+    }
+  }
+
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const output = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
 
 /**
  * Merge overrides into the base global.ini content.

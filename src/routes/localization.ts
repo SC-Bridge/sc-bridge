@@ -24,6 +24,7 @@ import {
   resolveCategoryFormat,
   searchGlobalIniKeys,
   applyCategoryPacks,
+  mergeGlobalIniBytes,
 } from "../lib/localization";
 
 /**
@@ -745,63 +746,7 @@ export function localizationRoutes() {
       overrideMap.set(o.key.toLowerCase(), o.value);
     }
 
-    // Merge: scan raw bytes line by line. For lines with a matching key,
-    // emit the replacement. For all others, emit the original bytes untouched.
-    const chunks: Uint8Array[] = [];
-    const te = new TextEncoder();
-    let lineStart = 0;
-    for (let i = 0; i <= raw.length; i++) {
-      if (i === raw.length || raw[i] === 0x0A) {
-        const lineEnd = i;
-        // Find '=' in this line
-        let eqPos = -1;
-        for (let j = lineStart; j < lineEnd; j++) {
-          if (raw[j] === 0x3D) { eqPos = j; break; }
-        }
-        if (eqPos > lineStart) {
-          let keyEnd = eqPos;
-          while (keyEnd > lineStart && raw[keyEnd - 1] === 0x20) keyEnd--;
-          const keyBytes = raw.slice(lineStart, keyEnd);
-          const keyStr = String.fromCharCode(...(lineStart === 0 && keyBytes[0] === 0xEF ? keyBytes.slice(3) : keyBytes));
-          const override = overrideMap.get(keyStr.toLowerCase());
-          if (override !== undefined) {
-            // Emit: original key bytes + '=' + override value + \r\n
-            chunks.push(raw.slice(lineStart, eqPos + 1));
-
-            if (override.startsWith("\0BP_APPEND\0")) {
-              // Append mode: emit original value + appended text
-              const appendText = override.slice("\0BP_APPEND\0".length);
-              // Extract original value bytes (after '=', before line end)
-              let valEnd = lineEnd;
-              if (valEnd > 0 && raw[valEnd - 1] === 0x0D) valEnd--;
-              const origValBytes = raw.slice(eqPos + 1, valEnd);
-              chunks.push(origValBytes);
-              chunks.push(te.encode(appendText));
-            } else {
-              chunks.push(te.encode(override));
-            }
-            if (lineEnd > 0 && raw[lineEnd - 1] === 0x0D) {
-              chunks.push(new Uint8Array([0x0D]));
-            }
-            if (i < raw.length) chunks.push(new Uint8Array([0x0A]));
-            lineStart = i + 1;
-            continue;
-          }
-        }
-        // Untouched line: emit original bytes
-        chunks.push(raw.slice(lineStart, i < raw.length ? i + 1 : i));
-        lineStart = i + 1;
-      }
-    }
-
-    // Concatenate chunks
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-    const output = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const chunk of chunks) {
-      output.set(chunk, offset);
-      offset += chunk.length;
-    }
+    const output = mergeGlobalIniBytes(raw, overrideMap);
 
     return new Response(output, {
       headers: {
