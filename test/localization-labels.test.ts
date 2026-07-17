@@ -5,6 +5,7 @@ import {
   generateItemLabels,
   generateContrabandWarnings,
   generateMaterialShortNames,
+  splitPlaceholderChanges,
   ALL_LABEL_FIELDS,
   CATEGORY_AVAILABLE_FIELDS,
   BP_APPEND_SENTINEL,
@@ -397,5 +398,47 @@ describe("generateItemLabels — item_Name_<class> underscore convention", () =>
     const out = generateItemLabels(rows, { fields: ["subType"], format: "suffix" },
       keys("item_Namesomething_else"));
     expect(out).toEqual([]);
+  });
+});
+
+/**
+ * Placeholder housekeeping split — CIG ships literal "PLACEHOLDER" strings for
+ * unreleased items, and 4.9 appended the item class to every one of them
+ * ("PLACEHOLDER" -> "PLACEHOLDER - cbd_hat_03_01_CFP_var2"). Those are real
+ * value changes but pure housekeeping; the diff banner collapses them into a
+ * single count instead of listing each.
+ */
+describe("splitPlaceholderChanges", () => {
+  const ch = (key: string, oldValue: string, newValue: string) => ({ key, oldValue, newValue });
+
+  it("separates changes where BOTH sides are placeholder text", () => {
+    const { changed, placeholderChanged } = splitPlaceholderChanges([
+      ch("item_Desc_hat,P", "PLACEHOLDER", "PLACEHOLDER - cbd_hat_03_01"),
+      ch("Human_Surnames_3433", "Mussolini", "Musson"),
+    ]);
+    expect(changed.map(c => c.key)).toEqual(["Human_Surnames_3433"]);
+    expect(placeholderChanged.map(c => c.key)).toEqual(["item_Desc_hat,P"]);
+  });
+
+  it("keeps a change where a placeholder became REAL text (that's content news)", () => {
+    const { changed, placeholderChanged } = splitPlaceholderChanges([
+      ch("item_Desc_gun", "PLACEHOLDER", "A finely tuned ballistic rifle."),
+    ]);
+    expect(changed).toHaveLength(1);
+    expect(placeholderChanged).toHaveLength(0);
+  });
+
+  it("keeps a change where real text regressed TO a placeholder", () => {
+    const { changed } = splitPlaceholderChanges([
+      ch("item_Desc_x", "An actual description", "PLACEHOLDER - item_x"),
+    ]);
+    expect(changed).toHaveLength(1);
+  });
+
+  it("is case- and whitespace-tolerant", () => {
+    const { placeholderChanged } = splitPlaceholderChanges([
+      ch("k", "  placeholder", "Placeholder - thing"),
+    ]);
+    expect(placeholderChanged).toHaveLength(1);
   });
 });
