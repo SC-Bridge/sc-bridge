@@ -25,8 +25,12 @@ export function blueprintRoutes() {
   //   - fps_weapons     ("Novia Crossbow", "FS-9 LMG", ...)
   //   - fps_armour      ("Pembroke RG-46 Helmet", "Hardline AR2", ...)
   //   - fps_helmets     (helmet-specific item table)
+  //   - fps_clothing    ("Bellator Jacket", "Spettro Shoes", ...)
+  //   - fps_carryables  ("TH-01 Propulsor", "Probe", ...)
   //   - fps_ammo_types  (magazine names: "Novia Bolt Magazine")
   //   - vehicle_components (ship-mounted weapons + components)
+  // Miss a table here and its blueprints silently fall back to the
+  // machine-derived crafting_blueprints.name ("Hdtc Jacket 01 01 01").
   // Each gets a LIVE + PTU pair. First non-null wins via COALESCE.
   //
   // Builds (mig 0226) are nested under each blueprint as `builds[]`
@@ -53,6 +57,8 @@ export function blueprintRoutes() {
       ? `LEFT JOIN ptu_fps_weapons  pfw ON LOWER(pfw.class_name) = ${outItem}
          LEFT JOIN ptu_fps_armour   pfa ON LOWER(pfa.class_name) = ${outItem}
          LEFT JOIN ptu_fps_helmets  pfh ON LOWER(pfh.class_name) = ${outItem}
+         LEFT JOIN ptu_fps_clothing pfc ON LOWER(pfc.class_name) = ${outItem}
+         LEFT JOIN ptu_fps_carryables pfy ON LOWER(pfy.class_name) = ${outItem}
          LEFT JOIN ptu_fps_ammo_types pam ON LOWER(pam.class_name) = ${outItem}
          LEFT JOIN ptu_vehicle_components pvc ON LOWER(pvc.class_name) = ${outItem}`
       : ``;
@@ -75,6 +81,8 @@ export function blueprintRoutes() {
                   lfw.name, ${p("pfw.name")},
                   lfa.name, ${p("pfa.name")},
                   lfh.name, ${p("pfh.name")},
+                  lfc.name, ${p("pfc.name")},
+                  lfy.name, ${p("pfy.name")},
                   lam.name, ${p("pam.name")},
                   lvc.name, ${p("pvc.name")}
                 ) AS item_name
@@ -84,6 +92,8 @@ export function blueprintRoutes() {
          LEFT JOIN fps_weapons      lfw ON LOWER(lfw.class_name) = ${outItem}
          LEFT JOIN fps_armour       lfa ON LOWER(lfa.class_name) = ${outItem}
          LEFT JOIN fps_helmets      lfh ON LOWER(lfh.class_name) = ${outItem}
+         LEFT JOIN fps_clothing     lfc ON LOWER(lfc.class_name) = ${outItem}
+         LEFT JOIN fps_carryables   lfy ON LOWER(lfy.class_name) = ${outItem}
          LEFT JOIN fps_ammo_types   lam ON LOWER(lam.class_name) = ${outItem}
          LEFT JOIN vehicle_components     lvc ON LOWER(lvc.class_name) = ${outItem}
          ${ptuItemJoins}
