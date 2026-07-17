@@ -12,6 +12,7 @@ import {
   DEFAULT_CONFIG,
   configFromRow,
   diffGlobalIni,
+  splitPlaceholderChanges,
   generateAsopOverrides,
   generateItemLabels,
   generateContrabandWarnings,
@@ -104,13 +105,19 @@ export function localizationRoutes() {
       }
 
       const diff = diffGlobalIni(fromIni, toIni);
+      // Placeholder→placeholder edits (CIG housekeeping on unfinished strings)
+      // are collapsed to a count so the banner shows real content changes.
+      const { changed, placeholderChanged } = splitPlaceholderChanges(diff.changed);
       return c.json({
         from: fromCode,
         to: toCode,
         added_count: diff.added.length,
         removed_count: diff.removed.length,
-        changed_count: diff.changed.length,
-        ...diff,
+        changed_count: changed.length,
+        placeholder_changed_count: placeholderChanged.length,
+        added: diff.added,
+        removed: diff.removed,
+        changed,
       });
     },
   );
