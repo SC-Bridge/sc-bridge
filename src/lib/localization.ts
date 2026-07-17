@@ -797,6 +797,34 @@ export function diffGlobalIni(oldContent: string, newContent: string): GlobalIni
   return { added, removed, changed };
 }
 
+/** True when a localization value is CIG's unfinished-string marker. */
+function isPlaceholderValue(v: string): boolean {
+  return v.trim().toUpperCase().startsWith("PLACEHOLDER");
+}
+
+/**
+ * Split value changes into real edits vs placeholder housekeeping.
+ *
+ * CIG ships literal "PLACEHOLDER" strings for unreleased items, and their 4.9
+ * loc pipeline appended the item class to every one ("PLACEHOLDER" →
+ * "PLACEHOLDER - cbd_hat_03_01_CFP_var2"). Both sides placeholder = pure
+ * housekeeping the diff banner collapses to a count. A placeholder becoming
+ * real text (or regressing to one) stays in `changed` — that IS content news.
+ */
+export function splitPlaceholderChanges(
+  changes: GlobalIniDiff["changed"],
+): { changed: GlobalIniDiff["changed"]; placeholderChanged: GlobalIniDiff["changed"] } {
+  const changed: GlobalIniDiff["changed"] = [];
+  const placeholderChanged: GlobalIniDiff["changed"] = [];
+  for (const c of changes) {
+    (isPlaceholderValue(c.oldValue) && isPlaceholderValue(c.newValue)
+      ? placeholderChanged
+      : changed
+    ).push(c);
+  }
+  return { changed, placeholderChanged };
+}
+
 // ---------------------------------------------------------------------------
 // Key browser search
 // ---------------------------------------------------------------------------

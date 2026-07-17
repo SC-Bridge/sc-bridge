@@ -89,7 +89,17 @@ export default function WhatsChangedBanner() {
 
           {/* Tab body */}
           <div className="max-h-[40vh] overflow-y-auto">
-            {tab === 'changed' && <ChangedList items={diff.changed} />}
+            {tab === 'changed' && (
+              <>
+                <ChangedList items={diff.changed} />
+                {diff.placeholder_changed_count > 0 && (
+                  <div className="px-4 py-2 text-[11px] text-gray-600 border-t border-white/[0.04]">
+                    +{diff.placeholder_changed_count} placeholder housekeeping changes
+                    <span className="text-gray-700"> — unfinished CIG strings (&quot;PLACEHOLDER&quot;) that only gained an item tag</span>
+                  </div>
+                )}
+              </>
+            )}
             {tab === 'added' && <KeyList items={diff.added} tone="emerald" />}
             {tab === 'removed' && <KeyList items={diff.removed} tone="rose" />}
           </div>
