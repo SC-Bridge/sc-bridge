@@ -301,6 +301,25 @@ The correct workflow for staging-only deploys:
 ### Staging Deploy Gotcha
 The `@cloudflare/vite-plugin` generates a redirect config at `.wrangler/deploy/config.json` → `dist/sc_bridge/wrangler.json`. This flattened config does NOT support `--env`. Always use `--config wrangler.toml` for staging deploys.
 
+### Branch & Migration Workflow Policy (DO NOT BREAK THIS)
+
+Standing process for every change (adopted 2026-06-30 after repeated prod schema-drift). **Use branches, not worktrees, for normal work.**
+
+1. **Branch** off `main` — one feature/fix per branch.
+2. **Open a PR** — review there.
+3. **Merge to `staging`** (`git push origin <branch>:staging`) → CI deploys staging + smoke tests. Staging-only; never push `main` unless told.
+4. **Apply migrations to staging, then TEST** on staging.scbridge.app.
+5. Only after staging passes → **merge to `main`** → CI deploys prod.
+6. **Apply migrations to prod and VERIFY they took.**
+
+**Migrations do NOT auto-apply** (there is no runtime self-migrate; `migrate.ts` is Better Auth only). Apply with `wrangler d1 migrations apply <db> --remote --env <env> --config wrangler.toml`.
+
+**The verify step is non-negotiable — the `d1_migrations` tracker can lie.** After a reseed/account-migration it may report a migration "applied" when its DDL never ran (this caused the /fleet 500: `user_fleet_tags` missing while the tracker said done). So:
+- `migrations list` showing "No migrations to apply!" is NOT proof.
+- Spot-check the real object: `SELECT name FROM sqlite_master WHERE name='<table>'` / `SELECT name FROM pragma_table_info('<table>') WHERE name='<col>'`.
+- If missing despite the tracker, apply the DDL directly: `wrangler d1 execute <db> --remote --env <env> --config wrangler.toml --file <migration>.sql` (migrations are `CREATE TABLE IF NOT EXISTS` / safe; ALTER ADD COLUMN is not idempotent — guard it).
+- Full alignment audit: diff `sqlite_master` table lists + per-table `pragma_table_info` counts between prod and staging. Prod-only **`_nerdz_id`** is a harmless NERDZ→SC-Bridge migration artifact (not in the canonical schema) — ignore it in diffs.
+
 ## Wrangler Config (`wrangler.toml`)
 - **Account:** NERDZ (`4214879ee537a4840de659aafb7bf201`) — will be updated to SC Bridge after migration
 - **Assets dir:** `./frontend/dist` (with `run_worker_first = true`)
