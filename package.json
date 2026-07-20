@@ -29,17 +29,23 @@
   },
   "dependencies": {
     "@better-auth/passkey": "1.6.23",
+    "@fontsource/opendyslexic": "^5.2.5",
     "@hono/zod-validator": "^0.8.0",
     "@tailwindcss/typography": "^0.5.20",
     "better-auth": "1.6.23",
+    "dompurify": "^3.3.3",
     "hono": "^4.12.28",
     "kysely-d1": "^0.4.0",
     "lucide-react": "^0.460.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^5.5.7",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.13.3",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
