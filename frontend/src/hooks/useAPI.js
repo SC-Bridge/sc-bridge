@@ -150,8 +150,27 @@ export function useNPCLoadouts() {
   return useAPI('/gamedata/npc-loadouts')
 }
 
-export function useFpsGear() {
-  return useAPI('/gamedata/fps-gear')
+export function useWeaponBench() {
+  return useAPI('/gamedata/weapon-bench')
+}
+
+// Utility-slot catalog (medical devices/pens, gadgets, throwables, tool
+// attachments) for the FPS loadout's Item Source.
+export function useUtilityItems() {
+  return useAPI('/gamedata/utility-items')
+}
+
+// Saved weapon-bench builds (user_weapon_builds, Plan C endpoint).
+export function useWeaponBuilds() {
+  return useAPI('/weapon-builds')
+}
+
+export async function createWeaponBuild({ weaponUuid, name, config }) {
+  return postJSON('/weapon-builds', { weaponUuid, name, config })
+}
+
+export async function deleteWeaponBuild(id) {
+  return apiFetch('DELETE', `/weapon-builds/${id}`)
 }
 
 export function useNPCFactionLoadouts(factionCode, page = 1, perPage = 50) {
@@ -754,4 +773,30 @@ export async function updateBlueprintBuild(id, { name, qualityConfig, craftedQua
 /** Delete a build by id. */
 export async function deleteBlueprintBuild(id) {
   return apiFetch('DELETE', `/blueprints/builds/${id}`)
+}
+
+// --- FPS Loadouts ---
+
+export function useFpsLoadouts() {
+  return useAPI('/fps-loadouts')
+}
+
+export async function createFpsLoadout({ name }) {
+  return postJSON('/fps-loadouts', { name })
+}
+
+export async function updateFpsLoadout(id, { name }) {
+  return patchJSON(`/fps-loadouts/${id}`, { name })
+}
+
+export async function deleteFpsLoadout(id) {
+  return apiFetch('DELETE', `/fps-loadouts/${id}`)
+}
+
+export async function putLoadoutSlot(id, slotKey, body) {
+  return putJSON(`/fps-loadouts/${id}/slots/${slotKey}`, body)
+}
+
+export async function clearLoadoutSlot(id, slotKey) {
+  return apiFetch('DELETE', `/fps-loadouts/${id}/slots/${slotKey}`)
 }

@@ -964,6 +964,71 @@ return cachedJson(c, `gd:missions`, async () => {
     })
   })
 
+  // Weapon bench (#200) — attachments WITH their stat-multiplier columns. Weapons
+  // + crafting come from /api/gamedata/crafting; this fills the attachment gap the
+  // /fps-gear query omits.
+  app.get("/weapon-bench", async (c) => {
+    const db = c.env.DB;
+    return cachedJson(c, `gd:weapon-bench`, async () => {
+      const { results } = await db
+        .prepare(
+          `SELECT a.uuid, a.name, a.class_name, a.sub_type, a.size,
+                  a.sub_type AS attach_port_type, a.size AS attach_size, a.attach_tags,
+                  a.damage_multiplier, a.fire_rate_multiplier,
+                  a.projectile_speed_multiplier, a.heat_generation_multiplier,
+                  a.recoil_strength, a.recoil_decay, a.recoil_randomness,
+                  a.sound_radius_multiplier, a.zoom_scale, a.second_zoom_scale,
+                  a.zoom_time_scale,
+                  m.name AS manufacturer_name, lm.rarity
+           FROM fps_attachments a
+           LEFT JOIN manufacturers m ON m.id = a.manufacturer_id
+           LEFT JOIN loot_map lm ON lm.fps_attachment_id = a.id
+           -- The binoculars' fake-optic prop is extracted as a size-1
+           -- "EE16 (16x Telescopic)" IronSight; it isn't a real, equippable
+           -- scope and slips past port-size validation on pistols.
+           WHERE a.class_name NOT LIKE '%fakeoptic%'
+           ORDER BY a.name`,
+        )
+        .all();
+      return { attachments: results };
+    });
+  });
+
+  // Utility-slot catalog for the FPS loadout's Item Source (medical devices +
+  // pens, gadgets/tools, throwables, and multi-tool attachments). A focused
+  // slice of loot_map — the full /api/loot payload is far too heavy to load
+  // on the loadout page. util_slot maps each item to the paperdoll slot it
+  // can equip into (NULL = listed for reference only, e.g. tool attachments).
+  app.get("/utility-items", async (c) => {
+    const channel = getActiveChannel(c);
+    const lm = isPTUChannel(channel) ? "ptu_loot_map" : "loot_map";
+    return cachedJson(c, `gd:utility-items:${channel.toLowerCase()}`, async () => {
+      const { results } = await c.env.DB
+        .prepare(
+          `SELECT lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity, lm.manufacturer_name,
+                  CASE
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Gadget' THEN 'gadget'
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%' THEN 'medical'
+                    WHEN lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap') THEN 'medical'
+                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Grenade' THEN 'throwable'
+                    ELSE NULL
+                  END AS util_slot
+           FROM ${lm} lm
+           WHERE COALESCE(lm.is_deleted, 0) = 0
+             AND (
+               (lm.type = 'weapon' AND lm.sub_type = 'Gadget')
+               OR (lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%')
+               OR (lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap'))
+               OR (lm.type = 'weapon' AND lm.sub_type = 'Grenade')
+               OR (lm.type = 'attachment' AND lm.sub_type = 'Utility')
+             )
+           ORDER BY lm.name`,
+        )
+        .all();
+      return { items: results };
+    });
+  });
+
   // GET /api/gamedata/crafting — all blueprints with slots and modifiers
   app.get("/crafting", async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
@@ -1035,10 +1100,30 @@ return cachedJson(c, `gd:crafting`, async () => {
         // FPS handheld weapons (FS-9 LMG, Arclight Pistol, etc.)
         const weaponResult = await db.prepare(`SELECT fw.class_name, fw.name, fw.rounds_per_minute, fw.damage, fw.dps,
                   fw.effective_range, fw.projectile_speed, fw.ammo_capacity,
-                  fw.spread_min, fw.spread_max, fw.damage_type, fw.fire_modes
+                  fw.spread_min, fw.spread_max, fw.damage_type, fw.fire_modes,
+                  fw.loadout_icon
            FROM ${t("fps_weapons")} fw
           `
         ).all()
+
+        // Attachment ports per weapon (Plan B) — grouped by weapon class so the
+        // bench can enforce real compatibility (sub-type + size + required tags).
+        const portsResult = await db.prepare(`SELECT fw.class_name, p.port_type, p.size_min, p.size_max, p.required_port_tags
+           FROM ${t("fps_weapon_attachment_ports")} p
+           JOIN ${t("fps_weapons")} fw ON fw.id = p.weapon_id`
+        ).all()
+        const portsMap = new Map<string, Array<Record<string, unknown>>>()
+        for (const p of portsResult.results) {
+          const cn = (p.class_name as string).toLowerCase()
+          if (!portsMap.has(cn)) portsMap.set(cn, [])
+          portsMap.get(cn)!.push({
+            port_type: p.port_type,
+            size_min: p.size_min,
+            size_max: p.size_max,
+            required_port_tags: p.required_port_tags,
+          })
+        }
+
         for (const w of weaponResult.results) {
           const cn = (w.class_name as string).toLowerCase()
           if (weaponTags.includes(cn) && !baseStatsMap.has(cn)) {
@@ -1054,6 +1139,8 @@ return cachedJson(c, `gd:crafting`, async () => {
               spread_max: w.spread_max,
               damage_type: w.damage_type,
               fire_modes: w.fire_modes,
+              loadout_icon: w.loadout_icon,
+              attachment_ports: portsMap.get(cn) || [],
             })
           }
         }
