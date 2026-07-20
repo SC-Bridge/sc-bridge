@@ -45,7 +45,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.2",
     "@cloudflare/vitest-pool-workers": "^0.18.2",
-    "@cloudflare/workers-types": "^4.20250214.0",
+    "@cloudflare/workers-types": "^5.20260719.1",
     "@playwright/test": "^1.61.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
