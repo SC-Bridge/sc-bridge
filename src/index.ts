@@ -39,6 +39,13 @@ import { logEvent } from "./lib/logger";
 import { isTrustedExtension } from "./lib/constants";
 import { cachedJson, cacheSlug } from "./lib/cache";
 
+// Version-skew guard: the client bundle bakes in the same id; the SPA compares
+// its copy against this via /api/status and reloads when stale. Two sources:
+// the vite define (root-vite-built worker, local path) or the BUILD_ID var
+// (CI path — wrangler compiles the worker itself, so no vite define there).
+const VITE_BUILD_ID: string | null =
+  typeof __BUILD_ID__ === "string" && __BUILD_ID__ !== "dev" ? __BUILD_ID__ : null;
+
 const app = new Hono<HonoEnv>();
 
 // Global error handler — structured logging for unhandled exceptions
@@ -391,6 +398,7 @@ app.get("/api/status", async (c) => {
       ops: c.env.ENVIRONMENT !== "production",
       fpsLoadout: true, // live everywhere behind the page-level WIP banner
     },
+    build: VITE_BUILD_ID ?? c.env.BUILD_ID ?? "dev",
   });
 });
 
