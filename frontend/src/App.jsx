@@ -7,6 +7,7 @@ import RequireAuth from './components/RequireAuth'
 import RequireFeature from './components/RequireFeature'
 import useFontPreference from './hooks/useFontPreference'
 import { useStatus, usePreferences, setPreferences } from './hooks/useAPI'
+import { useVersionSkewGuard } from './hooks/useVersionSkewGuard'
 import { authClient, useSession, signOut } from './lib/auth-client'
 import { TimezoneProvider } from './hooks/useTimezone'
 import { PrivacyModeProvider } from './hooks/usePrivacyMode'
@@ -551,6 +552,26 @@ function RequireRole({ roles, children }) {
   return children
 }
 
+function VersionSkewToast() {
+  const { stale, reloadNow } = useVersionSkewGuard()
+  if (!stale) return null
+
+  return (
+    <div
+      data-testid="skew-toast"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2 bg-sc-panel border border-sc-border rounded-lg shadow-lg text-sm text-gray-200"
+    >
+      <span>SC Bridge has been updated.</span>
+      <button
+        onClick={reloadNow}
+        className="px-3 py-1 bg-sc-accent/15 hover:bg-sc-accent/25 text-sc-accent rounded text-xs font-display tracking-wide uppercase transition-colors"
+      >
+        Reload
+      </button>
+    </div>
+  )
+}
+
 function ImpersonationBanner() {
   const { data: sessionData } = useSession()
   const isImpersonating = !!sessionData?.session?.impersonatedBy
@@ -637,6 +658,7 @@ export default function App() {
         element={
           <div className="min-h-screen flex">
             <ImpersonationBanner />
+            <VersionSkewToast />
             {/* Skip navigation link */}
             <a href="#main-content" className="skip-link">
               Skip to content

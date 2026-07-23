@@ -51,6 +51,15 @@ describe("Health & Status", () => {
       expect(body).toHaveProperty("config");
       expect((body.config as Record<string, unknown>).db_driver).toBe("d1");
     });
+
+    it("reports the deployed build id for the version-skew guard", async () => {
+      const res = await SELF.fetch("http://localhost/api/status");
+      const body = (await res.json()) as Record<string, unknown>;
+      // vitest-pool-workers runs without the vite define, so the worker
+      // falls back to "dev"; in CI-built bundles this is the commit SHA.
+      expect(typeof body.build).toBe("string");
+      expect((body.build as string).length).toBeGreaterThan(0);
+    });
   });
 
   describe("API 404 fallthrough", () => {

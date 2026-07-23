@@ -39,6 +39,11 @@ import { logEvent } from "./lib/logger";
 import { isTrustedExtension } from "./lib/constants";
 import { cachedJson, cacheSlug } from "./lib/cache";
 
+// Version-skew guard: same constant is baked into the client bundle; the SPA
+// compares its copy against this one via /api/status and reloads when stale.
+// `typeof` guard: the define is absent under vitest-pool-workers.
+const BUILD_ID = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
+
 const app = new Hono<HonoEnv>();
 
 // Global error handler — structured logging for unhandled exceptions
@@ -391,6 +396,7 @@ app.get("/api/status", async (c) => {
       ops: c.env.ENVIRONMENT !== "production",
       fpsLoadout: true, // live everywhere behind the page-level WIP banner
     },
+    build: BUILD_ID,
   });
 });
 
