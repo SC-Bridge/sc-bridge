@@ -75,14 +75,14 @@ jobs:
 
       - name: Deploy to production
         if: github.ref == 'refs/heads/main'
-        run: npx wrangler deploy --env production --config wrangler.toml --message "${GITHUB_SHA::7} — $(git log -1 --pretty=%s)"
+        run: npx wrangler deploy --env production --config wrangler.toml --var BUILD_ID:"${GITHUB_SHA::12}" --message "${GITHUB_SHA::7} — $(git log -1 --pretty=%s)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy to staging
         if: github.ref == 'refs/heads/staging'
-        run: npx wrangler deploy --env staging --config wrangler.toml --message "${GITHUB_SHA::7} — $(git log -1 --pretty=%s)"
+        run: npx wrangler deploy --env staging --config wrangler.toml --var BUILD_ID:"${GITHUB_SHA::12}" --message "${GITHUB_SHA::7} — $(git log -1 --pretty=%s)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
