@@ -4,6 +4,12 @@ import svgr from 'vite-plugin-svgr'
 
 export default defineConfig({
   plugins: [svgr(), react()],
+  // Version-skew guard: must match the id the worker reports on /api/status.
+  // CI provides GITHUB_SHA to this build and passes the same value to
+  // `wrangler deploy --var BUILD_ID:…`; local dev gets "dev" (guard inert).
+  define: {
+    __BUILD_ID__: JSON.stringify((process.env.GITHUB_SHA ?? 'dev').slice(0, 12)),
+  },
   server: {
     port: 5173,
     proxy: {

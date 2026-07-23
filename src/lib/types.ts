@@ -46,6 +46,10 @@ export interface Env {
   DISCORD_PACK_REQUEST_WEBHOOK?: string;
   TWITCH_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET?: string;
+  // Deployed build id for the version-skew guard — injected by CI via
+  // `wrangler deploy --var BUILD_ID:$GITHUB_SHA` (wrangler builds the worker
+  // itself, so the vite define never reaches this bundle in the CI path).
+  BUILD_ID?: string;
 }
 
 export type HonoEnv = {
