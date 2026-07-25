@@ -107,6 +107,33 @@ describe('resolveDrop', () => {
   })
 })
 
+describe('armour drags', () => {
+  const core = { kind: 'armour', armour: { uuid: 'a1', base_stats: { armour_slot: 'core' } } }
+  it('valid only on the matching armour slot tile', () => {
+    expect(isValidTarget(core, { kind: 'loadout-slot', slotKey: 'core' })).toBe(true)
+    expect(isValidTarget(core, { kind: 'loadout-slot', slotKey: 'legs' })).toBe(false)
+    expect(isValidTarget(core, { kind: 'loadout-slot', slotKey: 'primary' })).toBe(false)
+  })
+  it('valid on the bench (load-to-preview)', () => {
+    expect(isValidTarget(core, { kind: 'bench' })).toBe(true)
+  })
+  it('resolves to equip-armour / load-bench actions', () => {
+    expect(resolveDrop(core, { kind: 'loadout-slot', slotKey: 'core' }))
+      .toEqual({ type: 'equip-armour', slotKey: 'core', armour: core.armour })
+    expect(resolveDrop(core, { kind: 'bench' })).toEqual({ type: 'load-bench', armour: core.armour })
+  })
+  it('armour builds land on their armour_slot too', () => {
+    const build = { kind: 'build', build: { id: 9, kind: 'armour', item_uuid: 'a1', armourSlot: 'core' } }
+    expect(isValidTarget(build, { kind: 'loadout-slot', slotKey: 'core' })).toBe(true)
+    expect(isValidTarget(build, { kind: 'loadout-slot', slotKey: 'sidearm' })).toBe(false)
+  })
+  it('armour bench-combo lands only on its armour_slot tile', () => {
+    const ctx = { benchKind: 'armour', benchWeapon: { base_stats: { armour_slot: 'core' } } }
+    expect(isValidTarget({ kind: 'bench-combo' }, { kind: 'loadout-slot', slotKey: 'core' }, ctx)).toBe(true)
+    expect(isValidTarget({ kind: 'bench-combo' }, { kind: 'loadout-slot', slotKey: 'legs' }, ctx)).toBe(false)
+  })
+})
+
 describe('resolveDropFromCollisions', () => {
   const collision = (data) => ({ data: { droppableContainer: { data: { current: data } } } })
 

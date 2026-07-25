@@ -1,7 +1,7 @@
 // frontend/src/pages/FpsLoadout/SavedBuilds.jsx
 import React, { useState } from 'react'
 
-// Saved weapon-bench builds palette. Backed by /api/weapon-builds (Plan C).
+// Saved item-bench builds palette (weapon or armour). Backed by /api/item-builds.
 export default function SavedBuilds({ items = [], onLoad, onDelete, onSave, canSave = false }) {
   const [name, setName] = useState('')
 

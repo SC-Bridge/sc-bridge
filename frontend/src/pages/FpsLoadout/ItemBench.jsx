@@ -1,9 +1,10 @@
-// frontend/src/pages/FpsLoadout/WeaponBench.jsx
+// frontend/src/pages/FpsLoadout/ItemBench.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import QualitySlider from '../Crafting/QualitySlider'
 import StatsGrid from './StatsGrid'
-import { combinedMultipliers, computeBenchStats, equippedZoom } from './weaponBenchStats'
+import ArmourStatsGrid from './ArmourStatsGrid'
+import { getBenchAdapter } from './benchAdapters'
 import { isCompatible, weaponAttachmentSlots, SLOT_LABEL } from './attachmentCompat'
 import { isValidTarget } from './dnd'
 import { resolveWeaponIcon } from './weaponIcon'
@@ -73,7 +74,8 @@ function sameQualities(a, b) {
   return ka.every((k) => Number(a[k]) === Number((b || {})[k]))
 }
 
-export default function WeaponBench({ blueprint, attachments = [], initialConfig = null, onConfigChange, equipRequest = null, activeDrag = null }) {
+export default function ItemBench({ kind = 'weapon', blueprint, attachments = [], initialConfig = null, onConfigChange, equipRequest = null, activeDrag = null }) {
+  const adapter = getBenchAdapter(kind)
   const slots = blueprint?.slots || []
   const [qualities, setQualities] = useState(() => qualitiesFromConfig(slots, initialConfig))
   const [equipped, setEquipped] = useState(() => initialConfig?.attachments || {}) // { [slotType]: attachmentUuid }
@@ -93,13 +95,14 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
   // An attachment was dropped on one of this bench's slots (the DndContext
   // lives in the container; it signals the drop here via a seq-bumped request).
   useEffect(() => {
+    if (!adapter.hasAttachments) return
     if (!equipRequest || equipRequest.seq === equipSeqRef.current) return
     equipSeqRef.current = equipRequest.seq
     const att = attachments.find((a) => a.uuid === equipRequest.uuid)
     if (att && att.slot && isCompatible(blueprint, att)) {
       setEquipped((prev) => ({ ...prev, [att.slot]: att.uuid }))
     }
-  }, [equipRequest, attachments, blueprint])
+  }, [adapter.hasAttachments, equipRequest, attachments, blueprint])
 
   // Surface the live config so a parent can save it.
   useEffect(() => {
@@ -113,13 +116,11 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
 
   const stats = useMemo(() => {
     if (!blueprint) return null
-    const m = combinedMultipliers(slots, qualities, equippedList)
-    // Zoom rides on the equipped optic itself (a property, not a multiplier).
-    return { ...computeBenchStats(blueprint.base_stats, m), zoom: equippedZoom(equippedList) }
-  }, [blueprint, slots, qualities, equippedList])
+    return adapter.computeStats(blueprint, qualities, equippedList)
+  }, [adapter, blueprint, qualities, equippedList])
 
   if (!blueprint) {
-    return <div className="text-center py-12 text-gray-500 text-sm">Select a weapon to begin.</div>
+    return <div className="text-center py-12 text-gray-500 text-sm">Select {kind === 'armour' ? 'an armour piece' : 'a weapon'} to begin.</div>
   }
 
   const toggle = (att) => setEquipped((prev) => {
@@ -129,14 +130,11 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
     return next
   })
 
-  // The attachment slots THIS weapon exposes (optic/barrel/underbarrel), from
-  // its ports — not the union of every attachment's slot. Falls back to the
-  // available attachments' slots when the weapon carries no port data.
-  const slotNames = weaponAttachmentSlots(blueprint, attachments)
   const diverged = baseline.current && !sameQualities(qualities, baseline.current.qualities)
 
-  // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else placeholder text.
-  const { url } = resolveWeaponIcon({ ...blueprint, icon_url: blueprint.base_stats?.loadout_icon })
+  // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else
+  // placeholder text. Armour has no extracted loadout icons yet.
+  const { url } = kind === 'weapon' ? resolveWeaponIcon({ ...blueprint, icon_url: blueprint.base_stats?.loadout_icon }) : { url: null }
   // blueprint.name from useCrafting is the raw internal name (e.g. "Behr Lmg Ballistic 01");
   // the friendly, player-facing name lives at base_stats.item_name (e.g. "FS-9 LMG").
   const displayName = blueprint.base_stats?.item_name || blueprint.name
@@ -161,19 +159,25 @@ export default function WeaponBench({ blueprint, attachments = [], initialConfig
         </div>
       </div>
 
-      {slotNames.length > 0 && (
-        <div>
-          <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Slots</h4>
-          <div className="flex flex-wrap gap-2">
-            {slotNames.map((slot) => (
-              <BenchDropZone key={slot} slot={slot} blueprint={blueprint} activeDrag={activeDrag}
-                equippedAtt={attachments.find((a) => a.uuid === equipped[slot])} onToggle={toggle} />
-            ))}
+      {adapter.hasAttachments && (() => {
+        // The attachment slots THIS weapon exposes (optic/barrel/underbarrel), from
+        // its ports — not the union of every attachment's slot. Falls back to the
+        // available attachments' slots when the weapon carries no port data.
+        const slotNames = weaponAttachmentSlots(blueprint, attachments)
+        return slotNames.length > 0 && (
+          <div>
+            <h4 className="text-xs uppercase tracking-wider text-gray-500 mb-2">Slots</h4>
+            <div className="flex flex-wrap gap-2">
+              {slotNames.map((slot) => (
+                <BenchDropZone key={slot} slot={slot} blueprint={blueprint} activeDrag={activeDrag}
+                  equippedAtt={attachments.find((a) => a.uuid === equipped[slot])} onToggle={toggle} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
-      <StatsGrid baseStats={blueprint.base_stats} stats={stats} />
+      {kind === 'armour' ? <ArmourStatsGrid baseStats={blueprint.base_stats} stats={stats} /> : <StatsGrid baseStats={blueprint.base_stats} stats={stats} />}
     </div>
   )
 }

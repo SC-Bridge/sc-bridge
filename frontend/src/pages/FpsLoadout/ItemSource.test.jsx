@@ -46,13 +46,51 @@ describe('ItemSource', () => {
     expect(screen.queryByText('P4-AR Rifle')).not.toBeInTheDocument()
   })
 
-  it('renders a "coming soon" state for the Armour tab and an empty state for Utility', () => {
+  it('defaults to the Armour tab for an armour slot, and an empty state for Utility', () => {
     render(<ItemSource slotKey="helmet" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
     expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/Armour catalog coming soon/)).toBeInTheDocument()
+    expect(screen.getByText(/No armour matches/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('type-utility'))
     expect(screen.getByText(/No utility items match/)).toBeInTheDocument()
+  })
+
+  it('lists armour rows on the Armour tab with a slot/weight sub-line, and fires onPick on click', () => {
+    const armours = [
+      { uuid: 'ar1', name: 'Light_Core_01', base_stats: { item_name: 'Explorer Core', armour_slot: 'core', armour_weight: 'light' } },
+      { uuid: 'ar2', name: 'Heavy_Helmet_01', base_stats: { item_name: 'Marauder Helmet', armour_slot: 'helmet', armour_weight: 'heavy' } },
+    ]
+    const onPick = vi.fn()
+    render(<ItemSource slotKey="core" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={onPick} />)
+
+    expect(screen.getByText('Explorer Core')).toBeInTheDocument()
+    expect(screen.getByText('core · light')).toBeInTheDocument()
+    expect(screen.getByText('Marauder Helmet')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('item-armour-ar1'))
+    expect(onPick).toHaveBeenCalledWith(armours[0])
+  })
+
+  it('filters the Armour tab by slot pill', () => {
+    const armours = [
+      { uuid: 'ar1', name: 'Light_Core_01', base_stats: { item_name: 'Explorer Core', armour_slot: 'core', armour_weight: 'light' } },
+      { uuid: 'ar2', name: 'Heavy_Helmet_01', base_stats: { item_name: 'Marauder Helmet', armour_slot: 'helmet', armour_weight: 'heavy' } },
+    ]
+    render(<ItemSource slotKey="core" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={() => {}} />)
+
+    // Both visible under the default "All" slot filter.
+    expect(screen.getByTestId('item-armour-ar1')).toBeInTheDocument()
+    expect(screen.getByTestId('item-armour-ar2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('cat-helmet'))
+    expect(screen.queryByTestId('item-armour-ar1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('item-armour-ar2')).toBeInTheDocument()
+  })
+
+  it('makes armour rows dnd-kit draggables carrying { kind: "armour" }', () => {
+    const armours = [{ uuid: 'ar1', name: 'Light_Core_01', base_stats: { item_name: 'Explorer Core', armour_slot: 'core', armour_weight: 'light' } }]
+    render(<ItemSource slotKey="core" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('item-armour-ar1')).toHaveAttribute('aria-roledescription', 'draggable')
   })
 
   it('lists attachments on the Attach tab', () => {

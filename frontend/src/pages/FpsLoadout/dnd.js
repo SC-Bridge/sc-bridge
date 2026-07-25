@@ -2,28 +2,33 @@
 //
 // Drag payloads (draggable `data`):
 //   { kind: 'weapon', weapon }        — an Item Source weapon blueprint row
-//   { kind: 'build',  build }         — a saved design/build row
+//   { kind: 'armour', armour }        — an Item Source armour blueprint row
+//   { kind: 'build',  build }         — a saved design/build row (build.kind
+//                                       is 'weapon'|'armour'; armour builds
+//                                       carry build.armourSlot)
 //   { kind: 'attachment', attachment }— an attachment row (attachment.slot is
 //                                       one of optic/barrel/underbarrel)
 //   { kind: 'utility', item }         — a utility-catalog row (item.util_slot
 //                                       is medical/gadget/throwable)
-//   { kind: 'bench-combo' }           — the bench's current weapon + live
-//                                       config (qualities + attachments); the
-//                                       container resolves the payload on drop
+//   { kind: 'bench-combo' }           — the bench's current weapon/armour +
+//                                       live config (qualities + attachments);
+//                                       the container resolves the payload on drop
 // Drop targets (droppable `data`):
-//   { kind: 'bench' }                 — the whole bench panel: weapons/builds
-//                                       dropped here LOAD to the bench (preview
-//                                       only, nothing saved)
+//   { kind: 'bench' }                 — the whole bench panel: weapons/armour/
+//                                       builds dropped here LOAD to the bench
+//                                       (preview only, nothing saved)
 //   { kind: 'bench-slot', slot }      — a bench attachment zone (optic/…)
 //   { kind: 'loadout-slot', slotKey } — a paperdoll slot (primary/…): drops
 //                                       here SAVE instantly
 //
 // ctx (third argument) carries what validation needs:
 //   { benchWeapon,                — blueprint currently on the bench
+//     benchKind,                  — 'weapon'|'armour' — which kind is on the bench
 //     slotWeapons: {slotKey: bp} }— saved weapon blueprint per paperdoll slot
 import { isCompatible } from './attachmentCompat'
 
 export const WEAPON_SLOT_KEYS = new Set(['primary', 'secondary', 'sidearm'])
+export const ARMOUR_SLOT_KEYS = new Set(['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'])
 export const UTILITY_SLOT_KEYS = new Set(['medical', 'gadget', 'throwable'])
 
 // Which paperdoll/bench targets does the active drag payload fit? Used to
@@ -32,9 +37,23 @@ export function isValidTarget(drag, target, ctx = {}) {
   if (!drag || !target) return false
   const { benchWeapon = null, slotWeapons = {} } = ctx
   if (target.kind === 'loadout-slot') {
-    // Weapons, weapon builds, and the bench combo land on the three weapon slots.
-    if (drag.kind === 'weapon' || drag.kind === 'build' || drag.kind === 'bench-combo') {
+    if (drag.kind === 'weapon' || drag.kind === 'bench-combo') {
+      if (drag.kind === 'bench-combo' && ctx.benchKind === 'armour') {
+        const slot = ctx.benchWeapon?.base_stats?.armour_slot
+        return slot != null && slot === target.slotKey
+      }
       return WEAPON_SLOT_KEYS.has(target.slotKey)
+    }
+    if (drag.kind === 'build') {
+      // Armour builds land on their piece's slot; weapon builds on weapon slots.
+      if (drag.build?.kind === 'armour') {
+        return drag.build?.armourSlot != null && drag.build.armourSlot === target.slotKey
+      }
+      return WEAPON_SLOT_KEYS.has(target.slotKey)
+    }
+    if (drag.kind === 'armour') {
+      const slot = drag.armour?.base_stats?.armour_slot
+      return slot != null && slot === target.slotKey
     }
     // Utility items land only on the paperdoll slot they belong to.
     if (drag.kind === 'utility') {
@@ -50,8 +69,8 @@ export function isValidTarget(drag, target, ctx = {}) {
     return false
   }
   if (target.kind === 'bench') {
-    // Dropping a weapon or build on the bench loads it for tuning (no save).
-    return drag.kind === 'weapon' || drag.kind === 'build'
+    // Dropping a weapon, armour piece, or build on the bench loads it for tuning (no save).
+    return drag.kind === 'weapon' || drag.kind === 'build' || drag.kind === 'armour'
   }
   if (target.kind === 'bench-slot') {
     return (
@@ -71,6 +90,9 @@ export function resolveDrop(drag, target, ctx = {}) {
     if (drag.kind === 'weapon') {
       return { type: 'equip-weapon', slotKey: target.slotKey, weapon: drag.weapon }
     }
+    if (drag.kind === 'armour') {
+      return { type: 'equip-armour', slotKey: target.slotKey, armour: drag.armour }
+    }
     if (drag.kind === 'build') {
       return { type: 'equip-build', slotKey: target.slotKey, build: drag.build }
     }
@@ -83,9 +105,9 @@ export function resolveDrop(drag, target, ctx = {}) {
     return { type: 'equip-bench-combo', slotKey: target.slotKey }
   }
   if (target.kind === 'bench') {
-    return drag.kind === 'weapon'
-      ? { type: 'load-bench', weapon: drag.weapon }
-      : { type: 'load-bench', build: drag.build }
+    if (drag.kind === 'weapon') return { type: 'load-bench', weapon: drag.weapon }
+    if (drag.kind === 'armour') return { type: 'load-bench', armour: drag.armour }
+    return { type: 'load-bench', build: drag.build }
   }
   // bench-slot + attachment (the only other valid combination)
   return { type: 'equip-attachment', attachment: drag.attachment }
