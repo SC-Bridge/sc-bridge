@@ -333,7 +333,7 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
                 ctag={`◇ CUSTOM Q${buildQuality(b.config)}`}
                 name={b.name}
                 sub={b.weaponName ? `${b.weaponName} · your design` : 'your design'}
-                state={buildOwnershipState(ownership, b.weapon_uuid || b.weaponUuid)}
+                state={buildOwnershipState(ownership, b.item_uuid || b.weaponUuid)}
                 onClick={() => pick(b)}
                 dragId={`build-${b.id}`}
                 dragData={{ kind: 'build', build: b }}

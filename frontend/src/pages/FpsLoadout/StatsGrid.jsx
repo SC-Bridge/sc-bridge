@@ -1,6 +1,6 @@
 // frontend/src/pages/FpsLoadout/StatsGrid.jsx
 import React from 'react'
-import { Cell, EM_DASH, fmt, pctDelta, DeltaSub } from './statCells'
+import { Cell, fmt, pctDelta, DeltaSub } from './statCells'
 
 // Recoil-family multipliers are inverted: a multiplier below 1.0 is an
 // improvement (less kick / faster recovery / tighter pattern). Convert to a

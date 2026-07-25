@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import ItemSource from './ItemSource'
 
 const weapons = [
   { uuid: 'w1', name: 'P4-AR Rifle', sub_type: 'rifle' },
   { uuid: 'w2', name: 'A03 Sniper Rifle', sub_type: 'sniper' },
 ]
-const builds = [{ id: 1, name: 'CQB Build', weapon_uuid: 'w1', config: {} }]
+// Real user_item_builds row shape post-migration (item_uuid, not weapon_uuid).
+const builds = [{ id: 1, name: 'CQB Build', item_uuid: 'w1', config: {} }]
 const ownership = { owned: new Set(['w1']), wishlisted: new Set(['w2']) }
 
 describe('ItemSource', () => {
@@ -16,7 +17,7 @@ describe('ItemSource', () => {
     expect(screen.getByTestId('cat-all')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('shows an owned tick for P4-AR, renders the custom build with a CUSTOM tag, and fires onPick on click', () => {
+  it('shows an owned tick for P4-AR, renders the custom build with a CUSTOM tag and its own aspirational badge, and fires onPick on click', () => {
     const onPick = vi.fn()
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={builds} ownership={ownership} onPick={onPick} />)
 
@@ -25,8 +26,13 @@ describe('ItemSource', () => {
     expect(screen.getByLabelText('owned')).toBeInTheDocument()
 
     // The saved build for this slot's weapon sits at the top, tagged as a custom design.
-    expect(screen.getByText('CQB Build')).toBeInTheDocument()
-    expect(screen.getByText(/CUSTOM Q/)).toBeInTheDocument()
+    const buildRow = screen.getByTestId('item-build-1')
+    expect(buildRow).toHaveTextContent('CQB Build')
+    expect(buildRow).toHaveTextContent(/CUSTOM Q/)
+    // Regression: buildOwnershipState reads item_uuid post-migration — a build
+    // whose base weapon (w1) is tracked (owned here) still renders as aspirational
+    // (a saved config is never "confirmed owned" outright).
+    expect(within(buildRow).getByLabelText('aspirational')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('item-weapon-w1'))
     expect(onPick).toHaveBeenCalledWith(weapons[0])
@@ -124,7 +130,7 @@ describe('ItemSource', () => {
   })
 
   it('shows a saved build tagged with its resolved weapon name when enriched by the container', () => {
-    const enrichedBuilds = [{ id: 1, name: 'CQB Build', weapon_uuid: 'w1', config: {}, weaponName: 'FS-9 LMG' }]
+    const enrichedBuilds = [{ id: 1, name: 'CQB Build', item_uuid: 'w1', config: {}, weaponName: 'FS-9 LMG' }]
     render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={enrichedBuilds} ownership={{}} onPick={() => {}} />)
     expect(screen.getByText('CQB Build')).toBeInTheDocument()
     expect(screen.getByText(/FS-9 LMG/)).toBeInTheDocument()
