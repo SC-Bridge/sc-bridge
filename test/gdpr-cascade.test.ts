@@ -36,7 +36,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
     db.prepare("DELETE FROM user_module_selection WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_loadout_cart WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_blueprints WHERE user_id = ?").bind(userId),
-    db.prepare("DELETE FROM user_weapon_builds WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM user_item_builds WHERE user_id = ?").bind(userId),
     db.prepare("DELETE FROM user_fps_loadouts WHERE user_id = ?").bind(userId),
     // Better Auth tables (no CASCADE)
     db.prepare('DELETE FROM "session" WHERE userId = ?').bind(userId),
@@ -104,8 +104,8 @@ const USER_TABLES = [
   "user_blueprint_builds",
   // Character backup CHF files (0214) — CASCADE deletes metadata; R2 blobs cleaned by account deletion flow
   "user_characters",
-  // Weapon bench saved builds (0264)
-  "user_weapon_builds",
+  // Bench saved builds — weapon + armour (0271, generalized from user_weapon_builds)
+  "user_item_builds",
   // FPS loadouts (0267) — slots cascade via FK on loadout delete
   "user_fps_loadouts",
 ] as const;
@@ -528,11 +528,11 @@ describe("GDPR — User Deletion Cascade", () => {
         .bind(user.userId)
         .run();
 
-      // user_weapon_builds (migration 0264)
+      // user_item_builds (migration 0271, generalized from user_weapon_builds)
       await db
         .prepare(
-          `INSERT INTO user_weapon_builds (user_id, weapon_uuid, name, config_json)
-           VALUES (?, 'gmni_pistol_ballistic_01', 'GDPR Bench Build', '{"qualities":{"0":500}}')`
+          `INSERT INTO user_item_builds (user_id, kind, item_uuid, name, config_json)
+           VALUES (?, 'weapon', 'gmni_pistol_ballistic_01', 'GDPR Bench Build', '{"qualities":{"0":500}}')`
         )
         .bind(user.userId)
         .run();

@@ -32,7 +32,7 @@ interface LoadoutSlotRow {
   slot_key: string | null;
   item_uuid: string | null;
   item_name: string | null;
-  weapon_build_id: number | null;
+  item_build_id: number | null;
   config_json: string | null;
   owned: number;
   wishlisted: number;
@@ -54,7 +54,7 @@ export function fpsLoadoutRoutes() {
     const { results } = await db
       .prepare(
         `SELECT l.id AS loadout_id, l.name,
-                s.slot_key, s.item_uuid, s.item_name, s.weapon_build_id, s.config_json,
+                s.slot_key, s.item_uuid, s.item_name, s.item_build_id, s.config_json,
                 CASE WHEN ulc.id IS NOT NULL THEN 1 ELSE 0 END AS owned,
                 CASE WHEN ulw.id IS NOT NULL THEN 1 ELSE 0 END AS wishlisted
          FROM user_fps_loadouts l
@@ -81,7 +81,7 @@ export function fpsLoadoutRoutes() {
           slot_key: r.slot_key,
           item_uuid: r.item_uuid,
           item_name: r.item_name,
-          weapon_build_id: r.weapon_build_id,
+          item_build_id: r.item_build_id,
           config,
           owned: !!r.owned,
           wishlisted: !!r.wishlisted,
@@ -159,14 +159,14 @@ export function fpsLoadoutRoutes() {
   routes.put(
     "/:id/slots/:slotKey",
     validate("param", SlotParams),
-    // nullable + optional: clients send explicit `weaponBuildId: null` /
+    // nullable + optional: clients send explicit `itemBuildId: null` /
     // `config: null` for "no build / no config" — plain .optional() rejects
     // null ("expected number, received null"), which silently broke every
     // drag-to-loadout save.
     validate("json", z.object({
       itemUuid: z.string().trim().min(1).max(120).optional(),
       itemName: z.string().trim().min(1).max(200).optional(),
-      weaponBuildId: z.number().int().positive().nullable().optional(),
+      itemBuildId: z.number().int().positive().nullable().optional(),
       config: z.record(z.string(), z.unknown()).nullable().optional(),
     })),
     async (c) => {
@@ -181,22 +181,22 @@ export function fpsLoadoutRoutes() {
         .first();
       if (!loadoutOwned) return c.json({ error: "Not found" }, 404);
 
-      if (body.weaponBuildId != null) {
+      if (body.itemBuildId != null) {
         const buildOwned = await db
-          .prepare("SELECT id FROM user_weapon_builds WHERE id = ? AND user_id = ?")
-          .bind(body.weaponBuildId, userId)
+          .prepare("SELECT id FROM user_item_builds WHERE id = ? AND user_id = ?")
+          .bind(body.itemBuildId, userId)
           .first();
-        if (!buildOwned) return c.json({ error: "weapon build not found" }, 404);
+        if (!buildOwned) return c.json({ error: "item build not found" }, 404);
       }
 
       await db
         .prepare(
-          `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, weapon_build_id, config_json, updated_at)
+          `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, item_build_id, config_json, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(loadout_id, slot_key) DO UPDATE SET
              item_uuid = excluded.item_uuid,
              item_name = excluded.item_name,
-             weapon_build_id = excluded.weapon_build_id,
+             item_build_id = excluded.item_build_id,
              config_json = excluded.config_json,
              updated_at = datetime('now')`,
         )
@@ -205,7 +205,7 @@ export function fpsLoadoutRoutes() {
           slotKey,
           body.itemUuid ?? null,
           body.itemName ?? null,
-          body.weaponBuildId ?? null,
+          body.itemBuildId ?? null,
           body.config != null ? JSON.stringify(body.config) : null,
         )
         .run();
