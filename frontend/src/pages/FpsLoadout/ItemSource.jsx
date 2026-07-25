@@ -1,5 +1,5 @@
 // frontend/src/pages/FpsLoadout/ItemSource.jsx
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { isCompatible, SLOT_LABEL } from './attachmentCompat'
 
@@ -224,6 +224,11 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
   const [armourSlotCat, setArmourSlotCat] = useState(ARMOUR_SLOT_CATEGORIES[0].label)
   const [armourWeightCat, setArmourWeightCat] = useState(ARMOUR_WEIGHT_CATEGORIES[0].label)
   const [search, setSearch] = useState('')
+
+  // The container no longer remounts this component on slot change (search
+  // text and pill selections must survive a slot jump), so the active TYPE
+  // tab follows the slotKey prop itself instead of a fresh useState default.
+  useEffect(() => { setType(defaultTypeForSlot(slotKey)) }, [slotKey])
 
   const q = search.trim().toLowerCase()
   const activeCategory = WEAPON_CATEGORIES.find((c) => c.label === category) || WEAPON_CATEGORIES[0]

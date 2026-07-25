@@ -357,17 +357,23 @@ export default function LoadoutContainer() {
       // into "Set to loadout" — crafting designs aren't rows in that table.
       const buildId = item.item_uuid ? item.id : null
       // Armour builds jump to their own piece's slot (mirrors the drop paths'
-      // load-bench/equip-build routing) — weapon builds/designs stay on
-      // whichever weapon slot is selected, since the three weapon slots are
-      // interchangeable and there's no single "own slot" to jump to.
-      const targetSlot = item.kind === 'armour' ? (item.armourSlot ?? selectedSlot) : selectedSlot
+      // load-bench/equip-build routing); weapon builds/designs jump to a
+      // weapon slot — staying on selectedSlot if it's already one (the three
+      // weapon slots are interchangeable), else 'primary' (mirrors load-bench;
+      // picking a weapon while an armour slot is selected can't resolve in
+      // the armour benchCatalog otherwise, and the bench appears dead).
+      const targetSlot = item.kind === 'armour'
+        ? (item.armourSlot ?? selectedSlot)
+        : (WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary')
       setPickState({ slotKey: targetSlot, itemUuid: buildUuid, buildId, config: { ...(item.config || {}), name: item.name } })
       setSelectedSlot(targetSlot)
     } else if (item.uuid && item.base_stats) {
       // A plain weapon/armour catalog blueprint — reset to a fresh config.
       // Armour pieces jump to their own slot (mirrors equip-armour's drop
-      // semantics); weapons stay on whichever weapon slot is selected.
-      const targetSlot = item.base_stats.armour_slot ?? selectedSlot
+      // semantics); weapons jump to a weapon slot the same way builds do above.
+      const targetSlot = item.base_stats.armour_slot != null
+        ? item.base_stats.armour_slot
+        : (WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary')
       setPickState({ slotKey: targetSlot, itemUuid: item.uuid, buildId: null, config: null })
       setSelectedSlot(targetSlot)
     }
@@ -708,7 +714,7 @@ export default function LoadoutContainer() {
             <span style={{ color: ICE_DIM, fontSize: 10 }}>for {slotLabel}</span>
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            <ItemSource key={selectedSlot} slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
+            <ItemSource slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
               builds={buildsForSource} utility={utilityItems} armours={armours} armourBuilds={armourBuildsForSource}
               ownership={ownership} onPick={handlePick} />
           </div>

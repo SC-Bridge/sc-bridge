@@ -237,4 +237,58 @@ describe('LoadoutContainer', () => {
       expect.objectContaining({ itemUuid: 'w-secondary' }),
     )
   })
+
+  // Mirror of the armour fix above: with an armour slot selected, the picked
+  // weapon can't resolve in the armour benchCatalog, so the bench appeared
+  // dead. Weapon picks must jump OUT of an armour slot onto a weapon slot.
+  it('clicking a weapon while an armour slot is selected jumps to a weapon slot', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-arms'))
+    fireEvent.click(screen.getByTestId('type-weapons'))
+    fireEvent.click(screen.getByTestId('item-weapon-w-primary'))
+
+    expect(screen.getByRole('heading', { name: 'P4-AR Rifle' })).toBeInTheDocument()
+    expect(screen.getByTestId('set-to-loadout')).toHaveTextContent('Primary')
+
+    fireEvent.click(screen.getByTestId('set-to-loadout'))
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'primary',
+      expect.objectContaining({ itemUuid: 'w-primary' }),
+    )
+  })
+
+  // Weapon-slot invariance: picking a weapon while a non-primary weapon slot
+  // is already selected must stay on that slot (the three weapon slots are
+  // interchangeable — only an armour-slot selection needs to jump).
+  it('clicking a weapon while a weapon slot is already selected stays on that slot', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-secondary'))
+    fireEvent.click(screen.getByTestId('item-weapon-w-primary'))
+
+    expect(screen.getByTestId('set-to-loadout')).toHaveTextContent('Secondary')
+
+    fireEvent.click(screen.getByTestId('set-to-loadout'))
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'secondary',
+      expect.objectContaining({ itemUuid: 'w-primary' }),
+    )
+  })
+
+  // Live staging bug: <ItemSource key={selectedSlot}> remounted on every slot
+  // change, wiping the search box (and all pill state) — increasingly
+  // disruptive now that armour/weapon picks jump the selected slot. Search
+  // text must persist across slot changes; only the active TYPE tab should
+  // follow the newly selected slot's default.
+  it('preserves the item-source search text across a slot change, while the tab follows the new slot\'s default', () => {
+    render(<LoadoutContainer />)
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'Rifle' } })
+    expect(screen.getByTestId('item-source-search')).toHaveValue('Rifle')
+
+    fireEvent.click(screen.getByTestId('slot-helmet'))
+
+    expect(screen.getByTestId('item-source-search')).toHaveValue('Rifle')
+    expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
+  })
 })

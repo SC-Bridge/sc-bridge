@@ -17,6 +17,17 @@ describe('ItemSource', () => {
     expect(screen.getByTestId('cat-all')).toHaveAttribute('aria-pressed', 'true')
   })
 
+  // The container no longer remounts ItemSource on slot change (search text
+  // must survive it) — the active tab now follows the slotKey PROP via an
+  // effect instead of a fresh useState from a remount.
+  it('switches the active tab when the slotKey prop changes, without remounting', () => {
+    const { rerender } = render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-weapons')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="helmet" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('shows an owned tick for P4-AR, renders the custom build with a CUSTOM tag and its own aspirational badge, and fires onPick on click', () => {
     const onPick = vi.fn()
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={builds} ownership={ownership} onPick={onPick} />)
