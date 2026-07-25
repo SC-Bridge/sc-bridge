@@ -1,6 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { useDroppable } from '@dnd-kit/core'
 import MyLoadout from './MyLoadout'
+
+// SlotTile's useDroppable `disabled` flag is what actually excludes a tile
+// from dnd-kit's live collision detection during a real drag — the pure
+// isValidTarget() styling renders correctly regardless of it, so a
+// style-only assertion wouldn't catch a tile that's excluded from drops.
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, useDroppable: vi.fn(actual.useDroppable) }
+})
 
 const ALL_SLOTS = [
   'primary', 'secondary', 'sidearm',
@@ -53,6 +63,24 @@ describe('MyLoadout', () => {
     render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={onSelectSlot} />)
     fireEvent.click(screen.getByTestId('slot-primary'))
     expect(onSelectSlot).toHaveBeenCalledWith('primary')
+  })
+
+  it('registers armour paperdoll tiles as real dnd-kit drop targets, same as weapon/utility tiles', () => {
+    render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} />)
+    const disabledFor = (slotKey) => useDroppable.mock.calls.find(([opts]) => opts.id === `loadout-${slotKey}`)[0].disabled
+    for (const slotKey of ['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit']) {
+      expect(disabledFor(slotKey)).toBe(false)
+    }
+    // Regression: weapon/utility tiles must stay enabled too.
+    expect(disabledFor('primary')).toBe(false)
+    expect(disabledFor('medical')).toBe(false)
+  })
+
+  it('highlights an armour tile as a valid target when a matching armour item is being dragged', () => {
+    const activeDrag = { kind: 'armour', armour: { base_stats: { armour_slot: 'core' } } }
+    render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} activeDrag={activeDrag} dropCtx={{}} />)
+    expect(screen.getByTestId('slot-core')).toHaveStyle({ border: '1px solid rgba(0,232,255,0.55)' })
+    expect(screen.getByTestId('slot-legs')).not.toHaveStyle({ border: '1px solid rgba(0,232,255,0.55)' })
   })
 
   it('marks the currently selected slot with selected styling', () => {

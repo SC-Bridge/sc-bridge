@@ -20,7 +20,7 @@ const WEAPON_VARIANT = {
   slots: [{ name: 'Frame', resource_name: 'Titanium', slot_type: 'resource', modifiers: [] }],
 }
 const BUILD_SECONDARY = {
-  id: 5, name: 'Stealth SMG', weapon_uuid: 'w-secondary', config: { qualities: { 0: 500 }, attachments: {} },
+  id: 5, kind: 'weapon', name: 'Stealth SMG', item_uuid: 'w-secondary', config: { qualities: { 0: 500 }, attachments: {} },
 }
 // The FS-9 LMG — used to verify the bench's default-weapon fallback (FIX 3).
 const WEAPON_FS9 = {
@@ -54,11 +54,11 @@ vi.mock('../../hooks/useAPI', () => ({
   putLoadoutSlot: vi.fn(() => Promise.resolve({ ok: true })),
   useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9] }, loading: false, error: null }),
   useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
-  useWeaponBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
+  useItemBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
   useUserBlueprints: () => ({ data: { items: [CRAFTING_DESIGN_PRIMARY] }, loading: false, error: null }),
   useUtilityItems: () => ({ data: { items: [{ uuid: 'u-medgun', name: 'ParaMed Medical Device', util_slot: 'medical' }] }, loading: false, error: null }),
-  createWeaponBuild: vi.fn(() => Promise.resolve({})),
-  deleteWeaponBuild: vi.fn(() => Promise.resolve({})),
+  createItemBuild: vi.fn(() => Promise.resolve({})),
+  deleteItemBuild: vi.fn(() => Promise.resolve({})),
   useLootCollection: () => ({ data: [{ loot_uuid: 'w-primary', quantity: 1 }], loading: false }),
   useLootWishlist: () => ({ data: [{ uuid: 'w-secondary', name: 'C54 SMG' }], loading: false }),
 }))
@@ -86,10 +86,17 @@ describe('LoadoutContainer', () => {
     expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
   })
 
-  it('shows a slice-2 placeholder for non-weapon slots instead of the bench', () => {
+  it('shows a slice-3 placeholder for utility slots instead of the bench', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-medical'))
+    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/coming in slice 3/i)
+  })
+
+  it('renders the bench (not the slice-3 placeholder) for an armour slot', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-helmet'))
-    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/coming in slice 2/i)
+    expect(screen.queryByTestId('slot-placeholder')).not.toBeInTheDocument()
+    expect(screen.getByText(/Select an armour piece from Item Source/)).toBeInTheDocument()
   })
 
   it('calls putLoadoutSlot with the bench config when "Set to loadout" is clicked', () => {
@@ -103,7 +110,7 @@ describe('LoadoutContainer', () => {
   })
 
   // Regression for the initialConfig-reference bug: initialConfig used to be
-  // rebuilt as a fresh object every render, so WeaponBench's reset effect
+  // rebuilt as a fresh object every render, so ItemBench's reset effect
   // (keyed on that reference) wiped in-progress slider edits on *any*
   // unrelated re-render of LoadoutContainer (e.g. after Save build triggers
   // buildsQ.refetch()). initialConfig must now be memoized so the bench only
@@ -161,7 +168,7 @@ describe('LoadoutContainer', () => {
 
   // FIX 1: a build made in the Crafting page's quality sim (user_blueprint_builds,
   // surfaced via useUserBlueprints) must appear in Item Source, not just designs
-  // saved from the bench itself (user_weapon_builds / useWeaponBuilds).
+  // saved from the bench itself (user_item_builds / useItemBuilds).
   it("surfaces the user's crafting-page quality-sim designs in Item Source, and loads their config on pick", () => {
     render(<LoadoutContainer />)
     const row = screen.getByTestId('item-build-bp-w-primary-9')

@@ -1175,15 +1175,60 @@ return cachedJson(c, `gd:crafting`, async () => {
       }
 
       if (armourTags.length > 0) {
-// Query fps_armour (body pieces + undersuits) and fps_helmets in parallel
+        // Slot derivation (#200 slice 2): fps_armour.sub_type is the WEIGHT
+        // class, not the body slot. class_name patterns catch backpacks and
+        // undersuits; protected_body_parts maps the rest. Helmets live in
+        // fps_helmets and are always slot 'helmet'.
+        const armourSlotOf = (className: string, parts: string | null): string | null => {
+          const cn = className.toLowerCase();
+          if (cn.includes("backpack")) return "backpack";
+          if (cn.includes("undersuit")) return "undersuit";
+          const p = (parts || "").toLowerCase();
+          if (!p) return null;
+          const torso = p.includes("torso");
+          const arms = p.includes("arm");
+          const legs = p.includes("leg");
+          if (torso && arms && legs) return "undersuit";
+          if (torso) return "core";
+          if (arms) return "arms";
+          if (legs) return "legs";
+          return null;
+        };
+        const armourBase = (row: Record<string, unknown>, slot: string | null) => ({
+          item_name: row.name,
+          armour_weight: row.sub_type,
+          sub_type: row.sub_type,
+          armour_slot: slot,
+          resist_physical: row.resist_physical,
+          resist_energy: row.resist_energy,
+          resist_distortion: row.resist_distortion,
+          resist_thermal: row.resist_thermal,
+          resist_biochemical: row.resist_biochemical,
+          resist_stun: row.resist_stun,
+          temperature_min: row.temperature_min,
+          temperature_max: row.temperature_max,
+          weight: row.armor_weight,
+          ir_emission: row.ir_emission,
+          em_emission: row.em_emission,
+          inventory_volume: row.inventory_volume,
+        });
+        // Query fps_armour (body pieces + undersuits + backpacks) and
+        // fps_helmets in parallel.
         const [armourResult, helmetResult] = await Promise.all([
           db.prepare(`SELECT fa.class_name, fa.name, fa.sub_type,
                     fa.resist_physical, fa.resist_energy, fa.resist_distortion,
-                    fa.resist_thermal, fa.resist_biochemical, fa.resist_stun
+                    fa.resist_thermal, fa.resist_biochemical, fa.resist_stun,
+                    fa.temperature_min, fa.temperature_max, CAST(fa.armor_weight AS REAL) AS armor_weight,
+                    fa.ir_emission, fa.em_emission, fa.inventory_volume,
+                    fa.protected_body_parts
              FROM ${t("fps_armour")} fa
             `
           ).all(),
-          db.prepare(`SELECT fh.class_name, fh.name
+          db.prepare(`SELECT fh.class_name, fh.name, fh.sub_type,
+                    fh.resist_physical, fh.resist_energy, fh.resist_distortion,
+                    fh.resist_thermal, fh.resist_biochemical, fh.resist_stun,
+                    fh.temperature_min, fh.temperature_max, CAST(fh.armor_weight AS REAL) AS armor_weight,
+                    fh.ir_emission, fh.em_emission, fh.inventory_volume
              FROM ${t("fps_helmets")} fh
             `
           ).all(),
@@ -1191,30 +1236,13 @@ return cachedJson(c, `gd:crafting`, async () => {
         for (const a of armourResult.results) {
           const cn = (a.class_name as string).toLowerCase()
           if (armourTags.includes(cn) && !baseStatsMap.has(cn)) {
-            // fps_armour.sub_type stores the WEIGHT (Light/Medium/Heavy/
-            // Personal). Surface it as `armour_weight` so the FPS Armour
-            // filter row can offer a Weight axis distinct from the BP's
-            // own sub_type (which holds the role: combat/hunter/...).
-            baseStatsMap.set(cn, {
-              item_name: a.name,
-              armour_weight: a.sub_type,
-              sub_type: a.sub_type,
-              resist_physical: a.resist_physical,
-              resist_energy: a.resist_energy,
-              resist_distortion: a.resist_distortion,
-              resist_thermal: a.resist_thermal,
-              resist_biochemical: a.resist_biochemical,
-              resist_stun: a.resist_stun,
-            })
+            baseStatsMap.set(cn, armourBase(a, armourSlotOf(cn, a.protected_body_parts as string | null)))
           }
         }
         for (const h of helmetResult.results) {
           const cn = (h.class_name as string).toLowerCase()
           if (armourTags.includes(cn) && !baseStatsMap.has(cn)) {
-            // Helmets share the armour BP type but live in fps_helmets;
-            // they don't carry a weight value of their own (no sub_type
-            // column with weight data). Leave armour_weight unset.
-            baseStatsMap.set(cn, { item_name: h.name })
+            baseStatsMap.set(cn, armourBase(h, "helmet"))
           }
         }
       }

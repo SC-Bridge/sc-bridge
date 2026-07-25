@@ -160,17 +160,16 @@ export function useUtilityItems() {
   return useAPI('/gamedata/utility-items')
 }
 
-// Saved weapon-bench builds (user_weapon_builds, Plan C endpoint).
-export function useWeaponBuilds() {
-  return useAPI('/weapon-builds')
+export function useItemBuilds() {
+  return useAPI('/item-builds')
 }
 
-export async function createWeaponBuild({ weaponUuid, name, config }) {
-  return postJSON('/weapon-builds', { weaponUuid, name, config })
+export async function createItemBuild({ kind, itemUuid, name, config }) {
+  return postJSON('/item-builds', { kind, itemUuid, name, config })
 }
 
-export async function deleteWeaponBuild(id) {
-  return apiFetch('DELETE', `/weapon-builds/${id}`)
+export async function deleteItemBuild(id) {
+  return apiFetch('DELETE', `/item-builds/${id}`)
 }
 
 export function useNPCFactionLoadouts(factionCode, page = 1, perPage = 50) {

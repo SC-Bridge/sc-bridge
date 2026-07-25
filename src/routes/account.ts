@@ -643,8 +643,8 @@ export function accountRoutes() {
       db.prepare("DELETE FROM companion_status WHERE user_id = ?").bind(user.id),
       // Character backup (migration 0214) — metadata; R2 blobs deleted above
       db.prepare("DELETE FROM user_characters WHERE user_id = ?").bind(user.id),
-      // Weapon bench saved builds (migration 0264)
-      db.prepare("DELETE FROM user_weapon_builds WHERE user_id = ?").bind(user.id),
+      // Bench saved builds — weapon + armour (migration 0271, generalized from user_weapon_builds)
+      db.prepare("DELETE FROM user_item_builds WHERE user_id = ?").bind(user.id),
       // FPS loadouts (migration 0267) — slots cascade via FK
       db.prepare("DELETE FROM user_fps_loadouts WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values + IP
