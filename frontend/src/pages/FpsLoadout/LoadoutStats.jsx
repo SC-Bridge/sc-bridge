@@ -33,8 +33,9 @@ const ATTACHMENT_ICON = {
 const EM_DASH = '—'
 const fmtNum = (v, d = 0) => (v == null ? EM_DASH : Number(v).toFixed(d))
 
-const RESIST_ROWS = ['Physical', 'Energy', 'Distortion', 'Temperature']
-const ARMOUR_COLS = ['Helmet', 'Core', 'Arms', 'Legs']
+const RESIST_ROWS = ['Physical', 'Energy', 'Distortion', 'Thermal', 'Biochem', 'Stun']
+const RESIST_KEY = { Physical: 'resist_physical', Energy: 'resist_energy', Distortion: 'resist_distortion', Thermal: 'resist_thermal', Biochem: 'resist_biochemical', Stun: 'resist_stun' }
+const ARMOUR_COLS = [['helmet', 'Helmet'], ['core', 'Core'], ['arms', 'Arms'], ['legs', 'Legs'], ['undersuit', 'Suit']]
 
 function BlockHeader({ children }) {
   return (
@@ -191,7 +192,14 @@ function WeaponStatsBlock({ weaponStats }) {
   )
 }
 
-function ArmourStatsBlock() {
+function ArmourStatsBlock({ armourStats }) {
+  const pieces = armourStats?.pieces || {}
+  const hasAny = Object.keys(pieces).length > 0
+  const pct = (v) => (v == null ? EM_DASH : `${Math.round(v * 100)}%`)
+  const sum = (key) => {
+    const vals = Object.values(pieces).map((p) => p.stats?.[key]).filter((v) => v != null)
+    return vals.length ? vals.reduce((a, b) => a + b, 0) : null
+  }
   return (
     <div className="rounded" style={{ border: `1px solid ${LINE}`, background: PANEL }}>
       <BlockHeader>
@@ -203,18 +211,19 @@ function ArmourStatsBlock() {
           <tr>
             <Th first>Resist</Th>
             <Th>&#931; Total</Th>
-            {ARMOUR_COLS.map((c) => <Th key={c}>{c}</Th>)}
+            {ARMOUR_COLS.map(([, label]) => <Th key={label}>{label}</Th>)}
           </tr>
         </thead>
         <tbody>
           {RESIST_ROWS.map((r, i) => {
+            const key = RESIST_KEY[r]
             const last = i === RESIST_ROWS.length - 1
             return (
               <tr key={r} data-testid={`armour-stat-row-${r.toLowerCase()}`}>
                 <Td first last>{r}</Td>
-                <Td last emph dim>{EM_DASH}</Td>
-                {ARMOUR_COLS.map((c) => (
-                  <Td key={c} last dim>{EM_DASH}</Td>
+                <Td last emph dim={!hasAny}>{pct(sum(key))}</Td>
+                {ARMOUR_COLS.map(([slotKey, label]) => (
+                  <Td key={label} last dim={!pieces[slotKey]}>{pct(pieces[slotKey]?.stats?.[key])}</Td>
                 ))}
               </tr>
             )
@@ -222,17 +231,19 @@ function ArmourStatsBlock() {
         </tbody>
       </table>
       <div className="italic" style={{ padding: '8px 10px', fontSize: 11, color: ICE_DIM }}>
-        No armour equipped &middot; slice 2
+        {armourStats?.backpack
+          ? <>Backpack: {armourStats.backpack.name}{armourStats.backpack.volume != null ? <> &middot; {(armourStats.backpack.volume / 1000).toFixed(0)}K &micro;SCU carry</> : null}</>
+          : hasAny ? <>No backpack equipped</> : <>No armour equipped</>}
       </div>
     </div>
   )
 }
 
-export default function LoadoutStats({ weaponStats }) {
+export default function LoadoutStats({ weaponStats, armourStats }) {
   return (
     <div className="grid grid-cols-2 gap-3 mt-3">
       <WeaponStatsBlock weaponStats={weaponStats} />
-      <ArmourStatsBlock />
+      <ArmourStatsBlock armourStats={armourStats} />
     </div>
   )
 }
