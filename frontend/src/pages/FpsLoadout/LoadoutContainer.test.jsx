@@ -34,6 +34,18 @@ const CRAFTING_DESIGN_PRIMARY = {
   blueprint_uuid: 'w-primary', blueprint_name: 'P4-AR Rifle', item_name: 'P4-AR Rifle', sub_type: 'rifle',
   builds: [{ id: 9, name: 'Ranked Loadout', quality_config: { 0: 700 } }],
 }
+// Two armour pieces on different slots — used to verify handlePick routes an
+// armour catalog pick to the PIECE's own slot, not whatever's selected.
+const ARMOUR_CORE = {
+  uuid: 'a-core', name: 'Explorer_Core_01', type: 'armour', sub_type: 'core',
+  base_stats: { item_name: 'Explorer Core', armour_slot: 'core', armour_weight: 'light', resist_physical: 0.2, weight: 3.5 },
+  slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
+}
+const ARMOUR_ARMS = {
+  uuid: 'a-arms', name: 'Explorer_Arms_01', type: 'armour', sub_type: 'arms',
+  base_stats: { item_name: 'Explorer Arms', armour_slot: 'arms', armour_weight: 'light', resist_physical: 0.15, weight: 1.2 },
+  slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
+}
 
 const LOADOUT = {
   id: 1,
@@ -52,7 +64,7 @@ vi.mock('../../hooks/useAPI', () => ({
   useFpsLoadouts: () => ({ data: { items: [LOADOUT] }, loading: false, error: null, refetch: refetchLoadouts }),
   createFpsLoadout: vi.fn(() => Promise.resolve({ id: 2 })),
   putLoadoutSlot: vi.fn(() => Promise.resolve({ ok: true })),
-  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9] }, loading: false, error: null }),
+  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9, ARMOUR_CORE, ARMOUR_ARMS] }, loading: false, error: null }),
   useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
   useItemBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
   useUserBlueprints: () => ({ data: { items: [CRAFTING_DESIGN_PRIMARY] }, loading: false, error: null }),
@@ -187,5 +199,42 @@ describe('LoadoutContainer', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-sidearm')) // no saved slot in LOADOUT, nothing picked
     expect(screen.getByRole('heading', { name: 'FS-9 LMG' })).toBeInTheDocument()
+  })
+
+  // Live staging bug: handlePick pinned every pick to selectedSlot — with
+  // Core selected, clicking an Arms piece in Item Source left the bench (and
+  // "Set to loadout") targeting Core, so Set-to-loadout would have persisted
+  // the arms piece into the core slot. Armour pieces must jump to their OWN
+  // slot on pick, mirroring the drop paths (equip-armour/load-bench).
+  it('clicking an armour piece from a different slot targets that piece\'s own slot, not the currently selected one', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-core'))
+    fireEvent.click(screen.getByTestId('item-armour-a-arms'))
+
+    expect(screen.getByTestId('set-to-loadout')).toHaveTextContent('arms')
+
+    fireEvent.click(screen.getByTestId('set-to-loadout'))
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'arms',
+      expect.objectContaining({ itemUuid: 'a-arms' }),
+    )
+  })
+
+  // Regression: weapon slots are interchangeable (primary/secondary/sidearm),
+  // so clicking a weapon must keep targeting whichever weapon slot is selected.
+  it('clicking a weapon keeps targeting the currently selected weapon slot', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-primary'))
+    fireEvent.click(screen.getByTestId('item-weapon-w-secondary'))
+
+    expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('set-to-loadout'))
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'primary',
+      expect.objectContaining({ itemUuid: 'w-secondary' }),
+    )
   })
 })

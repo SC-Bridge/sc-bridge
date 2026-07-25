@@ -356,10 +356,20 @@ export default function LoadoutContainer() {
       // Only user_item_builds rows have a persistable build id worth carrying
       // into "Set to loadout" — crafting designs aren't rows in that table.
       const buildId = item.item_uuid ? item.id : null
-      setPickState({ slotKey: selectedSlot, itemUuid: buildUuid, buildId, config: { ...(item.config || {}), name: item.name } })
+      // Armour builds jump to their own piece's slot (mirrors the drop paths'
+      // load-bench/equip-build routing) — weapon builds/designs stay on
+      // whichever weapon slot is selected, since the three weapon slots are
+      // interchangeable and there's no single "own slot" to jump to.
+      const targetSlot = item.kind === 'armour' ? (item.armourSlot ?? selectedSlot) : selectedSlot
+      setPickState({ slotKey: targetSlot, itemUuid: buildUuid, buildId, config: { ...(item.config || {}), name: item.name } })
+      setSelectedSlot(targetSlot)
     } else if (item.uuid && item.base_stats) {
-      // A plain weapon/armour blueprint — reset to a fresh config.
-      setPickState({ slotKey: selectedSlot, itemUuid: item.uuid, buildId: null, config: null })
+      // A plain weapon/armour catalog blueprint — reset to a fresh config.
+      // Armour pieces jump to their own slot (mirrors equip-armour's drop
+      // semantics); weapons stay on whichever weapon slot is selected.
+      const targetSlot = item.base_stats.armour_slot ?? selectedSlot
+      setPickState({ slotKey: targetSlot, itemUuid: item.uuid, buildId: null, config: null })
+      setSelectedSlot(targetSlot)
     }
     // Attachment picks (Item Source → Attach) aren't auto-equipped here —
     // the bench's own drag/click UI on its attachment slots handles that.
