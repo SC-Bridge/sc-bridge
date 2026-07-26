@@ -28,6 +28,30 @@ describe('ItemSource', () => {
     expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
   })
 
+  // FIX 2: the slot-following effect must also carry the matching sub-filter
+  // pill, not just the TYPE tab — selecting the Helmet slot should land on
+  // the Helmet pill within Armour, not "All". Search text must keep surviving
+  // the slot jump (regression guard for the recently-shipped persistence fix).
+  it('follows the slot into the matching Armour sub-filter pill, without losing search text', () => {
+    const { rerender } = render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    fireEvent.change(screen.getByTestId('item-source-search'), { target: { value: 'FS' } })
+
+    rerender(<ItemSource slotKey="helmet" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-helmet')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('item-source-search')).toHaveValue('FS')
+  })
+
+  // Same slot-follow behaviour on the Utility side: Medical slot -> Utility
+  // tab + Medical pill.
+  it('follows the slot into the matching Utility sub-filter pill', () => {
+    const { rerender } = render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+
+    rerender(<ItemSource slotKey="medical" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-medical')).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('shows an owned tick for P4-AR, renders the custom build with a CUSTOM tag and its own aspirational badge, and fires onPick on click', () => {
     const onPick = vi.fn()
     render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={builds} ownership={ownership} onPick={onPick} />)
@@ -78,7 +102,11 @@ describe('ItemSource', () => {
       { uuid: 'ar2', name: 'Heavy_Helmet_01', base_stats: { item_name: 'Marauder Helmet', armour_slot: 'helmet', armour_weight: 'heavy' } },
     ]
     const onPick = vi.fn()
-    render(<ItemSource slotKey="core" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={onPick} />)
+    // slotKey is a weapon slot here (not an armour slot) so the slot-follow
+    // effect leaves the sub-filter on "All" — this test is about row shape
+    // and onPick, not slot-following (covered separately below).
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={onPick} />)
+    fireEvent.click(screen.getByTestId('type-armour'))
 
     expect(screen.getByText('Explorer Core')).toBeInTheDocument()
     expect(screen.getByText('core · light')).toBeInTheDocument()
@@ -93,7 +121,11 @@ describe('ItemSource', () => {
       { uuid: 'ar1', name: 'Light_Core_01', base_stats: { item_name: 'Explorer Core', armour_slot: 'core', armour_weight: 'light' } },
       { uuid: 'ar2', name: 'Heavy_Helmet_01', base_stats: { item_name: 'Marauder Helmet', armour_slot: 'helmet', armour_weight: 'heavy' } },
     ]
-    render(<ItemSource slotKey="core" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={() => {}} />)
+    // slotKey is a weapon slot here so the slot-follow effect leaves the
+    // sub-filter on "All", isolating this test to the pill-click mechanism
+    // (slot-following itself is covered separately below).
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={[]} armours={armours} ownership={{}} onPick={() => {}} />)
+    fireEvent.click(screen.getByTestId('type-armour'))
 
     // Both visible under the default "All" slot filter.
     expect(screen.getByTestId('item-armour-ar1')).toBeInTheDocument()
@@ -192,8 +224,11 @@ describe('ItemSource', () => {
       { uuid: 'u3', name: 'MK-4 Frag Grenade', util_slot: 'throwable', manufacturer_name: 'Behring' },
       { uuid: 'u4', name: 'OxyTorch Cutter Attachment', util_slot: null, manufacturer_name: 'Greycat' },
     ]
-    render(<ItemSource slotKey="medical" weapons={[]} attachments={[]} builds={[]} utility={utility} ownership={{}} onPick={() => {}} />)
-    // slotKey=medical defaults the tab to Utility; all four listed under 'All'
+    // slotKey is a weapon slot here so the slot-follow effect leaves the
+    // sub-filter on "All" — Medical-slot-follow is covered separately below.
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={[]} utility={utility} ownership={{}} onPick={() => {}} />)
+    fireEvent.click(screen.getByTestId('type-utility'))
+    // all four listed under 'All'
     expect(screen.getByTestId('item-utility-u1')).toBeInTheDocument()
     expect(screen.getByTestId('item-utility-u4')).toBeInTheDocument()
     // Slot-equippable rows are draggable; tool attachments are not

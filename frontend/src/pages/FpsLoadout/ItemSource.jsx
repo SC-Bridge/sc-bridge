@@ -228,7 +228,17 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
   // The container no longer remounts this component on slot change (search
   // text and pill selections must survive a slot jump), so the active TYPE
   // tab follows the slotKey prop itself instead of a fresh useState default.
-  useEffect(() => { setType(defaultTypeForSlot(slotKey)) }, [slotKey])
+  // The matching sub-filter pill follows along too — selecting the Helmet
+  // slot should land on the Helmet pill within Armour, not "All" — for
+  // armour and utility slots (weapon slots only change the TYPE tab; the
+  // weapon category pill is left alone).
+  useEffect(() => {
+    setType(defaultTypeForSlot(slotKey))
+    const armourSlot = ARMOUR_SLOT_CATEGORIES.find((c) => c.slot === slotKey)
+    if (armourSlot) setArmourSlotCat(armourSlot.label)
+    const utilSlot = UTILITY_CATEGORIES.find((c) => c.match === slotKey)
+    if (utilSlot) setUtilCategory(utilSlot.label)
+  }, [slotKey])
 
   const q = search.trim().toLowerCase()
   const activeCategory = WEAPON_CATEGORIES.find((c) => c.label === category) || WEAPON_CATEGORIES[0]
