@@ -209,6 +209,10 @@ describe('LoadoutContainer', () => {
   it('clicking an armour piece from a different slot targets that piece\'s own slot, not the currently selected one', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-core'))
+    // Selecting Core now also narrows the Armour sub-filter to the Core pill
+    // (slot-follow); widen back to "All" to browse across slots, as this test
+    // is exercising cross-slot pick-routing, not slot-follow itself.
+    fireEvent.click(screen.getByTestId('cat-all'))
     fireEvent.click(screen.getByTestId('item-armour-a-arms'))
 
     expect(screen.getByTestId('set-to-loadout')).toHaveTextContent('arms')

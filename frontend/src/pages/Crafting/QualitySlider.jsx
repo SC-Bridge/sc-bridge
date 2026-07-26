@@ -81,6 +81,7 @@ export default function QualitySlider({ slot, value, onChange }) {
           max={1000}
           value={value}
           onChange={e => onChange(snapValue(parseInt(e.target.value)))}
+          tabIndex={-1}
           className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer"
           style={{ top: '0' }}
         />
@@ -93,6 +94,7 @@ export default function QualitySlider({ slot, value, onChange }) {
           <button
             key={sp}
             onClick={() => onChange(sp)}
+            tabIndex={-1}
             className={`absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full transition-all cursor-pointer ${
               value === sp ? 'bg-sc-accent scale-125' : 'bg-gray-600 hover:bg-gray-400'
             }`}
@@ -102,8 +104,8 @@ export default function QualitySlider({ slot, value, onChange }) {
         ))}
       </div>
       <div className="flex justify-between mt-1 text-[10px] text-gray-600">
-        <button onClick={() => onChange(0)} className="hover:text-gray-400 cursor-pointer transition-colors">0</button>
-        <button onClick={() => onChange(1000)} className="hover:text-gray-400 cursor-pointer transition-colors">1000</button>
+        <button onClick={() => onChange(0)} tabIndex={-1} className="hover:text-gray-400 cursor-pointer transition-colors">0</button>
+        <button onClick={() => onChange(1000)} tabIndex={-1} className="hover:text-gray-400 cursor-pointer transition-colors">1000</button>
       </div>
     </div>
   )
