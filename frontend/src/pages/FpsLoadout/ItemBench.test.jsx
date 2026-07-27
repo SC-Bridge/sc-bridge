@@ -1,7 +1,7 @@
-// frontend/src/pages/FpsLoadout/WeaponBench.test.jsx
+// frontend/src/pages/FpsLoadout/ItemBench.test.jsx
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import WeaponBench from './WeaponBench'
+import ItemBench from './ItemBench'
 
 const BLUEPRINT = {
   name: 'LH86 Pistol',
@@ -25,18 +25,25 @@ const BLUEPRINT_2 = {
   ],
 }
 
+// Same fixture family as Task 5's benchAdapters.test.js.
+const ARMOUR_BP = {
+  slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [
+    { key: 'armor_damagemitigation', start_quality: 0, end_quality: 1000, modifier_at_start: 0.9, modifier_at_end: 1.2 } ] }],
+  base_stats: { resist_physical: 0.2, temperature_min: -80, temperature_max: 120, weight: 12.5, armour_slot: 'core' },
+}
+
 // Attachments drag from Item Source via dnd-kit; the DndContext lives in
 // LoadoutContainer, which resolves the drop and signals the bench through a
 // seq-bumped equipRequest prop. Tests simulate a completed drop the same way.
 let equipSeq = 0
 function equipViaRequest(rerender, props, uuid) {
   equipSeq += 1
-  rerender(<WeaponBench {...props} equipRequest={{ uuid, seq: equipSeq }} />)
+  rerender(<ItemBench {...props} equipRequest={{ uuid, seq: equipSeq }} />)
 }
 
-describe('WeaponBench', () => {
+describe('ItemBench', () => {
   it('renders the weapon, a slider per material slot, and a stats panel', () => {
-    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+    render(<ItemBench kind="weapon" blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
     expect(screen.getByText('LH86 Pistol')).toBeInTheDocument()
     expect(screen.getAllByRole('slider')).toHaveLength(2)      // Frame + Barrel
     expect(screen.getByText('Damage')).toBeInTheDocument()
@@ -45,15 +52,15 @@ describe('WeaponBench', () => {
   // FIX 2: attachments no longer live under the bench as a flat chip list —
   // they're picked from Item Source's Attach tab and dragged onto a dropzone.
   it('does not render the old attachment chip list, but a dropzone still renders', () => {
-    render(<WeaponBench blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
+    render(<ItemBench kind="weapon" blueprint={BLUEPRINT} attachments={ATTACHMENTS} />)
     expect(screen.queryByText('Attachments')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Stark Compensator 1/ })).not.toBeInTheDocument()
     expect(screen.getByTestId('dropzone-barrel')).toBeInTheDocument()
   })
 
   it('recomputes fire rate when an attachment is dropped onto its slot', () => {
-    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
-    const { rerender } = render(<WeaponBench {...props} />)
+    const props = { kind: 'weapon', blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<ItemBench {...props} />)
     // At default Q500 the firerate curve interpolates to ×1.0, so build rpm = base (950).
     // Equipping the Stark Compensator (−20%) drops build rpm to 760 (unique in the DOM).
     equipViaRequest(rerender, props, 'stark')
@@ -73,7 +80,7 @@ describe('WeaponBench', () => {
         ],
       },
     }
-    render(<WeaponBench blueprint={ported} attachments={[]} />)
+    render(<ItemBench kind="weapon" blueprint={ported} attachments={[]} />)
     expect(screen.getByTestId('dropzone-optic')).toBeInTheDocument()
     expect(screen.getByTestId('dropzone-barrel')).toBeInTheDocument()
     expect(screen.getByTestId('dropzone-underbarrel')).toBeInTheDocument()
@@ -82,7 +89,7 @@ describe('WeaponBench', () => {
   })
 
   it('shows a placeholder banner when no blueprint', () => {
-    render(<WeaponBench blueprint={null} attachments={[]} />)
+    render(<ItemBench kind="weapon" blueprint={null} attachments={[]} />)
     expect(screen.getByText(/select a weapon/i)).toBeInTheDocument()
   })
 
@@ -92,14 +99,14 @@ describe('WeaponBench', () => {
     // We verify this by equipping Stark Compensator on BLUEPRINT (rpm drops from 950→760),
     // then switching to BLUEPRINT_2 and asserting its base rpm (600) is the build value —
     // if equipped was NOT reset, Stark's ×0.8 would make it 480 instead.
-    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
-    const { rerender } = render(<WeaponBench {...props} />)
+    const props = { kind: 'weapon', blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<ItemBench {...props} />)
     // Equip the attachment on the first weapon; build rpm drops to 760
     equipViaRequest(rerender, props, 'stark')
     expect(screen.getByText('760')).toBeInTheDocument()
 
     // Switch to a different weapon (2 slots → 1 slot)
-    rerender(<WeaponBench blueprint={BLUEPRINT_2} attachments={ATTACHMENTS} />)
+    rerender(<ItemBench kind="weapon" blueprint={BLUEPRINT_2} attachments={ATTACHMENTS} />)
 
     // The slider count must match the new weapon's slot count
     expect(screen.getAllByRole('slider')).toHaveLength(1)
@@ -111,14 +118,14 @@ describe('WeaponBench', () => {
 
   it('renders the real weapon icon image when base_stats.loadout_icon is present', () => {
     const bp = { ...BLUEPRINT, base_stats: { ...BLUEPRINT.base_stats, loadout_icon: 'https://imagedelivery.net/x/lh86/public' } }
-    render(<WeaponBench blueprint={bp} attachments={[]} />)
+    render(<ItemBench kind="weapon" blueprint={bp} attachments={[]} />)
     const img = screen.getByRole('img', { name: bp.name })
     expect(img).toHaveAttribute('src', 'https://imagedelivery.net/x/lh86/public')
   })
 
   it('shows the equipped attachment in its slot drop-zone after a drop', () => {
-    const props = { blueprint: BLUEPRINT, attachments: ATTACHMENTS }
-    const { rerender } = render(<WeaponBench {...props} />)
+    const props = { kind: 'weapon', blueprint: BLUEPRINT, attachments: ATTACHMENTS }
+    const { rerender } = render(<ItemBench {...props} />)
     equipViaRequest(rerender, props, 'stark')
     const zone = screen.getByTestId('dropzone-barrel')
     expect(within(zone).getByText(/Stark Compensator 1/)).toBeInTheDocument()
@@ -128,18 +135,35 @@ describe('WeaponBench', () => {
     // An optic attachment can't land in the barrel slot state — the request
     // carries a uuid whose slot is optic, and there's no optic among ATTACHMENTS.
     const atts = [...ATTACHMENTS, { uuid: 'wrongslot', name: 'Fake Optic', slot: null }]
-    const props = { blueprint: BLUEPRINT, attachments: atts }
-    const { rerender } = render(<WeaponBench {...props} />)
+    const props = { kind: 'weapon', blueprint: BLUEPRINT, attachments: atts }
+    const { rerender } = render(<ItemBench {...props} />)
     equipViaRequest(rerender, props, 'wrongslot')
     // Nothing equipped: rpm stays at base 950.
     expect(screen.getByText('950')).toBeInTheDocument()
   })
 
   it('warns when a loaded build’s slider is moved off its saved baseline', () => {
-    render(<WeaponBench blueprint={BLUEPRINT} attachments={[]} initialConfig={{ qualities: { 0: 250, 1: 250 }, attachments: {}, name: 'My Rifle' }} />)
+    render(<ItemBench kind="weapon" blueprint={BLUEPRINT} attachments={[]} initialConfig={{ qualities: { 0: 250, 1: 250 }, attachments: {}, name: 'My Rifle' }} />)
     expect(screen.queryByText(/no longer match/i)).not.toBeInTheDocument()
     fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '1000' } })
     expect(screen.getByText(/no longer match your saved weapon/i)).toBeInTheDocument()
     expect(screen.getByText(/My Rifle/)).toBeInTheDocument()
+  })
+
+  it('renders armour without attachment slots or drop zones', () => {
+    render(<ItemBench kind="armour" blueprint={ARMOUR_BP} attachments={[]} />)
+    expect(screen.queryByTestId(/dropzone-/)).toBeNull()
+    expect(screen.getByTestId('armour-stats-grid')).toBeInTheDocument()
+  })
+
+  it('moves armour resist stats when a quality slider moves', () => {
+    render(<ItemBench kind="armour" blueprint={ARMOUR_BP} attachments={[]} />)
+    // At default Q500 the damagemitigation curve interpolates to ×1.05, so
+    // physical resist reads 21% (0.2 × 1.05).
+    expect(screen.getByText('21%')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '1000' } })
+    // At Q1000 the multiplier is ×1.2 (modifier_at_end) → 24%.
+    expect(screen.getByText('24%')).toBeInTheDocument()
+    expect(screen.queryByText('21%')).not.toBeInTheDocument()
   })
 })

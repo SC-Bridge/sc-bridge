@@ -1,27 +1,6 @@
 // frontend/src/pages/FpsLoadout/StatsGrid.jsx
 import React from 'react'
-
-const EM_DASH = '—'
-const fmt = (v, d = 0) => (v == null ? null : Number(v).toFixed(d))
-
-function pctDelta(base, build) {
-  if (base == null || build == null || base === 0) return null
-  return ((build - base) / base) * 100
-}
-
-function DeltaSub({ deltaPct, suffix }) {
-  if (deltaPct == null || Math.abs(deltaPct) < 0.05) {
-    return <span className="text-gray-600">{suffix}</span>
-  }
-  const cls = deltaPct > 0 ? 'text-sc-success' : 'text-sc-danger'
-  const sign = deltaPct > 0 ? '+' : ''
-  return (
-    <>
-      <span className={cls}>{sign}{deltaPct.toFixed(0)}%</span>
-      {suffix ? <span className="text-gray-600"> · {suffix}</span> : null}
-    </>
-  )
-}
+import { Cell, fmt, pctDelta, DeltaSub } from './statCells'
 
 // Recoil-family multipliers are inverted: a multiplier below 1.0 is an
 // improvement (less kick / faster recovery / tighter pattern). Convert to a
@@ -38,26 +17,6 @@ function ImprovementSub({ improvementPct, goodWord = 'better', badWord = 'worse'
   const better = improvementPct > 0
   const cls = better ? 'text-sc-success' : 'text-sc-danger'
   return <span className={cls}>{Math.abs(improvementPct).toFixed(0)}% {better ? goodWord : badWord}</span>
-}
-
-function Cell({ label, value, sub, dyn = false, na = false }) {
-  return (
-    <div
-      data-testid="stat-cell"
-      className={[
-        'rounded border px-2.5 py-1.5 min-h-[48px]',
-        'border-white/[0.08] bg-black/20',
-        dyn ? 'border-l-2 border-l-sc-accent' : '',
-        na ? 'opacity-40' : '',
-      ].filter(Boolean).join(' ')}
-    >
-      <div className="text-[8.5px] uppercase tracking-wide text-sc-accent2">{label}</div>
-      <div className={`text-sm font-semibold tabular-nums leading-tight ${na ? 'text-gray-500' : 'text-gray-100'}`}>
-        {value == null ? EM_DASH : value}
-      </div>
-      <div className="text-[9px] text-gray-500">{sub}</div>
-    </div>
-  )
 }
 
 export default function StatsGrid({ baseStats, stats }) {

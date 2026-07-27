@@ -8,8 +8,8 @@ const WEAPON_STATS = [
   { slot_key: 'sidearm', name: 'LH86 Pistol', damage: 13, rpm: 950, dps: 206, recoil: 1.0, isDesign: false, attachments: [] },
 ]
 
-const RESIST_ROWS = ['physical', 'energy', 'distortion', 'temperature']
-const ARMOUR_COLS = ['Helmet', 'Core', 'Arms', 'Legs']
+const RESIST_ROWS = ['physical', 'energy', 'distortion', 'thermal', 'biochem', 'stun']
+const ARMOUR_COLS = ['Helmet', 'Core', 'Arms', 'Legs', 'Suit']
 
 describe('LoadoutStats', () => {
   it('renders a weapon row per equipped weapon', () => {
@@ -38,13 +38,13 @@ describe('LoadoutStats', () => {
     expect(screen.getByText('No weapons equipped')).toBeInTheDocument()
   })
 
-  it('renders the 4 armour resistance rows x 5 columns, all em-dash', () => {
+  it('renders the 6 armour resistance rows x 5 columns, all em-dash', () => {
     render(<LoadoutStats weaponStats={WEAPON_STATS} />)
     const table = screen.getByTestId('armour-stats-table')
 
     RESIST_ROWS.forEach((r) => {
       const row = screen.getByTestId(`armour-stat-row-${r}`)
-      // Σ Total + 4 per-piece columns = 5 dashed cells per row
+      // Σ Total + 5 per-piece columns = 6 dashed cells per row
       const cells = within(row).getAllByText('—')
       expect(cells).toHaveLength(1 + ARMOUR_COLS.length)
     })
@@ -53,5 +53,25 @@ describe('LoadoutStats', () => {
       expect(within(table).getByText(c)).toBeInTheDocument()
     })
     expect(within(table).getByText('Σ Total')).toBeInTheDocument()
+  })
+
+  it('renders per-piece resistances and Σ total', () => {
+    const armourStats = {
+      pieces: {
+        core: { name: 'Test Core', stats: { resist_physical: 0.2, resist_energy: 0.1, resist_distortion: 0, resist_thermal: 0, resist_biochemical: 0, resist_stun: 0 } },
+        legs: { name: 'Test Legs', stats: { resist_physical: 0.1, resist_energy: 0, resist_distortion: 0, resist_thermal: 0, resist_biochemical: 0, resist_stun: 0 } },
+      },
+      backpack: { name: 'Big Pack', volume: 40000 },
+    }
+    render(<LoadoutStats weaponStats={[]} armourStats={armourStats} />)
+    const physRow = screen.getByTestId('armour-stat-row-physical')
+    expect(physRow).toHaveTextContent('30%')   // Σ 0.2 + 0.1
+    expect(physRow).toHaveTextContent('20%')   // core cell
+    expect(screen.getByText(/Big Pack/)).toBeInTheDocument()
+  })
+
+  it('keeps the empty state when nothing is equipped', () => {
+    render(<LoadoutStats weaponStats={[]} armourStats={{ pieces: {}, backpack: null }} />)
+    expect(screen.getByText(/No armour equipped/)).toBeInTheDocument()
   })
 })

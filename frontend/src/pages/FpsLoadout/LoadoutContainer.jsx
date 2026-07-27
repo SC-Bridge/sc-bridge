@@ -1,9 +1,10 @@
 // frontend/src/pages/FpsLoadout/LoadoutContainer.jsx
 //
 // Orchestrator for the FPS Loadout page: wires the paperdoll (MyLoadout), the
-// weapon bench, the catalog (ItemSource) and the summary (LoadoutStats)
+// item bench, the catalog (ItemSource) and the summary (LoadoutStats)
 // together against the /fps-loadouts + weapon-bench APIs. Absorbs the old
-// WeaponBenchContainer's weapon/attachment resolution and saved-build flow.
+// WeaponBenchContainer's weapon/attachment resolution and saved-build flow,
+// generalized (#200 slice 2) to also drive armour pieces through ItemBench.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable,
@@ -11,17 +12,18 @@ import {
 } from '@dnd-kit/core'
 import {
   useFpsLoadouts, createFpsLoadout, putLoadoutSlot,
-  useCrafting, useWeaponBench, useWeaponBuilds, createWeaponBuild, deleteWeaponBuild,
+  useCrafting, useWeaponBench, useItemBuilds, createItemBuild, deleteItemBuild,
   useUserBlueprints, useUtilityItems,
   useLootCollection, useLootWishlist,
 } from '../../hooks/useAPI'
 import { useSession } from '../../lib/auth-client'
 import MyLoadout from './MyLoadout'
-import WeaponBench from './WeaponBench'
+import ItemBench from './ItemBench'
 import SavedBuilds from './SavedBuilds'
 import ItemSource from './ItemSource'
 import LoadoutStats from './LoadoutStats'
 import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
+import { getBenchAdapter } from './benchAdapters'
 import { attachmentSlot } from './attachmentCompat'
 import { isValidTarget, resolveDrop, resolveDropFromCollisions, mergeAttachmentIntoConfig } from './dnd'
 
@@ -44,6 +46,8 @@ const OWN = '#36e08a'
 const WANT = '#f3b03a'
 
 const WEAPON_SLOTS = new Set(['primary', 'secondary', 'sidearm'])
+const ARMOUR_SLOTS = new Set(['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'])
+const ARMOUR_STAT_SLOT_KEYS = ['helmet', 'core', 'arms', 'legs', 'undersuit']
 const WEAPON_SLOT_LABEL = { primary: 'Primary', secondary: 'Secondary', sidearm: 'Sidearm' }
 const STAT_SLOT_KEYS = ['primary', 'secondary', 'sidearm']
 
@@ -120,7 +124,7 @@ export default function LoadoutContainer() {
   const loadoutsQ = useFpsLoadouts()
   const craftingQ = useCrafting()
   const benchQ = useWeaponBench()
-  const buildsQ = useWeaponBuilds()
+  const buildsQ = useItemBuilds()
   const blueprintsQ = useUserBlueprints()
   const utilityQ = useUtilityItems()
   const collectionQ = useLootCollection(isAuthed)
@@ -131,7 +135,7 @@ export default function LoadoutContainer() {
   // Transient bench override — set when the user picks a weapon/build from
   // ItemSource or drops one on the bench, before "Set to loadout" commits it.
   // Scoped to a slot: it only applies while that slot is selected.
-  const [pickState, setPickState] = useState(null) // { slotKey, weaponUuid, buildId, config }
+  const [pickState, setPickState] = useState(null) // { slotKey, itemUuid, buildId, config }
   const pick = pickState && pickState.slotKey === selectedSlot ? pickState : null
   // Live drag payload while a dnd-kit drag is in flight (drives target highlights
   // + the DragOverlay ghost); equipRequest tells the bench to equip an attachment
@@ -187,6 +191,19 @@ export default function LoadoutContainer() {
     [benchQ.data],
   )
   const allBuilds = buildsQ.data?.items || []
+  const weaponBuilds = useMemo(() => allBuilds.filter((b) => b.kind === 'weapon'), [allBuilds])
+  const armourBuilds = useMemo(() => allBuilds.filter((b) => b.kind === 'armour'), [allBuilds])
+
+  // Armour catalog — mirrors the weapons memo above, filtered to craftable
+  // base armour pieces (named/skin variants and $templates excluded).
+  const armours = useMemo(
+    () => (craftingQ.data?.blueprints || []).filter((b) =>
+      b.type === 'armour' && (b.slots?.length > 0) && b.base_stats
+      && b.base_stats.armour_slot != null
+      && !(b.base_stats?.item_name || b.name || '').includes('"')
+      && b.sub_type !== '$templates'),
+    [craftingQ.data],
+  )
 
   // Default weapon for the bench when nothing is saved/picked yet — the FS-9
   // LMG, so a fresh slot doesn't land on whatever weapon sorts first
@@ -221,13 +238,17 @@ export default function LoadoutContainer() {
 
   const savedSlot = currentLoadout.slots?.find((s) => s.slot_key === selectedSlot) || null
   const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot)
+  const isArmourSlot = ARMOUR_SLOTS.has(selectedSlot)
+  const benchKind = isArmourSlot ? 'armour' : 'weapon'
+  const benchCatalog = isArmourSlot ? armours : weapons
 
   // Resolve which blueprint the bench should show: a transient pick wins,
-  // then the loadout's saved weapon for this slot, then just the first
-  // available weapon so the bench isn't empty.
-  const activeWeaponUuid = pick?.weaponUuid ?? savedSlot?.item_uuid ?? defaultWeapon?.uuid ?? null
-  const blueprint = isWeaponSlot ? (weapons.find((w) => w.uuid === activeWeaponUuid) || null) : null
-  // Memoized so WeaponBench (which resets its in-progress edits whenever this
+  // then the loadout's saved item for this slot, then (weapon slots only) the
+  // default weapon so the bench isn't empty. Armour slots show the empty
+  // state until something is picked/saved — no forced default piece.
+  const activeItemUuid = pick?.itemUuid ?? savedSlot?.item_uuid ?? (isArmourSlot ? null : defaultWeapon?.uuid) ?? null
+  const blueprint = (isWeaponSlot || isArmourSlot) ? (benchCatalog.find((w) => w.uuid === activeItemUuid) || null) : null
+  // Memoized so ItemBench (which resets its in-progress edits whenever this
   // reference changes) only resets when the selected slot's source item
   // actually changes — not on every unrelated re-render (e.g. after Save
   // build triggers buildsQ.refetch()).
@@ -252,26 +273,36 @@ export default function LoadoutContainer() {
     return out
   }, [currentLoadout, weapons])
 
-  const dropCtx = useMemo(() => ({ benchWeapon: blueprint, slotWeapons }), [blueprint, slotWeapons])
+  const dropCtx = useMemo(() => ({ benchWeapon: blueprint, benchKind, slotWeapons }), [blueprint, benchKind, slotWeapons])
 
   // The whole bench panel accepts weapon/build drops (load-to-bench preview).
   const benchDrop = useDroppable({ id: 'bench', data: { kind: 'bench' } })
   const benchIsValidTarget = isValidTarget(activeDrag, { kind: 'bench' }, dropCtx)
 
-  const buildsForWeapon = useMemo(
-    () => allBuilds.filter((b) => b.weapon_uuid === blueprint?.uuid),
-    [allBuilds, blueprint],
+  const buildsForBench = useMemo(
+    () => (benchKind === 'armour' ? armourBuilds : weaponBuilds).filter((b) => b.item_uuid === blueprint?.uuid),
+    [benchKind, armourBuilds, weaponBuilds, blueprint],
   )
 
   // All of the user's saved weapon-bench builds, enriched with their weapon's friendly
   // name so a build for a weapon other than the one currently on the bench is still
   // identifiable when it surfaces via Item Source search (see buildsForSource below).
   const weaponBuildsForSource = useMemo(
-    () => allBuilds.map((b) => {
-      const bp = weapons.find((w) => w.uuid === b.weapon_uuid)
+    () => weaponBuilds.map((b) => {
+      const bp = weapons.find((w) => w.uuid === b.item_uuid)
       return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null }
     }),
-    [allBuilds, weapons],
+    [weaponBuilds, weapons],
+  )
+
+  // Armour builds enriched with their piece's friendly name + armour_slot —
+  // armourSlot feeds dnd validation (a build only lands on its own tile).
+  const armourBuildsForSource = useMemo(
+    () => armourBuilds.map((b) => {
+      const bp = armours.find((a) => a.uuid === b.item_uuid)
+      return { ...b, itemName: bp ? (bp.base_stats?.item_name || bp.name) : null, armourSlot: bp?.base_stats?.armour_slot ?? null }
+    }),
+    [armourBuilds, armours],
   )
 
   // Quality-sim "designs" saved from the Crafting page (user_blueprint_builds via
@@ -316,19 +347,35 @@ export default function LoadoutContainer() {
 
   const handlePick = (item) => {
     if (!item) return
-    // A saved design/build — either a user_weapon_builds row (weapon_uuid) or a
+    // A saved design/build — either a user_item_builds row (item_uuid) or a
     // crafting-page quality-sim build surfaced via useUserBlueprints (weaponUuid).
-    // Either way: load that design's own weapon into the bench (not whatever's
+    // Either way: load that design's own item into the bench (not whatever's
     // currently loaded) plus its exact config.
-    const weaponUuid = item.weapon_uuid || item.weaponUuid
-    if (weaponUuid) {
-      // Only user_weapon_builds rows have a weapon_build_id worth persisting on
-      // "Set to loadout" — crafting designs aren't rows in that table.
-      const buildId = item.weapon_uuid ? item.id : null
-      setPickState({ slotKey: selectedSlot, weaponUuid, buildId, config: { ...(item.config || {}), name: item.name } })
+    const buildUuid = item.item_uuid || item.weaponUuid
+    if (buildUuid) {
+      // Only user_item_builds rows have a persistable build id worth carrying
+      // into "Set to loadout" — crafting designs aren't rows in that table.
+      const buildId = item.item_uuid ? item.id : null
+      // Armour builds jump to their own piece's slot (mirrors the drop paths'
+      // load-bench/equip-build routing); weapon builds/designs jump to a
+      // weapon slot — staying on selectedSlot if it's already one (the three
+      // weapon slots are interchangeable), else 'primary' (mirrors load-bench;
+      // picking a weapon while an armour slot is selected can't resolve in
+      // the armour benchCatalog otherwise, and the bench appears dead).
+      const targetSlot = item.kind === 'armour'
+        ? (item.armourSlot ?? selectedSlot)
+        : (WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary')
+      setPickState({ slotKey: targetSlot, itemUuid: buildUuid, buildId, config: { ...(item.config || {}), name: item.name } })
+      setSelectedSlot(targetSlot)
     } else if (item.uuid && item.base_stats) {
-      // A plain weapon blueprint — reset to a fresh config.
-      setPickState({ slotKey: selectedSlot, weaponUuid: item.uuid, buildId: null, config: null })
+      // A plain weapon/armour catalog blueprint — reset to a fresh config.
+      // Armour pieces jump to their own slot (mirrors equip-armour's drop
+      // semantics); weapons jump to a weapon slot the same way builds do above.
+      const targetSlot = item.base_stats.armour_slot != null
+        ? item.base_stats.armour_slot
+        : (WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary')
+      setPickState({ slotKey: targetSlot, itemUuid: item.uuid, buildId: null, config: null })
+      setSelectedSlot(targetSlot)
     }
     // Attachment picks (Item Source → Attach) aren't auto-equipped here —
     // the bench's own drag/click UI on its attachment slots handles that.
@@ -374,7 +421,7 @@ export default function LoadoutContainer() {
     const ok = await persistSlot(selectedSlot, {
       itemUuid: blueprint.uuid,
       itemName: blueprint.base_stats?.item_name || blueprint.name,
-      weaponBuildId: pick?.buildId ?? null,
+      itemBuildId: pick?.buildId ?? null,
       config: liveConfigRef.current,
     })
     if (ok) setPickState(null)
@@ -406,35 +453,47 @@ export default function LoadoutContainer() {
       await persistSlot(action.slotKey, {
         itemUuid: w.uuid,
         itemName: w.base_stats?.item_name || w.name,
-        weaponBuildId: null,
+        itemBuildId: null,
         config: { qualities: {}, attachments: {} },
+      })
+      setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-armour') {
+      const a = action.armour
+      await persistSlot(action.slotKey, {
+        itemUuid: a.uuid,
+        itemName: a.base_stats?.item_name || a.name,
+        itemBuildId: null,
+        config: { qualities: {} },
       })
       setSelectedSlot(action.slotKey)
       return
     }
     if (action.type === 'equip-build') {
       const b = action.build
-      const weaponUuid = b.weapon_uuid || b.weaponUuid
-      const bp = weapons.find((x) => x.uuid === weaponUuid)
+      const catalog = b.kind === 'armour' ? armours : weapons
+      const itemUuid = b.item_uuid || b.weaponUuid
+      const bp = catalog.find((x) => x.uuid === itemUuid)
       if (!bp) return
       await persistSlot(action.slotKey, {
         itemUuid: bp.uuid,
         itemName: bp.base_stats?.item_name || bp.name,
-        // Only user_weapon_builds rows have a persistable build id.
-        weaponBuildId: b.weapon_uuid ? b.id : null,
+        // Only user_item_builds rows have a persistable build id.
+        itemBuildId: b.item_uuid ? b.id : null,
         config: { ...(b.config || {}), name: b.name },
       })
       setSelectedSlot(action.slotKey)
       return
     }
     if (action.type === 'equip-bench-combo') {
-      // The bench header dragged onto a weapon slot: save the weapon on the
-      // bench WITH its live sliders + attachments into that slot.
+      // The bench header dragged onto a weapon/armour slot: save the bench's
+      // current item WITH its live sliders + attachments into that slot.
       if (!blueprint) return
       await persistSlot(action.slotKey, {
         itemUuid: blueprint.uuid,
         itemName: blueprint.base_stats?.item_name || blueprint.name,
-        weaponBuildId: pick?.buildId ?? null,
+        itemBuildId: pick?.buildId ?? null,
         config: liveConfigRef.current,
       })
       setSelectedSlot(action.slotKey)
@@ -446,7 +505,7 @@ export default function LoadoutContainer() {
       await persistSlot(action.slotKey, {
         itemUuid: action.item.uuid,
         itemName: action.item.name,
-        weaponBuildId: null,
+        itemBuildId: null,
         config: null,
       })
       setSelectedSlot(action.slotKey)
@@ -461,40 +520,50 @@ export default function LoadoutContainer() {
       await persistSlot(action.slotKey, {
         itemUuid: slot.item_uuid,
         itemName: slot.item_name,
-        weaponBuildId: slot.weapon_build_id ?? null,
+        itemBuildId: slot.item_build_id ?? null,
         config: mergeAttachmentIntoConfig(slot.config, action.attachment),
       })
       return
     }
     if (action.type === 'load-bench') {
-      // A weapon/build dropped onto the bench: LOAD it for tuning — preview
-      // only, nothing saved until "Set to loadout" (or a drag to a slot).
-      const targetSlot = WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary'
+      // A weapon/armour/build dropped onto the bench: LOAD it for tuning —
+      // preview only, nothing saved until "Set to loadout" (or a drag to a slot).
       if (action.weapon) {
-        setPickState({ slotKey: targetSlot, weaponUuid: action.weapon.uuid, buildId: null, config: null })
-      } else {
-        const b = action.build
-        const weaponUuid = b.weapon_uuid || b.weaponUuid
-        setPickState({
-          slotKey: targetSlot,
-          weaponUuid,
-          buildId: b.weapon_uuid ? b.id : null,
-          config: { ...(b.config || {}), name: b.name },
-        })
+        const targetSlot = WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary'
+        setPickState({ slotKey: targetSlot, itemUuid: action.weapon.uuid, buildId: null, config: null })
+        setSelectedSlot(targetSlot)
+        return
       }
+      if (action.armour) {
+        const armourSlot = action.armour.base_stats?.armour_slot
+        const targetSlot = selectedSlot === armourSlot ? selectedSlot : (armourSlot || selectedSlot)
+        setPickState({ slotKey: targetSlot, itemUuid: action.armour.uuid, buildId: null, config: null })
+        setSelectedSlot(targetSlot)
+        return
+      }
+      const b = action.build
+      const targetSlot = b.kind === 'armour'
+        ? (selectedSlot === b.armourSlot ? selectedSlot : (b.armourSlot || selectedSlot))
+        : (WEAPON_SLOTS.has(selectedSlot) ? selectedSlot : 'primary')
+      setPickState({
+        slotKey: targetSlot,
+        itemUuid: b.item_uuid || b.weaponUuid,
+        buildId: b.item_uuid ? b.id : null,
+        config: { ...(b.config || {}), name: b.name },
+      })
       setSelectedSlot(targetSlot)
     }
   }
 
   const handleSaveBuild = (name) => {
     if (!blueprint?.uuid) return
-    createWeaponBuild({ weaponUuid: blueprint.uuid, name, config: liveConfigRef.current })
+    createItemBuild({ kind: benchKind, itemUuid: blueprint.uuid, name, config: liveConfigRef.current })
       .then(() => buildsQ.refetch?.())
   }
-  const handleDeleteBuild = (b) => deleteWeaponBuild(b.id).then(() => buildsQ.refetch?.())
+  const handleDeleteBuild = (b) => deleteItemBuild(b.id).then(() => buildsQ.refetch?.())
   const handleLoadBuild = (b) => {
-    if (b.weapon_uuid !== blueprint?.uuid) return
-    setPickState({ slotKey: selectedSlot, weaponUuid: b.weapon_uuid, buildId: b.id, config: { ...(b.config || {}), name: b.name } })
+    if (b.item_uuid !== blueprint?.uuid) return
+    setPickState({ slotKey: selectedSlot, itemUuid: b.item_uuid, buildId: b.id, config: { ...(b.config || {}), name: b.name } })
   }
 
   // Per-weapon-slot stats for the loadout summary footer — resolves each
@@ -518,11 +587,32 @@ export default function LoadoutContainer() {
         rpm: stats.rpm,
         dps: stats.dps,
         recoil: stats.recoil,
-        isDesign: Boolean(slot.weapon_build_id),
+        isDesign: Boolean(slot.item_build_id),
         attachments: Object.keys(cfg.attachments || {}),
       }
     }).filter(Boolean)
   }, [currentLoadout, weapons, attachments])
+
+  // Per-armour-slot stats for the loadout summary footer, plus the backpack's
+  // display info (no combat stats — it only carries inventory volume).
+  const armourStats = useMemo(() => {
+    const pieces = {}
+    for (const slotKey of ARMOUR_STAT_SLOT_KEYS) {
+      const slot = currentLoadout.slots?.find((s) => s.slot_key === slotKey)
+      if (!slot?.item_uuid) continue
+      const bp = armours.find((a) => a.uuid === slot.item_uuid)
+      if (!bp) continue
+      const adapter = getBenchAdapter('armour')
+      pieces[slotKey] = {
+        name: slot.item_name || bp.base_stats?.item_name || bp.name,
+        stats: adapter.computeStats(bp, (slot.config?.qualities) || {}),
+        isDesign: Boolean(slot.item_build_id),
+      }
+    }
+    const backpackSlot = currentLoadout.slots?.find((s) => s.slot_key === 'backpack')
+    const backpackBp = backpackSlot?.item_uuid ? armours.find((a) => a.uuid === backpackSlot.item_uuid) : null
+    return { pieces, backpack: backpackBp ? { name: backpackBp.base_stats?.item_name || backpackBp.name, volume: backpackBp.base_stats?.inventory_volume ?? null } : null }
+  }, [currentLoadout, armours])
 
   const slotLabel = WEAPON_SLOT_LABEL[selectedSlot] || selectedSlot
   const blueprintOwned = Boolean(blueprint && ownership.owned.has(blueprint.uuid))
@@ -530,6 +620,7 @@ export default function LoadoutContainer() {
   // Ghost label for the DragOverlay — the name of whatever is being dragged.
   const dragLabel = activeDrag?.kind === 'weapon'
     ? (activeDrag.weapon?.base_stats?.item_name || activeDrag.weapon?.name)
+    : activeDrag?.kind === 'armour' ? (activeDrag.armour?.base_stats?.item_name || activeDrag.armour?.name)
     : activeDrag?.kind === 'build' ? activeDrag.build?.name
     : activeDrag?.kind === 'attachment' ? activeDrag.attachment?.name
     : activeDrag?.kind === 'utility' ? activeDrag.item?.name
@@ -584,13 +675,13 @@ export default function LoadoutContainer() {
             {blueprintOwned && <span style={{ color: OWN, fontSize: 11 }}>&#10003; OWNED</span>}
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            {!isWeaponSlot ? (
+            {!(isWeaponSlot || isArmourSlot) ? (
               <div className="text-center py-12 text-sm italic" style={{ color: ICE_DIM }} data-testid="slot-placeholder">
-                {slotLabel} bench coming in slice 2
+                {slotLabel} bench coming in slice 3
               </div>
             ) : blueprint ? (
               <>
-                <WeaponBench blueprint={blueprint} attachments={attachments}
+                <ItemBench kind={benchKind} blueprint={blueprint} attachments={attachments}
                   initialConfig={initialConfig} onConfigChange={onConfigChange}
                   equipRequest={equipRequest} activeDrag={activeDrag} />
                 <button
@@ -604,12 +695,14 @@ export default function LoadoutContainer() {
                   &#10230; Set to loadout ({slotLabel})
                 </button>
                 <div className="mt-3">
-                  <SavedBuilds items={buildsForWeapon} canSave={!!blueprint}
+                  <SavedBuilds items={buildsForBench} canSave={!!blueprint}
                     onSave={handleSaveBuild} onDelete={handleDeleteBuild} onLoad={handleLoadBuild} />
                 </div>
               </>
             ) : (
-              <div className="text-center py-12 text-sm" style={{ color: ICE_DIM }}>No craftable weapons available.</div>
+              <div className="text-center py-12 text-sm" style={{ color: ICE_DIM }}>
+                {benchKind === 'armour' ? 'Select an armour piece from Item Source.' : 'No craftable weapons available.'}
+              </div>
             )}
           </div>
         </div>
@@ -621,14 +714,15 @@ export default function LoadoutContainer() {
             <span style={{ color: ICE_DIM, fontSize: 10 }}>for {slotLabel}</span>
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
-            <ItemSource key={selectedSlot} slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
-              builds={buildsForSource} utility={utilityItems} ownership={ownership} onPick={handlePick} />
+            <ItemSource slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
+              builds={buildsForSource} utility={utilityItems} armours={armours} armourBuilds={armourBuildsForSource}
+              ownership={ownership} onPick={handlePick} />
           </div>
         </div>
       </div>
 
       <div className="flex-shrink-0 mt-3">
-        <LoadoutStats weaponStats={weaponStats} />
+        <LoadoutStats weaponStats={weaponStats} armourStats={armourStats} />
       </div>
     </div>
     {/* width/height max-content: the overlay wrapper otherwise inherits the

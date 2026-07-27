@@ -25,6 +25,7 @@ const SLOT_GROUPS = [
 ]
 
 const WEAPON_SLOTS = new Set(SLOT_GROUPS[0].slots)
+const ARMOUR_SLOTS = new Set(SLOT_GROUPS[1].slots)
 const UTILITY_SLOTS = new Set(SLOT_GROUPS[2].slots)
 
 const SLOT_ICON = {
@@ -141,14 +142,14 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
   const owned = filled && Boolean(entry.owned)
   const wishlisted = filled && !owned && Boolean(entry.wishlisted)
 
-  // Weapon + utility tiles double as dnd-kit drop targets for items dragged
-  // from Item Source (drop = equip + save immediately). Armour stays inert
-  // until slice 2.
+  // Weapon, armour, and utility tiles all double as dnd-kit drop targets for
+  // items dragged from Item Source (drop = equip + save immediately).
+  const isArmour = ARMOUR_SLOTS.has(slotKey)
   const isUtility = UTILITY_SLOTS.has(slotKey)
   const { setNodeRef, isOver } = useDroppable({
     id: `loadout-${slotKey}`,
     data: { kind: 'loadout-slot', slotKey },
-    disabled: !isWeapon && !isUtility,
+    disabled: !isWeapon && !isArmour && !isUtility,
   })
   const validTarget = isValidTarget(activeDrag, { kind: 'loadout-slot', slotKey }, dropCtx)
 

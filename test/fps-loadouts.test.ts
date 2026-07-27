@@ -110,7 +110,7 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     expect(body4.items.find((l) => l.id === id)).toBeUndefined();
   });
 
-  it("accepts explicit weaponBuildId: null and config: null on slot PUT", async () => {
+  it("accepts explicit itemBuildId: null and config: null on slot PUT", async () => {
     // Regression: .optional() without .nullable() rejected null with
     // "expected number, received null", silently 400ing every
     // drag-to-loadout save from the frontend.
@@ -119,7 +119,7 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     const putNulls = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/sidearm`, {
       method: "PUT",
       headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ itemUuid: "some-weapon-uuid", itemName: "Test Pistol", weaponBuildId: null, config: null }),
+      body: JSON.stringify({ itemUuid: "some-weapon-uuid", itemName: "Test Pistol", itemBuildId: null, config: null }),
     });
     expect(putNulls.status).toBe(200);
   });
@@ -176,37 +176,37 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     expect(theirItems.find((i) => i.id === theirId)!.name).toBe("Theirs");
   });
 
-  it("rejects a weaponBuildId owned by another user (IDOR) but accepts the caller's own build", async () => {
+  it("rejects an itemBuildId owned by another user (IDOR) but accepts the caller's own build", async () => {
     const other = await createTestUser(env.DB);
 
     const create = await post(sessionToken, { name: "Weapon Kit" });
     const { id } = (await create.json()) as { id: number };
 
     // A build owned by the OTHER user
-    const theirBuild = await SELF.fetch("http://localhost/api/weapon-builds", {
+    const theirBuild = await SELF.fetch("http://localhost/api/item-builds", {
       method: "POST",
       headers: { ...(await authHeaders(other.sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ weaponUuid: "weapon-uuid-1", name: "Their Build", config: {} }),
+      body: JSON.stringify({ kind: "weapon", itemUuid: "weapon-uuid-1", name: "Their Build", config: {} }),
     });
     const { id: theirBuildId } = (await theirBuild.json()) as { id: number };
 
     // A build owned by the CALLER
-    const myBuild = await SELF.fetch("http://localhost/api/weapon-builds", {
+    const myBuild = await SELF.fetch("http://localhost/api/item-builds", {
       method: "POST",
       headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ weaponUuid: "weapon-uuid-1", name: "My Build", config: {} }),
+      body: JSON.stringify({ kind: "weapon", itemUuid: "weapon-uuid-1", name: "My Build", config: {} }),
     });
     const { id: myBuildId } = (await myBuild.json()) as { id: number };
 
     const hijack = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
       method: "PUT",
       headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ weaponBuildId: theirBuildId }),
+      body: JSON.stringify({ itemBuildId: theirBuildId }),
     });
     expect(hijack.status).toBe(404);
 
     const list = await SELF.fetch("http://localhost/api/fps-loadouts", { headers: await authHeaders(sessionToken) });
-    type ListBody = { items: Array<{ id: number; slots: Array<{ slot_key: string; weapon_build_id: number | null }> }> };
+    type ListBody = { items: Array<{ id: number; slots: Array<{ slot_key: string; item_build_id: number | null }> }> };
     const listBody = (await list.json()) as ListBody;
     const loadout = listBody.items.find((l) => l.id === id)!;
     expect(loadout.slots).toHaveLength(0);
@@ -214,14 +214,36 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     const own = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
       method: "PUT",
       headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ weaponBuildId: myBuildId }),
+      body: JSON.stringify({ itemBuildId: myBuildId }),
     });
     expect(own.status).toBe(200);
 
     const list2 = await SELF.fetch("http://localhost/api/fps-loadouts", { headers: await authHeaders(sessionToken) });
     const listBody2 = (await list2.json()) as ListBody;
     const loadout2 = listBody2.items.find((l) => l.id === id)!;
-    expect(loadout2.slots[0].weapon_build_id).toBe(myBuildId);
+    expect(loadout2.slots[0].item_build_id).toBe(myBuildId);
+  });
+
+  it("stores an armour build link on an armour slot", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const h = await authHeaders(sessionToken);
+    const build = await SELF.fetch("http://localhost/api/item-builds", {
+      method: "POST", headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "armour", itemUuid: "rsi_core_medium_01", name: "Tuned Core", config: { qualities: { 0: 800 } } }),
+    });
+    const { id: buildId } = (await build.json()) as { id: number };
+    const lo = await SELF.fetch("http://localhost/api/fps-loadouts", {
+      method: "POST", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Armour Kit" }),
+    });
+    const { id: loadoutId } = (await lo.json()) as { id: number };
+    const put = await SELF.fetch(`http://localhost/api/fps-loadouts/${loadoutId}/slots/core`, {
+      method: "PUT", headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ itemUuid: "rsi_core_medium_01", itemName: "RSI Core", itemBuildId: buildId, config: { qualities: { 0: 800 } } }),
+    });
+    expect(put.status).toBe(200);
+    const list = (await (await SELF.fetch("http://localhost/api/fps-loadouts", { headers: h })).json()) as { items: Array<{ id: number; slots: Array<{ slot_key: string; item_build_id: number | null }> }> };
+    const kit = list.items.find((l) => l.id === loadoutId)!;
+    expect(kit.slots.find((s) => s.slot_key === "core")!.item_build_id).toBe(buildId);
   });
 
   it("rejects an invalid slotKey with 400 on PUT and DELETE", async () => {

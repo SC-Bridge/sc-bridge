@@ -1,5 +1,5 @@
 // frontend/src/pages/FpsLoadout/ItemSource.jsx
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { isCompatible, SLOT_LABEL } from './attachmentCompat'
 
@@ -51,6 +51,23 @@ const UTILITY_CATEGORIES = [
 ]
 
 const UTIL_SLOT_LABEL = { medical: 'Medical', gadget: 'Gadget', throwable: 'Throwable' }
+
+// Armour tab sub-filters — slot first (matches the paperdoll), then weight class.
+const ARMOUR_SLOT_CATEGORIES = [
+  { label: 'All', slot: null },
+  { label: 'Helmet', slot: 'helmet' },
+  { label: 'Core', slot: 'core' },
+  { label: 'Arms', slot: 'arms' },
+  { label: 'Legs', slot: 'legs' },
+  { label: 'Undersuit', slot: 'undersuit' },
+  { label: 'Backpack', slot: 'backpack' },
+]
+const ARMOUR_WEIGHT_CATEGORIES = [
+  { label: 'Any', match: null },
+  { label: 'Light', match: 'light' },
+  { label: 'Medium', match: 'medium' },
+  { label: 'Heavy', match: 'heavy' },
+]
 
 function defaultTypeForSlot(slotKey) {
   if (ARMOUR_SLOTS.has(slotKey)) return 'Armour'
@@ -199,17 +216,36 @@ function EmptyRow({ children }) {
   )
 }
 
-export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], utility = [], ownership = {}, onPick }) {
+export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], utility = [], armours = [], armourBuilds = [], ownership = {}, onPick }) {
   const [type, setType] = useState(() => defaultTypeForSlot(slotKey))
   const [category, setCategory] = useState(WEAPON_CATEGORIES[0].label)
   const [attachCategory, setAttachCategory] = useState(ATTACH_CATEGORIES[0].label)
   const [utilCategory, setUtilCategory] = useState(UTILITY_CATEGORIES[0].label)
+  const [armourSlotCat, setArmourSlotCat] = useState(ARMOUR_SLOT_CATEGORIES[0].label)
+  const [armourWeightCat, setArmourWeightCat] = useState(ARMOUR_WEIGHT_CATEGORIES[0].label)
   const [search, setSearch] = useState('')
+
+  // The container no longer remounts this component on slot change (search
+  // text and pill selections must survive a slot jump), so the active TYPE
+  // tab follows the slotKey prop itself instead of a fresh useState default.
+  // The matching sub-filter pill follows along too — selecting the Helmet
+  // slot should land on the Helmet pill within Armour, not "All" — for
+  // armour and utility slots (weapon slots only change the TYPE tab; the
+  // weapon category pill is left alone).
+  useEffect(() => {
+    setType(defaultTypeForSlot(slotKey))
+    const armourSlot = ARMOUR_SLOT_CATEGORIES.find((c) => c.slot === slotKey)
+    if (armourSlot) setArmourSlotCat(armourSlot.label)
+    const utilSlot = UTILITY_CATEGORIES.find((c) => c.match === slotKey)
+    if (utilSlot) setUtilCategory(utilSlot.label)
+  }, [slotKey])
 
   const q = search.trim().toLowerCase()
   const activeCategory = WEAPON_CATEGORIES.find((c) => c.label === category) || WEAPON_CATEGORIES[0]
   const activeAttachCategory = ATTACH_CATEGORIES.find((c) => c.label === attachCategory) || ATTACH_CATEGORIES[0]
   const activeUtilCategory = UTILITY_CATEGORIES.find((c) => c.label === utilCategory) || UTILITY_CATEGORIES[0]
+  const activeArmourSlot = ARMOUR_SLOT_CATEGORIES.find((c) => c.label === armourSlotCat) || ARMOUR_SLOT_CATEGORIES[0]
+  const activeArmourWeight = ARMOUR_WEIGHT_CATEGORIES.find((c) => c.label === armourWeightCat) || ARMOUR_WEIGHT_CATEGORIES[0]
 
   const filteredWeapons = useMemo(
     () => weapons.filter((w) => (!q || friendlyWeaponName(w)?.toLowerCase().includes(q)) && matchesCategory(w.sub_type, activeCategory)),
@@ -241,6 +277,18 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
       // 'All' (match undefined) shows everything; 'Tool Attach.' matches null util_slot.
       && (activeUtilCategory.match === undefined || (u.util_slot ?? null) === activeUtilCategory.match)),
     [utility, q, activeUtilCategory],
+  )
+
+  const filteredArmours = useMemo(
+    () => armours.filter((a) =>
+      (!q || friendlyWeaponName(a)?.toLowerCase().includes(q))
+      && (activeArmourSlot.slot == null || a.base_stats?.armour_slot === activeArmourSlot.slot)
+      && (activeArmourWeight.match == null || (a.base_stats?.armour_weight || '').toLowerCase() === activeArmourWeight.match)),
+    [armours, q, activeArmourSlot, activeArmourWeight],
+  )
+  const filteredArmourBuilds = useMemo(
+    () => armourBuilds.filter((b) => !q || b.name?.toLowerCase().includes(q) || b.itemName?.toLowerCase().includes(q)),
+    [armourBuilds, q],
   )
 
   const pick = (item) => onPick?.(item)
@@ -300,7 +348,7 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
                 ctag={`◇ CUSTOM Q${buildQuality(b.config)}`}
                 name={b.name}
                 sub={b.weaponName ? `${b.weaponName} · your design` : 'your design'}
-                state={buildOwnershipState(ownership, b.weapon_uuid || b.weaponUuid)}
+                state={buildOwnershipState(ownership, b.item_uuid || b.weaponUuid)}
                 onClick={() => pick(b)}
                 dragId={`build-${b.id}`}
                 dragData={{ kind: 'build', build: b }}
@@ -363,7 +411,28 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
         </div>
       )}
 
-      {type === 'Armour' && <EmptyRow>Armour catalog coming soon.</EmptyRow>}
+      {type === 'Armour' && (
+        <div>
+          <CategoryPills categories={ARMOUR_SLOT_CATEGORIES} active={armourSlotCat} onSelect={setArmourSlotCat} />
+          <CategoryPills categories={ARMOUR_WEIGHT_CATEGORIES} active={armourWeightCat} onSelect={setArmourWeightCat} />
+          {filteredArmourBuilds.map((b) => (
+            <Row key={`abuild-${b.id}`} testId={`item-armour-build-${b.id}`} custom
+              ctag={`◇ CUSTOM Q${buildQuality(b.config)}`} name={b.name}
+              sub={b.itemName ? `${b.itemName} · your design` : 'your design'}
+              state={buildOwnershipState(ownership, b.item_uuid)}
+              onClick={() => pick(b)} dragId={`abuild-${b.id}`} dragData={{ kind: 'build', build: b }} />
+          ))}
+          {filteredArmours.map((a) => (
+            <Row key={itemKey(a)} testId={`item-armour-${itemKey(a)}`}
+              name={friendlyWeaponName(a)}
+              sub={[a.base_stats?.armour_slot, a.base_stats?.armour_weight].filter(Boolean).join(' · ')}
+              state={ownershipState(ownership, itemKey(a))}
+              onClick={() => pick(a)} dragId={`armour-${itemKey(a)}`}
+              dragData={{ kind: 'armour', armour: a }} />
+          ))}
+          {filteredArmours.length === 0 && filteredArmourBuilds.length === 0 && <EmptyRow>No armour matches.</EmptyRow>}
+        </div>
+      )}
     </div>
   )
 }
