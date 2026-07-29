@@ -42,12 +42,13 @@ describe('ItemSource', () => {
     expect(screen.getByTestId('item-source-search')).toHaveValue('FS')
   })
 
-  // Same slot-follow behaviour on the Utility side: Medical slot -> Utility
-  // tab + Medical pill.
+  // Same slot-follow behaviour on the Utility side: a pen slot -> Utility
+  // tab + Medical pill (see the dedicated slice-3 dynamic-slot test below
+  // for the full family -> tab/pill mapping).
   it('follows the slot into the matching Utility sub-filter pill', () => {
     const { rerender } = render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
 
-    rerender(<ItemSource slotKey="medical" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    rerender(<ItemSource slotKey="pen_2" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
     expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('cat-medical')).toHaveAttribute('aria-pressed', 'true')
   })
@@ -215,6 +216,61 @@ describe('ItemSource', () => {
     expect(screen.queryByTestId('item-attach-a1')).not.toBeInTheDocument()
     expect(screen.getByTestId('item-attach-a2')).toBeInTheDocument()
     expect(screen.queryByTestId('item-attach-a3')).not.toBeInTheDocument()
+  })
+
+  it('pill-follow maps the new dynamic slot keys to the right tab and pill (slice 3)', () => {
+    const { rerender } = render(<ItemSource slotKey="primary" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+
+    rerender(<ItemSource slotKey="grenade_2" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-throwable')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="pen_3" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-medical')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="util_gadget" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-gadgets')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="util_knife" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-utility')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-knife')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="mag_3" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-attach')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('cat-magazines')).toHaveAttribute('aria-pressed', 'true')
+
+    rerender(<ItemSource slotKey="sling_1" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('type-weapons')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('lists knife rows under the Utility tab\'s Knife pill, dragging as { kind: "melee" }', () => {
+    const knives = [
+      { uuid: 'k1', name: 'Combat Knife', sub_type: 'Knife', manufacturer_name: 'Kastak Arms', util_slot: 'knife' },
+      { uuid: 'k2', name: 'Survival Knife', sub_type: 'Knife', manufacturer_name: 'Greycat', util_slot: 'knife' },
+    ]
+    render(<ItemSource slotKey="util_knife" weapons={[]} attachments={[]} builds={[]} utility={[]} knives={knives} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('cat-knife')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Combat Knife')).toBeInTheDocument()
+    expect(screen.getByTestId('item-knife-k1')).toHaveAttribute('aria-roledescription', 'draggable')
+  })
+
+  it('shows knives under the "All" utility pill too', () => {
+    const knives = [{ uuid: 'k1', name: 'Combat Knife', sub_type: 'Knife', manufacturer_name: 'Kastak Arms', util_slot: 'knife' }]
+    render(<ItemSource slotKey="primary" weapons={[]} attachments={[]} builds={[]} utility={[]} knives={knives} ownership={{}} onPick={() => {}} />)
+    fireEvent.click(screen.getByTestId('type-utility'))
+    expect(screen.getByTestId('cat-all')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Combat Knife')).toBeInTheDocument()
+  })
+
+  it('lists magazine rows under the Attach tab\'s Magazines pill, with a fits_class sub-line, dragging as { kind: "magazine" }', () => {
+    const magazines = [{ uuid: 'm1', name: 'Behring 30rd Mag', size: 2, magazine_capacity: 30, fits_class: 'behr_lmg_ballistic_01' }]
+    render(<ItemSource slotKey="mag_1" weapons={[]} attachments={[]} builds={[]} magazines={magazines} ownership={{}} onPick={() => {}} />)
+    expect(screen.getByTestId('cat-magazines')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Behring 30rd Mag')).toBeInTheDocument()
+    expect(screen.getByText(/behr_lmg_ballistic_01/)).toBeInTheDocument()
+    expect(screen.getByTestId('item-magazine-m1')).toHaveAttribute('aria-roledescription', 'draggable')
   })
 
   it('lists utility items with slot sub-filters; slot items drag, tool attachments do not', () => {

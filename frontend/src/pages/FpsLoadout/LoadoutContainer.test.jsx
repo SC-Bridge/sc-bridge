@@ -46,6 +46,18 @@ const ARMOUR_ARMS = {
   base_stats: { item_name: 'Explorer Arms', armour_slot: 'arms', armour_weight: 'light', resist_physical: 0.15, weight: 1.2 },
   slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
 }
+// A heavy core + legs, equipped in LOADOUT below — drives portCapacity so
+// the utility paperdoll groups (grenades/mags/slings/pens/util) render tiles.
+const ARMOUR_CORE_HEAVY = {
+  uuid: 'a-core-heavy', name: 'Marauder_Core_01', type: 'armour', sub_type: 'core',
+  base_stats: { item_name: 'Marauder Core', armour_slot: 'core', armour_weight: 'heavy', resist_physical: 0.4, weight: 6 },
+  slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
+}
+const ARMOUR_LEGS = {
+  uuid: 'a-legs', name: 'Marauder_Legs_01', type: 'armour', sub_type: 'legs',
+  base_stats: { item_name: 'Marauder Legs', armour_slot: 'legs', armour_weight: 'heavy', resist_physical: 0.35, weight: 4 },
+  slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
+}
 
 const LOADOUT = {
   id: 1,
@@ -55,20 +67,35 @@ const LOADOUT = {
       owned: true, wishlisted: false, config: { qualities: { 0: 500 }, attachments: {} } },
     { slot_key: 'secondary', item_uuid: 'w-secondary', item_name: 'C54 SMG', weapon_build_id: null,
       owned: false, wishlisted: true, config: { qualities: { 0: 500 }, attachments: {} } },
+    { slot_key: 'core', item_uuid: 'a-core-heavy', item_name: 'Marauder Core', weapon_build_id: null,
+      owned: true, wishlisted: false, config: { qualities: {} } },
+    { slot_key: 'legs', item_uuid: 'a-legs', item_name: 'Marauder Legs', weapon_build_id: null,
+      owned: true, wishlisted: false, config: { qualities: {} } },
+    // A weapon saved into a sling slot — used to verify attachments dropped
+    // straight onto a FILLED sling tile merge into its config, same as a
+    // filled primary/secondary/sidearm tile does.
+    { slot_key: 'sling_1', item_uuid: 'w-primary', item_name: 'P4-AR Rifle', weapon_build_id: null,
+      owned: true, wishlisted: false, config: { qualities: {}, attachments: {} } },
   ],
 }
 
+// No attachment_ports on WEAPON_PRIMARY.base_stats, so isCompatible() is
+// permissive (no port data to enforce) — any attachment fits.
+const ATTACHMENT_SCOPE = { uuid: 'att-scope', name: 'Devastator Scope', slot: 'optic', attach_port_type: 'IronSight', attach_size: 1 }
+
 const refetchLoadouts = vi.fn()
+const duplicateFpsLoadout = vi.fn(() => Promise.resolve({ ok: true, id: 9, name: 'Copy of Ground Ops' }))
 
 vi.mock('../../hooks/useAPI', () => ({
   useFpsLoadouts: () => ({ data: { items: [LOADOUT] }, loading: false, error: null, refetch: refetchLoadouts }),
   createFpsLoadout: vi.fn(() => Promise.resolve({ id: 2 })),
   putLoadoutSlot: vi.fn(() => Promise.resolve({ ok: true })),
-  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9, ARMOUR_CORE, ARMOUR_ARMS] }, loading: false, error: null }),
-  useWeaponBench: () => ({ data: { attachments: [] }, loading: false, error: null }),
+  duplicateFpsLoadout: (...args) => duplicateFpsLoadout(...args),
+  useCrafting: () => ({ data: { blueprints: [WEAPON_PRIMARY, WEAPON_SECONDARY, WEAPON_VARIANT, WEAPON_FS9, ARMOUR_CORE, ARMOUR_ARMS, ARMOUR_CORE_HEAVY, ARMOUR_LEGS] }, loading: false, error: null }),
+  useWeaponBench: () => ({ data: { attachments: [], magazines: [{ uuid: 'mg1', name: '30rd Mag', size: 2, magazine_capacity: 30, fits_class: 'behr_lmg_ballistic_01' }] }, loading: false, error: null }),
   useItemBuilds: () => ({ data: { items: [BUILD_SECONDARY] }, loading: false, error: null, refetch: vi.fn() }),
   useUserBlueprints: () => ({ data: { items: [CRAFTING_DESIGN_PRIMARY] }, loading: false, error: null }),
-  useUtilityItems: () => ({ data: { items: [{ uuid: 'u-medgun', name: 'ParaMed Medical Device', util_slot: 'medical' }] }, loading: false, error: null }),
+  useUtilityItems: () => ({ data: { items: [{ uuid: 'u-medgun', name: 'ParaMed Medical Device', util_slot: 'medical' }, { uuid: 'u-knife', name: 'Combat Knife', util_slot: 'knife' }] }, loading: false, error: null }),
   createItemBuild: vi.fn(() => Promise.resolve({})),
   deleteItemBuild: vi.fn(() => Promise.resolve({})),
   useLootCollection: () => ({ data: [{ loot_uuid: 'w-primary', quantity: 1 }], loading: false }),
@@ -78,6 +105,34 @@ vi.mock('../../hooks/useAPI', () => ({
 vi.mock('../../lib/auth-client', () => ({
   useSession: () => ({ data: { user: { id: 'u1' } } }),
 }))
+
+// Real drag/drop is a full pointer gesture dnd-kit resolves via live rect
+// collision — not practical to simulate in jsdom, and this codebase has no
+// existing precedent for it. DndContext's onDragEnd is captured here instead
+// (everything else — useDroppable/useDraggable/DragOverlay/collision
+// detection — stays real) so a drop can be exercised directly against the
+// container's actual handler.
+const dndHandlers = {}
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    DndContext: (props) => {
+      dndHandlers.onDragEnd = props.onDragEnd
+      dndHandlers.onDragStart = props.onDragStart
+      dndHandlers.onDragCancel = props.onDragCancel
+      return props.children
+    },
+  }
+})
+
+function simulateDrop(drag, target) {
+  return dndHandlers.onDragEnd({
+    active: { data: { current: drag } },
+    collisions: [{ data: { droppableContainer: { data: { current: target } } } }],
+    over: { data: { current: target } },
+  })
+}
 
 import LoadoutContainer from './LoadoutContainer'
 import { putLoadoutSlot } from '../../hooks/useAPI'
@@ -98,10 +153,22 @@ describe('LoadoutContainer', () => {
     expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
   })
 
-  it('shows a slice-3 placeholder for utility slots instead of the bench', () => {
+  it('shows an equip-only placeholder for the remaining (non-sling) utility slots instead of the bench', () => {
     render(<LoadoutContainer />)
-    fireEvent.click(screen.getByTestId('slot-medical'))
-    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/coming in slice 3/i)
+    fireEvent.click(screen.getByTestId('slot-pen_1'))
+    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/equip-only, no bench tuning/i)
+  })
+
+  // FIX 1 (final review): the bench header and placeholder must show the
+  // human label ("Pen 2") for a dynamic utility slot, not the raw slot key
+  // ("pen_2") — and the placeholder copy must not still say "coming in
+  // slice 3" (this fix itself shipped IN slice 3).
+  it('labels a selected pen tile "Pen 2" in the bench header and shows equip-only copy', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-pen_2'))
+    expect(screen.getByTestId('bench-droppable')).toHaveTextContent('Pen 2')
+    expect(screen.getByTestId('bench-droppable')).not.toHaveTextContent('pen_2 slot')
+    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent('Pen 2 — equip-only, no bench tuning')
   })
 
   it('renders the bench (not the slice-3 placeholder) for an armour slot', () => {
@@ -294,5 +361,102 @@ describe('LoadoutContainer', () => {
 
     expect(screen.getByTestId('item-source-search')).toHaveValue('Rifle')
     expect(screen.getByTestId('type-armour')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // Slice 3: capacity is derived from the loadout's equipped core + legs
+  // (portCapacity) and threaded into MyLoadout — LOADOUT here has a heavy
+  // core + legs equipped, so all 4 grenade tiles should render.
+  it('computes capacity from the equipped core/legs armour and passes it to MyLoadout', () => {
+    render(<LoadoutContainer />)
+    for (let i = 1; i <= 4; i++) expect(screen.getByTestId(`slot-grenade_${i}`)).toBeInTheDocument()
+    for (let i = 1; i <= 8; i++) expect(screen.getByTestId(`slot-mag_${i}`)).toBeInTheDocument()
+    for (let i = 1; i <= 2; i++) expect(screen.getByTestId(`slot-sling_${i}`)).toBeInTheDocument()
+  })
+
+  it('duplicates the active loadout and switches to the new one', async () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('duplicate-loadout'))
+    expect(duplicateFpsLoadout).toHaveBeenCalledWith(1)
+    await vi.waitFor(() => expect(refetchLoadouts).toHaveBeenCalled())
+  })
+
+  it('surfaces a duplicate failure via the save flash', async () => {
+    duplicateFpsLoadout.mockImplementationOnce(() => Promise.reject(new Error('name taken')))
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('duplicate-loadout'))
+    await vi.waitFor(() => expect(screen.getByTestId('save-flash')).toHaveTextContent(/name taken/))
+  })
+
+  // FIX 4 (final review): a slow duplicate request must not let the user
+  // double-click and fire it twice — the button disables for the duration
+  // of the in-flight request and re-enables once it settles.
+  it('disables the duplicate button while a duplicate request is in flight', async () => {
+    let resolveDuplicate
+    duplicateFpsLoadout.mockImplementationOnce(() => new Promise((resolve) => { resolveDuplicate = resolve }))
+    render(<LoadoutContainer />)
+    const button = screen.getByTestId('duplicate-loadout')
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+    expect(button).toBeDisabled()
+    resolveDuplicate({ ok: true, id: 9, name: 'Copy of Ground Ops' })
+    await vi.waitFor(() => expect(button).not.toBeDisabled())
+  })
+
+  // Slice 3: a utility drop must persist to its ordinal slot key exactly like
+  // a weapon/armour drop persists to a fixed one — proving persistSlot works
+  // generically now that utility slot keys are dynamic (pen_2, not 'medical').
+  it('persists a dropped utility item to a dynamic ordinal slot (pen_2)', async () => {
+    render(<LoadoutContainer />)
+    const medgun = { uuid: 'u-medgun', name: 'ParaMed Medical Device', util_slot: 'medical' }
+    await simulateDrop({ kind: 'utility', item: medgun }, { kind: 'loadout-slot', slotKey: 'pen_2' })
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'pen_2',
+      expect.objectContaining({ itemUuid: 'u-medgun', itemName: 'ParaMed Medical Device' }),
+    )
+  })
+
+  it('persists a dropped knife to util_knife via equip-melee', async () => {
+    render(<LoadoutContainer />)
+    const knife = { uuid: 'u-knife', name: 'Combat Knife' }
+    await simulateDrop({ kind: 'melee', item: knife }, { kind: 'loadout-slot', slotKey: 'util_knife' })
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'util_knife',
+      expect.objectContaining({ itemUuid: 'u-knife', itemName: 'Combat Knife' }),
+    )
+  })
+
+  it('persists a dropped magazine to a mag_* slot via equip-magazine', async () => {
+    render(<LoadoutContainer />)
+    const magazine = { uuid: 'mg1', name: '30rd Mag' }
+    await simulateDrop({ kind: 'magazine', magazine }, { kind: 'loadout-slot', slotKey: 'mag_3' })
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'mag_3',
+      expect.objectContaining({ itemUuid: 'mg1', itemName: '30rd Mag' }),
+    )
+  })
+
+  it('renders the weapon bench (not the slice-3 placeholder) for a sling slot', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-sling_1'))
+    expect(screen.queryByTestId('slot-placeholder')).not.toBeInTheDocument()
+  })
+
+  // FIX: slotWeapons (drives attachment-drop validation on a FILLED paperdoll
+  // tile) only recognised primary/secondary/sidearm — a sling tile carrying a
+  // saved weapon silently rejected an attachment dropped straight onto it.
+  it('merges an attachment dropped onto a FILLED sling tile into that slot\'s config, same as a weapon slot', async () => {
+    render(<LoadoutContainer />)
+    await simulateDrop({ kind: 'attachment', attachment: ATTACHMENT_SCOPE }, { kind: 'loadout-slot', slotKey: 'sling_1' })
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'sling_1',
+      expect.objectContaining({
+        itemUuid: 'w-primary',
+        config: expect.objectContaining({ attachments: expect.objectContaining({ optic: 'att-scope' }) }),
+      }),
+    )
   })
 })

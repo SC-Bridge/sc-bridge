@@ -799,3 +799,7 @@ export async function putLoadoutSlot(id, slotKey, body) {
 export async function clearLoadoutSlot(id, slotKey) {
   return apiFetch('DELETE', `/fps-loadouts/${id}/slots/${slotKey}`)
 }
+
+export async function duplicateFpsLoadout(id) {
+  return postJSON(`/fps-loadouts/${id}/duplicate`)
+}
