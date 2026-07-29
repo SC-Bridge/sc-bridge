@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { isCompatible, SLOT_LABEL } from './attachmentCompat'
+import { SLOT_FAMILY } from './portCapacity'
 
 // Palette lifted from the FPS loadout visual system (see MyLoadout.jsx / mock v5).
 const CYAN = '#00e8ff'
@@ -14,7 +15,6 @@ const LINE = 'rgba(120,200,220,0.14)'
 const LINE2 = 'rgba(120,200,220,0.30)'
 
 const ARMOUR_SLOTS = new Set(['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'])
-const UTILITY_SLOTS = new Set(['medical', 'gadget', 'throwable'])
 
 const TYPES = ['Weapons', 'Armour', 'Attach', 'Utility']
 
@@ -32,21 +32,28 @@ const WEAPON_CATEGORIES = [
 ]
 
 // Attach tab sub-filters — keyed on the attachment's mapped bench slot.
+// 'Magazines' is a slice-3 addition: magazines are a separate catalog (the
+// `magazines` prop), not part of `attachments`, so it's handled as its own
+// filtered list rather than through the a.slot === category.slot match below.
 const ATTACH_CATEGORIES = [
   { label: 'All', slot: null },
   { label: 'Optics', slot: 'optic' },
   { label: 'Barrels', slot: 'barrel' },
   { label: 'Underbarrel', slot: 'underbarrel' },
+  { label: 'Magazines', slot: 'magazines' },
 ]
 
 // Utility tab sub-filters — keyed on util_slot from /gamedata/utility-items.
 // 'Tool Attach.' rows (util_slot null) are multi-tool attachments: browsable
-// + badged, but they don't equip into a paperdoll slot themselves.
+// + badged, but they don't equip into a paperdoll slot themselves. 'Knife' is
+// a slice-3 addition: knives are a separate catalog (the `knives` prop) so
+// they equip as { kind: 'melee' } rather than { kind: 'utility' }.
 const UTILITY_CATEGORIES = [
   { label: 'All', match: undefined },
   { label: 'Medical', match: 'medical' },
   { label: 'Gadgets', match: 'gadget' },
   { label: 'Throwable', match: 'throwable' },
+  { label: 'Knife', match: 'knife' },
   { label: 'Tool Attach.', match: null },
 ]
 
@@ -69,10 +76,17 @@ const ARMOUR_WEIGHT_CATEGORIES = [
   { label: 'Heavy', match: 'heavy' },
 ]
 
+// Dynamic ordinal families (grenade_N/pen_N/util_gadget/util_knife -> Utility;
+// mag_N -> Attach) route to a different TYPE tab than the fixed slots; sling_N
+// stays on Weapons (it holds a real weapon, just via the sling family).
+const UTIL_TAB_FAMILIES = new Set(['grenades', 'pens', 'utilGadget', 'utilKnife'])
+
 function defaultTypeForSlot(slotKey) {
   if (ARMOUR_SLOTS.has(slotKey)) return 'Armour'
-  if (UTILITY_SLOTS.has(slotKey)) return 'Utility'
-  return 'Weapons' // weapon slots, and anything unrecognised, default to Weapons
+  const { family } = SLOT_FAMILY(slotKey)
+  if (family === 'mags') return 'Attach'
+  if (UTIL_TAB_FAMILIES.has(family)) return 'Utility'
+  return 'Weapons' // weapon slots, sling slots, and anything unrecognised, default to Weapons
 }
 
 // Shared sub-filter pill strip (Weapons / Attach / Utility tabs).
@@ -216,7 +230,7 @@ function EmptyRow({ children }) {
   )
 }
 
-export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], utility = [], armours = [], armourBuilds = [], ownership = {}, onPick }) {
+export default function ItemSource({ slotKey, weapon = null, weapons = [], attachments = [], builds = [], utility = [], knives = [], magazines = [], armours = [], armourBuilds = [], ownership = {}, onPick }) {
   const [type, setType] = useState(() => defaultTypeForSlot(slotKey))
   const [category, setCategory] = useState(WEAPON_CATEGORIES[0].label)
   const [attachCategory, setAttachCategory] = useState(ATTACH_CATEGORIES[0].label)
@@ -231,13 +245,20 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
   // The matching sub-filter pill follows along too — selecting the Helmet
   // slot should land on the Helmet pill within Armour, not "All" — for
   // armour and utility slots (weapon slots only change the TYPE tab; the
-  // weapon category pill is left alone).
+  // weapon category pill is left alone). Slice 3's dynamic ordinal families
+  // route through SLOT_FAMILY rather than a direct slotKey match (the old
+  // fixed slot keys — medical/gadget/throwable — WERE their own util_slot
+  // value; grenade_2/pen_3/mag_5/etc. are not, so they resolve via family).
   useEffect(() => {
     setType(defaultTypeForSlot(slotKey))
     const armourSlot = ARMOUR_SLOT_CATEGORIES.find((c) => c.slot === slotKey)
     if (armourSlot) setArmourSlotCat(armourSlot.label)
-    const utilSlot = UTILITY_CATEGORIES.find((c) => c.match === slotKey)
-    if (utilSlot) setUtilCategory(utilSlot.label)
+    const { family } = SLOT_FAMILY(slotKey)
+    if (family === 'grenades') setUtilCategory('Throwable')
+    else if (family === 'pens') setUtilCategory('Medical')
+    else if (slotKey === 'util_gadget') setUtilCategory('Gadgets')
+    else if (slotKey === 'util_knife') setUtilCategory('Knife')
+    else if (family === 'mags') setAttachCategory('Magazines')
   }, [slotKey])
 
   const q = search.trim().toLowerCase()
@@ -277,6 +298,26 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
       // 'All' (match undefined) shows everything; 'Tool Attach.' matches null util_slot.
       && (activeUtilCategory.match === undefined || (u.util_slot ?? null) === activeUtilCategory.match)),
     [utility, q, activeUtilCategory],
+  )
+
+  // Knives are a separate catalog (not mixed into `utility`) because they
+  // equip as { kind: 'melee' }, not { kind: 'utility' } — shown under "All"
+  // and under their own "Knife" pill, hidden under every other pill.
+  const filteredKnives = useMemo(
+    () => knives.filter((k) =>
+      (!q || k.name?.toLowerCase().includes(q))
+      && (activeUtilCategory.match === undefined || activeUtilCategory.match === 'knife')),
+    [knives, q, activeUtilCategory],
+  )
+
+  // Magazines are a separate catalog (not mixed into `attachments`) because
+  // they equip as { kind: 'magazine' }, not { kind: 'attachment' } — shown
+  // under "All" and under their own "Magazines" pill, hidden under every other pill.
+  const filteredMagazines = useMemo(
+    () => magazines.filter((m) =>
+      (!q || m.name?.toLowerCase().includes(q))
+      && (activeAttachCategory.slot == null || activeAttachCategory.slot === 'magazines')),
+    [magazines, q, activeAttachCategory],
   )
 
   const filteredArmours = useMemo(
@@ -386,7 +427,19 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
               dragData={{ kind: 'attachment', attachment: a }}
             />
           ))}
-          {filteredAttachments.length === 0 && <EmptyRow>No attachments match.</EmptyRow>}
+          {filteredMagazines.map((m) => (
+            <Row
+              key={itemKey(m)}
+              testId={`item-magazine-${itemKey(m)}`}
+              name={m.name}
+              sub={[m.fits_class ? `Fits ${m.fits_class}` : null, m.magazine_capacity ? `${m.magazine_capacity} rd` : null].filter(Boolean).join(' · ')}
+              state={ownershipState(ownership, itemKey(m))}
+              onClick={() => pick(m)}
+              dragId={`magazine-${itemKey(m)}`}
+              dragData={{ kind: 'magazine', magazine: m }}
+            />
+          ))}
+          {filteredAttachments.length === 0 && filteredMagazines.length === 0 && <EmptyRow>No attachments match.</EmptyRow>}
         </div>
       )}
 
@@ -407,7 +460,19 @@ export default function ItemSource({ slotKey, weapon = null, weapons = [], attac
               dragData={u.util_slot ? { kind: 'utility', item: u } : null}
             />
           ))}
-          {filteredUtility.length === 0 && <EmptyRow>No utility items match.</EmptyRow>}
+          {filteredKnives.map((k) => (
+            <Row
+              key={itemKey(k)}
+              testId={`item-knife-${itemKey(k)}`}
+              name={k.name}
+              sub={`Knife · ${k.manufacturer_name || k.sub_type || ''}`}
+              state={ownershipState(ownership, itemKey(k))}
+              onClick={() => pick(k)}
+              dragId={`knife-${itemKey(k)}`}
+              dragData={{ kind: 'melee', item: k }}
+            />
+          ))}
+          {filteredUtility.length === 0 && filteredKnives.length === 0 && <EmptyRow>No utility items match.</EmptyRow>}
         </div>
       )}
 

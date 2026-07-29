@@ -11,7 +11,7 @@ import {
   pointerWithin, rectIntersection,
 } from '@dnd-kit/core'
 import {
-  useFpsLoadouts, createFpsLoadout, putLoadoutSlot,
+  useFpsLoadouts, createFpsLoadout, putLoadoutSlot, duplicateFpsLoadout,
   useCrafting, useWeaponBench, useItemBuilds, createItemBuild, deleteItemBuild,
   useUserBlueprints, useUtilityItems,
   useLootCollection, useLootWishlist,
@@ -26,6 +26,7 @@ import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { getBenchAdapter } from './benchAdapters'
 import { attachmentSlot } from './attachmentCompat'
 import { isValidTarget, resolveDrop, resolveDropFromCollisions, mergeAttachmentIntoConfig } from './dnd'
+import { portCapacity, SLOT_FAMILY } from './portCapacity'
 
 // Forgiving collision: prefer the droppable directly under the pointer, but
 // fall back to any droppable the dragged rect overlaps — so a near-miss on a
@@ -66,7 +67,7 @@ function ColHeader({ children }) {
   )
 }
 
-function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, newLoadoutError }) {
+function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, onDuplicate, newLoadoutError }) {
   return (
     <div className="flex items-center gap-3 flex-wrap" style={{ padding: '4px 8px 12px', borderBottom: `1px solid ${LINE}` }}>
       <div className="font-bold uppercase" style={{ letterSpacing: 3, color: '#fff', fontSize: 14 }}>
@@ -94,6 +95,17 @@ function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, newLoadoutError }
           </button>
         )
       })}
+      <button
+        type="button"
+        data-testid="duplicate-loadout"
+        onClick={onDuplicate}
+        disabled={!currentLoadoutId}
+        className="rounded disabled:opacity-40"
+        title="Duplicate the active loadout"
+        style={{ border: `1px solid ${LINE2}`, color: ICE_DIM, padding: '5px 11px', fontSize: 12 }}
+      >
+        &#10697; Duplicate
+      </button>
       <button
         type="button"
         data-testid="new-loadout"
@@ -236,8 +248,29 @@ export default function LoadoutContainer() {
     return [...byName.values()]
   }, [utilityQ.data, ownership])
 
+  // Utility items filtered by util_slot, split from the main catalog because
+  // knives equip via { kind: 'melee' } (util_knife) rather than
+  // { kind: 'utility' } — ItemSource renders them under their own Knife pill.
+  const knives = useMemo(() => utilityItems.filter((u) => u.util_slot === 'knife'), [utilityItems])
+  const nonKnifeUtility = useMemo(() => utilityItems.filter((u) => u.util_slot !== 'knife'), [utilityItems])
+  const magazines = benchQ.data?.magazines || []
+
+  // Capacity flows from the equipped core + legs armour (portCapacity) —
+  // drives MyLoadout's dynamic utility groups and every drop's validity.
+  const corePiece = useMemo(() => {
+    const slot = currentLoadout.slots?.find((s) => s.slot_key === 'core')
+    return slot?.item_uuid ? armours.find((a) => a.uuid === slot.item_uuid) || null : null
+  }, [currentLoadout, armours])
+  const legsPiece = useMemo(() => {
+    const slot = currentLoadout.slots?.find((s) => s.slot_key === 'legs')
+    return slot?.item_uuid ? armours.find((a) => a.uuid === slot.item_uuid) || null : null
+  }, [currentLoadout, armours])
+  const capacity = useMemo(() => portCapacity(corePiece, legsPiece), [corePiece, legsPiece])
+
   const savedSlot = currentLoadout.slots?.find((s) => s.slot_key === selectedSlot) || null
-  const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot)
+  // Sling slots hold a real weapon (gated on size + capacity, see dnd.js) so
+  // they get full weapon-bench treatment just like primary/secondary/sidearm.
+  const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot) || SLOT_FAMILY(selectedSlot).family === 'slings'
   const isArmourSlot = ARMOUR_SLOTS.has(selectedSlot)
   const benchKind = isArmourSlot ? 'armour' : 'weapon'
   const benchCatalog = isArmourSlot ? armours : weapons
@@ -273,7 +306,7 @@ export default function LoadoutContainer() {
     return out
   }, [currentLoadout, weapons])
 
-  const dropCtx = useMemo(() => ({ benchWeapon: blueprint, benchKind, slotWeapons }), [blueprint, benchKind, slotWeapons])
+  const dropCtx = useMemo(() => ({ benchWeapon: blueprint, benchKind, slotWeapons, capacity }), [blueprint, benchKind, slotWeapons, capacity])
 
   // The whole bench panel accepts weapon/build drops (load-to-bench preview).
   const benchDrop = useDroppable({ id: 'bench', data: { kind: 'bench' } })
@@ -287,10 +320,12 @@ export default function LoadoutContainer() {
   // All of the user's saved weapon-bench builds, enriched with their weapon's friendly
   // name so a build for a weapon other than the one currently on the bench is still
   // identifiable when it surfaces via Item Source search (see buildsForSource below).
+  // weaponSize feeds dnd validation — a build only lands on a sling slot when
+  // its underlying weapon's base_stats.size is large enough (see dnd.js).
   const weaponBuildsForSource = useMemo(
     () => weaponBuilds.map((b) => {
       const bp = weapons.find((w) => w.uuid === b.item_uuid)
-      return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null }
+      return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null, weaponSize: bp?.base_stats?.size ?? null }
     }),
     [weaponBuilds, weapons],
   )
@@ -314,12 +349,14 @@ export default function LoadoutContainer() {
     const out = []
     for (const item of items) {
       const weaponName = item.item_name
+      const weaponSize = weapons.find((w) => w.uuid === item.blueprint_uuid)?.base_stats?.size ?? null
       for (const build of item.builds || []) {
         out.push({
           id: `bp-${item.blueprint_uuid}-${build.id}`,
           name: build.name || weaponName,
           weaponUuid: item.blueprint_uuid,
           weaponName,
+          weaponSize,
           config: { qualities: build.quality_config, attachments: {} },
         })
       }
@@ -329,12 +366,13 @@ export default function LoadoutContainer() {
           name: weaponName,
           weaponUuid: item.blueprint_uuid,
           weaponName,
+          weaponSize,
           config: { qualities: item.quality_config, attachments: {} },
         })
       }
     }
     return out
-  }, [blueprintsQ.data])
+  }, [blueprintsQ.data, weapons])
 
   // Combined list handed to ItemSource — crafting designs first (they're the newer,
   // more-often-used source), weapon-bench builds after.
@@ -389,6 +427,17 @@ export default function LoadoutContainer() {
       setCurrentLoadoutId(created.id)
     } catch (err) {
       setNewLoadoutError(err?.message || 'Could not create loadout.')
+    }
+  }
+
+  const handleDuplicate = async () => {
+    if (!currentLoadoutId) return
+    try {
+      const result = await duplicateFpsLoadout(currentLoadoutId)
+      await loadoutsQ.refetch()
+      setCurrentLoadoutId(result.id)
+    } catch (err) {
+      flash('err', `Duplicate failed: ${err?.message || 'unknown error'}`)
     }
   }
 
@@ -505,6 +554,28 @@ export default function LoadoutContainer() {
       await persistSlot(action.slotKey, {
         itemUuid: action.item.uuid,
         itemName: action.item.name,
+        itemBuildId: null,
+        config: null,
+      })
+      setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-melee') {
+      // A knife onto util_knife — same no-bench-config treatment as utility items.
+      await persistSlot(action.slotKey, {
+        itemUuid: action.item.uuid,
+        itemName: action.item.name,
+        itemBuildId: null,
+        config: null,
+      })
+      setSelectedSlot(action.slotKey)
+      return
+    }
+    if (action.type === 'equip-magazine') {
+      // A magazine onto a mag_* slot — same no-bench-config treatment.
+      await persistSlot(action.slotKey, {
+        itemUuid: action.magazine.uuid,
+        itemName: action.magazine.name,
         itemBuildId: null,
         config: null,
       })
@@ -633,7 +704,7 @@ export default function LoadoutContainer() {
       onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
     <div className="flex flex-col h-full overflow-hidden" style={{ padding: '4px 10px 14px' }}>
       <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
-        onNew={handleNewLoadout} newLoadoutError={newLoadoutError} />
+        onNew={handleNewLoadout} onDuplicate={handleDuplicate} newLoadoutError={newLoadoutError} />
       {saveFlash && (
         <div
           data-testid="save-flash"
@@ -654,7 +725,7 @@ export default function LoadoutContainer() {
           <ColHeader><b style={{ color: '#fff' }}>My Loadout</b> &mdash; {currentLoadout.name}</ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             <MyLoadout loadout={currentLoadout} selectedSlot={selectedSlot} onSelectSlot={setSelectedSlot}
-              activeDrag={activeDrag} dropCtx={dropCtx} />
+              activeDrag={activeDrag} dropCtx={dropCtx} capacity={capacity} />
           </div>
         </div>
 
@@ -715,7 +786,8 @@ export default function LoadoutContainer() {
           </ColHeader>
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             <ItemSource slotKey={selectedSlot} weapon={blueprint} weapons={weapons} attachments={attachments}
-              builds={buildsForSource} utility={utilityItems} armours={armours} armourBuilds={armourBuildsForSource}
+              builds={buildsForSource} utility={nonKnifeUtility} knives={knives} magazines={magazines}
+              armours={armours} armourBuilds={armourBuildsForSource}
               ownership={ownership} onPick={handlePick} />
           </div>
         </div>

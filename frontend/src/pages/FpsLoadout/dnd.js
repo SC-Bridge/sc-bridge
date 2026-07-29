@@ -5,11 +5,14 @@
 //   { kind: 'armour', armour }        — an Item Source armour blueprint row
 //   { kind: 'build',  build }         — a saved design/build row (build.kind
 //                                       is 'weapon'|'armour'; armour builds
-//                                       carry build.armourSlot)
+//                                       carry build.armourSlot; weapon builds
+//                                       carry build.weaponSize for sling routing)
 //   { kind: 'attachment', attachment }— an attachment row (attachment.slot is
 //                                       one of optic/barrel/underbarrel)
 //   { kind: 'utility', item }         — a utility-catalog row (item.util_slot
-//                                       is medical/gadget/throwable)
+//                                       is medical/gadget/throwable/knife)
+//   { kind: 'melee', item }           — a knife-catalog row; lands on util_knife only
+//   { kind: 'magazine', magazine }    — a magazine-catalog row; lands on mag_*
 //   { kind: 'bench-combo' }           — the bench's current weapon/armour +
 //                                       live config (qualities + attachments);
 //                                       the container resolves the payload on drop
@@ -19,35 +22,60 @@
 //                                       (preview only, nothing saved)
 //   { kind: 'bench-slot', slot }      — a bench attachment zone (optic/…)
 //   { kind: 'loadout-slot', slotKey } — a paperdoll slot (primary/…): drops
-//                                       here SAVE instantly
+//                                       here SAVE instantly. Utility slots are
+//                                       dynamic ordinal keys (grenade_1..4,
+//                                       mag_1..8, sling_1..2, pen_1..4,
+//                                       util_gadget, util_knife) — SLOT_FAMILY
+//                                       maps a key to its family + 1-based index.
 //
 // ctx (third argument) carries what validation needs:
 //   { benchWeapon,                — blueprint currently on the bench
 //     benchKind,                  — 'weapon'|'armour' — which kind is on the bench
-//     slotWeapons: {slotKey: bp} }— saved weapon blueprint per paperdoll slot
+//     slotWeapons: {slotKey: bp}, — saved weapon blueprint per paperdoll slot
+//     capacity: {grenades,mags,slings,pens,utilGadget,utilKnife} } — from portCapacity
 import { isCompatible } from './attachmentCompat'
+import { SLOT_FAMILY } from './portCapacity'
 
 export const WEAPON_SLOT_KEYS = new Set(['primary', 'secondary', 'sidearm'])
 export const ARMOUR_SLOT_KEYS = new Set(['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'])
-export const UTILITY_SLOT_KEYS = new Set(['medical', 'gadget', 'throwable'])
+
+// A utility item's util_slot -> which capacity family/families it can equip
+// into. 'gadget' items (multi-tools etc.) can occupy either the dedicated
+// gadget slot or the knife slot — both are general-purpose tool mounts.
+const UTIL_SLOT_FAMILIES = {
+  throwable: ['grenades'],
+  medical: ['pens'],
+  gadget: ['utilGadget', 'utilKnife'],
+  knife: ['utilKnife'],
+}
 
 // Which paperdoll/bench targets does the active drag payload fit? Used to
 // highlight valid targets while dragging.
 export function isValidTarget(drag, target, ctx = {}) {
   if (!drag || !target) return false
-  const { benchWeapon = null, slotWeapons = {} } = ctx
+  const { benchWeapon = null, slotWeapons = {}, capacity = {} } = ctx
   if (target.kind === 'loadout-slot') {
+    const { family, index } = SLOT_FAMILY(target.slotKey)
+    const withinCapacity = (fam) => fam != null && index <= (capacity[fam] || 0)
     if (drag.kind === 'weapon' || drag.kind === 'bench-combo') {
       if (drag.kind === 'bench-combo' && ctx.benchKind === 'armour') {
         const slot = ctx.benchWeapon?.base_stats?.armour_slot
         return slot != null && slot === target.slotKey
       }
+      if (family === 'slings') {
+        const size = drag.kind === 'bench-combo' ? ctx.benchWeapon?.base_stats?.size : drag.weapon?.base_stats?.size
+        return size != null && size >= 2 && withinCapacity(family)
+      }
       return WEAPON_SLOT_KEYS.has(target.slotKey)
     }
     if (drag.kind === 'build') {
-      // Armour builds land on their piece's slot; weapon builds on weapon slots.
+      // Armour builds land on their piece's slot; weapon builds on weapon
+      // slots, or (by their weapon's size) a sling slot.
       if (drag.build?.kind === 'armour') {
         return drag.build?.armourSlot != null && drag.build.armourSlot === target.slotKey
+      }
+      if (family === 'slings') {
+        return drag.build?.weaponSize != null && drag.build.weaponSize >= 2 && withinCapacity(family)
       }
       return WEAPON_SLOT_KEYS.has(target.slotKey)
     }
@@ -55,9 +83,19 @@ export function isValidTarget(drag, target, ctx = {}) {
       const slot = drag.armour?.base_stats?.armour_slot
       return slot != null && slot === target.slotKey
     }
-    // Utility items land only on the paperdoll slot they belong to.
+    // Utility items land on any capacity family their util_slot maps to,
+    // within that family's current capacity.
     if (drag.kind === 'utility') {
-      return drag.item?.util_slot != null && drag.item.util_slot === target.slotKey
+      const families = UTIL_SLOT_FAMILIES[drag.item?.util_slot]
+      return Boolean(families) && families.includes(family) && withinCapacity(family)
+    }
+    // Knives land only on the dedicated knife slot.
+    if (drag.kind === 'melee') {
+      return family === 'utilKnife' && withinCapacity(family)
+    }
+    // Magazines land only on mag_* slots, within capacity.
+    if (drag.kind === 'magazine') {
+      return family === 'mags' && withinCapacity(family)
     }
     // An attachment dropped on a FILLED weapon tile stores it into that
     // slot's saved config — valid only if it fits that slot's weapon.
@@ -98,6 +136,12 @@ export function resolveDrop(drag, target, ctx = {}) {
     }
     if (drag.kind === 'utility') {
       return { type: 'equip-utility', slotKey: target.slotKey, item: drag.item }
+    }
+    if (drag.kind === 'melee') {
+      return { type: 'equip-melee', slotKey: target.slotKey, item: drag.item }
+    }
+    if (drag.kind === 'magazine') {
+      return { type: 'equip-magazine', slotKey: target.slotKey, magazine: drag.magazine }
     }
     if (drag.kind === 'attachment') {
       return { type: 'equip-attachment-to-slot', slotKey: target.slotKey, attachment: drag.attachment }
