@@ -57,7 +57,7 @@ const UTILITY_CATEGORIES = [
   { label: 'Tool Attach.', match: null },
 ]
 
-const UTIL_SLOT_LABEL = { medical: 'Medical', gadget: 'Gadget', throwable: 'Throwable' }
+const UTIL_SLOT_LABEL = { medical: 'Medical', gadget: 'Gadget', throwable: 'Throwable', knife: 'Knife' }
 
 // Armour tab sub-filters — slot first (matches the paperdoll), then weight class.
 const ARMOUR_SLOT_CATEGORIES = [

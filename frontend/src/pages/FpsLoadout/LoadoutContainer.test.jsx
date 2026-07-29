@@ -71,8 +71,17 @@ const LOADOUT = {
       owned: true, wishlisted: false, config: { qualities: {} } },
     { slot_key: 'legs', item_uuid: 'a-legs', item_name: 'Marauder Legs', weapon_build_id: null,
       owned: true, wishlisted: false, config: { qualities: {} } },
+    // A weapon saved into a sling slot — used to verify attachments dropped
+    // straight onto a FILLED sling tile merge into its config, same as a
+    // filled primary/secondary/sidearm tile does.
+    { slot_key: 'sling_1', item_uuid: 'w-primary', item_name: 'P4-AR Rifle', weapon_build_id: null,
+      owned: true, wishlisted: false, config: { qualities: {}, attachments: {} } },
   ],
 }
+
+// No attachment_ports on WEAPON_PRIMARY.base_stats, so isCompatible() is
+// permissive (no port data to enforce) — any attachment fits.
+const ATTACHMENT_SCOPE = { uuid: 'att-scope', name: 'Devastator Scope', slot: 'optic', attach_port_type: 'IronSight', attach_size: 1 }
 
 const refetchLoadouts = vi.fn()
 const duplicateFpsLoadout = vi.fn(() => Promise.resolve({ ok: true, id: 9, name: 'Copy of Ground Ops' }))
@@ -406,5 +415,21 @@ describe('LoadoutContainer', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-sling_1'))
     expect(screen.queryByTestId('slot-placeholder')).not.toBeInTheDocument()
+  })
+
+  // FIX: slotWeapons (drives attachment-drop validation on a FILLED paperdoll
+  // tile) only recognised primary/secondary/sidearm — a sling tile carrying a
+  // saved weapon silently rejected an attachment dropped straight onto it.
+  it('merges an attachment dropped onto a FILLED sling tile into that slot\'s config, same as a weapon slot', async () => {
+    render(<LoadoutContainer />)
+    await simulateDrop({ kind: 'attachment', attachment: ATTACHMENT_SCOPE }, { kind: 'loadout-slot', slotKey: 'sling_1' })
+    expect(putLoadoutSlot).toHaveBeenCalledWith(
+      1,
+      'sling_1',
+      expect.objectContaining({
+        itemUuid: 'w-primary',
+        config: expect.objectContaining({ attachments: expect.objectContaining({ optic: 'att-scope' }) }),
+      }),
+    )
   })
 })

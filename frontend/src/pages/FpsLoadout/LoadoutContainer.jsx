@@ -295,11 +295,15 @@ export default function LoadoutContainer() {
 
   // Saved weapon blueprint per paperdoll slot — drives drop validation for
   // attachments dragged straight onto a loadout tile (a 16x scope must fit
-  // THAT slot's weapon, not whatever's on the bench).
+  // THAT slot's weapon, not whatever's on the bench). Sling slots hold a real
+  // weapon too (see isWeaponSlot above), so they're included alongside the
+  // three fixed weapon slots.
   const slotWeapons = useMemo(() => {
     const out = {}
     for (const s of currentLoadout.slots || []) {
-      if (!s.item_uuid || !WEAPON_SLOTS.has(s.slot_key)) continue
+      if (!s.item_uuid) continue
+      const isWeaponFamily = WEAPON_SLOTS.has(s.slot_key) || SLOT_FAMILY(s.slot_key).family === 'slings'
+      if (!isWeaponFamily) continue
       const bp = weapons.find((w) => w.uuid === s.item_uuid)
       if (bp) out[s.slot_key] = bp
     }
