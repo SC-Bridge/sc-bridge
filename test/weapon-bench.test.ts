@@ -204,4 +204,27 @@ describe("GET /api/gamedata/utility-items", () => {
     expect(body.items.find((i) => i.uuid === "u-knife-removed")).toBeUndefined();
     expect(body.items.find((i) => i.uuid === "u-baton")).toBeUndefined();
   });
+
+  it("honors ?channel=PTU for knives — PTU knife on PTU, LIVE knife only on LIVE (slice 3)", async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO fps_melee (uuid, name, class_name, sub_type, game_version_id)
+         VALUES ('u-knife-live', 'LIVE Combat Knife', 'weap_knife_live', 'Knife', 1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO ptu_fps_melee (uuid, name, class_name, sub_type, game_version_id)
+         VALUES ('u-knife-ptu', 'PTU Combat Knife', 'weap_knife_ptu', 'Knife', 1)`,
+      ),
+    ]);
+
+    const live = await SELF.fetch("http://localhost/api/gamedata/utility-items");
+    const liveBody = (await live.json()) as { items: Array<{ uuid: string }> };
+    expect(liveBody.items.some((i) => i.uuid === "u-knife-live")).toBe(true);
+    expect(liveBody.items.some((i) => i.uuid === "u-knife-ptu")).toBe(false);
+
+    const ptu = await SELF.fetch("http://localhost/api/gamedata/utility-items?channel=PTU");
+    const ptuBody = (await ptu.json()) as { items: Array<{ uuid: string }> };
+    expect(ptuBody.items.some((i) => i.uuid === "u-knife-ptu")).toBe(true);
+    expect(ptuBody.items.some((i) => i.uuid === "u-knife-live")).toBe(false);
+  });
 });

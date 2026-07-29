@@ -1025,7 +1025,9 @@ return cachedJson(c, `gd:missions`, async () => {
   // can equip into (NULL = listed for reference only, e.g. tool attachments).
   app.get("/utility-items", async (c) => {
     const channel = getActiveChannel(c);
-    const lm = isPTUChannel(channel) ? "ptu_loot_map" : "loot_map";
+    const isPTU = isPTUChannel(channel);
+    const t = (n: string) => resolveTable(n, isPTU);
+    const lm = t("loot_map");
     return cachedJson(c, `gd:utility-items:${channel.toLowerCase()}`, async () => {
       const [{ results }, { results: knifeResults }] = await Promise.all([
         c.env.DB
@@ -1051,12 +1053,14 @@ return cachedJson(c, `gd:missions`, async () => {
           )
           .all(),
         // Knives (slice 3, util_knife slot) — sourced straight from fps_melee
-        // rather than loot_map, mirroring the melee source used by /fps-gear.
+        // rather than loot_map. Channel-resolved via t() like every sibling
+        // query in this file (isPTU ? ptu_fps_melee : fps_melee) so PTU-channel
+        // requests don't silently see LIVE knives.
         c.env.DB
           .prepare(
             `SELECT me.uuid, me.name, me.sub_type, m.name AS manufacturer_name
-             FROM fps_melee me
-             LEFT JOIN manufacturers m ON m.id = me.manufacturer_id
+             FROM ${t("fps_melee")} me
+             LEFT JOIN ${t("manufacturers")} m ON m.id = me.manufacturer_id
              WHERE me.sub_type = 'Knife' AND me.removed = 0
              ORDER BY me.name`,
           )
