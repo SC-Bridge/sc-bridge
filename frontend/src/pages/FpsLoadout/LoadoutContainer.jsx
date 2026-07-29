@@ -26,7 +26,7 @@ import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { getBenchAdapter } from './benchAdapters'
 import { attachmentSlot } from './attachmentCompat'
 import { isValidTarget, resolveDrop, resolveDropFromCollisions, mergeAttachmentIntoConfig } from './dnd'
-import { portCapacity, SLOT_FAMILY } from './portCapacity'
+import { portCapacity, SLOT_FAMILY, labelForSlotKey } from './portCapacity'
 
 // Forgiving collision: prefer the droppable directly under the pointer, but
 // fall back to any droppable the dragged rect overlaps — so a near-miss on a
@@ -67,7 +67,7 @@ function ColHeader({ children }) {
   )
 }
 
-function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, onDuplicate, newLoadoutError }) {
+function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, onDuplicate, duplicating, newLoadoutError }) {
   return (
     <div className="flex items-center gap-3 flex-wrap" style={{ padding: '4px 8px 12px', borderBottom: `1px solid ${LINE}` }}>
       <div className="font-bold uppercase" style={{ letterSpacing: 3, color: '#fff', fontSize: 14 }}>
@@ -99,7 +99,7 @@ function TopBar({ loadouts, currentLoadoutId, onSelect, onNew, onDuplicate, newL
         type="button"
         data-testid="duplicate-loadout"
         onClick={onDuplicate}
-        disabled={!currentLoadoutId}
+        disabled={!currentLoadoutId || duplicating}
         className="rounded disabled:opacity-40"
         title="Duplicate the active loadout"
         style={{ border: `1px solid ${LINE2}`, color: ICE_DIM, padding: '5px 11px', fontSize: 12 }}
@@ -157,6 +157,7 @@ export default function LoadoutContainer() {
   const equipSeqRef = useRef(0)
   const [saving, setSaving] = useState(false)
   const [newLoadoutError, setNewLoadoutError] = useState(null)
+  const [duplicating, setDuplicating] = useState(false)
   // Save feedback — every persist attempt flashes "Saved ✓" or the error, so
   // a failed save is never silent again.
   const [saveFlash, setSaveFlash] = useState(null) // { type: 'ok'|'err', msg }
@@ -436,12 +437,15 @@ export default function LoadoutContainer() {
 
   const handleDuplicate = async () => {
     if (!currentLoadoutId) return
+    setDuplicating(true)
     try {
       const result = await duplicateFpsLoadout(currentLoadoutId)
       await loadoutsQ.refetch()
       setCurrentLoadoutId(result.id)
     } catch (err) {
       flash('err', `Duplicate failed: ${err?.message || 'unknown error'}`)
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -689,7 +693,7 @@ export default function LoadoutContainer() {
     return { pieces, backpack: backpackBp ? { name: backpackBp.base_stats?.item_name || backpackBp.name, volume: backpackBp.base_stats?.inventory_volume ?? null } : null }
   }, [currentLoadout, armours])
 
-  const slotLabel = WEAPON_SLOT_LABEL[selectedSlot] || selectedSlot
+  const slotLabel = WEAPON_SLOT_LABEL[selectedSlot] || labelForSlotKey(selectedSlot)
   const blueprintOwned = Boolean(blueprint && ownership.owned.has(blueprint.uuid))
 
   // Ghost label for the DragOverlay — the name of whatever is being dragged.
@@ -708,7 +712,7 @@ export default function LoadoutContainer() {
       onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
     <div className="flex flex-col h-full overflow-hidden" style={{ padding: '4px 10px 14px' }}>
       <TopBar loadouts={loadouts} currentLoadoutId={currentLoadoutId} onSelect={setCurrentLoadoutId}
-        onNew={handleNewLoadout} onDuplicate={handleDuplicate} newLoadoutError={newLoadoutError} />
+        onNew={handleNewLoadout} onDuplicate={handleDuplicate} duplicating={duplicating} newLoadoutError={newLoadoutError} />
       {saveFlash && (
         <div
           data-testid="save-flash"
@@ -752,7 +756,7 @@ export default function LoadoutContainer() {
           <div className="flex-1 overflow-y-auto min-h-0" style={{ padding: '11px 12px' }}>
             {!(isWeaponSlot || isArmourSlot) ? (
               <div className="text-center py-12 text-sm italic" style={{ color: ICE_DIM }} data-testid="slot-placeholder">
-                {slotLabel} bench coming in slice 3
+                {slotLabel} &mdash; equip-only, no bench tuning
               </div>
             ) : blueprint ? (
               <>

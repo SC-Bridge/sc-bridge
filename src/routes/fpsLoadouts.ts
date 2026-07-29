@@ -148,27 +148,60 @@ export function fpsLoadoutRoutes() {
         .first<{ id: number; name: string }>();
       if (!src) return c.json({ error: "Not found" }, 404);
 
-      const base = `Copy of ${src.name}`.slice(0, 100);
+      // Matches POST / and PATCH /:id's z.max(80) — the suffix loop below
+      // must keep the *final* name (base + " (N)") within that same cap, or
+      // a rename via PATCH could reject a name this endpoint itself produced.
+      const NAME_MAX = 80;
+      const base = `Copy of ${src.name}`.slice(0, NAME_MAX);
       const { results } = await db
         .prepare("SELECT name FROM user_fps_loadouts WHERE user_id = ?")
         .bind(userId)
         .all<{ name: string }>();
       const taken = new Set(results.map((r) => r.name));
       let name = base;
-      for (let i = 2; taken.has(name); i++) name = `${base} (${i})`;
+      for (let i = 2; taken.has(name); i++) {
+        const suffix = ` (${i})`;
+        name = `${base.slice(0, NAME_MAX - suffix.length)}${suffix}`;
+      }
 
-      const created = await db
-        .prepare("INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, ?) RETURNING id")
-        .bind(userId, name)
-        .first<{ id: number }>();
-      await db
-        .prepare(
-          `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, item_build_id, config_json)
-           SELECT ?, slot_key, item_uuid, item_name, item_build_id, config_json
-           FROM user_fps_loadout_slots WHERE loadout_id = ?`,
-        )
-        .bind(created!.id, src.id)
-        .run();
+      // Two statements, not one D1 batch: the slots INSERT...SELECT needs the
+      // loadout id RETURNING produces from the first insert, and a batch's
+      // statements are prepared up-front — there's no way to feed one
+      // statement's result into the next within the same batch. Instead: the
+      // taken-name scan above should already dodge the UNIQUE(user_id, name)
+      // constraint, but a concurrent create/duplicate can still race it, so
+      // the insert itself is guarded the same way POST / and PATCH /:id are
+      // (409, not a raw 500). If the slots copy then fails, the loadout row
+      // is compensated away (deleted) so a duplicate never leaves an
+      // orphaned, slot-less loadout behind — the closest thing to atomicity
+      // two non-transactional statements can offer.
+      let created: { id: number } | null;
+      try {
+        created = await db
+          .prepare("INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, ?) RETURNING id")
+          .bind(userId, name)
+          .first<{ id: number }>();
+      } catch (e: unknown) {
+        if (((e as Error)?.message || "").includes("UNIQUE")) {
+          return c.json({ error: "A loadout with that name already exists" }, 409);
+        }
+        throw e;
+      }
+
+      try {
+        await db
+          .prepare(
+            `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, item_build_id, config_json)
+             SELECT ?, slot_key, item_uuid, item_name, item_build_id, config_json
+             FROM user_fps_loadout_slots WHERE loadout_id = ?`,
+          )
+          .bind(created!.id, src.id)
+          .run();
+      } catch (e: unknown) {
+        await db.prepare("DELETE FROM user_fps_loadouts WHERE id = ?").bind(created!.id).run();
+        throw e;
+      }
+
       return c.json({ ok: true, id: created!.id, name });
     },
   );

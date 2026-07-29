@@ -227,4 +227,21 @@ describe("GET /api/gamedata/utility-items", () => {
     expect(ptuBody.items.some((i) => i.uuid === "u-knife-ptu")).toBe(true);
     expect(ptuBody.items.some((i) => i.uuid === "u-knife-live")).toBe(false);
   });
+
+  // Final-review fix 2: the handler used to dedup by name server-side,
+  // first-wins — which silently defeated LoadoutContainer.jsx's
+  // ownership-aware client-side dedup (it needs BOTH rows present so it can
+  // keep whichever uuid the user actually owns/wishlists). Two same-named
+  // rows with different uuids must both come through untouched.
+  it("does not dedup same-named rows with different uuids (client owns dedup)", async () => {
+    await env.DB.prepare(
+      `INSERT INTO loot_map (uuid, name, type, sub_type, game_version_id)
+       VALUES ('u-variant-a', 'MedPen (Hemozal)', 'consumable', 'MedPack', 1)`
+    ).run();
+
+    const res = await SELF.fetch("http://localhost/api/gamedata/utility-items");
+    const body = (await res.json()) as { items: Array<{ uuid: string; name: string }> };
+    const variants = body.items.filter((i) => i.name === "MedPen (Hemozal)");
+    expect(variants.map((i) => i.uuid).sort()).toEqual(["u-pen", "u-variant-a"]);
+  });
 });

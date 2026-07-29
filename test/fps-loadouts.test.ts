@@ -338,6 +338,35 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
       expect(secondBody.name).toBe("Copy of Repeat Kit (2)");
     });
 
+    // Final-review fix 3c: the duplicate name (base + suffix) must stay
+    // within the same 80-char cap POST / and PATCH /:id enforce (z.max(80)).
+    // A source name at that 80-char cap (the max POST itself allows) still
+    // overflows once "Copy of " is prefixed (88 chars) — this proves the
+    // duplicate endpoint truncates the RESULT, not just refuses long inputs,
+    // so a name it produces can't itself get rejected by a later PATCH rename.
+    it("truncates an 80-char source name (max allowed by POST) so the duplicate name stays within PATCH's 80-char cap", async () => {
+      const longName = "X".repeat(80);
+      const create = await post(sessionToken, { name: longName });
+      const { id } = (await create.json()) as { id: number };
+
+      const dup = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/duplicate`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(dup.status).toBe(200);
+      const dupBody = (await dup.json()) as { id: number; name: string };
+      expect(dupBody.name.length).toBeLessThanOrEqual(80);
+
+      // Prove the cap is real, not incidental: PATCH must accept renaming to
+      // exactly the name /duplicate produced.
+      const rename = await SELF.fetch(`http://localhost/api/fps-loadouts/${dupBody.id}`, {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: dupBody.name }),
+      });
+      expect(rename.status).toBe(200);
+    });
+
     it("returns 404 when duplicating another user's loadout (IDOR)", async () => {
       const other = await createTestUser(env.DB);
       const theirCreate = await post(other.sessionToken, { name: "Not Yours" });

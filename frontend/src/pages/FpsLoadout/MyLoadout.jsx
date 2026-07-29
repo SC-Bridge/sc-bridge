@@ -1,7 +1,7 @@
 import React from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { isValidTarget } from './dnd'
-import { SLOT_FAMILY } from './portCapacity'
+import { SLOT_FAMILY, labelForSlotKey as sharedLabelForSlotKey } from './portCapacity'
 
 const ICON = (name) => `/inventory-assets/${name}`
 
@@ -55,15 +55,15 @@ const SLOT_LABEL = {
   util_knife: 'Knife',
 }
 
-// Ordinal utility families (grenade_N/mag_N/sling_N/pen_N) share one icon and
-// label prefix per family — the tile name is just "<Prefix> <index>".
+// Ordinal utility families (grenade_N/mag_N/sling_N/pen_N) share one icon
+// per family — the tile name (label) comes from portCapacity.js, which owns
+// the family-prefix vocabulary shared with LoadoutContainer's bench header.
 const FAMILY_ICON = {
   grenades: 'icon_common_grenade',
   mags: 'Inv_filter_Icons_ammo',
   slings: 'icon_common_secondary_weapon',
   pens: 'icon_common_consumable',
 }
-const FAMILY_LABEL_PREFIX = { grenades: 'Grenade', mags: 'Mag', slings: 'Sling', pens: 'Pen' }
 
 function iconForSlotKey(slotKey) {
   if (SLOT_ICON[slotKey]) return SLOT_ICON[slotKey]
@@ -72,10 +72,7 @@ function iconForSlotKey(slotKey) {
 }
 
 function labelForSlotKey(slotKey) {
-  if (SLOT_LABEL[slotKey]) return SLOT_LABEL[slotKey]
-  const { family, index } = SLOT_FAMILY(slotKey)
-  const prefix = FAMILY_LABEL_PREFIX[family]
-  return prefix ? `${prefix} ${index}` : slotKey
+  return SLOT_LABEL[slotKey] || sharedLabelForSlotKey(slotKey)
 }
 
 const range = (n) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1)

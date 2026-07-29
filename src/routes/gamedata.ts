@@ -1074,14 +1074,15 @@ return cachedJson(c, `gd:missions`, async () => {
         util_slot: "knife",
       }));
 
-      // Dedup by name, like the rest of the catalog — keep the first
-      // occurrence in name order across both sources.
-      const byName = new Map<string, Record<string, unknown>>();
-      for (const item of [...results, ...knives] as Record<string, unknown>[]) {
-        const name = item.name as string;
-        if (!byName.has(name)) byName.set(name, item);
-      }
-      const items = Array.from(byName.values()).sort((a, b) =>
+      // Deliberately NOT deduped by name here (a byName first-wins pass used
+      // to live in this handler and got removed — see final-review fix 2).
+      // LoadoutContainer.jsx's Item Source list does its own ownership-aware
+      // dedup client-side: when two rows share a name (e.g. a UUID that
+      // changed across a patch), it keeps the row whose uuid the signed-in
+      // user actually owns/wishlists so the ✓/◇ badge survives. A server
+      // dedup here picks an arbitrary row by name order and silently defeats
+      // that — don't re-add it.
+      const items = ([...results, ...knives] as Record<string, unknown>[]).sort((a, b) =>
         ((a.name as string) ?? "").localeCompare((b.name as string) ?? ""),
       );
       return { items };

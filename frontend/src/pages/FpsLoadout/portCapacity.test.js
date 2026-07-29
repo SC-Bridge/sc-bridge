@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { portCapacity, SLOT_FAMILY } from './portCapacity'
+import { portCapacity, SLOT_FAMILY, labelForSlotKey } from './portCapacity'
 
 const core = (weight) => ({ base_stats: { armour_weight: weight } })
 const LEGS = { base_stats: { armour_weight: 'light' } }
@@ -48,5 +48,25 @@ describe('SLOT_FAMILY', () => {
     expect(SLOT_FAMILY('primary')).toEqual({ family: null, index: 0 })
     expect(SLOT_FAMILY('core')).toEqual({ family: null, index: 0 })
     expect(SLOT_FAMILY(undefined)).toEqual({ family: null, index: 0 })
+  })
+
+  it('parses multi-digit ordinal indexes (family still recognized past the single-digit range)', () => {
+    expect(SLOT_FAMILY('mag_10')).toEqual({ family: 'mags', index: 10 })
+  })
+})
+
+describe('labelForSlotKey', () => {
+  it('labels ordinal family slots as "<Prefix> <index>"', () => {
+    expect(labelForSlotKey('pen_2')).toBe('Pen 2')
+    expect(labelForSlotKey('mag_3')).toBe('Mag 3')
+  })
+
+  it('labels the singleton utility slots', () => {
+    expect(labelForSlotKey('util_knife')).toBe('Knife')
+    expect(labelForSlotKey('util_gadget')).toBe('Gadget')
+  })
+
+  it('passes through slot keys outside its vocabulary unchanged', () => {
+    expect(labelForSlotKey('primary')).toBe('primary')
   })
 })

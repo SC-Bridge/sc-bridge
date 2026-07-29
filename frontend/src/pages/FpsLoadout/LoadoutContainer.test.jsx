@@ -153,10 +153,22 @@ describe('LoadoutContainer', () => {
     expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
   })
 
-  it('shows a slice-3 placeholder for the remaining (non-sling) utility slots instead of the bench', () => {
+  it('shows an equip-only placeholder for the remaining (non-sling) utility slots instead of the bench', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-pen_1'))
-    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/coming in slice 3/i)
+    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/equip-only, no bench tuning/i)
+  })
+
+  // FIX 1 (final review): the bench header and placeholder must show the
+  // human label ("Pen 2") for a dynamic utility slot, not the raw slot key
+  // ("pen_2") — and the placeholder copy must not still say "coming in
+  // slice 3" (this fix itself shipped IN slice 3).
+  it('labels a selected pen tile "Pen 2" in the bench header and shows equip-only copy', () => {
+    render(<LoadoutContainer />)
+    fireEvent.click(screen.getByTestId('slot-pen_2'))
+    expect(screen.getByTestId('bench-droppable')).toHaveTextContent('Pen 2')
+    expect(screen.getByTestId('bench-droppable')).not.toHaveTextContent('pen_2 slot')
+    expect(screen.getByTestId('slot-placeholder')).toHaveTextContent('Pen 2 — equip-only, no bench tuning')
   })
 
   it('renders the bench (not the slice-3 placeholder) for an armour slot', () => {
@@ -373,6 +385,21 @@ describe('LoadoutContainer', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('duplicate-loadout'))
     await vi.waitFor(() => expect(screen.getByTestId('save-flash')).toHaveTextContent(/name taken/))
+  })
+
+  // FIX 4 (final review): a slow duplicate request must not let the user
+  // double-click and fire it twice — the button disables for the duration
+  // of the in-flight request and re-enables once it settles.
+  it('disables the duplicate button while a duplicate request is in flight', async () => {
+    let resolveDuplicate
+    duplicateFpsLoadout.mockImplementationOnce(() => new Promise((resolve) => { resolveDuplicate = resolve }))
+    render(<LoadoutContainer />)
+    const button = screen.getByTestId('duplicate-loadout')
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+    expect(button).toBeDisabled()
+    resolveDuplicate({ ok: true, id: 9, name: 'Copy of Ground Ops' })
+    await vi.waitFor(() => expect(button).not.toBeDisabled())
   })
 
   // Slice 3: a utility drop must persist to its ordinal slot key exactly like

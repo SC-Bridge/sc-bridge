@@ -23,7 +23,7 @@ export function portCapacity(corePiece, legsPiece) {
   }
 }
 
-const FAMILY_RE = /^(grenade|mag|sling|pen)_(\d)$/
+const FAMILY_RE = /^(grenade|mag|sling|pen)_(\d+)$/
 export function SLOT_FAMILY(slotKey) {
   if (slotKey === 'util_gadget') return { family: 'utilGadget', index: 1 }
   if (slotKey === 'util_knife') return { family: 'utilKnife', index: 1 }
@@ -31,4 +31,19 @@ export function SLOT_FAMILY(slotKey) {
   if (!m) return { family: null, index: 0 }
   const familyKey = { grenade: 'grenades', mag: 'mags', sling: 'slings', pen: 'pens' }[m[1]]
   return { family: familyKey, index: Number(m[2]) }
+}
+
+// Human labels for the dynamic utility slot-key vocabulary this module owns
+// (util_gadget/util_knife singletons + the ordinal grenade_N/mag_N/sling_N/
+// pen_N families). Fixed structural slots (primary, helmet, ...) aren't part
+// of that vocabulary — callers with their own fixed-slot labels should check
+// those first and fall back to this for anything else; unrecognized keys
+// pass through unchanged rather than leaking a made-up label.
+const UTIL_SLOT_LABEL = { util_gadget: 'Gadget', util_knife: 'Knife' }
+const FAMILY_LABEL_PREFIX = { grenades: 'Grenade', mags: 'Mag', slings: 'Sling', pens: 'Pen' }
+export function labelForSlotKey(slotKey) {
+  if (UTIL_SLOT_LABEL[slotKey]) return UTIL_SLOT_LABEL[slotKey]
+  const { family, index } = SLOT_FAMILY(slotKey)
+  const prefix = FAMILY_LABEL_PREFIX[family]
+  return prefix ? `${prefix} ${index}` : slotKey
 }
