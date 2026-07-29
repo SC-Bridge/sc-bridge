@@ -38,7 +38,6 @@ export function useVersionSkewGuard() {
   const serverBuild = status?.build
   const [stale, setStale] = useState(false)
   const lastFocusCheck = useRef(0)
-  const initialPath = useRef(location.pathname)
 
   // Re-check when the tab regains focus (long-lived background tabs are the
   // main skew audience), throttled so focus flapping doesn't spam the API.
@@ -54,8 +53,11 @@ export function useVersionSkewGuard() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [refetch])
 
-  // Mismatch handling. Auto-reload only on a route CHANGE (not the landing
-  // render, where reloading would double-load the page the user just opened).
+  // Mismatch handling. Auto-reload on any detected mismatch, including the
+  // landing render — a stale bundle is exactly as stale on first paint as
+  // it is after a route change. The sessionStorage guard (one reload per
+  // server build) prevents a reload loop; a broken deploy degrades to the
+  // toast instead of reloading forever.
   useEffect(() => {
     const action = decideSkewAction({
       clientBuild: CLIENT_BUILD,
@@ -67,7 +69,7 @@ export function useVersionSkewGuard() {
       return
     }
     setStale(true)
-    if (action === 'reload' && location.pathname !== initialPath.current) {
+    if (action === 'reload') {
       markReloadedFor(serverBuild)
       window.location.reload()
     }
