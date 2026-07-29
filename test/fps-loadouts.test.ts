@@ -263,4 +263,91 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     });
     expect(del.status).toBe(400);
   });
+
+  it("accepts the new ordinal utility slot keys and rejects legacy/out-of-range keys", async () => {
+    const create = await post(sessionToken, { name: "Utility Slot Kit" });
+    const { id } = (await create.json()) as { id: number };
+
+    const putSlot = async (slotKey: string) =>
+      SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/${slotKey}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: "Whatever" }),
+      });
+
+    expect((await putSlot("grenade_3")).status).toBe(200);
+    expect((await putSlot("pen_4")).status).toBe(200);
+    expect((await putSlot("medical")).status).toBe(400);
+    expect((await putSlot("grenade_5")).status).toBe(400);
+  });
+
+  describe("POST /:id/duplicate", () => {
+    it("duplicates a loadout and its slots under 'Copy of <name>'", async () => {
+      const create = await post(sessionToken, { name: "Source Kit" });
+      const { id } = (await create.json()) as { id: number };
+
+      await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ itemUuid: "dup-primary-uuid", itemName: "Dup Primary" }),
+      });
+      await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/sidearm`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ itemUuid: "dup-sidearm-uuid", itemName: "Dup Sidearm" }),
+      });
+
+      const dup = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/duplicate`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(dup.status).toBe(200);
+      const dupBody = (await dup.json()) as { ok: boolean; id: number; name: string };
+      expect(dupBody.ok).toBe(true);
+      expect(dupBody.name).toBe("Copy of Source Kit");
+      expect(dupBody.id).not.toBe(id);
+
+      const list = await SELF.fetch("http://localhost/api/fps-loadouts", { headers: await authHeaders(sessionToken) });
+      type ListBody = {
+        items: Array<{ id: number; name: string; slots: Array<{ slot_key: string; item_uuid: string | null }> }>;
+      };
+      const body = (await list.json()) as ListBody;
+      const copy = body.items.find((l) => l.id === dupBody.id)!;
+      expect(copy.name).toBe("Copy of Source Kit");
+      expect(copy.slots).toHaveLength(2);
+      expect(copy.slots.find((s) => s.slot_key === "primary")?.item_uuid).toBe("dup-primary-uuid");
+      expect(copy.slots.find((s) => s.slot_key === "sidearm")?.item_uuid).toBe("dup-sidearm-uuid");
+    });
+
+    it("suffixes ' (2)', ' (3)'… on repeated duplication to dodge the UNIQUE(user_id, name) constraint", async () => {
+      const create = await post(sessionToken, { name: "Repeat Kit" });
+      const { id } = (await create.json()) as { id: number };
+
+      const first = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/duplicate`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      const firstBody = (await first.json()) as { name: string };
+      expect(firstBody.name).toBe("Copy of Repeat Kit");
+
+      const second = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/duplicate`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      const secondBody = (await second.json()) as { name: string };
+      expect(secondBody.name).toBe("Copy of Repeat Kit (2)");
+    });
+
+    it("returns 404 when duplicating another user's loadout (IDOR)", async () => {
+      const other = await createTestUser(env.DB);
+      const theirCreate = await post(other.sessionToken, { name: "Not Yours" });
+      const { id: theirId } = (await theirCreate.json()) as { id: number };
+
+      const dup = await SELF.fetch(`http://localhost/api/fps-loadouts/${theirId}/duplicate`, {
+        method: "POST",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(dup.status).toBe(404);
+    });
+  });
 });

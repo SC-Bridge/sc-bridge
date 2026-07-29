@@ -15,9 +15,26 @@ const FpsSlotKey = z.enum([
   "legs",
   "backpack",
   "undersuit",
-  "medical",
-  "gadget",
-  "throwable",
+  "grenade_1",
+  "grenade_2",
+  "grenade_3",
+  "grenade_4",
+  "mag_1",
+  "mag_2",
+  "mag_3",
+  "mag_4",
+  "mag_5",
+  "mag_6",
+  "mag_7",
+  "mag_8",
+  "sling_1",
+  "sling_2",
+  "pen_1",
+  "pen_2",
+  "pen_3",
+  "pen_4",
+  "util_gadget",
+  "util_knife",
 ]);
 
 /** Route params for /:id/slots/:slotKey — loadout id + known slot key */
@@ -113,6 +130,46 @@ export function fpsLoadoutRoutes() {
         }
         throw e;
       }
+    },
+  );
+
+  // Duplicate a loadout (+ all its slots) under "Copy of <name>", suffixing
+  // " (2)", " (3)"… to dodge the UNIQUE(user_id, name) constraint.
+  routes.post(
+    "/:id/duplicate",
+    validate("param", z.object({ id: z.coerce.number().int().positive() })),
+    async (c) => {
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { id } = c.req.valid("param");
+      const src = await db
+        .prepare("SELECT id, name FROM user_fps_loadouts WHERE id = ? AND user_id = ?")
+        .bind(id, userId)
+        .first<{ id: number; name: string }>();
+      if (!src) return c.json({ error: "Not found" }, 404);
+
+      const base = `Copy of ${src.name}`.slice(0, 100);
+      const { results } = await db
+        .prepare("SELECT name FROM user_fps_loadouts WHERE user_id = ?")
+        .bind(userId)
+        .all<{ name: string }>();
+      const taken = new Set(results.map((r) => r.name));
+      let name = base;
+      for (let i = 2; taken.has(name); i++) name = `${base} (${i})`;
+
+      const created = await db
+        .prepare("INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, ?) RETURNING id")
+        .bind(userId, name)
+        .first<{ id: number }>();
+      await db
+        .prepare(
+          `INSERT INTO user_fps_loadout_slots (loadout_id, slot_key, item_uuid, item_name, item_build_id, config_json)
+           SELECT ?, slot_key, item_uuid, item_name, item_build_id, config_json
+           FROM user_fps_loadout_slots WHERE loadout_id = ?`,
+        )
+        .bind(created!.id, src.id)
+        .run();
+      return c.json({ ok: true, id: created!.id, name });
     },
   );
 

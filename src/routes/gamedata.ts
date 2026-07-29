@@ -970,27 +970,51 @@ return cachedJson(c, `gd:missions`, async () => {
   app.get("/weapon-bench", async (c) => {
     const db = c.env.DB;
     return cachedJson(c, `gd:weapon-bench`, async () => {
-      const { results } = await db
-        .prepare(
-          `SELECT a.uuid, a.name, a.class_name, a.sub_type, a.size,
-                  a.sub_type AS attach_port_type, a.size AS attach_size, a.attach_tags,
-                  a.damage_multiplier, a.fire_rate_multiplier,
-                  a.projectile_speed_multiplier, a.heat_generation_multiplier,
-                  a.recoil_strength, a.recoil_decay, a.recoil_randomness,
-                  a.sound_radius_multiplier, a.zoom_scale, a.second_zoom_scale,
-                  a.zoom_time_scale,
-                  m.name AS manufacturer_name, lm.rarity
-           FROM fps_attachments a
-           LEFT JOIN manufacturers m ON m.id = a.manufacturer_id
-           LEFT JOIN loot_map lm ON lm.fps_attachment_id = a.id
-           -- The binoculars' fake-optic prop is extracted as a size-1
-           -- "EE16 (16x Telescopic)" IronSight; it isn't a real, equippable
-           -- scope and slips past port-size validation on pistols.
-           WHERE a.class_name NOT LIKE '%fakeoptic%'
-           ORDER BY a.name`,
-        )
-        .all();
-      return { attachments: results };
+      const [{ results }, { results: magazineResults }] = await Promise.all([
+        db
+          .prepare(
+            `SELECT a.uuid, a.name, a.class_name, a.sub_type, a.size,
+                    a.sub_type AS attach_port_type, a.size AS attach_size, a.attach_tags,
+                    a.damage_multiplier, a.fire_rate_multiplier,
+                    a.projectile_speed_multiplier, a.heat_generation_multiplier,
+                    a.recoil_strength, a.recoil_decay, a.recoil_randomness,
+                    a.sound_radius_multiplier, a.zoom_scale, a.second_zoom_scale,
+                    a.zoom_time_scale,
+                    m.name AS manufacturer_name, lm.rarity
+             FROM fps_attachments a
+             LEFT JOIN manufacturers m ON m.id = a.manufacturer_id
+             LEFT JOIN loot_map lm ON lm.fps_attachment_id = a.id
+             -- The binoculars' fake-optic prop is extracted as a size-1
+             -- "EE16 (16x Telescopic)" IronSight; it isn't a real, equippable
+             -- scope and slips past port-size validation on pistols.
+             WHERE a.class_name NOT LIKE '%fakeoptic%'
+             ORDER BY a.name`,
+          )
+          .all(),
+        // Magazines (slice 3): fits_class strips a trailing "_mag" off
+        // class_name so the frontend can match a magazine to the weapon
+        // class it loads into without parsing the suffix itself.
+        db
+          .prepare(
+            `SELECT a.uuid, a.name, a.class_name, a.size, a.magazine_capacity
+             FROM fps_attachments a
+             WHERE a.sub_type = 'Magazine' AND a.removed = 0
+             ORDER BY a.name`,
+          )
+          .all(),
+      ]);
+      const magazines = magazineResults.map((m) => {
+        const className = m.class_name as string | null;
+        const match = className?.match(/^(.+)_mag$/);
+        return {
+          uuid: m.uuid,
+          name: m.name,
+          size: m.size,
+          magazine_capacity: m.magazine_capacity,
+          fits_class: match ? match[1] : null,
+        };
+      });
+      return { attachments: results, magazines };
     });
   });
 
@@ -1003,29 +1027,60 @@ return cachedJson(c, `gd:missions`, async () => {
     const channel = getActiveChannel(c);
     const lm = isPTUChannel(channel) ? "ptu_loot_map" : "loot_map";
     return cachedJson(c, `gd:utility-items:${channel.toLowerCase()}`, async () => {
-      const { results } = await c.env.DB
-        .prepare(
-          `SELECT lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity, lm.manufacturer_name,
-                  CASE
-                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Gadget' THEN 'gadget'
-                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%' THEN 'medical'
-                    WHEN lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap') THEN 'medical'
-                    WHEN lm.type = 'weapon' AND lm.sub_type = 'Grenade' THEN 'throwable'
-                    ELSE NULL
-                  END AS util_slot
-           FROM ${lm} lm
-           WHERE COALESCE(lm.is_deleted, 0) = 0
-             AND (
-               (lm.type = 'weapon' AND lm.sub_type = 'Gadget')
-               OR (lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%')
-               OR (lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap'))
-               OR (lm.type = 'weapon' AND lm.sub_type = 'Grenade')
-               OR (lm.type = 'attachment' AND lm.sub_type = 'Utility')
-             )
-           ORDER BY lm.name`,
-        )
-        .all();
-      return { items: results };
+      const [{ results }, { results: knifeResults }] = await Promise.all([
+        c.env.DB
+          .prepare(
+            `SELECT lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity, lm.manufacturer_name,
+                    CASE
+                      WHEN lm.type = 'weapon' AND lm.sub_type = 'Gadget' THEN 'gadget'
+                      WHEN lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%' THEN 'medical'
+                      WHEN lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap') THEN 'medical'
+                      WHEN lm.type = 'weapon' AND lm.sub_type = 'Grenade' THEN 'throwable'
+                      ELSE NULL
+                    END AS util_slot
+             FROM ${lm} lm
+             WHERE COALESCE(lm.is_deleted, 0) = 0
+               AND (
+                 (lm.type = 'weapon' AND lm.sub_type = 'Gadget')
+                 OR (lm.type = 'weapon' AND lm.sub_type = 'Small' AND lm.name LIKE '%Medical Device%')
+                 OR (lm.type = 'consumable' AND lm.sub_type IN ('Medical','MedPack','OxygenCap'))
+                 OR (lm.type = 'weapon' AND lm.sub_type = 'Grenade')
+                 OR (lm.type = 'attachment' AND lm.sub_type = 'Utility')
+               )
+             ORDER BY lm.name`,
+          )
+          .all(),
+        // Knives (slice 3, util_knife slot) — sourced straight from fps_melee
+        // rather than loot_map, mirroring the melee source used by /fps-gear.
+        c.env.DB
+          .prepare(
+            `SELECT me.uuid, me.name, me.sub_type, m.name AS manufacturer_name
+             FROM fps_melee me
+             LEFT JOIN manufacturers m ON m.id = me.manufacturer_id
+             WHERE me.sub_type = 'Knife' AND me.removed = 0
+             ORDER BY me.name`,
+          )
+          .all(),
+      ]);
+      const knives = knifeResults.map((k) => ({
+        uuid: k.uuid,
+        name: k.name,
+        sub_type: k.sub_type,
+        manufacturer_name: k.manufacturer_name,
+        util_slot: "knife",
+      }));
+
+      // Dedup by name, like the rest of the catalog — keep the first
+      // occurrence in name order across both sources.
+      const byName = new Map<string, Record<string, unknown>>();
+      for (const item of [...results, ...knives] as Record<string, unknown>[]) {
+        const name = item.name as string;
+        if (!byName.has(name)) byName.set(name, item);
+      }
+      const items = Array.from(byName.values()).sort((a, b) =>
+        ((a.name as string) ?? "").localeCompare((b.name as string) ?? ""),
+      );
+      return { items };
     });
   });
 
@@ -1101,7 +1156,7 @@ return cachedJson(c, `gd:crafting`, async () => {
         const weaponResult = await db.prepare(`SELECT fw.class_name, fw.name, fw.rounds_per_minute, fw.damage, fw.dps,
                   fw.effective_range, fw.projectile_speed, fw.ammo_capacity,
                   fw.spread_min, fw.spread_max, fw.damage_type, fw.fire_modes,
-                  fw.loadout_icon
+                  fw.loadout_icon, fw.size
            FROM ${t("fps_weapons")} fw
           `
         ).all()
@@ -1140,6 +1195,7 @@ return cachedJson(c, `gd:crafting`, async () => {
               damage_type: w.damage_type,
               fire_modes: w.fire_modes,
               loadout_icon: w.loadout_icon,
+              size: w.size,
               attachment_ports: portsMap.get(cn) || [],
             })
           }
