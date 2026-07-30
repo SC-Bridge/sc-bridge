@@ -80,10 +80,15 @@ describe('RockCalculator — rock mass crack feasibility', () => {
     expect(screen.queryByText('Rock Mass')).not.toBeInTheDocument()
   })
 
-  it('stays inert (no mass card) when the scope has no global params loaded', () => {
+  it('keeps the slider visible but hides the verdict row when the scope has no global params loaded', () => {
     renderCalculator(baseData({ global_params: [] }))
     selectLaserAndRock()
-    expect(screen.queryByText('Rock Mass')).not.toBeInTheDocument()
+    // computeCrackFeasibility({ globalParams: null }) returns null -- the OUTPUT
+    // row (verdict/time/margin) is inert, but the slider itself must stay
+    // rendered: it's the only control that could ever recover a null result.
+    expect(screen.getByText('Rock Mass')).toBeInTheDocument()
+    expect(screen.queryByText('CAN CRACK')).not.toBeInTheDocument()
+    expect(screen.queryByText('CANNOT CRACK')).not.toBeInTheDocument()
   })
 
   it('defaults to the ship scope mass (8000) and renders CAN CRACK per the golden math', () => {
@@ -112,5 +117,30 @@ describe('RockCalculator — rock mass crack feasibility', () => {
     expect(screen.queryByText(/best case/)).not.toBeInTheDocument()
     // netRate -2000, marginPct -50 -- signed, no leading '+' for a negative value
     expect(screen.getByText('-50% power margin')).toBeInTheDocument()
+  })
+
+  it('mass=0 is a recoverable dead zone, not a self-inflicted trap', () => {
+    renderCalculator(baseData())
+    selectLaserAndRock()
+
+    const box = massBox()
+    box.focus()
+    fireEvent.change(box, { target: { value: '0' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+
+    // computeCrackFeasibility guards on !(mass > 0) -> null -- verdict row hides...
+    expect(screen.queryByText('CAN CRACK')).not.toBeInTheDocument()
+    expect(screen.queryByText('CANNOT CRACK')).not.toBeInTheDocument()
+    // ...but the slider (the only way to set mass back to something positive)
+    // must still be on screen, not vanish along with the verdict.
+    expect(screen.getByText('Rock Mass')).toBeInTheDocument()
+    expect(massBox()).toHaveValue('0')
+
+    // Recovery: raising mass again brings the verdict row back.
+    const box2 = massBox()
+    box2.focus()
+    fireEvent.change(box2, { target: { value: '8000' } })
+    fireEvent.keyDown(box2, { key: 'Enter' })
+    expect(screen.getByText('CAN CRACK')).toBeInTheDocument()
   })
 })

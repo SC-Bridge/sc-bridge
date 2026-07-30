@@ -286,6 +286,12 @@ export function formatDuration(seconds) {
 // rock's resistance"; this asks "can my DPS out-fill the mass-scaled decay
 // drain fast enough to ever finish the pool" (computeCrackFeasibility).
 // Styled like the page's other result cards (ChargeBar/StabilityCard/PowerBar).
+//
+// `feasibility` may be null (mass=0, or the scope's global params haven't
+// loaded) — only the OUTPUT row is gated on that. The slider itself always
+// renders: it's the only control that can set mass back to something
+// feasibility-computable, so hiding it alongside the row would strand the
+// player at mass=0 with no way back short of a page reload.
 function MassCrackCard({ mass, massConfig, onMassChange, feasibility }) {
   return (
     <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4 space-y-3">
@@ -299,17 +305,19 @@ function MassCrackCard({ mass, massConfig, onMassChange, feasibility }) {
         unit={massConfig.unit}
         onChange={onMassChange}
       />
-      <div className="flex items-center justify-between text-xs font-mono">
-        <span className={`font-semibold ${feasibility.canCrack ? 'text-emerald-400' : 'text-red-400'}`}>
-          {feasibility.canCrack ? 'CAN CRACK' : 'CANNOT CRACK'}
-        </span>
-        {feasibility.canCrack && (
-          <span className="text-gray-400">~{formatDuration(feasibility.timeToCrack)} best case</span>
-        )}
-        <span className={feasibility.marginPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-          {feasibility.marginPct > 0 ? '+' : ''}{feasibility.marginPct.toFixed(0)}% power margin
-        </span>
-      </div>
+      {feasibility && (
+        <div className="flex items-center justify-between text-xs font-mono">
+          <span className={`font-semibold ${feasibility.canCrack ? 'text-emerald-400' : 'text-red-400'}`}>
+            {feasibility.canCrack ? 'CAN CRACK' : 'CANNOT CRACK'}
+          </span>
+          {feasibility.canCrack && (
+            <span className="text-gray-400">~{formatDuration(feasibility.timeToCrack)} best case</span>
+          )}
+          <span className={feasibility.marginPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+            {feasibility.marginPct > 0 ? '+' : ''}{feasibility.marginPct.toFixed(0)}% power margin
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -792,15 +800,16 @@ export default function RockCalculator({ data }) {
         <div className="space-y-4">
           {hasResults ? (
             <>
-              {/* Rock Mass — mass-scaled fill/decay crack feasibility */}
-              {crackFeasibility && (
-                <MassCrackCard
-                  mass={mass}
-                  massConfig={massConfig}
-                  onMassChange={setMass}
-                  feasibility={crackFeasibility}
-                />
-              )}
+              {/* Rock Mass — mass-scaled fill/decay crack feasibility. Always
+                  rendered once a loadout+rock are picked, even when
+                  `crackFeasibility` is null (mass=0, or no scope params) —
+                  see MassCrackCard's null-feasibility handling above. */}
+              <MassCrackCard
+                mass={mass}
+                massConfig={massConfig}
+                onMassChange={setMass}
+                feasibility={crackFeasibility}
+              />
 
               {/* CAN/CANNOT BREAK banner — prominent like RockBreaker */}
               <div className={`relative overflow-hidden rounded-xl border-2 p-6 text-center ${
