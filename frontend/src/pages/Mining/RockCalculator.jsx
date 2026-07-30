@@ -8,6 +8,8 @@ import {
 } from './miningUtils'
 import { computeQualityBand } from './computeEffectiveRockStats'
 import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
+import { computeCrackFeasibility } from './computeCrackFeasibility'
+import MassSlider from './MassSlider'
 import { encodeLoadoutParams, decodeLoadoutParams } from './loadoutCodec'
 import {
   serializeLoadout, resolveLoadout, upsertLoadout, removeLoadout,
@@ -255,6 +257,63 @@ export function buildElements(compositionUuid, compositions, elements) {
   })
 }
 
+// Per-equipment-scope Rock Mass slider config. `mining_global_params.scope`
+// values are 'ship' | 'fps' | 'ground_vehicle' (see migration
+// 0251_mining_global_params.sql). Only 'ship' is wired into RockCalculator
+// today — see the `massScope` comment below — but the fps/ground_vehicle
+// rows are kept ready so threading the real equipment scope through later is
+// a config lookup, not a rewrite.
+const MASS_SCOPE_CONFIG = {
+  ship: { min: 0, max: 40000, default: 8000, step: 100, unit: 'kg' },
+  fps: { min: 0, max: 10, default: 1, step: 0.1, unit: 'kg' },
+  ground_vehicle: { min: 0, max: 2000, default: 400, step: 10, unit: 'kg' },
+}
+
+// Format a best-case crack time (seconds, continuous) as a short duration.
+// Sub-10s values keep one decimal — the difference between 0.4s and 4s
+// matters at that scale, whole-second precision doesn't.
+export function formatDuration(seconds) {
+  if (typeof seconds !== 'number' || !(seconds > 0)) return '--'
+  if (seconds < 10) return `${seconds.toFixed(1)}s`
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const m = Math.floor(seconds / 60)
+  const s = Math.round(seconds % 60)
+  return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
+// Mass-scaled fill/decay verdict — a separate axis from the resistance-based
+// CAN/CANNOT BREAK banner below. That banner asks "does my DPS beat this
+// rock's resistance"; this asks "can my DPS out-fill the mass-scaled decay
+// drain fast enough to ever finish the pool" (computeCrackFeasibility).
+// Styled like the page's other result cards (ChargeBar/StabilityCard/PowerBar).
+function MassCrackCard({ mass, massConfig, onMassChange, feasibility }) {
+  return (
+    <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4 space-y-3">
+      <MassSlider
+        value={mass}
+        min={massConfig.min}
+        max={massConfig.max}
+        step={massConfig.step}
+        defaultValue={massConfig.default}
+        label="Rock Mass"
+        unit={massConfig.unit}
+        onChange={onMassChange}
+      />
+      <div className="flex items-center justify-between text-xs font-mono">
+        <span className={`font-semibold ${feasibility.canCrack ? 'text-emerald-400' : 'text-red-400'}`}>
+          {feasibility.canCrack ? 'CAN CRACK' : 'CANNOT CRACK'}
+        </span>
+        {feasibility.canCrack && (
+          <span className="text-gray-400">~{formatDuration(feasibility.timeToCrack)} best case</span>
+        )}
+        <span className={feasibility.marginPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+          {feasibility.marginPct > 0 ? '+' : ''}{feasibility.marginPct.toFixed(0)}% power margin
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function RockCalculator({ data }) {
   const [shipIndex, setShipIndex] = useState(0)
   const ship = SHIP_PRESETS[shipIndex]
@@ -375,6 +434,20 @@ export default function RockCalculator({ data }) {
     [data?.global_params],
   )
 
+  // Rock Mass slider (crack feasibility). RockCalculator doesn't yet thread a
+  // real per-equipment scope through to its math — `shipScopeParams` above
+  // resolves 'ship' unconditionally, even when the ROC or FPS Multi-Tool
+  // SHIP_PRESETS entry is active — so mass stays on 'ship' too for now.
+  // Swapping to the real scope later is changing this one constant.
+  const massScope = 'ship'
+  const massConfig = MASS_SCOPE_CONFIG[massScope]
+  const [mass, setMass] = useState(massConfig.default)
+
+  const massScopeParams = useMemo(
+    () => (data?.global_params ?? []).find((p) => p.scope === massScope) ?? null,
+    [data?.global_params, massScope],
+  )
+
   const result = useMemo(() => {
     let totalDps = 0
     let allMods = {}
@@ -397,6 +470,11 @@ export default function RockCalculator({ data }) {
 
     return { totalDps, mods: allMods }
   }, [ship, laserIds, moduleIds, gadget])
+
+  const crackFeasibility = useMemo(
+    () => computeCrackFeasibility({ mass, globalParams: massScopeParams, effectiveDPS: result.totalDps }),
+    [mass, massScopeParams, result.totalDps],
+  )
 
   // Per-stat quality band. For each target composition we sample the quality
   // roll (lean/avg/rich); across variants (generic deposit mode) we average
@@ -714,6 +792,16 @@ export default function RockCalculator({ data }) {
         <div className="space-y-4">
           {hasResults ? (
             <>
+              {/* Rock Mass — mass-scaled fill/decay crack feasibility */}
+              {crackFeasibility && (
+                <MassCrackCard
+                  mass={mass}
+                  massConfig={massConfig}
+                  onMassChange={setMass}
+                  feasibility={crackFeasibility}
+                />
+              )}
+
               {/* CAN/CANNOT BREAK banner — prominent like RockBreaker */}
               <div className={`relative overflow-hidden rounded-xl border-2 p-6 text-center ${
                 displayStats.canBreak
