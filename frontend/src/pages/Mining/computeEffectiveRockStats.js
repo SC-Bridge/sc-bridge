@@ -1,3 +1,5 @@
+import { computeRockResistance } from './computeRockResistance'
+
 /**
  * Pure math for the Rock Calculator. Implements the game's actual fracture
  * model - see tools/docs/design/2026-06-01-rock-calculator-rewrite.md
@@ -64,6 +66,10 @@ export function computeEffectiveRockStats({
   return {
     effective_resistance: effectiveResistance,
     effective_resistance_after_laser: effectiveResistanceAfterLaser,
+    // The rock's real (element-composed) resistance, on the same quality roll
+    // as everything else here so the crack verdict and the results panel
+    // describe the same expected rock.
+    rock_resistance: computeRockResistance(elements, q),
     effective_instability_delta: instabilityDelta,
     effective_window_midpoint_delta: windowMidpointDelta,
     effective_window_thinness_delta: windowThinnessDelta,

@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Check, X as XIcon, ChevronDown, Activity, Save, Trash2 } from 'lucide-react'
+import { ChevronDown, Activity, Save, Trash2 } from 'lucide-react'
 import {
   SHIP_PRESETS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD,
   computeEffectiveModifiers, formatModPct,
   friendlyElementName, instabilityBand,
 } from './miningUtils'
 import { computeQualityBand } from './computeEffectiveRockStats'
+import { computeDamageFactor } from './computeRockResistance'
 import { resolveRockEntity, buildMedianBaseByCategory } from './resolveRockEntity'
 import { computeCrackFeasibility } from './computeCrackFeasibility'
 import MassSlider from './MassSlider'
@@ -263,10 +264,23 @@ export function buildElements(compositionUuid, compositions, elements) {
 // today — see the `massScope` comment below — but the fps/ground_vehicle
 // rows are kept ready so threading the real equipment scope through later is
 // a config lookup, not a rewrite.
+//
+// The mass a player reads off the scan HUD carries no unit, and the scan
+// number is what this slider takes, so it is labelled without one — calling
+// it kg would be inventing a unit the game never states.
 const MASS_SCOPE_CONFIG = {
-  ship: { min: 0, max: 40000, default: 8000, step: 100, unit: 'kg' },
-  fps: { min: 0, max: 10, default: 1, step: 0.1, unit: 'kg' },
-  ground_vehicle: { min: 0, max: 2000, default: 400, step: 10, unit: 'kg' },
+  ship: { min: 0, max: 40000, default: 8000, step: 100, unit: 'Mass (scan HUD)' },
+  fps: { min: 0, max: 10, default: 1, step: 0.1, unit: 'Mass (scan HUD)' },
+  ground_vehicle: { min: 0, max: 2000, default: 400, step: 10, unit: 'Mass (scan HUD)' },
+}
+
+// Fit a mass to a scope's config: keep it when the new scope can represent
+// it, otherwise fall back to that scope's default. The three scopes' ranges
+// barely overlap (ship tops out at 40000, fps at 10), so carrying a mass
+// across a scope swap unchanged would leave the slider pinned off-scale.
+export function clampMassToScope(mass, config) {
+  if (typeof mass !== 'number' || !Number.isFinite(mass)) return config.default
+  return mass >= config.min && mass <= config.max ? mass : config.default
 }
 
 // Format a best-case crack time (seconds, continuous) as a short duration.
@@ -281,10 +295,11 @@ export function formatDuration(seconds) {
   return s > 0 ? `${m}m ${s}s` : `${m}m`
 }
 
-// Mass-scaled fill/decay verdict — a separate axis from the resistance-based
-// CAN/CANNOT BREAK banner below. That banner asks "does my DPS beat this
-// rock's resistance"; this asks "can my DPS out-fill the mass-scaled decay
-// drain fast enough to ever finish the pool" (computeCrackFeasibility).
+// The page's crack verdict: can this loadout's resistance-adjusted DPS
+// out-fill the mass-scaled decay drain fast enough to ever finish the power
+// pool (computeCrackFeasibility)? Both axes are in play — the rock's
+// element-composed resistance eats a fraction of your DPS, and its mass sets
+// how big a pool that reduced DPS has to fill against a proportional drain.
 // Styled like the page's other result cards (ChargeBar/StabilityCard/PowerBar).
 //
 // `feasibility` may be null (mass=0, or the scope's global params haven't
@@ -313,7 +328,7 @@ function MassCrackCard({ mass, massConfig, onMassChange, feasibility }) {
           {feasibility.canCrack && (
             <span className="text-gray-400">~{formatDuration(feasibility.timeToCrack)} best case</span>
           )}
-          <span className={feasibility.marginPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+          <span className={feasibility.marginPct > 0 ? 'text-emerald-400' : 'text-red-400'}>
             {feasibility.marginPct > 0 ? '+' : ''}{feasibility.marginPct.toFixed(0)}% power margin
           </span>
         </div>
@@ -446,10 +461,19 @@ export default function RockCalculator({ data }) {
   // real per-equipment scope through to its math — `shipScopeParams` above
   // resolves 'ship' unconditionally, even when the ROC or FPS Multi-Tool
   // SHIP_PRESETS entry is active — so mass stays on 'ship' too for now.
-  // Swapping to the real scope later is changing this one constant.
+  // Swapping to the real scope means making `massScope` derived rather than
+  // constant; the slider range, global-params row and the mass reset below
+  // all follow from it, so nothing else here needs rewriting.
   const massScope = 'ship'
   const massConfig = MASS_SCOPE_CONFIG[massScope]
   const [mass, setMass] = useState(massConfig.default)
+
+  // A scope swap changes the mass range by three orders of magnitude, so the
+  // mass carried over from the previous scope has to be refitted — otherwise
+  // a ship's 8000 survives into the FPS scope, whose slider maxes out at 10.
+  useEffect(() => {
+    setMass((prev) => clampMassToScope(prev, MASS_SCOPE_CONFIG[massScope]))
+  }, [massScope])
 
   const massScopeParams = useMemo(
     () => (data?.global_params ?? []).find((p) => p.scope === massScope) ?? null,
@@ -484,11 +508,6 @@ export default function RockCalculator({ data }) {
     return { totalDps, mods: allMods }
   }, [ship, laserIds, moduleIds, gadget])
 
-  const crackFeasibility = useMemo(
-    () => computeCrackFeasibility({ mass, globalParams: massScopeParams, effectiveDPS: result.totalDps }),
-    [mass, massScopeParams, result.totalDps],
-  )
-
   // Per-stat quality band. For each target composition we sample the quality
   // roll (lean/avg/rich); across variants (generic deposit mode) we average
   // each quality point. `band[key] = { lean, avg, rich }`. The `avg` point is
@@ -497,6 +516,7 @@ export default function RockCalculator({ data }) {
   const BAND_KEYS = [
     'effective_resistance',
     'effective_resistance_after_laser',
+    'rock_resistance',
     'effective_instability_delta',
     'effective_window_midpoint_delta',
     'effective_window_thinness_delta',
@@ -559,10 +579,12 @@ export default function RockCalculator({ data }) {
     const windowEnd = Math.min(1, baseMidpoint + windowSize / 2)
 
     const canBreak = result.totalDps > effectiveResistanceAfterLaser
-    // Margin: how much your power over/under-shoots the rock's resistance.
-    const marginPct = effectiveResistanceAfterLaser > 0
-      ? Math.abs((result.totalDps - effectiveResistanceAfterLaser) / effectiveResistanceAfterLaser) * 100
-      : 0
+
+    // The rock's real (element-composed) resistance eats a fraction of the
+    // beam: effectiveDPS = totalDps × damageFactor. This is the number the
+    // crack verdict runs on — see the resistance-composition findings doc.
+    const rockResistance = get('rock_resistance') ?? 0
+    const damageFactor = computeDamageFactor(rockResistance, result.mods.mod_resistance || 0)
 
     const band = instabilityBand(instabilityDelta)
     const leanInstability = aggregatedStats.band?.effective_instability_delta?.lean
@@ -571,16 +593,28 @@ export default function RockCalculator({ data }) {
     return {
       effectiveResistance,
       effectiveResistanceAfterLaser,
+      rockResistance,
+      damageFactor,
       instabilityDelta,
       windowStart,
       windowEnd,
       canBreak,
-      marginPct,
       band,
       leanInstability,
       richInstability,
     }
   }, [aggregatedStats, result.mods, result.totalDps, shipScopeParams])
+
+  // Crack feasibility runs on resistance-adjusted DPS, from the same avg
+  // quality point the rest of the results panel displays.
+  const crackFeasibility = useMemo(
+    () => computeCrackFeasibility({
+      mass,
+      globalParams: massScopeParams,
+      effectiveDPS: result.totalDps * (displayStats?.damageFactor ?? 1),
+    }),
+    [mass, massScopeParams, result.totalDps, displayStats?.damageFactor],
+  )
 
   // Elements list for single-variant display. A composition can list the same
   // element as multiple parts (e.g. CommonShipMineables_Iron has two iron_ore
@@ -805,10 +839,10 @@ export default function RockCalculator({ data }) {
         <div className="space-y-4">
           {hasResults ? (
             <>
-              {/* Rock Mass — mass-scaled fill/decay crack feasibility. Always
-                  rendered once a loadout+rock are picked, even when
-                  `crackFeasibility` is null (mass=0, or no scope params) —
-                  see MassCrackCard's null-feasibility handling above. */}
+              {/* Rock Mass — the page's crack verdict. Always rendered once a
+                  loadout+rock are picked, even when `crackFeasibility` is null
+                  (mass=0, or no scope params) — see MassCrackCard's
+                  null-feasibility handling above. */}
               <MassCrackCard
                 mass={mass}
                 massConfig={massConfig}
@@ -816,55 +850,17 @@ export default function RockCalculator({ data }) {
                 feasibility={crackFeasibility}
               />
 
-              {/* CAN/CANNOT BREAK banner — prominent like RockBreaker */}
-              <div className={`relative overflow-hidden rounded-xl border-2 p-6 text-center ${
-                displayStats.canBreak
-                  ? 'bg-emerald-500/10 border-emerald-500/40'
-                  : 'bg-red-500/10 border-red-500/40'
-              }`}>
-                {/* HUD corners */}
-                <div className={`absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 rounded-tl-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 rounded-tr-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 rounded-bl-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-                <div className={`absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 rounded-br-xl ${displayStats.canBreak ? 'border-emerald-400/60' : 'border-red-400/60'}`} />
-
-                {displayStats.canBreak ? (
-                  <div>
-                    <Check className="w-10 h-10 mx-auto mb-2 text-emerald-400" />
-                    <p className="text-2xl font-bold tracking-wider text-emerald-400 font-display"
-                      style={{ textShadow: '0 0 20px rgba(52, 211, 153, 0.5)' }}>
-                      CAN BREAK
-                    </p>
-                    <p className="text-xs text-gray-300 mt-1.5">
-                      Your laser overpowers this rock by{' '}
-                      <span className="text-emerald-400 font-semibold">{displayStats.marginPct.toFixed(0)}%</span>
-                      {displayStats.marginPct < 15 && <span className="text-amber-400"> — tight</span>}
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <XIcon className="w-10 h-10 mx-auto mb-2 text-red-400" />
-                    <p className="text-2xl font-bold tracking-wider text-red-400 font-display"
-                      style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.5)' }}>
-                      CANNOT BREAK
-                    </p>
-                    <p className="text-xs text-gray-300 mt-1.5">
-                      Short by <span className="text-red-400 font-semibold">{displayStats.marginPct.toFixed(0)}%</span> — needs a stronger laser or modules
-                    </p>
-                  </div>
-                )}
-
-                {aggregatedStats && aggregatedStats.count > 1 && (
-                  <p className="text-[10px] text-gray-500 mt-2">
-                    Showing average across {aggregatedStats.count} variants — pick a dominant element for exact values
-                  </p>
-                )}
-                {aggregatedStats?.is_fallback && (
-                  <p className="text-[10px] text-amber-400/80 mt-1">
-                    ≈ Typical values — this deposit type has no per-rock data; using median of similar rocks
-                  </p>
-                )}
-              </div>
+              {/* Data-quality caveats for everything in this panel. */}
+              {aggregatedStats && aggregatedStats.count > 1 && (
+                <p className="text-[10px] text-gray-500 text-center">
+                  Showing average across {aggregatedStats.count} variants — pick a dominant element for exact values
+                </p>
+              )}
+              {aggregatedStats?.is_fallback && (
+                <p className="text-[10px] text-amber-400/80 text-center">
+                  ≈ Typical values — this deposit type has no per-rock data; using median of similar rocks
+                </p>
+              )}
 
               {/* Power vs Rock bar (your power vs power-to-fracture) */}
               <div>

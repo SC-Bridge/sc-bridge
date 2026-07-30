@@ -50,9 +50,7 @@ export default function MassSlider({ value, min, max, step = 1, defaultValue, la
         </div>
       </div>
       <div className="relative">
-        <div className="h-1.5 rounded-full overflow-hidden bg-white/[0.06]">
-          <div className="h-full bg-transparent" />
-        </div>
+        <div className="h-1.5 rounded-full bg-white/[0.06]" />
         <input
           type="range"
           min={min}

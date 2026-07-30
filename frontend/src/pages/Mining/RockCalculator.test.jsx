@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import RockCalculator from './RockCalculator'
+import RockCalculator, { clampMassToScope } from './RockCalculator'
 
 vi.mock('../../lib/auth-client', () => ({
   useSession: () => ({ data: null }),
@@ -38,6 +38,32 @@ const ROCK_ENTITY = {
 }
 const SHIP_GLOBAL_PARAMS = { scope: 'ship', power_capacity_per_mass: 10, decay_per_mass: 0.2, optimal_window_size: 0.1 }
 
+// Helix S1's real 4.9 resistanceModifier (-30%).
+const LASER_HELIX = { id: 4, size: 1, name: 'Helix S1', beam_dps: 2000, module_slots: 0, mod_resistance: -0.3 }
+
+// The generic C-Type asteroid (`asteroid_ctype`) worked example from
+// tools/docs/superpowers/specs/
+// 2026-07-30-mining-resistance-composition-findings.md §6 — rockResistance
+// 0.2408 renormalised, which is what makes an 8000-mass rock genuinely
+// marginal for a single S1 laser.
+const C_TYPE_PARTS = [
+  { element: 'aluminium', min_pct: 50, max_pct: 50, probability: 0.85 },
+  { element: 'hephaestanite', min_pct: 45, max_pct: 45, probability: 0.6 },
+  { element: 'taranite', min_pct: 35, max_pct: 35, probability: 0.3 },
+  { element: 'bexalite', min_pct: 35, max_pct: 35, probability: 0.3 },
+  { element: 'gold', min_pct: 35, max_pct: 35, probability: 0.07 },
+  { element: 'quantainium', min_pct: 35, max_pct: 35, probability: 0.05 },
+]
+const C_TYPE_ELEMENT_ROWS = [
+  { class_name: 'aluminium', resistance: -0.4, instability: 0 },
+  { class_name: 'hephaestanite', resistance: -0.3, instability: 0 },
+  { class_name: 'taranite', resistance: 0.5, instability: 0 },
+  { class_name: 'bexalite', resistance: 0.6, instability: 0 },
+  { class_name: 'gold', resistance: 0.5, instability: 0 },
+  { class_name: 'quantainium', resistance: 0.95, instability: 0 },
+]
+const C_TYPE_COMPOSITION = { ...COMPOSITION, composition_json: JSON.stringify(C_TYPE_PARTS) }
+
 function baseData(overrides = {}) {
   return {
     lasers: [LASER],
@@ -49,6 +75,10 @@ function baseData(overrides = {}) {
     global_params: [SHIP_GLOBAL_PARAMS],
     ...overrides,
   }
+}
+
+function cTypeData(overrides = {}) {
+  return baseData({ compositions: [C_TYPE_COMPOSITION], elements: C_TYPE_ELEMENT_ROWS, ...overrides })
 }
 
 function renderCalculator(data) {
@@ -188,6 +218,106 @@ describe('RockCalculator — module damage multipliers in total DPS', () => {
     // Bare 2000 DPS: netRate 400 → 200s, margin 25%.
     expect(screen.getByText('~3m 20s best case')).toBeInTheDocument()
     expect(screen.getByText('+25% power margin')).toBeInTheDocument()
+  })
+})
+
+// The crack verdict is fed resistance-adjusted DPS:
+//   effectiveDPS = totalDps × (1 - clamp(rockResistance × (1 + Σmod), 0, 0.95))
+// Goldens below are the findings doc §6 table for asteroid_ctype at 2000 base
+// DPS / 8000 mass / ship scope (capacity 80000, decay 1600).
+describe('RockCalculator — resistance-adjusted crack verdict', () => {
+  it('a bare 2000 DPS laser CANNOT crack an 8000-mass C-Type asteroid', () => {
+    renderCalculator(cTypeData())
+    selectLaserAndRock()
+
+    // damageFactor 0.7592 → 1518.3 effective DPS vs 1600 decay → net -81.7.
+    expect(screen.getByText('CANNOT CRACK')).toBeInTheDocument()
+    expect(screen.getByText('-5% power margin')).toBeInTheDocument()
+    expect(screen.queryByText(/best case/)).not.toBeInTheDocument()
+  })
+
+  it('Helix S1 (-30% resistance) turns the same rock into a slow crack', () => {
+    renderCalculator(cTypeData({ lasers: [LASER_HELIX] }))
+    selectLaser(/Helix S1 \(S1\)/)
+    selectRock()
+
+    // effectiveResistance 0.1686 → 1662.8 DPS → net 62.8 → 80000/62.8 = 1273.6s
+    expect(screen.getByText('CAN CRACK')).toBeInTheDocument()
+    expect(screen.getByText('~21m 14s best case')).toBeInTheDocument()
+    expect(screen.getByText('+4% power margin')).toBeInTheDocument()
+  })
+
+  it('Klein S1 (-45% resistance) cracks it in half the time', () => {
+    renderCalculator(cTypeData({ lasers: [LASER_KLEIN] }))
+    selectLaser(/Klein S1 \(S1\)/)
+    selectRock()
+
+    // effectiveResistance 0.1325 → 1735.1 DPS → net 135.1 → 592.3s
+    expect(screen.getByText('CAN CRACK')).toBeInTheDocument()
+    expect(screen.getByText('~9m 52s best case')).toBeInTheDocument()
+    expect(screen.getByText('+8% power margin')).toBeInTheDocument()
+  })
+
+  it('is the page\'s only crack verdict — the CAN/CANNOT BREAK banner is gone', () => {
+    // The old banner compared DPS against laser_damage_full_value × curve
+    // factor, a rock-surface damage-map normaliser with no fracture meaning
+    // (findings §2). Replaced outright rather than shown alongside.
+    renderCalculator(cTypeData())
+    selectLaserAndRock()
+
+    expect(screen.queryByText('CAN BREAK')).not.toBeInTheDocument()
+    expect(screen.queryByText('CANNOT BREAK')).not.toBeInTheDocument()
+    expect(screen.getByText('CANNOT CRACK')).toBeInTheDocument()
+  })
+
+  it('keeps the multi-variant caveat that used to sit in the banner', () => {
+    const variant = { ...C_TYPE_COMPOSITION, uuid: 'comp-2', class_name: 'Asteroid_CType_Tin', name: 'Asteroid_CType_Tin' }
+    renderCalculator(cTypeData({
+      compositions: [C_TYPE_COMPOSITION, variant],
+      rock_entities: [ROCK_ENTITY, { ...ROCK_ENTITY, composition_uuid: 'comp-2' }],
+    }))
+    selectLaserAndRock()
+
+    expect(screen.getByText(/Showing average across 2 variants/)).toBeInTheDocument()
+  })
+
+  it('labels mass with no unit noun — the scan HUD number is unitless', () => {
+    renderCalculator(cTypeData())
+    selectLaserAndRock()
+
+    expect(screen.queryByText('kg')).not.toBeInTheDocument()
+    expect(screen.getByText('Mass (scan HUD)')).toBeInTheDocument()
+  })
+
+  it('does not colour a dead-even power margin green', () => {
+    renderCalculator(baseData()) // no elements → rockResistance 0 → 2000 DPS
+    selectLaserAndRock()
+
+    const box = massBox()
+    box.focus()
+    fireEvent.change(box, { target: { value: '10000' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+
+    // decay 2000 == DPS 2000 → netRate 0 → the pool never fills.
+    expect(screen.getByText('CANNOT CRACK')).toBeInTheDocument()
+    expect(screen.getByText('0% power margin')).toHaveClass('text-red-400')
+  })
+})
+
+// Mass is scope-scaled (ship 0–40000, fps 0–10, ground_vehicle 0–2000), so a
+// scope swap must not strand a ship-sized mass in an fps-sized range.
+describe('clampMassToScope', () => {
+  it('keeps a mass the new scope can represent', () => {
+    expect(clampMassToScope(5, { min: 0, max: 10, default: 1 })).toBe(5)
+  })
+
+  it('falls back to the new scope default when the mass is out of range', () => {
+    expect(clampMassToScope(8000, { min: 0, max: 10, default: 1 })).toBe(1)
+    expect(clampMassToScope(-5, { min: 0, max: 10, default: 1 })).toBe(1)
+  })
+
+  it('falls back when the mass is not a number', () => {
+    expect(clampMassToScope(undefined, { min: 0, max: 40000, default: 8000 })).toBe(8000)
   })
 })
 

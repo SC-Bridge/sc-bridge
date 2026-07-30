@@ -106,6 +106,41 @@ describe('computeEffectiveRockStats', () => {
     expect(result.effective_resistance).toBeCloseTo(1500, 0)
   })
 
+  // rock_resistance rides the same quality roll as the other stats so the
+  // crack verdict and the results panel read the same expected rock. The
+  // value itself is computeRockResistance's contract (own suite); this
+  // asserts it is exposed and quality-sampled here.
+  it('exposes the composed rock_resistance (C-Type golden 0.2408)', () => {
+    const result = computeEffectiveRockStats({
+      rockEntity: { laser_damage_full_value: 2500 },
+      elements: [
+        ce({ element: 'aluminium', min_pct: 50, max_pct: 50, probability: 0.85, element_resistance: -0.4 }),
+        ce({ element: 'hephaestanite', min_pct: 45, max_pct: 45, probability: 0.6, element_resistance: -0.3 }),
+        ce({ element: 'taranite', min_pct: 35, max_pct: 35, probability: 0.3, element_resistance: 0.5 }),
+        ce({ element: 'bexalite', min_pct: 35, max_pct: 35, probability: 0.3, element_resistance: 0.6 }),
+        ce({ element: 'gold', min_pct: 35, max_pct: 35, probability: 0.07, element_resistance: 0.5 }),
+        ce({ element: 'quantainium', min_pct: 35, max_pct: 35, probability: 0.05, element_resistance: 0.95 }),
+      ],
+      globalParams: GLOBAL_SHIP,
+      laserMods: { mod_resistance: 0 },
+    })
+    expect(result.rock_resistance).toBeCloseTo(0.2408, 4)
+  })
+
+  it('rock_resistance follows the quality roll', () => {
+    const rock = (qualityRoll) => computeEffectiveRockStats({
+      rockEntity: { laser_damage_full_value: 1000 },
+      elements: [
+        ce({ element: 'quantainium', min_pct: 10, max_pct: 40, probability: 1, element_resistance: 0.95 }),
+        ce({ element: 'iron', min_pct: 60, max_pct: 60, probability: 1, element_resistance: -0.4 }),
+      ],
+      globalParams: GLOBAL_SHIP,
+      laserMods: { mod_resistance: 0 },
+      qualityRoll,
+    })
+    expect(rock(1).rock_resistance).toBeGreaterThan(rock(0).rock_resistance)
+  })
+
   it('instability and window come from globals + element deltas (Q3)', () => {
     const result = computeEffectiveRockStats({
       rockEntity: { laser_damage_full_value: 1000 },
