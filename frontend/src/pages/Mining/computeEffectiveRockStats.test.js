@@ -65,15 +65,34 @@ describe('computeEffectiveRockStats', () => {
     expect(result.effective_resistance).toBeCloseTo(1000, 0)
   })
 
-  it('applies laser mod_resistance after global scaling', () => {
+  // Resistance modifiers are CIG FloatModifierMultiplicative values stored by
+  // the extractor as raw/100 with no sign flip, so they apply as × (1 + mod):
+  // a POSITIVE mod_resistance makes the rock harder. See
+  // tools/docs/superpowers/specs/2026-07-30-mining-resistance-composition-findings.md
+  // §7.1 — the previous (1 - mod) reading ranked every mining laser backwards
+  // (Arbor +25 read as the best laser, Klein -45 as the worst).
+  it('applies laser mod_resistance after global scaling — positive mod hardens the rock', () => {
     const result = computeEffectiveRockStats({
       rockEntity: { laser_damage_full_value: 2500 },
       elements: [ce({ element: 'x', min_pct: 100, max_pct: 100, element_resistance: 0 })],
       globalParams: GLOBAL_SHIP,
       laserMods: { mod_resistance: 0.08 },
     })
-    // 2500 * 1.0 * 1.0 * (1 - 0.08) = 2300
-    expect(result.effective_resistance_after_laser).toBeCloseTo(2300, 0)
+    // 2500 * 1.0 * 1.0 * (1 + 0.08) = 2700
+    expect(result.effective_resistance_after_laser).toBeCloseTo(2700, 0)
+  })
+
+  it('a resistance-reducing laser (Klein -45%) softens the rock', () => {
+    const args = {
+      rockEntity: { laser_damage_full_value: 2500 },
+      elements: [ce({ element: 'x', min_pct: 100, max_pct: 100, element_resistance: 0 })],
+      globalParams: GLOBAL_SHIP,
+    }
+    const bare = computeEffectiveRockStats({ ...args, laserMods: { mod_resistance: 0 } })
+    const klein = computeEffectiveRockStats({ ...args, laserMods: { mod_resistance: -0.45 } })
+    expect(klein.effective_resistance_after_laser).toBeLessThan(bare.effective_resistance_after_laser)
+    // 2500 * (1 - 0.45) = 1375
+    expect(klein.effective_resistance_after_laser).toBeCloseTo(1375, 0)
   })
 
   it('negative element_resistance lowers the effective resistance', () => {

@@ -464,13 +464,18 @@ export default function RockCalculator({ data }) {
     for (let i = 0; i < ship.slots.length; i++) {
       const laser = laserIds[i]
       if (!laser) continue
-      totalDps += laser.beam_dps || 0
 
       const slotModules = []
       for (let j = 0; j < (laser.module_slots || 0); j++) {
         const mod = moduleIds[`${i}-${j}`]
         if (mod) slotModules.push(mod)
       }
+
+      // Module damage multipliers stack multiplicatively on the host laser
+      // (Rieger MK3 ×1.25, Surge ×1.5, Focus MK1 ×0.85, ArgoGEO ×0.15).
+      // `?? 1` so a legitimate 0 multiplier isn't silently neutralised.
+      const damageMult = slotModules.reduce((p, m) => p * (m.damage_multiplier ?? 1), 1)
+      totalDps += (laser.beam_dps || 0) * damageMult
 
       const mods = computeEffectiveModifiers(laser, slotModules, i === 0 ? gadget : null)
       for (const key of MOD_KEYS) allMods[key] += mods[key]

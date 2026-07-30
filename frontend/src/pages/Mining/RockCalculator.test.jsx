@@ -17,6 +17,12 @@ vi.mock('../../hooks/useAPI', () => ({
 // expected canCrack/timeToCrack/marginPct numbers below are cross-checked
 // against that module's own test suite, not just this integration test.
 const LASER = { id: 1, size: 1, name: 'Test Laser', beam_dps: 2000, module_slots: 0 }
+// A laser with one module slot + the Rieger MK3's real 4.9 damage multiplier
+// (1.25) — the Rieger series exists specifically to raise laser power.
+const LASER_MODULAR = { id: 2, size: 1, name: 'Modular Laser', beam_dps: 2000, module_slots: 1 }
+const MODULE_RIEGER = { id: 10, name: 'Rieger MK3', type: 'passive', damage_multiplier: 1.25 }
+// Klein S1's real 4.9 resistanceModifier (-45%) — the sought-after upgrade.
+const LASER_KLEIN = { id: 3, size: 1, name: 'Klein S1', beam_dps: 2000, module_slots: 0, mod_resistance: -0.45 }
 const COMPOSITION = {
   uuid: 'comp-1',
   name: 'Asteroid_CType_Iron',
@@ -60,13 +66,26 @@ function renderCalculator(data) {
 // `options.find(o => o.value === value)` against the '' value first — an
 // existing quirk, not something this task touches — so open it by its
 // "S1 Laser" field label instead of trigger text.
-function selectLaserAndRock() {
+function selectLaser(optionText = /Test Laser \(S1\)/) {
   const laserField = screen.getByText('S1 Laser').parentElement
   fireEvent.click(within(laserField).getByRole('button'))
-  fireEvent.click(screen.getByText(/Test Laser \(S1\)/))
+  fireEvent.click(screen.getByText(optionText))
+}
 
+function selectRock() {
   fireEvent.click(screen.getByText('Select a rock you scanned...'))
   fireEvent.click(screen.getByText('Test Deposit'))
+}
+
+function selectModule(slotLabel, optionText) {
+  const field = screen.getByText(slotLabel).parentElement
+  fireEvent.click(within(field).getByRole('button'))
+  fireEvent.click(screen.getByText(optionText))
+}
+
+function selectLaserAndRock() {
+  selectLaser()
+  selectRock()
 }
 
 function massBox() {
@@ -142,5 +161,45 @@ describe('RockCalculator — rock mass crack feasibility', () => {
     fireEvent.change(box2, { target: { value: '8000' } })
     fireEvent.keyDown(box2, { key: 'Enter' })
     expect(screen.getByText('CAN CRACK')).toBeInTheDocument()
+  })
+})
+
+// Total DPS is Σ_lasers (beam_dps × Π_modules damage_multiplier) — see the
+// resistance-composition findings doc §7.2. Ignoring damage_multiplier
+// understated a Rieger MK3 loadout by 25% and overstated a Focus MK1 by 18%.
+describe('RockCalculator — module damage multipliers in total DPS', () => {
+  it('multiplies laser DPS by an installed module damage multiplier', () => {
+    renderCalculator(baseData({ lasers: [LASER_MODULAR], modules: [MODULE_RIEGER] }))
+    selectLaser(/Modular Laser \(S1\)/)
+    selectModule('Module 1', 'Rieger MK3')
+    selectRock()
+
+    // 2000 × 1.25 = 2500 effective DPS; mass 8000 → decay 1600, netRate 900,
+    // capacity 80000 → 88.9s, margin 900/1600 = 56.25%.
+    expect(screen.getByText('~1m 29s best case')).toBeInTheDocument()
+    expect(screen.getByText('+56% power margin')).toBeInTheDocument()
+  })
+
+  it('leaves DPS untouched when no module is installed', () => {
+    renderCalculator(baseData({ lasers: [LASER_MODULAR], modules: [MODULE_RIEGER] }))
+    selectLaser(/Modular Laser \(S1\)/)
+    selectRock()
+
+    // Bare 2000 DPS: netRate 400 → 200s, margin 25%.
+    expect(screen.getByText('~3m 20s best case')).toBeInTheDocument()
+    expect(screen.getByText('+25% power margin')).toBeInTheDocument()
+  })
+})
+
+// mod_resistance is a CIG FloatModifierMultiplicative: negative = the rock
+// fights back less = better laser (findings §7.1). The bonuses panel must
+// colour a negative resistance modifier green, not red.
+describe('RockCalculator — resistance modifier direction', () => {
+  it('colours a resistance-reducing laser (Klein -45%) as a bonus, not a penalty', () => {
+    renderCalculator(baseData({ lasers: [LASER_KLEIN] }))
+    selectLaser(/Klein S1 \(S1\)/)
+    selectRock()
+
+    expect(screen.getByText('-45%')).toHaveClass('text-emerald-400')
   })
 })

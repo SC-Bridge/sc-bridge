@@ -55,8 +55,11 @@ export function computeEffectiveRockStats({
   const globalResist = globalParams?.resistance_curve_factor ?? 1.0
   const effectiveResistance = base * (1 + resistanceDelta) * globalResist
 
+  // CIG stores resistance modifiers as FloatModifierMultiplicative and the
+  // extractor keeps them as raw/100 without flipping the sign, so they apply
+  // as × (1 + mod): a NEGATIVE modifier (Klein -45%) softens the rock.
   const laserResistMod = laserMods?.mod_resistance ?? 0
-  const effectiveResistanceAfterLaser = effectiveResistance * (1 - laserResistMod)
+  const effectiveResistanceAfterLaser = effectiveResistance * (1 + laserResistMod)
 
   return {
     effective_resistance: effectiveResistance,

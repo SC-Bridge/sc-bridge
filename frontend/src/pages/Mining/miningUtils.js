@@ -61,11 +61,13 @@ export const MOD_LABELS = {
   mod_filter: 'Inert Filter',
 }
 
-// Whether a positive value for this modifier is good (true) or bad (false)
+// Whether a positive value for this modifier is good (true) or bad (false).
+// mod_resistance is false: it scales the ROCK's resistance (× 1 + mod), so a
+// negative value (Klein -45%) is the desirable one.
 export const MOD_POSITIVE_IS_GOOD = {
   mod_instability: false,
   mod_optimal_window_size: true,
-  mod_resistance: true,
+  mod_resistance: false,
   mod_shatter_damage: true,
   mod_cluster_factor: false,
   mod_optimal_charge_rate: true,
