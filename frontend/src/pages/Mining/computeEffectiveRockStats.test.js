@@ -65,15 +65,34 @@ describe('computeEffectiveRockStats', () => {
     expect(result.effective_resistance).toBeCloseTo(1000, 0)
   })
 
-  it('applies laser mod_resistance after global scaling', () => {
+  // Resistance modifiers are CIG FloatModifierMultiplicative values stored by
+  // the extractor as raw/100 with no sign flip, so they apply as × (1 + mod):
+  // a POSITIVE mod_resistance makes the rock harder. See
+  // tools/docs/superpowers/specs/2026-07-30-mining-resistance-composition-findings.md
+  // §7.1 — the previous (1 - mod) reading ranked every mining laser backwards
+  // (Arbor +25 read as the best laser, Klein -45 as the worst).
+  it('applies laser mod_resistance after global scaling — positive mod hardens the rock', () => {
     const result = computeEffectiveRockStats({
       rockEntity: { laser_damage_full_value: 2500 },
       elements: [ce({ element: 'x', min_pct: 100, max_pct: 100, element_resistance: 0 })],
       globalParams: GLOBAL_SHIP,
       laserMods: { mod_resistance: 0.08 },
     })
-    // 2500 * 1.0 * 1.0 * (1 - 0.08) = 2300
-    expect(result.effective_resistance_after_laser).toBeCloseTo(2300, 0)
+    // 2500 * 1.0 * 1.0 * (1 + 0.08) = 2700
+    expect(result.effective_resistance_after_laser).toBeCloseTo(2700, 0)
+  })
+
+  it('a resistance-reducing laser (Klein -45%) softens the rock', () => {
+    const args = {
+      rockEntity: { laser_damage_full_value: 2500 },
+      elements: [ce({ element: 'x', min_pct: 100, max_pct: 100, element_resistance: 0 })],
+      globalParams: GLOBAL_SHIP,
+    }
+    const bare = computeEffectiveRockStats({ ...args, laserMods: { mod_resistance: 0 } })
+    const klein = computeEffectiveRockStats({ ...args, laserMods: { mod_resistance: -0.45 } })
+    expect(klein.effective_resistance_after_laser).toBeLessThan(bare.effective_resistance_after_laser)
+    // 2500 * (1 - 0.45) = 1375
+    expect(klein.effective_resistance_after_laser).toBeCloseTo(1375, 0)
   })
 
   it('negative element_resistance lowers the effective resistance', () => {
@@ -85,6 +104,41 @@ describe('computeEffectiveRockStats', () => {
     })
     expect(result.effective_resistance).toBeLessThan(2000)
     expect(result.effective_resistance).toBeCloseTo(1500, 0)
+  })
+
+  // rock_resistance rides the same quality roll as the other stats so the
+  // crack verdict and the results panel read the same expected rock. The
+  // value itself is computeRockResistance's contract (own suite); this
+  // asserts it is exposed and quality-sampled here.
+  it('exposes the composed rock_resistance (C-Type golden 0.24085)', () => {
+    const result = computeEffectiveRockStats({
+      rockEntity: { laser_damage_full_value: 2500 },
+      elements: [
+        ce({ element: 'aluminium', min_pct: 50, max_pct: 50, probability: 0.85, element_resistance: -0.4 }),
+        ce({ element: 'hephaestanite', min_pct: 45, max_pct: 45, probability: 0.6, element_resistance: -0.3 }),
+        ce({ element: 'taranite', min_pct: 35, max_pct: 35, probability: 0.3, element_resistance: 0.5 }),
+        ce({ element: 'bexalite', min_pct: 35, max_pct: 35, probability: 0.3, element_resistance: 0.6 }),
+        ce({ element: 'gold', min_pct: 35, max_pct: 35, probability: 0.07, element_resistance: 0.5 }),
+        ce({ element: 'quantainium', min_pct: 35, max_pct: 35, probability: 0.05, element_resistance: 0.95 }),
+      ],
+      globalParams: GLOBAL_SHIP,
+      laserMods: { mod_resistance: 0 },
+    })
+    expect(result.rock_resistance).toBeCloseTo(0.24085, 5)
+  })
+
+  it('rock_resistance follows the quality roll', () => {
+    const rock = (qualityRoll) => computeEffectiveRockStats({
+      rockEntity: { laser_damage_full_value: 1000 },
+      elements: [
+        ce({ element: 'quantainium', min_pct: 10, max_pct: 40, probability: 1, element_resistance: 0.95 }),
+        ce({ element: 'iron', min_pct: 60, max_pct: 60, probability: 1, element_resistance: -0.4 }),
+      ],
+      globalParams: GLOBAL_SHIP,
+      laserMods: { mod_resistance: 0 },
+      qualityRoll,
+    })
+    expect(rock(1).rock_resistance).toBeGreaterThan(rock(0).rock_resistance)
   })
 
   it('instability and window come from globals + element deltas (Q3)', () => {
