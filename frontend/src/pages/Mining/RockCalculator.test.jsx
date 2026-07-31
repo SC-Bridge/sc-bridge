@@ -119,14 +119,14 @@ function selectLaserAndRock() {
 }
 
 function massBox() {
-  const label = screen.getByText('Rock Mass')
+  const label = screen.getByText('Rock Mass (scan HUD)')
   return within(label.parentElement).getByRole('textbox')
 }
 
 describe('RockCalculator — rock mass crack feasibility', () => {
   it('does not render the mass card before a rock + laser are selected', () => {
     renderCalculator(baseData())
-    expect(screen.queryByText('Rock Mass')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rock Mass (scan HUD)')).not.toBeInTheDocument()
   })
 
   it('keeps the slider visible but hides the verdict row when the scope has no global params loaded', () => {
@@ -135,7 +135,7 @@ describe('RockCalculator — rock mass crack feasibility', () => {
     // computeCrackFeasibility({ globalParams: null }) returns null -- the OUTPUT
     // row (verdict/time/margin) is inert, but the slider itself must stay
     // rendered: it's the only control that could ever recover a null result.
-    expect(screen.getByText('Rock Mass')).toBeInTheDocument()
+    expect(screen.getByText('Rock Mass (scan HUD)')).toBeInTheDocument()
     expect(screen.queryByText('CAN CRACK')).not.toBeInTheDocument()
     expect(screen.queryByText('CANNOT CRACK')).not.toBeInTheDocument()
   })
@@ -182,7 +182,7 @@ describe('RockCalculator — rock mass crack feasibility', () => {
     expect(screen.queryByText('CANNOT CRACK')).not.toBeInTheDocument()
     // ...but the slider (the only way to set mass back to something positive)
     // must still be on screen, not vanish along with the verdict.
-    expect(screen.getByText('Rock Mass')).toBeInTheDocument()
+    expect(screen.getByText('Rock Mass (scan HUD)')).toBeInTheDocument()
     expect(massBox()).toHaveValue('0')
 
     // Recovery: raising mass again brings the verdict row back.
@@ -285,8 +285,25 @@ describe('RockCalculator — resistance-adjusted crack verdict', () => {
     renderCalculator(cTypeData())
     selectLaserAndRock()
 
+    // One label, no unit suffix: the scan HUD prints a bare number, and the
+    // old 'kg' invented a unit the game never states.
     expect(screen.queryByText('kg')).not.toBeInTheDocument()
-    expect(screen.getByText('Mass (scan HUD)')).toBeInTheDocument()
+    expect(screen.getByText('Rock Mass (scan HUD)')).toBeInTheDocument()
+    expect(screen.queryByText('Mass (scan HUD)')).not.toBeInTheDocument()
+  })
+
+  it('has retired the Power vs Rock bar — the crack card is the only feasibility read', () => {
+    // PowerBar measured DPS against laser_damage_full_value, the same
+    // damage-map normaliser that retired the banner (findings §2), so it
+    // could read "Deficit" directly above a "CAN CRACK" verdict.
+    renderCalculator(cTypeData({ lasers: [LASER_KLEIN] }))
+    selectLaser(/Klein S1 \(S1\)/)
+    selectRock()
+
+    expect(screen.queryByText('Power vs Rock')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Surplus|Deficit/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Your power/)).not.toBeInTheDocument()
+    expect(screen.getByText('CAN CRACK')).toBeInTheDocument()
   })
 
   it('does not colour a dead-even power margin green', () => {

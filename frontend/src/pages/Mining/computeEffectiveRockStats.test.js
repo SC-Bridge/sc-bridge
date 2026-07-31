@@ -110,7 +110,7 @@ describe('computeEffectiveRockStats', () => {
   // crack verdict and the results panel read the same expected rock. The
   // value itself is computeRockResistance's contract (own suite); this
   // asserts it is exposed and quality-sampled here.
-  it('exposes the composed rock_resistance (C-Type golden 0.2408)', () => {
+  it('exposes the composed rock_resistance (C-Type golden 0.24085)', () => {
     const result = computeEffectiveRockStats({
       rockEntity: { laser_damage_full_value: 2500 },
       elements: [
@@ -124,7 +124,7 @@ describe('computeEffectiveRockStats', () => {
       globalParams: GLOBAL_SHIP,
       laserMods: { mod_resistance: 0 },
     })
-    expect(result.rock_resistance).toBeCloseTo(0.2408, 4)
+    expect(result.rock_resistance).toBeCloseTo(0.24085, 5)
   })
 
   it('rock_resistance follows the quality roll', () => {

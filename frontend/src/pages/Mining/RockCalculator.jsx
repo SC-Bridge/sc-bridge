@@ -167,54 +167,6 @@ function StabilityCard({ band, leanInstability, richInstability }) {
   )
 }
 
-// Power bar inspired by RockBreaker — shows deficit/surplus
-function PowerBar({ totalDps, effectiveResistance, canBreak }) {
-  const maxVal = Math.max(totalDps, effectiveResistance, 1)
-  const powerPct = (totalDps / maxVal) * 100
-  const resistPct = (effectiveResistance / maxVal) * 100
-  const diff = totalDps - effectiveResistance
-  const diffPct = effectiveResistance > 0 ? ((diff / effectiveResistance) * 100) : 0
-
-  return (
-    <div className="bg-white/[0.03] backdrop-blur-md border border-white/[0.06] rounded-lg p-4">
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-3">Power vs Rock</div>
-      <div className="relative h-6 bg-white/[0.04] rounded-full overflow-hidden">
-        {/* Power bar */}
-        <div
-          className={`absolute top-0 bottom-0 left-0 rounded-full transition-all duration-500 ${
-            canBreak ? 'bg-emerald-500/60' : 'bg-red-500/60'
-          }`}
-          style={{ width: `${powerPct}%` }}
-        />
-        {/* Resistance marker */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-white/40"
-          style={{ left: `${resistPct}%` }}
-        />
-      </div>
-      <div className="flex items-center justify-between mt-2 text-xs font-mono">
-        <span className="text-gray-400">
-          Your power <span className="text-sc-accent">{totalDps.toFixed(0)}</span>
-        </span>
-        <span className={canBreak ? 'text-emerald-400' : 'text-red-400'}>
-          {canBreak ? 'Surplus' : 'Deficit'} {diffPct.toFixed(0)}%
-        </span>
-        <span className="text-gray-400">
-          Needs <span className="text-amber-400">{effectiveResistance.toFixed(0)}</span>
-        </span>
-      </div>
-    </div>
-  )
-}
-
-/** "Lean X → Rich Y" sub-line for a quality band. Collapses to a single
- *  value when lean and rich coincide (e.g. a single fixed-% element). */
-function fmtBandSpread(band, fmt = (v) => v.toFixed(2)) {
-  if (!band || band.lean == null || band.rich == null) return null
-  if (Math.abs(band.lean - band.rich) < 1e-6) return null
-  return `Lean ${fmt(band.lean)} → Rich ${fmt(band.rich)}`
-}
-
 /** Plain-language difficulty tag for a composition element, from its signed
  *  resistance modifier + raw instability. Lets a player read "easy" / "brutal"
  *  instead of "R:-0.400 I:50.000". */
@@ -265,13 +217,14 @@ export function buildElements(compositionUuid, compositions, elements) {
 // rows are kept ready so threading the real equipment scope through later is
 // a config lookup, not a rewrite.
 //
-// The mass a player reads off the scan HUD carries no unit, and the scan
-// number is what this slider takes, so it is labelled without one — calling
-// it kg would be inventing a unit the game never states.
+// No `unit`: the mass a player reads off the scan HUD is a bare number, and
+// the scan number is what this slider takes. Calling it kg would invent a
+// unit the game never states, so the card's label carries the provenance
+// ("Rock Mass (scan HUD)") and nothing trails the value.
 const MASS_SCOPE_CONFIG = {
-  ship: { min: 0, max: 40000, default: 8000, step: 100, unit: 'Mass (scan HUD)' },
-  fps: { min: 0, max: 10, default: 1, step: 0.1, unit: 'Mass (scan HUD)' },
-  ground_vehicle: { min: 0, max: 2000, default: 400, step: 10, unit: 'Mass (scan HUD)' },
+  ship: { min: 0, max: 40000, default: 8000, step: 100 },
+  fps: { min: 0, max: 10, default: 1, step: 0.1 },
+  ground_vehicle: { min: 0, max: 2000, default: 400, step: 10 },
 }
 
 // Fit a mass to a scope's config: keep it when the new scope can represent
@@ -300,7 +253,7 @@ export function formatDuration(seconds) {
 // pool (computeCrackFeasibility)? Both axes are in play — the rock's
 // element-composed resistance eats a fraction of your DPS, and its mass sets
 // how big a pool that reduced DPS has to fill against a proportional drain.
-// Styled like the page's other result cards (ChargeBar/StabilityCard/PowerBar).
+// Styled like the page's other result cards (ChargeBar/StabilityCard).
 //
 // `feasibility` may be null (mass=0, or the scope's global params haven't
 // loaded) — only the OUTPUT row is gated on that. The slider itself always
@@ -316,8 +269,7 @@ function MassCrackCard({ mass, massConfig, onMassChange, feasibility }) {
         max={massConfig.max}
         step={massConfig.step}
         defaultValue={massConfig.default}
-        label="Rock Mass"
-        unit={massConfig.unit}
+        label="Rock Mass (scan HUD)"
         onChange={onMassChange}
       />
       {feasibility && (
@@ -514,8 +466,6 @@ export default function RockCalculator({ data }) {
   // the expected rock and drives the can-break / charge math; lean→rich shows
   // how difficulty (esp. instability) climbs with quality.
   const BAND_KEYS = [
-    'effective_resistance',
-    'effective_resistance_after_laser',
     'rock_resistance',
     'effective_instability_delta',
     'effective_window_midpoint_delta',
@@ -564,8 +514,6 @@ export default function RockCalculator({ data }) {
 
     const get = (key) => aggregatedStats.band?.[key]?.avg ?? null
 
-    const effectiveResistance = get('effective_resistance') ?? 0
-    const effectiveResistanceAfterLaser = get('effective_resistance_after_laser') ?? effectiveResistance
     const instabilityDelta = get('effective_instability_delta') ?? 0
     const windowMidpointDelta = get('effective_window_midpoint_delta') ?? 0
     const windowThinnessDelta = get('effective_window_thinness_delta') ?? 0
@@ -578,8 +526,6 @@ export default function RockCalculator({ data }) {
     const windowStart = Math.max(0, baseMidpoint - windowSize / 2)
     const windowEnd = Math.min(1, baseMidpoint + windowSize / 2)
 
-    const canBreak = result.totalDps > effectiveResistanceAfterLaser
-
     // The rock's real (element-composed) resistance eats a fraction of the
     // beam: effectiveDPS = totalDps × damageFactor. This is the number the
     // crack verdict runs on — see the resistance-composition findings doc.
@@ -591,19 +537,15 @@ export default function RockCalculator({ data }) {
     const richInstability = aggregatedStats.band?.effective_instability_delta?.rich
 
     return {
-      effectiveResistance,
-      effectiveResistanceAfterLaser,
-      rockResistance,
       damageFactor,
       instabilityDelta,
       windowStart,
       windowEnd,
-      canBreak,
       band,
       leanInstability,
       richInstability,
     }
-  }, [aggregatedStats, result.mods, result.totalDps, shipScopeParams])
+  }, [aggregatedStats, result.mods, shipScopeParams])
 
   // Crack feasibility runs on resistance-adjusted DPS, from the same avg
   // quality point the rest of the results panel displays.
@@ -861,20 +803,6 @@ export default function RockCalculator({ data }) {
                   ≈ Typical values — this deposit type has no per-rock data; using median of similar rocks
                 </p>
               )}
-
-              {/* Power vs Rock bar (your power vs power-to-fracture) */}
-              <div>
-                <PowerBar
-                  totalDps={result.totalDps}
-                  effectiveResistance={displayStats.effectiveResistanceAfterLaser}
-                  canBreak={displayStats.canBreak}
-                />
-                {fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser, (v) => v.toFixed(0)) && (
-                  <p className="text-[10px] text-gray-600 mt-1.5 ml-1 font-mono">
-                    power needed by quality — {fmtBandSpread(aggregatedStats?.band?.effective_resistance_after_laser, (v) => v.toFixed(0))}
-                  </p>
-                )}
-              </div>
 
               {/* Stability — the danger axis, as a named band */}
               <StabilityCard

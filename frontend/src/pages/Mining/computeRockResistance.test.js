@@ -24,8 +24,8 @@ const C_TYPE = [
 ]
 
 describe('computeRockResistance', () => {
-  it('matches the C-Type asteroid golden (0.2408)', () => {
-    expect(computeRockResistance(C_TYPE)).toBeCloseTo(0.2408, 4)
+  it('matches the C-Type asteroid golden (0.24085)', () => {
+    expect(computeRockResistance(C_TYPE)).toBeCloseTo(0.24085, 5)
   })
 
   it('renormalises percentages — scaling every weight leaves the result unchanged', () => {
@@ -47,9 +47,9 @@ describe('computeRockResistance', () => {
   })
 
   it('a trace of a hard element contributes sub-linearly, not proportionally', () => {
-    // 2% quantainium: pow(0.02, 0.6) * 0.95 = 0.0909, not 0.019.
+    // 2% quantainium: pow(0.02, 0.6) * 0.95 = 0.09085, not 0.019.
     const trace = [el('quantainium', 2, 1, 0.95), el('iron', 98, 1, 0)]
-    expect(computeRockResistance(trace)).toBeCloseTo(0.0909, 4)
+    expect(computeRockResistance(trace)).toBeCloseTo(0.09085, 5)
   })
 
   it('an all-soft rock bottoms out at 0, it does not go negative', () => {
