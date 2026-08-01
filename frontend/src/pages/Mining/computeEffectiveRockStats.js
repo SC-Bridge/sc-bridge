@@ -1,3 +1,5 @@
+import { computeRockResistance } from './computeRockResistance'
+
 /**
  * Pure math for the Rock Calculator. Implements the game's actual fracture
  * model - see tools/docs/design/2026-06-01-rock-calculator-rewrite.md
@@ -55,12 +57,19 @@ export function computeEffectiveRockStats({
   const globalResist = globalParams?.resistance_curve_factor ?? 1.0
   const effectiveResistance = base * (1 + resistanceDelta) * globalResist
 
+  // CIG stores resistance modifiers as FloatModifierMultiplicative and the
+  // extractor keeps them as raw/100 without flipping the sign, so they apply
+  // as × (1 + mod): a NEGATIVE modifier (Klein -45%) softens the rock.
   const laserResistMod = laserMods?.mod_resistance ?? 0
-  const effectiveResistanceAfterLaser = effectiveResistance * (1 - laserResistMod)
+  const effectiveResistanceAfterLaser = effectiveResistance * (1 + laserResistMod)
 
   return {
     effective_resistance: effectiveResistance,
     effective_resistance_after_laser: effectiveResistanceAfterLaser,
+    // The rock's real (element-composed) resistance, on the same quality roll
+    // as everything else here so the crack verdict and the results panel
+    // describe the same expected rock.
+    rock_resistance: computeRockResistance(elements, q),
     effective_instability_delta: instabilityDelta,
     effective_window_midpoint_delta: windowMidpointDelta,
     effective_window_thinness_delta: windowThinnessDelta,
