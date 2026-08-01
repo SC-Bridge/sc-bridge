@@ -49,6 +49,11 @@ describe('SLOT_FAMILY', () => {
     expect(SLOT_FAMILY(undefined)).toEqual({ family: null, index: 0 })
   })
 
+  it('returns a null family for the removed sling keys (slings removed)', () => {
+    expect(SLOT_FAMILY('sling_1')).toEqual({ family: null, index: 0 })
+    expect(SLOT_FAMILY('sling_2')).toEqual({ family: null, index: 0 })
+  })
+
   it('parses multi-digit ordinal indexes (family still recognized past the single-digit range)', () => {
     expect(SLOT_FAMILY('mag_10')).toEqual({ family: 'mags', index: 10 })
   })

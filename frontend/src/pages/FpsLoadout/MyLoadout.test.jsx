@@ -103,6 +103,20 @@ describe('MyLoadout', () => {
       expect(screen.getByTestId('slot-util_knife')).toBeInTheDocument()
     })
 
+    // Pin: no Slings group is ever rendered, at full or empty capacity — the
+    // family, its icon, and its tiles were removed entirely (slings removed).
+    it('never renders a Slings group, at full or empty capacity (slings removed)', () => {
+      const { unmount } = render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={FULL_CAPACITY} />)
+      expect(screen.queryByText('Slings')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('group-hint-slings')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('slot-sling_1')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('slot-sling_2')).not.toBeInTheDocument()
+      unmount()
+      render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={NO_CAPACITY} />)
+      expect(screen.queryByText('Slings')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('group-hint-slings')).not.toBeInTheDocument()
+    })
+
     // The paperdoll renders exactly six groups (2 fixed + 4 dynamic) at every
     // capacity — a fixed, closed set with no extra group ever appearing.
     it('renders exactly the six paperdoll groups and no more, at full or empty capacity', () => {

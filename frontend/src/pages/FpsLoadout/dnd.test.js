@@ -156,6 +156,18 @@ describe('utility family rules (dynamic ordinal slots, slice 3)', () => {
     expect(resolveDrop({ kind: 'magazine', magazine }, { kind: 'loadout-slot', slotKey: 'mag_2' }, ctx))
       .toEqual({ type: 'equip-magazine', slotKey: 'mag_2', magazine })
   })
+
+  // Pin: a weapon/build drag no longer fits a former sling slot key — slings
+  // were removed, so sling_1/sling_2 are now just unrecognized keys, same as
+  // any other non-weapon-slot key.
+  it('a weapon or weapon build no longer targets the removed sling_1/sling_2 keys', () => {
+    const bigWeapon = { uuid: 'w1', base_stats: { size: 3 } }
+    const bigBuild = { kind: 'weapon', item_uuid: 'w1', weaponSize: 2 }
+    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
+    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_2' }, ctx)).toBe(false)
+    expect(isValidTarget({ kind: 'build', build: bigBuild }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
+    expect(resolveDrop({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBeNull()
+  })
 })
 
 describe('armour drags', () => {
