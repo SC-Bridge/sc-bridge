@@ -26,7 +26,7 @@ import { combinedMultipliers, computeBenchStats } from './weaponBenchStats'
 import { getBenchAdapter } from './benchAdapters'
 import { attachmentSlot } from './attachmentCompat'
 import { isValidTarget, resolveDrop, resolveDropFromCollisions, mergeAttachmentIntoConfig } from './dnd'
-import { portCapacity, SLOT_FAMILY, labelForSlotKey } from './portCapacity'
+import { portCapacity, labelForSlotKey } from './portCapacity'
 
 // Forgiving collision: prefer the droppable directly under the pointer, but
 // fall back to any droppable the dragged rect overlaps — so a near-miss on a
@@ -269,9 +269,7 @@ export default function LoadoutContainer() {
   const capacity = useMemo(() => portCapacity(corePiece, legsPiece), [corePiece, legsPiece])
 
   const savedSlot = currentLoadout.slots?.find((s) => s.slot_key === selectedSlot) || null
-  // Sling slots hold a real weapon (gated on size + capacity, see dnd.js) so
-  // they get full weapon-bench treatment just like primary/secondary/sidearm.
-  const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot) || SLOT_FAMILY(selectedSlot).family === 'slings'
+  const isWeaponSlot = WEAPON_SLOTS.has(selectedSlot)
   const isArmourSlot = ARMOUR_SLOTS.has(selectedSlot)
   const benchKind = isArmourSlot ? 'armour' : 'weapon'
   const benchCatalog = isArmourSlot ? armours : weapons
@@ -296,15 +294,12 @@ export default function LoadoutContainer() {
 
   // Saved weapon blueprint per paperdoll slot — drives drop validation for
   // attachments dragged straight onto a loadout tile (a 16x scope must fit
-  // THAT slot's weapon, not whatever's on the bench). Sling slots hold a real
-  // weapon too (see isWeaponSlot above), so they're included alongside the
-  // three fixed weapon slots.
+  // THAT slot's weapon, not whatever's on the bench).
   const slotWeapons = useMemo(() => {
     const out = {}
     for (const s of currentLoadout.slots || []) {
       if (!s.item_uuid) continue
-      const isWeaponFamily = WEAPON_SLOTS.has(s.slot_key) || SLOT_FAMILY(s.slot_key).family === 'slings'
-      if (!isWeaponFamily) continue
+      if (!WEAPON_SLOTS.has(s.slot_key)) continue
       const bp = weapons.find((w) => w.uuid === s.item_uuid)
       if (bp) out[s.slot_key] = bp
     }
@@ -325,12 +320,10 @@ export default function LoadoutContainer() {
   // All of the user's saved weapon-bench builds, enriched with their weapon's friendly
   // name so a build for a weapon other than the one currently on the bench is still
   // identifiable when it surfaces via Item Source search (see buildsForSource below).
-  // weaponSize feeds dnd validation — a build only lands on a sling slot when
-  // its underlying weapon's base_stats.size is large enough (see dnd.js).
   const weaponBuildsForSource = useMemo(
     () => weaponBuilds.map((b) => {
       const bp = weapons.find((w) => w.uuid === b.item_uuid)
-      return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null, weaponSize: bp?.base_stats?.size ?? null }
+      return { ...b, weaponName: bp ? (bp.base_stats?.item_name || bp.name) : null }
     }),
     [weaponBuilds, weapons],
   )
@@ -354,14 +347,12 @@ export default function LoadoutContainer() {
     const out = []
     for (const item of items) {
       const weaponName = item.item_name
-      const weaponSize = weapons.find((w) => w.uuid === item.blueprint_uuid)?.base_stats?.size ?? null
       for (const build of item.builds || []) {
         out.push({
           id: `bp-${item.blueprint_uuid}-${build.id}`,
           name: build.name || weaponName,
           weaponUuid: item.blueprint_uuid,
           weaponName,
-          weaponSize,
           config: { qualities: build.quality_config, attachments: {} },
         })
       }
@@ -371,13 +362,12 @@ export default function LoadoutContainer() {
           name: weaponName,
           weaponUuid: item.blueprint_uuid,
           weaponName,
-          weaponSize,
           config: { qualities: item.quality_config, attachments: {} },
         })
       }
     }
     return out
-  }, [blueprintsQ.data, weapons])
+  }, [blueprintsQ.data])
 
   // Combined list handed to ItemSource — crafting designs first (they're the newer,
   // more-often-used source), weapon-bench builds after.

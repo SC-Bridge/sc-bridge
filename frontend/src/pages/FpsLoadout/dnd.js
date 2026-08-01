@@ -5,8 +5,7 @@
 //   { kind: 'armour', armour }        — an Item Source armour blueprint row
 //   { kind: 'build',  build }         — a saved design/build row (build.kind
 //                                       is 'weapon'|'armour'; armour builds
-//                                       carry build.armourSlot; weapon builds
-//                                       carry build.weaponSize for sling routing)
+//                                       carry build.armourSlot)
 //   { kind: 'attachment', attachment }— an attachment row (attachment.slot is
 //                                       one of optic/barrel/underbarrel)
 //   { kind: 'utility', item }         — a utility-catalog row (item.util_slot
@@ -24,15 +23,15 @@
 //   { kind: 'loadout-slot', slotKey } — a paperdoll slot (primary/…): drops
 //                                       here SAVE instantly. Utility slots are
 //                                       dynamic ordinal keys (grenade_1..4,
-//                                       mag_1..8, sling_1..2, pen_1..4,
-//                                       util_gadget, util_knife) — SLOT_FAMILY
-//                                       maps a key to its family + 1-based index.
+//                                       mag_1..8, pen_1..4, util_gadget,
+//                                       util_knife) — SLOT_FAMILY maps a key
+//                                       to its family + 1-based index.
 //
 // ctx (third argument) carries what validation needs:
 //   { benchWeapon,                — blueprint currently on the bench
 //     benchKind,                  — 'weapon'|'armour' — which kind is on the bench
 //     slotWeapons: {slotKey: bp}, — saved weapon blueprint per paperdoll slot
-//     capacity: {grenades,mags,slings,pens,utilGadget,utilKnife} } — from portCapacity
+//     capacity: {grenades,mags,pens,utilGadget,utilKnife} } — from portCapacity
 import { isCompatible } from './attachmentCompat'
 import { SLOT_FAMILY } from './portCapacity'
 
@@ -62,20 +61,12 @@ export function isValidTarget(drag, target, ctx = {}) {
         const slot = ctx.benchWeapon?.base_stats?.armour_slot
         return slot != null && slot === target.slotKey
       }
-      if (family === 'slings') {
-        const size = drag.kind === 'bench-combo' ? ctx.benchWeapon?.base_stats?.size : drag.weapon?.base_stats?.size
-        return size != null && size >= 2 && withinCapacity(family)
-      }
       return WEAPON_SLOT_KEYS.has(target.slotKey)
     }
     if (drag.kind === 'build') {
-      // Armour builds land on their piece's slot; weapon builds on weapon
-      // slots, or (by their weapon's size) a sling slot.
+      // Armour builds land on their piece's slot; weapon builds on weapon slots.
       if (drag.build?.kind === 'armour') {
         return drag.build?.armourSlot != null && drag.build.armourSlot === target.slotKey
-      }
-      if (family === 'slings') {
-        return drag.build?.weaponSize != null && drag.build.weaponSize >= 2 && withinCapacity(family)
       }
       return WEAPON_SLOT_KEYS.has(target.slotKey)
     }

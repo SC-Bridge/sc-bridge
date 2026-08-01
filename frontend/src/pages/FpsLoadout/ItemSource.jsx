@@ -77,8 +77,7 @@ const ARMOUR_WEIGHT_CATEGORIES = [
 ]
 
 // Dynamic ordinal families (grenade_N/pen_N/util_gadget/util_knife -> Utility;
-// mag_N -> Attach) route to a different TYPE tab than the fixed slots; sling_N
-// stays on Weapons (it holds a real weapon, just via the sling family).
+// mag_N -> Attach) route to a different TYPE tab than the fixed slots.
 const UTIL_TAB_FAMILIES = new Set(['grenades', 'pens', 'utilGadget', 'utilKnife'])
 
 function defaultTypeForSlot(slotKey) {
@@ -86,7 +85,7 @@ function defaultTypeForSlot(slotKey) {
   const { family } = SLOT_FAMILY(slotKey)
   if (family === 'mags') return 'Attach'
   if (UTIL_TAB_FAMILIES.has(family)) return 'Utility'
-  return 'Weapons' // weapon slots, sling slots, and anything unrecognised, default to Weapons
+  return 'Weapons' // weapon slots, and anything unrecognised, default to Weapons
 }
 
 // Shared sub-filter pill strip (Weapons / Attach / Utility tabs).
