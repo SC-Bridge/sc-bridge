@@ -27,8 +27,6 @@ const FpsSlotKey = z.enum([
   "mag_6",
   "mag_7",
   "mag_8",
-  "sling_1",
-  "sling_2",
   "pen_1",
   "pen_2",
   "pen_3",

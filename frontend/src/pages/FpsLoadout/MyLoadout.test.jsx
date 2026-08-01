@@ -14,8 +14,8 @@ vi.mock('@dnd-kit/core', async (importOriginal) => {
 
 const FIXED_SLOTS = ['primary', 'secondary', 'sidearm', 'helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit']
 // Heavy core + legs equipped — full capacity across every dynamic family.
-const FULL_CAPACITY = { grenades: 4, mags: 8, slings: 2, pens: 4, utilGadget: 1, utilKnife: 1 }
-const NO_CAPACITY = { grenades: 0, mags: 0, slings: 0, pens: 0, utilGadget: 0, utilKnife: 0 }
+const FULL_CAPACITY = { grenades: 4, mags: 8, pens: 4, utilGadget: 1, utilKnife: 1 }
+const NO_CAPACITY = { grenades: 0, mags: 0, pens: 0, utilGadget: 0, utilKnife: 0 }
 
 function makeLoadout(slots = []) {
   return {
@@ -98,28 +98,39 @@ describe('MyLoadout', () => {
       render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={FULL_CAPACITY} />)
       for (let i = 1; i <= 4; i++) expect(screen.getByTestId(`slot-grenade_${i}`)).toBeInTheDocument()
       for (let i = 1; i <= 8; i++) expect(screen.getByTestId(`slot-mag_${i}`)).toBeInTheDocument()
-      for (let i = 1; i <= 2; i++) expect(screen.getByTestId(`slot-sling_${i}`)).toBeInTheDocument()
       for (let i = 1; i <= 4; i++) expect(screen.getByTestId(`slot-pen_${i}`)).toBeInTheDocument()
       expect(screen.getByTestId('slot-util_gadget')).toBeInTheDocument()
       expect(screen.getByTestId('slot-util_knife')).toBeInTheDocument()
     })
 
-    it('greys grenade/mag/sling groups with a "needs core armour" hint when no core is equipped', () => {
+    // The paperdoll renders exactly six groups (2 fixed + 4 dynamic) at every
+    // capacity — a fixed, closed set with no extra group ever appearing.
+    it('renders exactly the six paperdoll groups and no more, at full or empty capacity', () => {
+      const GROUP_LABELS = ['Weapons', 'Armour', 'Grenades', 'Pens', 'Utility', 'Mags']
+      const { unmount } = render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={FULL_CAPACITY} />)
+      for (const label of GROUP_LABELS) expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.getAllByText(new RegExp(`^(${GROUP_LABELS.join('|')})$`))).toHaveLength(GROUP_LABELS.length)
+      unmount()
+      render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={NO_CAPACITY} />)
+      for (const label of GROUP_LABELS) expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.getAllByText(new RegExp(`^(${GROUP_LABELS.join('|')})$`))).toHaveLength(GROUP_LABELS.length)
+    })
+
+    it('greys grenade/mag groups with a "needs core armour" hint when no core is equipped', () => {
       const capacity = { ...NO_CAPACITY, pens: 4, utilGadget: 1, utilKnife: 1 } // legs but no core
       render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={capacity} />)
-      for (const family of ['grenades', 'mags', 'slings']) {
+      for (const family of ['grenades', 'mags']) {
         expect(screen.getByTestId(`group-hint-${family}`)).toHaveTextContent('needs core armour')
       }
       expect(screen.queryByTestId('slot-grenade_1')).not.toBeInTheDocument()
       expect(screen.queryByTestId('slot-mag_1')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('slot-sling_1')).not.toBeInTheDocument()
       // Legs-driven groups stay unaffected.
       expect(screen.getByTestId('slot-pen_1')).toBeInTheDocument()
       expect(screen.getByTestId('slot-util_gadget')).toBeInTheDocument()
     })
 
     it('greys the pens/utility groups with a "needs leg armour" hint when no legs are equipped', () => {
-      const capacity = { grenades: 2, mags: 4, slings: 1, pens: 0, utilGadget: 0, utilKnife: 0 } // core but no legs
+      const capacity = { grenades: 2, mags: 4, pens: 0, utilGadget: 0, utilKnife: 0 } // core but no legs
       render(<MyLoadout loadout={makeLoadout()} selectedSlot={null} onSelectSlot={() => {}} capacity={capacity} />)
       expect(screen.getByTestId('group-hint-pens')).toHaveTextContent('needs leg armour')
       expect(screen.getByTestId('group-hint-utility')).toHaveTextContent('needs leg armour')

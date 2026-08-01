@@ -132,7 +132,7 @@ describe("GET /api/gamedata/weapon-bench", () => {
     expect(mag!.fits_class).toBeNull();
   });
 
-  it("crafting base_stats include a weapon's numeric size (frontend sling validation, slice 3)", async () => {
+  it("crafting base_stats include a weapon's numeric size (kept for future frontend size-gated slot rules)", async () => {
     await env.DB.prepare(
       `INSERT INTO fps_weapons (uuid, class_name, name, game_version_id, size)
        VALUES ('w-sizetest', 'gmni_pistol_sizetest_01', 'Size Test Pistol', 1, 1)`

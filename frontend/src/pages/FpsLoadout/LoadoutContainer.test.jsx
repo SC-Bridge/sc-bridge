@@ -47,7 +47,7 @@ const ARMOUR_ARMS = {
   slots: [{ name: 'Padding', resource_name: 'Synthetic Fiber', slot_type: 'resource', modifiers: [] }],
 }
 // A heavy core + legs, equipped in LOADOUT below — drives portCapacity so
-// the utility paperdoll groups (grenades/mags/slings/pens/util) render tiles.
+// the utility paperdoll groups (grenades/mags/pens/util) render tiles.
 const ARMOUR_CORE_HEAVY = {
   uuid: 'a-core-heavy', name: 'Marauder_Core_01', type: 'armour', sub_type: 'core',
   base_stats: { item_name: 'Marauder Core', armour_slot: 'core', armour_weight: 'heavy', resist_physical: 0.4, weight: 6 },
@@ -71,17 +71,8 @@ const LOADOUT = {
       owned: true, wishlisted: false, config: { qualities: {} } },
     { slot_key: 'legs', item_uuid: 'a-legs', item_name: 'Marauder Legs', weapon_build_id: null,
       owned: true, wishlisted: false, config: { qualities: {} } },
-    // A weapon saved into a sling slot — used to verify attachments dropped
-    // straight onto a FILLED sling tile merge into its config, same as a
-    // filled primary/secondary/sidearm tile does.
-    { slot_key: 'sling_1', item_uuid: 'w-primary', item_name: 'P4-AR Rifle', weapon_build_id: null,
-      owned: true, wishlisted: false, config: { qualities: {}, attachments: {} } },
   ],
 }
-
-// No attachment_ports on WEAPON_PRIMARY.base_stats, so isCompatible() is
-// permissive (no port data to enforce) — any attachment fits.
-const ATTACHMENT_SCOPE = { uuid: 'att-scope', name: 'Devastator Scope', slot: 'optic', attach_port_type: 'IronSight', attach_size: 1 }
 
 const refetchLoadouts = vi.fn()
 const duplicateFpsLoadout = vi.fn(() => Promise.resolve({ ok: true, id: 9, name: 'Copy of Ground Ops' }))
@@ -153,7 +144,7 @@ describe('LoadoutContainer', () => {
     expect(screen.getByRole('heading', { name: 'C54 SMG' })).toBeInTheDocument()
   })
 
-  it('shows an equip-only placeholder for the remaining (non-sling) utility slots instead of the bench', () => {
+  it('shows an equip-only placeholder for a utility slot instead of the bench', () => {
     render(<LoadoutContainer />)
     fireEvent.click(screen.getByTestId('slot-pen_1'))
     expect(screen.getByTestId('slot-placeholder')).toHaveTextContent(/equip-only, no bench tuning/i)
@@ -370,7 +361,6 @@ describe('LoadoutContainer', () => {
     render(<LoadoutContainer />)
     for (let i = 1; i <= 4; i++) expect(screen.getByTestId(`slot-grenade_${i}`)).toBeInTheDocument()
     for (let i = 1; i <= 8; i++) expect(screen.getByTestId(`slot-mag_${i}`)).toBeInTheDocument()
-    for (let i = 1; i <= 2; i++) expect(screen.getByTestId(`slot-sling_${i}`)).toBeInTheDocument()
   })
 
   it('duplicates the active loadout and switches to the new one', async () => {
@@ -438,25 +428,4 @@ describe('LoadoutContainer', () => {
     )
   })
 
-  it('renders the weapon bench (not the slice-3 placeholder) for a sling slot', () => {
-    render(<LoadoutContainer />)
-    fireEvent.click(screen.getByTestId('slot-sling_1'))
-    expect(screen.queryByTestId('slot-placeholder')).not.toBeInTheDocument()
-  })
-
-  // FIX: slotWeapons (drives attachment-drop validation on a FILLED paperdoll
-  // tile) only recognised primary/secondary/sidearm — a sling tile carrying a
-  // saved weapon silently rejected an attachment dropped straight onto it.
-  it('merges an attachment dropped onto a FILLED sling tile into that slot\'s config, same as a weapon slot', async () => {
-    render(<LoadoutContainer />)
-    await simulateDrop({ kind: 'attachment', attachment: ATTACHMENT_SCOPE }, { kind: 'loadout-slot', slotKey: 'sling_1' })
-    expect(putLoadoutSlot).toHaveBeenCalledWith(
-      1,
-      'sling_1',
-      expect.objectContaining({
-        itemUuid: 'w-primary',
-        config: expect.objectContaining({ attachments: expect.objectContaining({ optic: 'att-scope' }) }),
-      }),
-    )
-  })
 })
