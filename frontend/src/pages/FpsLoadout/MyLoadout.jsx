@@ -1,6 +1,7 @@
 import React from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { isValidTarget } from './dnd'
+import { SLOT_FAMILY, labelForSlotKey as sharedLabelForSlotKey } from './portCapacity'
 
 const ICON = (name) => `/inventory-assets/${name}`
 
@@ -18,15 +19,13 @@ const PANEL2 = '#0e1822'
 const ICO_FILTER_ACTIVE = 'brightness(0) saturate(100%) invert(85%) sepia(30%) saturate(1000%) hue-rotate(155deg) brightness(1.1) drop-shadow(0 0 3px rgba(0,232,255,0.6))'
 const ICO_FILTER_DIM = 'brightness(0) saturate(100%) invert(60%) sepia(20%) saturate(500%) hue-rotate(155deg) brightness(0.7)'
 
-const SLOT_GROUPS = [
+const FIXED_SLOT_GROUPS = [
   { label: 'Weapons', slots: ['primary', 'secondary', 'sidearm'] },
   { label: 'Armour', slots: ['helmet', 'core', 'arms', 'legs', 'backpack', 'undersuit'] },
-  { label: 'Utility', slots: ['medical', 'gadget', 'throwable'] },
 ]
 
-const WEAPON_SLOTS = new Set(SLOT_GROUPS[0].slots)
-const ARMOUR_SLOTS = new Set(SLOT_GROUPS[1].slots)
-const UTILITY_SLOTS = new Set(SLOT_GROUPS[2].slots)
+const WEAPON_SLOTS = new Set(FIXED_SLOT_GROUPS[0].slots)
+const ARMOUR_SLOTS = new Set(FIXED_SLOT_GROUPS[1].slots)
 
 const SLOT_ICON = {
   primary: 'icon_common_primary_weapon',
@@ -38,9 +37,8 @@ const SLOT_ICON = {
   legs: 'PIT_Looting_Legs_Icon',
   backpack: 'icon_common_backpack_small',
   undersuit: 'icon_common_under_suit',
-  medical: 'icon_common_consumable',
-  gadget: 'icon_common_gadgets',
-  throwable: 'icon_common_grenade',
+  util_gadget: 'icon_common_gadgets',
+  util_knife: 'icon_common_knife',
 }
 
 const SLOT_LABEL = {
@@ -53,9 +51,79 @@ const SLOT_LABEL = {
   legs: 'Legs',
   backpack: 'Backpack',
   undersuit: 'Undersuit',
-  medical: 'Medical',
-  gadget: 'Gadget',
-  throwable: 'Throwable',
+  util_gadget: 'Gadget',
+  util_knife: 'Knife',
+}
+
+// Ordinal utility families (grenade_N/mag_N/sling_N/pen_N) share one icon
+// per family — the tile name (label) comes from portCapacity.js, which owns
+// the family-prefix vocabulary shared with LoadoutContainer's bench header.
+const FAMILY_ICON = {
+  grenades: 'icon_common_grenade',
+  mags: 'Inv_filter_Icons_ammo',
+  slings: 'icon_common_secondary_weapon',
+  pens: 'icon_common_consumable',
+}
+
+function iconForSlotKey(slotKey) {
+  if (SLOT_ICON[slotKey]) return SLOT_ICON[slotKey]
+  const { family } = SLOT_FAMILY(slotKey)
+  return FAMILY_ICON[family] || 'icon_common_gadgets'
+}
+
+function labelForSlotKey(slotKey) {
+  return SLOT_LABEL[slotKey] || sharedLabelForSlotKey(slotKey)
+}
+
+const range = (n) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1)
+
+// Ordinal family slots (grenade_1.., mag_1.., sling_1.., pen_1..): rendered
+// count is max(capacity, highest already-filled index) — a capacity shrink
+// (e.g. swapping to a lighter core) never deletes a filled tile; the tile
+// past capacity just renders as overflow (see SlotTile).
+function familySlots(prefix, family, capacityN, bySlot) {
+  let maxIndex = capacityN || 0
+  for (const key of Object.keys(bySlot)) {
+    const f = SLOT_FAMILY(key)
+    if (f.family === family && f.index > maxIndex) maxIndex = f.index
+  }
+  return range(maxIndex).map((i) => `${prefix}_${i}`)
+}
+
+// Singleton slots (util_gadget/util_knife): shown whenever capacity allows
+// one, or a tile is already filled there (same never-delete-a-filled-row policy).
+function singletonSlot(slotKey, familyCapacity, bySlot) {
+  return familyCapacity > 0 || bySlot[slotKey] ? [slotKey] : []
+}
+
+// Builds the five dynamic utility groups from the armour-derived capacity —
+// Grenades/Pens/Utility(gadget+knife)/Slings/Mags, in that display order.
+// A group with no slots to show (capacity 0 and nothing filled) renders as a
+// greyed hint strip instead ("needs core armour" / "needs leg armour").
+function buildDynamicGroups(capacity, bySlot) {
+  const cap = {
+    grenades: capacity.grenades || 0,
+    mags: capacity.mags || 0,
+    slings: capacity.slings || 0,
+    pens: capacity.pens || 0,
+    utilGadget: capacity.utilGadget || 0,
+    utilKnife: capacity.utilKnife || 0,
+  }
+  return [
+    { label: 'Grenades', family: 'grenades', needsHint: 'core', slots: familySlots('grenade', 'grenades', cap.grenades, bySlot) },
+    { label: 'Pens', family: 'pens', needsHint: 'legs', slots: familySlots('pen', 'pens', cap.pens, bySlot) },
+    {
+      label: 'Utility',
+      family: 'utility',
+      needsHint: 'legs',
+      slots: [
+        ...singletonSlot('util_gadget', cap.utilGadget, bySlot),
+        ...singletonSlot('util_knife', cap.utilKnife, bySlot),
+      ],
+    },
+    { label: 'Slings', family: 'slings', needsHint: 'core', slots: familySlots('sling', 'slings', cap.slings, bySlot) },
+    { label: 'Mags', family: 'mags', needsHint: 'core', slots: familySlots('mag', 'mags', cap.mags, bySlot) },
+  ]
 }
 
 const ATTACHMENT_PIPS = [
@@ -136,16 +204,22 @@ function SlotBadge({ owned, wishlisted }) {
   return null
 }
 
-function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, dropCtx }) {
+function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, dropCtx, capacity }) {
   const isWeapon = WEAPON_SLOTS.has(slotKey)
   const filled = Boolean(entry && entry.item_name)
   const owned = filled && Boolean(entry.owned)
   const wishlisted = filled && !owned && Boolean(entry.wishlisted)
 
-  // Weapon, armour, and utility tiles all double as dnd-kit drop targets for
-  // items dragged from Item Source (drop = equip + save immediately).
+  const { family, index } = SLOT_FAMILY(slotKey)
+  // A filled dynamic-family tile whose ordinal index outgrew a shrunk
+  // capacity (e.g. swapping to a lighter core) — kept visible, still
+  // clickable, just flagged so the player knows to resolve it.
+  const overflow = filled && family != null && index > (capacity?.[family] || 0)
+
+  // Weapon, armour, and utility (dynamic-family) tiles all double as dnd-kit
+  // drop targets for items dragged from Item Source (drop = equip + save immediately).
   const isArmour = ARMOUR_SLOTS.has(slotKey)
-  const isUtility = UTILITY_SLOTS.has(slotKey)
+  const isUtility = family != null
   const { setNodeRef, isOver } = useDroppable({
     id: `loadout-${slotKey}`,
     data: { kind: 'loadout-slot', slotKey },
@@ -161,6 +235,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
       type="button"
       data-testid={`slot-${slotKey}`}
       data-selected={selected ? 'true' : 'false'}
+      data-overflow={overflow ? 'true' : 'false'}
       onClick={() => onSelectSlot(slotKey)}
       aria-pressed={selected}
       className="relative flex flex-col items-center justify-center gap-1 rounded cursor-pointer text-left"
@@ -168,16 +243,17 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
         height: 92,
         padding: '6px 6px',
         background: isOver && validTarget ? 'rgba(0,232,255,0.10)' : PANEL2,
-        border: `1px solid ${isOver && validTarget ? CYAN : validTarget ? 'rgba(0,232,255,0.55)' : selected ? CYAN : filled ? LINE2 : LINE}`,
+        border: `1px solid ${isOver && validTarget ? CYAN : validTarget ? 'rgba(0,232,255,0.55)' : overflow ? WANT : selected ? CYAN : filled ? LINE2 : LINE}`,
         borderStyle: filled && !validTarget ? 'solid' : 'dashed',
         boxShadow: isOver && validTarget ? '0 0 0 1px rgba(0,232,255,0.45), 0 0 20px rgba(0,232,255,0.28)'
-          : selected ? '0 0 0 1px rgba(0,232,255,0.25), 0 0 16px rgba(0,232,255,0.14)' : 'none',
+          : selected ? '0 0 0 1px rgba(0,232,255,0.25), 0 0 16px rgba(0,232,255,0.14)'
+          : overflow ? '0 0 0 1px rgba(243,176,58,0.35)' : 'none',
         opacity: inert && !selected && !validTarget ? 0.55 : 1,
       }}
     >
       <SlotBadge owned={owned} wishlisted={wishlisted} />
       <img
-        src={ICON(`${SLOT_ICON[slotKey]}.svg`)}
+        src={ICON(`${iconForSlotKey(slotKey)}.svg`)}
         alt=""
         style={{
           width: 30,
@@ -188,9 +264,9 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
       />
       <div
         className="text-center leading-tight"
-        style={{ fontSize: 11, color: nameColor }}
+        style={{ fontSize: 11, color: overflow ? WANT : nameColor }}
       >
-        {filled ? entry.item_name : SLOT_LABEL[slotKey]}
+        {filled ? entry.item_name : labelForSlotKey(slotKey)}
       </div>
       <div
         className="uppercase text-center"
@@ -203,17 +279,34 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
   )
 }
 
-export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeDrag = null, dropCtx = undefined }) {
+function GroupHint({ family, needsHint }) {
+  return (
+    <div
+      data-testid={`group-hint-${family}`}
+      className="rounded text-center italic"
+      style={{ padding: '10px 6px', fontSize: 10.5, color: ICE_DIM, border: `1px dashed ${LINE}`, opacity: 0.6 }}
+    >
+      needs {needsHint === 'core' ? 'core' : 'leg'} armour
+    </div>
+  )
+}
+
+export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeDrag = null, dropCtx = undefined, capacity = {} }) {
   const bySlot = {}
   for (const s of loadout?.slots || []) {
     bySlot[s.slot_key] = s
   }
 
+  const groups = [...FIXED_SLOT_GROUPS, ...buildDynamicGroups(capacity, bySlot)]
+
   return (
     <div>
-      {SLOT_GROUPS.map((group, i) => (
+      {groups.map((group, i) => (
         <div key={group.label}>
           <GroupLabel>{group.label}</GroupLabel>
+          {group.slots.length === 0 && group.needsHint ? (
+            <GroupHint family={group.family} needsHint={group.needsHint} />
+          ) : (
           <div className="grid grid-cols-3 gap-2">
             {group.slots.map((slotKey) => (
               <SlotTile
@@ -221,6 +314,7 @@ export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeD
                 slotKey={slotKey}
                 entry={bySlot[slotKey]}
                 selected={selectedSlot === slotKey}
+                capacity={capacity}
                 inert={i !== 0}
                 onSelectSlot={onSelectSlot}
                 activeDrag={activeDrag}
@@ -228,6 +322,7 @@ export default function MyLoadout({ loadout, selectedSlot, onSelectSlot, activeD
               />
             ))}
           </div>
+          )}
         </div>
       ))}
     </div>
