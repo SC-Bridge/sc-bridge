@@ -281,6 +281,29 @@ describe("FPS Loadouts API — /api/fps-loadouts", () => {
     expect((await putSlot("grenade_5")).status).toBe(400);
   });
 
+  it("rejects the removed sling_1/sling_2 slot keys with 400 on PUT and DELETE", async () => {
+    // Slings were a modeling mistake (the game's wep_stocked ports ARE where
+    // primary/secondary physically live) and were dropped from the slot enum
+    // entirely — pinning the former sling-positive PUT case as a rejection.
+    const create = await post(sessionToken, { name: "Sling Rejection Kit" });
+    const { id } = (await create.json()) as { id: number };
+
+    for (const slotKey of ["sling_1", "sling_2"]) {
+      const put = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/${slotKey}`, {
+        method: "PUT",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: "Whatever" }),
+      });
+      expect(put.status).toBe(400);
+
+      const del = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/${slotKey}`, {
+        method: "DELETE",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Length": "0" },
+      });
+      expect(del.status).toBe(400);
+    }
+  });
+
   describe("POST /:id/duplicate", () => {
     it("duplicates a loadout and its slots under 'Copy of <name>'", async () => {
       const create = await post(sessionToken, { name: "Source Kit" });

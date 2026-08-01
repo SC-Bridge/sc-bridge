@@ -55,13 +55,12 @@ const SLOT_LABEL = {
   util_knife: 'Knife',
 }
 
-// Ordinal utility families (grenade_N/mag_N/sling_N/pen_N) share one icon
-// per family — the tile name (label) comes from portCapacity.js, which owns
-// the family-prefix vocabulary shared with LoadoutContainer's bench header.
+// Ordinal utility families (grenade_N/mag_N/pen_N) share one icon per
+// family — the tile name (label) comes from portCapacity.js, which owns the
+// family-prefix vocabulary shared with LoadoutContainer's bench header.
 const FAMILY_ICON = {
   grenades: 'icon_common_grenade',
   mags: 'Inv_filter_Icons_ammo',
-  slings: 'icon_common_secondary_weapon',
   pens: 'icon_common_consumable',
 }
 
@@ -77,8 +76,8 @@ function labelForSlotKey(slotKey) {
 
 const range = (n) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1)
 
-// Ordinal family slots (grenade_1.., mag_1.., sling_1.., pen_1..): rendered
-// count is max(capacity, highest already-filled index) — a capacity shrink
+// Ordinal family slots (grenade_1.., mag_1.., pen_1..): rendered count is
+// max(capacity, highest already-filled index) — a capacity shrink
 // (e.g. swapping to a lighter core) never deletes a filled tile; the tile
 // past capacity just renders as overflow (see SlotTile).
 function familySlots(prefix, family, capacityN, bySlot) {
@@ -96,15 +95,14 @@ function singletonSlot(slotKey, familyCapacity, bySlot) {
   return familyCapacity > 0 || bySlot[slotKey] ? [slotKey] : []
 }
 
-// Builds the five dynamic utility groups from the armour-derived capacity —
-// Grenades/Pens/Utility(gadget+knife)/Slings/Mags, in that display order.
-// A group with no slots to show (capacity 0 and nothing filled) renders as a
-// greyed hint strip instead ("needs core armour" / "needs leg armour").
+// Builds the four dynamic utility groups from the armour-derived capacity —
+// Grenades/Pens/Utility(gadget+knife)/Mags, in that display order. A group
+// with no slots to show (capacity 0 and nothing filled) renders as a greyed
+// hint strip instead ("needs core armour" / "needs leg armour").
 function buildDynamicGroups(capacity, bySlot) {
   const cap = {
     grenades: capacity.grenades || 0,
     mags: capacity.mags || 0,
-    slings: capacity.slings || 0,
     pens: capacity.pens || 0,
     utilGadget: capacity.utilGadget || 0,
     utilKnife: capacity.utilKnife || 0,
@@ -121,7 +119,6 @@ function buildDynamicGroups(capacity, bySlot) {
         ...singletonSlot('util_knife', cap.utilKnife, bySlot),
       ],
     },
-    { label: 'Slings', family: 'slings', needsHint: 'core', slots: familySlots('sling', 'slings', cap.slings, bySlot) },
     { label: 'Mags', family: 'mags', needsHint: 'core', slots: familySlots('mag', 'mags', cap.mags, bySlot) },
   ]
 }

@@ -96,7 +96,7 @@ describe('resolveDrop', () => {
 
   it('utility item on its family-mapped slot, within capacity → equip-utility', () => {
     const medgun = { uuid: 'u1', name: 'ParaMed Medical Device', util_slot: 'medical' }
-    const ctx = { capacity: { grenades: 2, mags: 4, slings: 1, pens: 4, utilGadget: 1, utilKnife: 1 } }
+    const ctx = { capacity: { grenades: 2, mags: 4, pens: 4, utilGadget: 1, utilKnife: 1 } }
     expect(resolveDrop({ kind: 'utility', item: medgun }, { kind: 'loadout-slot', slotKey: 'pen_2' }, ctx))
       .toEqual({ type: 'equip-utility', slotKey: 'pen_2', item: medgun })
     // Wrong family and weapon slots are rejected.
@@ -109,7 +109,7 @@ describe('resolveDrop', () => {
 })
 
 describe('utility family rules (dynamic ordinal slots, slice 3)', () => {
-  const CAPACITY = { grenades: 2, mags: 4, slings: 1, pens: 4, utilGadget: 1, utilKnife: 1 }
+  const CAPACITY = { grenades: 2, mags: 4, pens: 4, utilGadget: 1, utilKnife: 1 }
   const ctx = { capacity: CAPACITY }
   const throwable = { uuid: 't1', name: 'MK-4 Frag Grenade', util_slot: 'throwable' }
   const medical = { uuid: 'm1', name: 'ParaMed Medical Device', util_slot: 'medical' }
@@ -146,22 +146,7 @@ describe('utility family rules (dynamic ordinal slots, slice 3)', () => {
     expect(isValidTarget({ kind: 'magazine', ...magDrag }, { kind: 'loadout-slot', slotKey: 'mag_5' }, ctx)).toBe(false)
   })
 
-  it('a weapon fits a sling slot only when its size >= 2 and within sling capacity', () => {
-    const bigWeapon = { uuid: 'w1', base_stats: { size: 3 } }
-    const smallWeapon = { uuid: 'w2', base_stats: { size: 1 } }
-    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(true)
-    expect(isValidTarget({ kind: 'weapon', weapon: smallWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
-    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_2' }, { capacity: { ...CAPACITY, slings: 1 } })).toBe(false)
-  })
-
-  it('a weapon build routes to sling slots by its weaponSize', () => {
-    const bigBuild = { kind: 'weapon', item_uuid: 'w1', weaponSize: 2 }
-    const smallBuild = { kind: 'weapon', item_uuid: 'w2', weaponSize: 1 }
-    expect(isValidTarget({ kind: 'build', build: bigBuild }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(true)
-    expect(isValidTarget({ kind: 'build', build: smallBuild }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
-  })
-
-  it('resolveDrop shapes: equip-utility / equip-melee / equip-magazine, and slings reuse equip-weapon/equip-build', () => {
+  it('resolveDrop shapes: equip-utility / equip-melee / equip-magazine', () => {
     expect(resolveDrop({ kind: 'utility', item: throwable }, { kind: 'loadout-slot', slotKey: 'grenade_1' }, ctx))
       .toEqual({ type: 'equip-utility', slotKey: 'grenade_1', item: throwable })
     const knifeItem = { uuid: 'k1', name: 'Combat Knife' }
@@ -170,12 +155,22 @@ describe('utility family rules (dynamic ordinal slots, slice 3)', () => {
     const magazine = { uuid: 'mg1', name: '30rd Mag' }
     expect(resolveDrop({ kind: 'magazine', magazine }, { kind: 'loadout-slot', slotKey: 'mag_2' }, ctx))
       .toEqual({ type: 'equip-magazine', slotKey: 'mag_2', magazine })
-    const slingWeapon = { uuid: 'w1', base_stats: { size: 3 } }
-    expect(resolveDrop({ kind: 'weapon', weapon: slingWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx))
-      .toEqual({ type: 'equip-weapon', slotKey: 'sling_1', weapon: slingWeapon })
-    const slingBuild = { kind: 'weapon', item_uuid: 'w1', weaponSize: 2, name: 'My Sling Build' }
-    expect(resolveDrop({ kind: 'build', build: slingBuild }, { kind: 'loadout-slot', slotKey: 'sling_2' }, { capacity: { ...CAPACITY, slings: 2 } }))
-      .toEqual({ type: 'equip-build', slotKey: 'sling_2', build: slingBuild })
+  })
+
+  // Pin: a weapon/build drag no longer fits a former sling slot key — slings
+  // were removed, so sling_1/sling_2 are now just unrecognized keys, same as
+  // any other non-weapon-slot key.
+  it('a weapon or weapon build no longer targets the removed sling_1/sling_2 keys', () => {
+    const bigWeapon = { uuid: 'w1', base_stats: { size: 3 } }
+    // weaponSize is deliberately kept here even though production no longer
+    // emits it (LoadoutContainer dropped the enrichment once sling routing
+    // was removed) — this proves even a size-carrying build still can't
+    // land on a former sling key, closing off a stale-field edge case.
+    const bigBuild = { kind: 'weapon', item_uuid: 'w1', weaponSize: 2 }
+    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
+    expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_2' }, ctx)).toBe(false)
+    expect(isValidTarget({ kind: 'build', build: bigBuild }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
+    expect(resolveDrop({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBeNull()
   })
 })
 

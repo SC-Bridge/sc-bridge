@@ -240,9 +240,6 @@ describe('ItemSource', () => {
     rerender(<ItemSource slotKey="mag_3" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
     expect(screen.getByTestId('type-attach')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('cat-magazines')).toHaveAttribute('aria-pressed', 'true')
-
-    rerender(<ItemSource slotKey="sling_1" weapons={weapons} attachments={[]} builds={[]} ownership={{}} onPick={() => {}} />)
-    expect(screen.getByTestId('type-weapons')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('lists knife rows under the Utility tab\'s Knife pill, dragging as { kind: "melee" }', () => {
