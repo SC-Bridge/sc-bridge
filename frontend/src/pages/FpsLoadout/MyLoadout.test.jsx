@@ -23,6 +23,12 @@ function makeLoadout(slots = []) {
     name: 'Ground Ops',
     slots: [
       { slot_key: 'primary', item_uuid: 'abc', item_name: 'P4-AR Rifle', weapon_build_id: null, owned: true, wishlisted: false, config: { attachments: { barrel: 'stark' } } },
+      // Deploy-window case: a row saved into a sling slot before migration
+      // 0273 ran (or before this frontend deployed) can still arrive in the
+      // API payload. slot_key is unrecognized now (SLOT_FAMILY → null), so
+      // it must be inert — no tile, no crash, no group — across every test
+      // in this file that uses this fixture.
+      { slot_key: 'sling_1', item_uuid: 'w-primary', item_name: 'P4-AR Rifle' },
       ...slots,
     ],
   }

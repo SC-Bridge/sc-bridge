@@ -162,6 +162,10 @@ describe('utility family rules (dynamic ordinal slots, slice 3)', () => {
   // any other non-weapon-slot key.
   it('a weapon or weapon build no longer targets the removed sling_1/sling_2 keys', () => {
     const bigWeapon = { uuid: 'w1', base_stats: { size: 3 } }
+    // weaponSize is deliberately kept here even though production no longer
+    // emits it (LoadoutContainer dropped the enrichment once sling routing
+    // was removed) — this proves even a size-carrying build still can't
+    // land on a former sling key, closing off a stale-field edge case.
     const bigBuild = { kind: 'weapon', item_uuid: 'w1', weaponSize: 2 }
     expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_1' }, ctx)).toBe(false)
     expect(isValidTarget({ kind: 'weapon', weapon: bigWeapon }, { kind: 'loadout-slot', slotKey: 'sling_2' }, ctx)).toBe(false)
