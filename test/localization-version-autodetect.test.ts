@@ -34,6 +34,36 @@ describe("parseVersionFromCommit", () => {
     ).toEqual({ code: "4.8.0-live", channel: "live", build: null });
   });
 
+  it("parses the Dymerz 4.10+ message format (two-segment version, channel word, bare build)", () => {
+    // Dymerz changed format at 4.10: "English+Brazilian 4.10 LIVE 12519617" — no X.Y.Z-live
+    // token. Must normalise to the stable X.Y.0-live code so the cron can stage it.
+    expect(parseVersionFromCommit("English+Brazilian 4.10 LIVE 12519617")).toEqual({
+      code: "4.10.0-live",
+      channel: "live",
+      build: "12519617",
+    });
+  });
+
+  it("parses the two-segment PTU form and keeps the channel", () => {
+    expect(parseVersionFromCommit("4.10 PTU 12456044 (EN)")).toEqual({
+      code: "4.10.0-ptu",
+      channel: "ptu",
+      build: "12456044",
+    });
+  });
+
+  it("two-segment form without a build yields build null", () => {
+    expect(parseVersionFromCommit("4.10 LIVE English")).toEqual({
+      code: "4.10.0-live",
+      channel: "live",
+      build: null,
+    });
+  });
+
+  it("does not mistake an unrelated number followed by a channel word for a version", () => {
+    expect(parseVersionFromCommit("fix typo in 12 LIVE strings")).toBeNull();
+  });
+
   it("returns null for a chore commit with no version token", () => {
     expect(parseVersionFromCommit("refactor: restructure repo from version-specific to channel-based folders")).toBeNull();
   });
