@@ -26,6 +26,15 @@ import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
+# Windows consoles default to cp1252; the report uses "→" and "—". Force UTF-8
+# so the script doesn't crash before printing the budget.
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
+
 DEFAULT_ACCOUNT_ID = "92557ddeffaf43d64db74acf783ec49d"  # SC Bridge
 FREE_TIER_WRITES_PER_MONTH = 50_000_000
 GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql"

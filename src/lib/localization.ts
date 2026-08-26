@@ -1111,10 +1111,21 @@ export interface DetectedVersion {
  */
 export function parseVersionFromCommit(message: string): DetectedVersion | null {
   if (!message) return null;
+  // Form 1 — "4.8.1-live.11952564 …" (Dymerz ≤4.9) / "feat(4.8.0-live): …" (BeltaKoda).
   const m = message.match(/(\d+\.\d+\.\d+)-(live|ptu|eptu)(?:\.(\d+))?/i);
-  if (!m) return null;
-  const channel = m[2].toLowerCase();
-  return { code: `${m[1]}-${channel}`, channel, build: m[3] ?? null };
+  if (m) {
+    const channel = m[2].toLowerCase();
+    return { code: `${m[1]}-${channel}`, channel, build: m[3] ?? null };
+  }
+  // Form 2 — "English+Brazilian 4.10 LIVE 12519617" (Dymerz from 4.10): a two- or
+  // three-segment version, the channel as its own word, then an optional bare build.
+  // Missing segments are zero-filled so "4.10" → "4.10.0-live" (matches game_versions.code).
+  const m2 = message.match(/\b(\d+\.\d+(?:\.\d+)?)\s+(live|ptu|eptu)\b(?:\s+(\d{5,}))?/i);
+  if (!m2) return null;
+  const segments = m2[1].split(".");
+  while (segments.length < 3) segments.push("0");
+  const channel = m2[2].toLowerCase();
+  return { code: `${segments.join(".")}-${channel}`, channel, build: m2[3] ?? null };
 }
 
 /**
