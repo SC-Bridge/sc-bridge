@@ -128,13 +128,19 @@ export async function runLocalizationIngest(env: Env, deps: IngestDeps = DEFAULT
     state = { seen: {} };
   }
 
-  // Fetch every source; resolve its version from GitHub ONLY when the content
-  // changed since last run (keeps the GitHub API calls to ~once per patch).
+  // Fetch every source; resolve its version from GitHub only while the content
+  // differs from the CURRENT base. Gating on "changed since last run" instead
+  // wedged the 4.10 publish: Dymerz's commit message was unparseable at the
+  // time, the run still recorded the content hash as seen, and every later
+  // run skipped resolution — so no parser fix could ever stage it. A source
+  // that differs from the base costs ~1 GitHub API call per hour, well under
+  // the unauthenticated limit.
+  const baseHash = currentBase !== null ? hashIni(currentBase) : null;
   const fetched: VersionedSourceFetch[] = [];
   for (const src of BASE_SOURCES) {
     const content = await deps.fetchContent(src.url);
     let version: DetectedVersion | null = null;
-    if (content !== null && state.seen[src.name] !== hashIni(content)) {
+    if (content !== null && hashIni(content) !== baseHash) {
       version = await deps.fetchVersion(src);
     }
     fetched.push({ name: src.name, content, version });

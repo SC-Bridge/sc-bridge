@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase } from "./apply-migrations";
 import { runLocalizationIngest, type IngestDeps } from "../src/sync/localizationIngest";
+import { hashIni } from "../src/lib/localization";
 import type { Env } from "../src/lib/types";
 
 // The cloudflare:test `env` is structurally our Env for the bindings this code
@@ -98,5 +99,46 @@ describe("runLocalizationIngest orchestration", () => {
       .prepare("SELECT COUNT(*) AS n FROM game_versions WHERE code = '4.8.0-ptu'")
       .first<{ n: number }>();
     expect(ptuRow!.n).toBe(0);
+  });
+  it("still resolves + stages a version whose content was already SEEN by an earlier run", async () => {
+    // 4.10 incident: Dymerz published "English+Brazilian 4.10 LIVE 12519617"; the
+    // old parser returned null, the run recorded the content hash as seen, and
+    // every later run skipped version resolution ("unchanged since last run") —
+    // so fixing the parser alone could never stage it. Seen-ness must not gate
+    // resolution while the source still differs from the current base.
+    const dymerz = ini(8016, "v481");
+    await KV().put(
+      "localization:ingest-state",
+      JSON.stringify({ seen: { "Dymerz StarCitizen-Localization (english)": hashIni(dymerz) } }),
+    );
+    let resolved = 0;
+    const deps: IngestDeps = {
+      fetchContent: async (url) => (url.includes("Dymerz") ? dymerz : ini(8000, "v480")),
+      fetchVersion: async (src) => {
+        resolved += 1;
+        return src.name.includes("Dymerz")
+          ? { code: "4.8.1-live", channel: "live", build: "11952564" }
+          : { code: "4.8.0-live", channel: "live", build: null };
+      },
+    };
+    const r = await runLocalizationIngest(appEnv, deps);
+    expect(resolved).toBeGreaterThan(0);
+    expect(r.status).toBe("staged");
+    expect(r.versionCode).toBe("4.8.1-live");
+    expect(await KV().get("localization:global-ini:4.8.1-live")).toBe(dymerz);
+  });
+
+  it("does not hit GitHub for a source that already equals the current base", async () => {
+    let resolved = 0;
+    const deps: IngestDeps = {
+      fetchContent: async () => ini(8000, "v480"), // both sources == current base
+      fetchVersion: async () => {
+        resolved += 1;
+        return { code: "4.8.0-live", channel: "live", build: null };
+      },
+    };
+    const r = await runLocalizationIngest(appEnv, deps);
+    expect(r.status).toBe("unchanged");
+    expect(resolved).toBe(0);
   });
 });
