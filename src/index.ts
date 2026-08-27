@@ -26,6 +26,13 @@ import { localizationRoutes } from "./routes/localization";
 import { publicOpsRoutes } from "./routes/ops";
 import { reputationRoutes } from "./routes/reputation";
 import { publicFleetRoutes } from "./routes/publicFleet";
+import {
+  loadPublicFleet,
+  matchPublicFleetPath,
+  publicFleetCacheKey,
+  renderPublicFleetShell,
+  type PublicFleetPayload,
+} from "./lib/publicFleet";
 import { companionRoutes } from "./routes/companion";
 import { companionAuthRoutes } from "./routes/companion-auth";
 import { loadoutRoutes } from "./routes/loadout";
@@ -481,15 +488,30 @@ app.use("/api/*", async (c) => c.json({ error: "Not Found" }, 404));
 // HTML responses get Cache-Control: no-cache so browsers always revalidate index.html.
 // Without this, stale index.html references old chunk hashes → "error loading dynamically
 // imported module" when the old .js files are purged from Workers Assets CDN.
+//
+// /u/:handle/fleet additionally gets the shared fleet rendered into the shell so
+// non-JS clients (AI web readers, link unfurlers, search) see the roster.
 app.get("*", async (c) => {
   const res = await c.env.ASSETS.fetch(c.req.raw);
   const ct = res.headers.get("Content-Type") ?? "";
-  if (ct.startsWith("text/html")) {
-    const headers = new Headers(res.headers);
-    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
-    return new Response(res.body, { status: res.status, headers });
+  if (!ct.startsWith("text/html")) return res;
+
+  const headers = new Headers(res.headers);
+  headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  const shell = new Response(res.body, { status: res.status, headers });
+
+  const handle = matchPublicFleetPath(new URL(c.req.url).pathname);
+  if (!handle) return shell;
+  try {
+    const fleet = await cachedJson(c, publicFleetCacheKey(handle), () =>
+      loadPublicFleet(c.env.DB, handle),
+    );
+    const data = fleet.status === 200 ? await fleet.json<PublicFleetPayload>() : null;
+    return renderPublicFleetShell(shell, handle, data);
+  } catch (err) {
+    logEvent("public_fleet_shell_render_failed", { handle, error: String(err) });
+    return shell;
   }
-  return res;
 });
 
 // Export for Cloudflare Workers
