@@ -37,6 +37,7 @@ const CACHE_PREFIXES = [
   { value: 'components:',    label: 'Components' },
   { value: 'patches:',       label: 'Patches' },
   { value: 'localization:',  label: 'Localization' },
+  { value: 'public-fleet:',  label: 'Public fleet share pages' },
   { value: '',               label: 'All Cache (danger)' },
 ]
 
