@@ -56,12 +56,10 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 200 with empty ships array when toggle is on but no ships are public", async () => {
+  it("returns 200 with empty ships array when toggle is on but the fleet is empty", async () => {
     const { userId } = await createTestUser(env.DB);
     await setHandle(userId, "bob");
     await enableShare(userId);
-    const vehicleId = await seedVehicle(env.DB, { slug: "aurora-mr-bob", name: "Aurora MR" });
-    await seedFleetEntry(env.DB, userId, vehicleId, {});
 
     const res = await SELF.fetch("http://localhost/api/u/bob/fleet");
     expect(res.status).toBe(200);
@@ -70,21 +68,23 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     expect(body.ships).toEqual([]);
   });
 
-  it("returns only ships with org_visibility = 'public'", async () => {
+  it("returns every ship regardless of org_visibility (org roster and public page are distinct)", async () => {
     const { userId } = await createTestUser(env.DB);
     await setHandle(userId, "carol");
     await enableShare(userId);
     const v1 = await seedVehicle(env.DB, { slug: "gladius-carol", name: "Gladius" });
     const v2 = await seedVehicle(env.DB, { slug: "carrack-carol", name: "Carrack" });
+    const v3 = await seedVehicle(env.DB, { slug: "polaris-carol", name: "Polaris" });
     const f1 = await seedFleetEntry(env.DB, userId, v1, {});
     const f2 = await seedFleetEntry(env.DB, userId, v2, {});
+    const f3 = await seedFleetEntry(env.DB, userId, v3, {});
     await setOrgVisibility(f1, "public");
     await setOrgVisibility(f2, "private");
+    await setOrgVisibility(f3, "officers");
 
     const res = await SELF.fetch("http://localhost/api/u/carol/fleet");
     const body = (await res.json()) as { ships: Array<{ vehicle_name: string }> };
-    expect(body.ships).toHaveLength(1);
-    expect(body.ships[0].vehicle_name).toBe("Gladius");
+    expect(body.ships.map((s) => s.vehicle_name)).toEqual(["Carrack", "Gladius", "Polaris"]);
   });
 
   it("strips money fields from the response", async () => {
@@ -92,12 +92,11 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     await setHandle(userId, "dave");
     await enableShare(userId);
     const vid = await seedVehicle(env.DB, { slug: "idris-dave", name: "Idris" });
-    const fid = await seedFleetEntry(env.DB, userId, vid, {
+    await seedFleetEntry(env.DB, userId, vid, {
       pledge_cost: "$2700.00",
       pledge_name: "Idris-P LTI",
       pledge_id: "9999",
     });
-    await setOrgVisibility(fid, "public");
 
     const res = await SELF.fetch("http://localhost/api/u/dave/fleet");
     const body = (await res.json()) as { ships: Array<Record<string, unknown>> };
@@ -118,10 +117,9 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     await setHandle(userId, "eve");
     await enableShare(userId);
     const vid = await seedVehicle(env.DB, { slug: "polaris-eve", name: "Polaris" });
-    const fid = await seedFleetEntry(env.DB, userId, vid, {
+    await seedFleetEntry(env.DB, userId, vid, {
       insurance_type_id: 1,
     });
-    await setOrgVisibility(fid, "public");
 
     const res = await SELF.fetch("http://localhost/api/u/eve/fleet");
     const body = (await res.json()) as { ships: Array<Record<string, unknown>> };
@@ -134,8 +132,7 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     await setHandle(userId, "Frank");
     await enableShare(userId);
     const vid = await seedVehicle(env.DB, { slug: "freelancer-frank", name: "Freelancer" });
-    const fid = await seedFleetEntry(env.DB, userId, vid, {});
-    await setOrgVisibility(fid, "public");
+    await seedFleetEntry(env.DB, userId, vid, {});
 
     const lower = await SELF.fetch("http://localhost/api/u/frank/fleet");
     expect(lower.status).toBe(200);
@@ -157,8 +154,7 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     await setExtensionHandle(userId, "ExtUser");
     await enableShare(userId);
     const vid = await seedVehicle(env.DB, { slug: "aurora-extuser", name: "Aurora LN" });
-    const fid = await seedFleetEntry(env.DB, userId, vid, {});
-    await setOrgVisibility(fid, "public");
+    await seedFleetEntry(env.DB, userId, vid, {});
 
     const res = await SELF.fetch("http://localhost/api/u/ExtUser/fleet");
     expect(res.status).toBe(200);
@@ -173,8 +169,7 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     await setExtensionHandle(userId, "MixedCaseExt");
     await enableShare(userId);
     const vid = await seedVehicle(env.DB, { slug: "gladius-mixed", name: "Gladius" });
-    const fid = await seedFleetEntry(env.DB, userId, vid, {});
-    await setOrgVisibility(fid, "public");
+    await seedFleetEntry(env.DB, userId, vid, {});
 
     const res = await SELF.fetch("http://localhost/api/u/mixedcaseext/fleet");
     expect(res.status).toBe(200);
@@ -196,54 +191,84 @@ describe("Public Fleet API — /api/u/:handle/fleet", () => {
     expect(e.status).toBe(200);
   });
 
-  it("PATCH /api/vehicles/:id/visibility purges cache for extension-verified user", async () => {
-    const { userId, sessionToken } = await createTestUser(env.DB);
-    await setExtensionHandle(userId, "ExtPurge");
-    await enableShare(userId);
-    const vid = await seedVehicle(env.DB, { slug: "cutlass-extpurge", name: "Cutlass Black" });
-    const fleetId = await seedFleetEntry(env.DB, userId, vid, {});
-
-    let res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
-    let body = (await res.json()) as { ships: unknown[] };
-    expect(body.ships).toHaveLength(0);
-
-    const patch = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/visibility`, {
-      method: "PATCH",
-      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ org_visibility: "public" }),
-    });
-    expect(patch.status).toBe(200);
-
-    res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
-    body = (await res.json()) as { ships: Array<{ vehicle_name: string }> };
-    expect(body.ships).toHaveLength(1);
-  });
-
-  it("PATCH /api/vehicles/:id/visibility purges public fleet cache", async () => {
+  it("org visibility changes do not affect the public page", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     await setHandle(userId, "Helen");
     await enableShare(userId);
     const v1 = await seedVehicle(env.DB, { slug: "cutlass-helen", name: "Cutlass Black" });
     const fleetId = await seedFleetEntry(env.DB, userId, v1, {});
 
-    // Initial fetch — ship not visible (default visibility is private)
-    let res = await SELF.fetch("http://localhost/api/u/helen/fleet");
-    let body = await res.json() as { ships: unknown[] };
-    expect(body.ships).toHaveLength(0);
-
-    // Flip to public via the authenticated PATCH endpoint
     const patch = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/visibility`, {
       method: "PATCH",
       headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
-      body: JSON.stringify({ org_visibility: "public" }),
+      body: JSON.stringify({ org_visibility: "officers" }),
     });
     expect(patch.status).toBe(200);
 
-    // Next public fetch must reflect the change (test-env bypasses KV;
-    // in prod, the explicit purge ensures freshness)
-    res = await SELF.fetch("http://localhost/api/u/helen/fleet");
-    body = await res.json() as { ships: Array<{ vehicle_name: string }> };
+    const res = await SELF.fetch("http://localhost/api/u/helen/fleet");
+    const body = (await res.json()) as {
+      ships: Array<{ vehicle_name: string; org_visibility: string }>;
+    };
     expect(body.ships).toHaveLength(1);
-    expect((body.ships[0] as { vehicle_name: string }).vehicle_name).toBe("Cutlass Black");
+    expect(body.ships[0].vehicle_name).toBe("Cutlass Black");
+    expect(body.ships[0].org_visibility).toBe("officers");
+  });
+
+  it("adding a ship shows on the public page (cache purged on fleet writes)", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await setExtensionHandle(userId, "ExtPurge");
+    await enableShare(userId);
+    const vid = await seedVehicle(env.DB, { slug: "cutlass-extpurge", name: "Cutlass Black" });
+
+    let res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
+    let body = (await res.json()) as { ships: unknown[] };
+    expect(body.ships).toHaveLength(0);
+
+    const add = await SELF.fetch("http://localhost/api/vehicles/ingame", {
+      method: "POST",
+      headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle_id: vid }),
+    });
+    expect(add.status).toBe(200);
+
+    // Test env bypasses KV; in prod the explicit purge on fleet writes keeps this fresh.
+    res = await SELF.fetch("http://localhost/api/u/ExtPurge/fleet");
+    body = (await res.json()) as { ships: Array<{ vehicle_name: string }> };
+    expect(body.ships).toHaveLength(1);
+  });
+});
+
+describe("Public Fleet page — /u/:handle/fleet (non-JS clients)", () => {
+  it("serves the roster, title and Open Graph tags in the HTML shell", async () => {
+    const { userId } = await createTestUser(env.DB);
+    await setHandle(userId, "ShellUser");
+    await enableShare(userId);
+    const vid = await seedVehicle(env.DB, { slug: "carrack-shell", name: "Carrack" });
+    await seedFleetEntry(env.DB, userId, vid, { custom_name: "Jean-Luc" });
+
+    const res = await SELF.fetch("http://localhost/u/shelluser/fleet");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("<title>ShellUser's Fleet — SC Bridge</title>");
+    expect(html).toContain(`property="og:description" content="1 ship shared publicly on SC Bridge"`);
+    expect(html).toContain("Carrack");
+    expect(html).toContain("Jean-Luc");
+    expect(html).toMatch(/<div id="root">\s*<main/);
+  });
+
+  it("serves a not-found shell for an unknown handle", async () => {
+    const res = await SELF.fetch("http://localhost/u/nobody-here/fleet");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("No public fleet for");
+    expect(html).not.toContain("og:description");
+  });
+
+  it("leaves other SPA routes untouched", async () => {
+    const res = await SELF.fetch("http://localhost/ships");
+    const html = await res.text();
+    expect(html).toContain("<title>SC Bridge — Star Citizen Companion</title>");
+    expect(html).toMatch(/<div id="root"><\/div>/);
   });
 });
