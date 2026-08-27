@@ -91,7 +91,7 @@ export default function PublicFleet() {
 
         {ships.length === 0 ? (
           <div className="panel p-12 text-center text-gray-500">
-            No ships are marked public on this fleet.
+            This fleet has no ships yet.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

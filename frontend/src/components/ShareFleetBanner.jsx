@@ -119,9 +119,9 @@ export default function ShareFleetBanner() {
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-3 border-t border-sc-border/50">
           <p className="text-xs text-gray-400">
-            Publish a read-only fleet page. Only ships you mark{' '}
-            <strong className="text-white">Public</strong> in the Visibility column below appear.
-            Pledge prices and ship values are never shared.
+            Publish a read-only page listing every ship in your fleet. Pledge prices and ship
+            values are never shared. The Visibility column below is separate — it only controls
+            what your org's roster shows.
           </p>
 
           {error && (
