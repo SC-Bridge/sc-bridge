@@ -525,6 +525,44 @@ function stripManufacturerPrefix(name: string): string {
   return lower;
 }
 
+/** D1 caps one statement at 100 bound parameters (SQLITE_MAX_VARIABLE_NUMBER). */
+export const D1_MAX_BINDS = 100;
+
+/**
+ * is_pledgeable: 1 for ships matched in the ship-matrix, 0 for unmatched
+ * vehicles that came from p4k (uuid set — real in-game variants / mission
+ * props). NULL-uuid concept ships that didn't match are either mis-named or
+ * removed from the store — they keep their existing value.
+ *
+ * One atomic batch: reset p4k vehicles to 0, then flag the matched ids in
+ * chunks of D1_MAX_BINDS. The previous single `id IN (...)` statement bound
+ * every matched id (~300) at once, exceeded D1's limit, and rolled back the
+ * whole final batch of the nightly sync (production_status errored daily
+ * with "too many SQL variables" from 2026-04-21).
+ */
+export async function applyPledgeableFlags(
+  db: D1Database,
+  matchedIds: number[],
+): Promise<void> {
+  if (matchedIds.length === 0) return;
+  const statements: D1PreparedStatement[] = [
+    db.prepare(
+      `UPDATE vehicles SET is_pledgeable = 0
+         WHERE removed = 0 AND is_deleted = 0
+           AND uuid IS NOT NULL AND uuid != ''`,
+    ),
+  ];
+  for (const ids of chunkArray(matchedIds, D1_MAX_BINDS)) {
+    const placeholders = ids.map(() => "?").join(",");
+    statements.push(
+      db
+        .prepare(`UPDATE vehicles SET is_pledgeable = 1 WHERE id IN (${placeholders})`)
+        .bind(...ids),
+    );
+  }
+  await db.batch(statements);
+}
+
 /**
  * Fetch the live ship-matrix and update vehicles.production_status_id.
  * Also maintains is_pledgeable: ships found in the matrix are pledgeable (1),
@@ -926,49 +964,12 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       );
     }
 
-    // is_pledgeable: set 1 for matched ships, 0 for unmatched in-game variants.
-    // We only touch vehicles in the latest game version. Non-matched ones with
-    // UUID (came from p4k) get is_pledgeable=0. NULL-UUID concept ships that
-    // didn't match are either mis-named or removed from store — we leave them
-    // alone (their existing value wins).
-    let pledgeableErrors = 0;
-    try {
-      const matchedIdList = [...matchedIds];
-      if (matchedIdList.length > 0) {
-        // Set pledgeable=1 for the matched ones
-        const placeholders = matchedIdList.map(() => "?").join(",");
-        statements.push(
-          db
-            .prepare(
-              `UPDATE vehicles SET is_pledgeable = 1 WHERE id IN (${placeholders})`,
-            )
-            .bind(...matchedIdList),
-        );
-        // Set pledgeable=0 for everything else in the latest version that has a UUID
-        // (i.e. came from p4k — so it's a real in-game entity) and wasn't matched.
-        statements.push(
-          db
-            .prepare(
-              `UPDATE vehicles SET is_pledgeable = 0
-                 WHERE removed = 0
-                   AND uuid IS NOT NULL AND uuid != ''
-                   AND is_deleted = 0
-                   AND id NOT IN (${placeholders})`,
-            )
-            .bind(...matchedIdList),
-        );
-      }
-    } catch (err) {
-      // is_pledgeable column may not exist yet — count and continue
-      pledgeableErrors++;
-      console.log(`[rsi] is_pledgeable update skipped: ${err}`);
-    }
-
     // Execute in chunks (D1 batch has a statement limit)
-    const chunks = chunkArray(statements, 50);
-    for (const chunk of chunks) {
+    for (const chunk of chunkArray(statements, 50)) {
       await db.batch(chunk);
     }
+
+    await applyPledgeableFlags(db, [...matchedIds]);
 
     const detail =
       `matched=${matchedIds.size} unmatched=${unmatched} ` +
@@ -985,7 +986,6 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       vtype_updates: vtypeUpdates.length,
       scm_updates: scmUpdates.length,
       unmatched,
-      pledgeable_errors: pledgeableErrors,
     });
   } catch (err) {
     await updateSyncHistory(db, syncID, "error", 0, String(err));
