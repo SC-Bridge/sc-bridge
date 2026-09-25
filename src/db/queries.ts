@@ -1347,6 +1347,14 @@ export interface CollectionEntry {
   loot_map_id: number | null;
 }
 
+/**
+ * Every game_versions row, newest first — unfiltered.
+ *
+ * A PTU/EPTU row with `build_number IS NULL` has been purged and has no data
+ * behind it; a row whose version is at or below the active LIVE has shipped.
+ * Both are still returned here. Filtering is the consumer's job — see
+ * `frontend/src/lib/previewChannel.js` for the Preview Channel rules.
+ */
 export async function getGameVersions(db: D1Database): Promise<{ code: string; channel: string; is_default: number; released_at: string; build_number: string | null }[]> {
   const result = await db
     .prepare(`SELECT code, channel, is_default, released_at, build_number FROM game_versions ORDER BY id DESC`)
