@@ -1,8 +1,19 @@
 import { DollarSign, Rocket, Package, Users, Activity } from 'lucide-react'
 import PrivacyMask from './PrivacyMask'
+import ValueModeToggle from './ValueModeToggle'
+import useValueMode from '../hooks/useValueMode'
 
 export default function FleetOverviewGrid({ overview, totalVehicles, ltiPercent, readyPercent }) {
   const ltiCount = overview.lti_count || 0
+  const { isMelt } = useValueMode()
+
+  // Null (not zero) means the account has no pledge rows, so nothing is known
+  // about what can be reclaimed — hide the toggle rather than imply $0 melt.
+  const meltKnown = overview.total_melt_value != null
+  const showMelt = isMelt && meltKnown
+  const pledged = overview.total_pledge_value || 0
+  const melt = overview.total_melt_value || 0
+  const shown = showMelt ? melt : pledged
 
   return (
     <div className="bento-grid">
@@ -10,12 +21,18 @@ export default function FleetOverviewGrid({ overview, totalVehicles, ltiPercent,
       <div className="panel col-span-2 p-6 bg-grid animate-slide-up" style={{ animationDelay: '0ms' }}>
         <div className="flex items-center gap-2 mb-3">
           <DollarSign className="w-4 h-4 text-sc-accent" />
-          <span className="stat-label">Total Fleet Value</span>
+          <span className="stat-label">{showMelt ? 'Total Melt Value' : 'Total Fleet Value'}</span>
+          <span className="flex-1" />
+          <ValueModeToggle available={meltKnown} size="sm" />
         </div>
         <p className="text-5xl font-display font-bold text-sc-accent leading-tight">
-          <PrivacyMask placeholder="$•••••" value={overview.total_pledge_value || 0}>${(overview.total_pledge_value || 0).toLocaleString()}</PrivacyMask>
+          <PrivacyMask placeholder="$•••••" value={shown}>${shown.toLocaleString()}</PrivacyMask>
         </p>
-        <p className="text-sm text-gray-500 mt-2 font-mono">{totalVehicles} ships pledged</p>
+        <p className="text-sm text-gray-500 mt-2 font-mono">
+          {showMelt
+            ? <>of ${pledged.toLocaleString()} pledged across your account</>
+            : <>{totalVehicles} ships pledged</>}
+        </p>
       </div>
 
       {/* Ship Count */}

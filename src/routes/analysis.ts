@@ -47,14 +47,27 @@ export function analysisRoutes() {
 
     // Total pledge value from user_pledges (all pledges, not just ships)
     // This is the real total spent — ships, paints, add-ons, upgrades
+    //
+    // `melt` is the same population narrowed to is_reclaimable = 1 — RSI's own
+    // "this can be reclaimed for store credit" flag. Melting returns the
+    // pledge's current value, so there is no separate melt figure to store:
+    // meltable value IS value_cents. Keeping both sums in one query keeps the
+    // two totals computed over identical rows, so the UI toggle between them
+    // can never compare different populations.
     const pledgeTotal = await db
-      .prepare(`SELECT COALESCE(SUM(CASE WHEN value_cents > 0 AND currency NOT LIKE '%UEC%' THEN value_cents ELSE 0 END), 0) / 100.0 as total
+      .prepare(`SELECT
+           COALESCE(SUM(CASE WHEN value_cents > 0 AND currency NOT LIKE '%UEC%' THEN value_cents ELSE 0 END), 0) / 100.0 as total,
+           COALESCE(SUM(CASE WHEN value_cents > 0 AND currency NOT LIKE '%UEC%' AND is_reclaimable = 1 THEN value_cents ELSE 0 END), 0) / 100.0 as melt,
+           COUNT(*) as pledge_count
          FROM user_pledges WHERE user_id = ?`,
       )
       .bind(userID)
-      .first<{ total: number }>();
+      .first<{ total: number; melt: number; pledge_count: number }>();
 
     let totalPledgeValue = pledgeTotal?.total ?? 0;
+    // No pledge rows means no is_reclaimable data anywhere, so melt is unknown
+    // rather than zero. Null lets the UI hide the toggle instead of claiming $0.
+    const totalMeltValue = (pledgeTotal?.pledge_count ?? 0) > 0 ? (pledgeTotal?.melt ?? 0) : null;
 
     // Fallback: sum user_fleet.pledge_cost strings when user_pledges is empty
     // (persona accounts, older accounts that pre-date pledge-row seeding, or
@@ -77,7 +90,7 @@ export function analysisRoutes() {
       totalPledgeValue = fleetCostSum?.total ?? 0;
     }
 
-    const analysis = analyzeFleet(fleet, allVehicles, totalPledgeValue);
+    const analysis = analyzeFleet(fleet, allVehicles, totalPledgeValue, totalMeltValue);
     return c.json(analysis);
   });
 
@@ -391,7 +404,7 @@ function getRoleGroup(focus: string, classification?: string): string {
   return ROLE_GROUP_MAP[focus] ?? focus;
 }
 
-export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], totalPledgeValue: number = 0): FleetAnalysis {
+export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], totalPledgeValue: number = 0, totalMeltValue: number | null = null): FleetAnalysis {
   // Overview stats
   let flightReady = 0;
   let inConcept = 0;
@@ -589,6 +602,7 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], t
       in_concept: inConcept,
       total_cargo: totalCargo,
       total_pledge_value: totalPledgeValue,
+      total_melt_value: totalMeltValue,
       min_crew: minCrew,
       max_crew: maxCrew,
       lti_count: ltiCount,

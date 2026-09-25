@@ -414,6 +414,12 @@ async function getFleetList(
         p.image_url_large as paint_image_url_large,
         COALESCE(rps.key, ps.key) as production_status,
         COALESCE(latest_upg.new_value_cents, up.value_cents) as current_value_cents,
+        -- RSI's own "can be reclaimed for store credit" flag. Melting returns the
+        -- pledge's current value, so melt value IS current_value_cents when this
+        -- is 1; there is no separate melt figure. NULL means the ship has no
+        -- pledge row behind it (in-game purchase, promo, manual add) — those are
+        -- never meltable.
+        up.is_reclaimable as pledge_is_reclaimable,
         CASE WHEN v.replaced_by_vehicle_id IS NOT NULL THEN v.name END as original_vehicle_name
       FROM user_fleet uf
       JOIN vehicles v ON v.id = uf.vehicle_id
