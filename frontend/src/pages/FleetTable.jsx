@@ -17,6 +17,19 @@ import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
 import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
+import useValueMode from '../hooks/useValueMode'
+import { groupFleetByPledge, fleetValueTotals } from '../lib/fleetGrouping'
+import ValueModeToggle from '../components/ValueModeToggle'
+
+/** Whether this ship's pledge can be reclaimed for store credit.
+ *
+ * Melting returns the pledge's current value, so there is no separate melt
+ * figure — meltable value IS the pledge value. A null flag means no pledge row
+ * stands behind the ship (bought in game, promo code like the Saber Raven,
+ * manual add); none of those can be melted. */
+function isMeltable(entry) {
+  return entry.pledge_is_reclaimable === 1
+}
 
 /** Get display value and numeric sort value for a fleet entry's cost.
  * Prefers current_value_cents (from upgrade chain / pledge data) over raw pledge_cost string. */
@@ -198,6 +211,7 @@ export default function FleetTable() {
   const { data: loaners } = useFleetLoaners()
   const { data: orgsData } = useUserOrgs()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { isMelt } = useValueMode()
   const navigate = useNavigate()
   const sortKey = searchParams.get('sort') || 'vehicle_name'
   const sortDir = searchParams.get('dir') || 'asc'
@@ -364,6 +378,28 @@ export default function FleetTable() {
     return items
   }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, tagFilter, sortKey, sortDir])
 
+  // Fleet-wide money facts. Deliberately computed over the WHOLE fleet, not the
+  // filtered view — "what is my fleet worth" shouldn't change because someone
+  // typed in the search box. Grouping first is what stops a multi-ship pack
+  // being counted once per ship.
+  const meltTotals = useMemo(() => {
+    const groups = groupFleetByPledge(combined).filter((g) => g.kind === 'pledge')
+    const { pledgeCents, meltCents } = fleetValueTotals(groups)
+    return {
+      pledgeCents,
+      meltCents,
+      pledges: groups.length,
+      meltablePledges: groups.filter((g) => g.meltable).length,
+    }
+  }, [combined])
+
+  // No reclaimable flag anywhere means the account has no pledge rows to read
+  // it from — hide the toggle rather than offer a view that says $0.
+  const meltKnown = useMemo(
+    () => (combined || []).some((v) => v?.pledge_is_reclaimable != null),
+    [combined],
+  )
+
   const toggleSort = (key) => {
     setSearchParams(prev => {
       // Always set `sort` explicitly so ?dir=desc alone on the URL is never
@@ -516,7 +552,26 @@ export default function FleetTable() {
             ))}
           </select>
         )}
+        <span className="flex-1" />
+        <ValueModeToggle available={meltKnown} size="sm" />
       </div>
+
+      {meltKnown && (
+        <p className="text-xs text-gray-500 -mt-1">
+          {isMelt ? (
+            <>
+              <span className="font-mono text-gray-300">${Math.round(meltTotals.meltCents / 100).toLocaleString()}</span>
+              {' '}meltable across {meltTotals.meltablePledges} of {meltTotals.pledges} pledges holding ships.
+              {' '}Melting reclaims a whole pledge, so a pack takes every ship in it.
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-gray-300">${Math.round(meltTotals.pledgeCents / 100).toLocaleString()}</span>
+              {' '}pledged across {meltTotals.pledges} pledges holding ships.
+            </>
+          )}
+        </p>
+      )}
 
       <div className="panel overflow-hidden">
         <div className="overflow-x-auto">
@@ -529,7 +584,7 @@ export default function FleetTable() {
                   { key: 'size', label: 'Size' },
                   { key: 'focus', label: 'Role' },
                   { key: 'pack', label: 'Pack / Pledge' },
-                  { key: 'pledge', label: 'Pledge Value' },
+                  { key: 'pledge', label: isMelt ? 'Melt Value' : 'Pledge Value' },
                   { key: 'msrp', label: 'MSRP' },
                 ].map(({ key, label }) => (
                   <th
@@ -719,6 +774,16 @@ export default function FleetTable() {
                       {(() => {
                         const count = v.pledge_id ? (packCounts.get(v.pledge_id) || 1) : 1
                         const val = getShipValue(v)
+                        // In melt mode the column answers "what would I get back?".
+                        // Anything not reclaimable gets a stated fact, not $0 —
+                        // a zero here reads as a bug or a worthless ship.
+                        if (isMelt && !isMeltable(v)) {
+                          return (
+                            <span className="text-[11px] font-body text-gray-500 border border-gray-600/40 rounded px-2 py-0.5 whitespace-nowrap">
+                              Not meltable
+                            </span>
+                          )
+                        }
                         if (count > 1 && val.numeric > 0) {
                           return (
                             <PrivacyMask placeholder="$•••" value={val.numeric}>

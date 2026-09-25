@@ -489,6 +489,10 @@ export interface FleetOverview {
   in_concept: number;
   total_cargo: number;
   total_pledge_value: number;
+  /** Same population as total_pledge_value, narrowed to reclaimable pledges.
+   *  Null when the account has no user_pledges rows at all — melt is then
+   *  unknown, not zero, and the UI hides the pledge/melt toggle. */
+  total_melt_value: number | null;
   min_crew: number;
   max_crew: number;
   lti_count: number;
