@@ -76,6 +76,12 @@ export function useStatus() {
   return useAPI('/status')
 }
 
+// Game versions (public). Drives Settings → Preview Channel, which derives its
+// options from this rather than hardcoding a patch code — see lib/previewChannel.
+export function usePatches() {
+  return useAPI('/patches')
+}
+
 export function useShips() {
   // Server defaults to is_npc_only=0 (hides Vanduul/AI/defendship variants).
   // Player-obtainable but non-pledgeable ships (Drake Command Module, Krig

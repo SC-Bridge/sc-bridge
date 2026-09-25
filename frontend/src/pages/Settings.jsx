@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { useLLMConfig, setLLMConfig, testLLMConnection, usePreferences, setPreferences } from '../hooks/useAPI'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useLLMConfig, setLLMConfig, testLLMConnection, usePreferences, setPreferences, usePatches } from '../hooks/useAPI'
 import { Key, CheckCircle, XCircle, Loader, Trash2, Eye, EyeOff, Type, Globe, Shield, FlaskConical } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import PanelSection from '../components/PanelSection'
@@ -9,6 +9,7 @@ import useFontPreference from '../hooks/useFontPreference'
 import useTimezone from '../hooks/useTimezone'
 import usePrivacyMode from '../hooks/usePrivacyMode'
 import { formatDate } from '../lib/dates'
+import { derivePreviewOptions } from '../lib/previewChannel'
 
 const FONT_OPTIONS = [
   { key: 'default', label: 'Default', desc: 'Inter body + Electrolize headings', preview: '"Inter", "Segoe UI"' },
@@ -39,6 +40,18 @@ export default function Settings() {
   const [tzDropdownOpen, setTzDropdownOpen] = useState(false)
   const { data: config, refetch } = useLLMConfig()
   const { data: preferences, refetch: refetchPrefs } = usePreferences()
+  const { data: patches } = usePatches()
+
+  // Preview channels currently worth offering: has data, and ahead of LIVE.
+  const previewOptions = useMemo(() => derivePreviewOptions(patches), [patches])
+  const activePreview = preferences?.adminPreviewPatch || null
+  // A preview the user selected that has since ended (purged, or LIVE caught
+  // up). Without this they'd be left on a dead channel with no radio checked
+  // and no obvious way back to LIVE.
+  const orphanedPreview = activePreview && !previewOptions.some((o) => o.key === activePreview)
+    ? activePreview
+    : null
+  const showPreviewChannel = previewOptions.length > 0 || !!orphanedPreview
   const [activeProvider, setActiveProvider] = useState('anthropic')
   const [apiKey, setAPIKey] = useState('')
   const [testing, setTesting] = useState(false)
@@ -128,6 +141,7 @@ export default function Settings() {
         </div>
       )}
 
+      {showPreviewChannel && (
       <PanelSection title="Preview Channel" icon={FlaskConical}>
         <div className="p-5 space-y-4">
           <p className="text-sm text-gray-400">
@@ -136,12 +150,18 @@ export default function Settings() {
             from CIG's Public Test Universe — handy for verifying upcoming ships,
             crafting recipes, and items before they go live.
           </p>
+          {orphanedPreview && (
+            <p className="text-xs text-amber-400">
+              ⚠ The preview channel you were using ({orphanedPreview}) has ended —
+              its data is gone or the patch has since gone live. Switch to LIVE.
+            </p>
+          )}
           <div className="space-y-2">
             {[
               { key: null, label: 'LIVE', desc: 'Current released patch (default)' },
-              { key: '4.8.0-ptu', label: 'PTU 4.8.0', desc: 'Public Test Universe — preview data' },
+              ...previewOptions,
             ].map((c) => {
-              const checked = (preferences?.adminPreviewPatch || null) === c.key
+              const checked = activePreview === c.key
               return (
                 <label
                   key={c.key ?? 'live'}
@@ -179,7 +199,7 @@ export default function Settings() {
               )
             })}
           </div>
-          {preferences?.adminPreviewPatch && (
+          {activePreview && !orphanedPreview && (
             <p className="text-xs text-amber-400">
               ⚠ You're previewing PTU data. Some entries may be incomplete or
               change before going live. Switch back to LIVE for the released
@@ -188,6 +208,7 @@ export default function Settings() {
           )}
         </div>
       </PanelSection>
+      )}
 
       <PanelSection title="Display" icon={Type}>
         <div className="p-5 space-y-4">
