@@ -815,8 +815,12 @@ export function adminRoutes() {
    * DELETE /api/admin/versions/ptu
    *
    * Purge all game data for a PTU/EPTU channel. The game_versions row is kept
-   * alive but with build_number set to NULL, so the EXISTS check in
-   * getGameVersions naturally hides it from the dropdown until new data arrives.
+   * alive but with build_number set to NULL. A null build_number is the
+   * "no data here" signal: `getGameVersions` returns the row as-is (it applies
+   * no filter of its own — it did not, despite an earlier comment here, ever
+   * have an EXISTS check), and consumers of /api/patches drop it. See
+   * `frontend/src/lib/previewChannel.js`, which hides the Settings → Preview
+   * Channel option until new data arrives.
    *
    * Body: { channel?: "PTU" | "EPTU" } (defaults to "PTU")
    */
