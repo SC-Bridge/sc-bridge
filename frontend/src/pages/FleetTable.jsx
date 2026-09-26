@@ -556,18 +556,19 @@ export default function FleetTable() {
         <ValueModeToggle available={meltKnown} size="sm" />
       </div>
 
+      {/* Both modes render one short line of near-identical length, so flipping
+          the toggle never rewraps this and shoves the table down the page. */}
       {meltKnown && (
-        <p className="text-xs text-gray-500 -mt-1">
+        <p className="text-xs text-gray-500 -mt-1 truncate">
           {isMelt ? (
             <>
               <span className="font-mono text-gray-300">${Math.round(meltTotals.meltCents / 100).toLocaleString()}</span>
-              {' '}meltable across {meltTotals.meltablePledges} of {meltTotals.pledges} pledges holding ships.
-              {' '}Melting reclaims a whole pledge, so a pack takes every ship in it.
+              {' '}meltable across {meltTotals.meltablePledges} of {meltTotals.pledges} pledges holding ships
             </>
           ) : (
             <>
               <span className="font-mono text-gray-300">${Math.round(meltTotals.pledgeCents / 100).toLocaleString()}</span>
-              {' '}pledged across {meltTotals.pledges} pledges holding ships.
+              {' '}pledged across {meltTotals.pledges} pledges holding ships
             </>
           )}
         </p>
@@ -584,13 +585,16 @@ export default function FleetTable() {
                   { key: 'size', label: 'Size' },
                   { key: 'focus', label: 'Role' },
                   { key: 'pack', label: 'Pack / Pledge' },
-                  { key: 'pledge', label: isMelt ? 'Melt Value' : 'Pledge Value' },
+                  // Width is pinned so the column doesn't resize when the mode
+                  // flips — "Not meltable" is wider than a dollar figure, and
+                  // letting the table reflow shifts every column beside it.
+                  { key: 'pledge', label: isMelt ? 'Melt Value' : 'Pledge Value', w: 'min-w-[8.5rem]' },
                   { key: 'msrp', label: 'MSRP' },
-                ].map(({ key, label }) => (
+                ].map(({ key, label, w }) => (
                   <th
                     key={key}
                     scope="col"
-                    className="table-header cursor-pointer hover:text-gray-300 select-none whitespace-nowrap"
+                    className={`table-header cursor-pointer hover:text-gray-300 select-none whitespace-nowrap ${w || ''}`}
                     onClick={() => toggleSort(key)}
                     aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                   >
@@ -770,16 +774,18 @@ export default function FleetTable() {
                         return <span className="text-xs text-gray-600">{name || '-'}</span>
                       })()}
                     </td>
-                    <td className="table-cell font-mono text-gray-400">
+                    <td className="table-cell font-mono text-gray-400 min-w-[8.5rem]">
                       {(() => {
                         const count = v.pledge_id ? (packCounts.get(v.pledge_id) || 1) : 1
                         const val = getShipValue(v)
                         // In melt mode the column answers "what would I get back?".
                         // Anything not reclaimable gets a stated fact, not $0 —
-                        // a zero here reads as a bug or a worthless ship.
+                        // a zero here reads as a bug or a worthless ship. Plain
+                        // text, not a pill: the bordered chip drew more attention
+                        // than the values it sat beside.
                         if (isMelt && !isMeltable(v)) {
                           return (
-                            <span className="text-[11px] font-body text-gray-500 border border-gray-600/40 rounded px-2 py-0.5 whitespace-nowrap">
+                            <span className="text-xs font-body text-gray-500 whitespace-nowrap">
                               Not meltable
                             </span>
                           )
