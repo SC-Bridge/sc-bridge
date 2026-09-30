@@ -31,6 +31,20 @@ function byPledge(items) {
 }
 
 /**
+ * Whether a pledge belongs in a dollar total.
+ *
+ * UEC pledges are game credits, not money, and zero-value rows contribute
+ * nothing. The dashboard and fleet totals already exclude both (see the
+ * `currency NOT LIKE '%UEC%'` filter in the analysis query) — counting them
+ * here would make the hangar's pledge counts disagree with its own money.
+ */
+function countsTowardMoney(item) {
+  if (!item) return false
+  if ((item.pledge_value_cents ?? 0) <= 0) return false
+  return !String(item.pledge_currency ?? '').toUpperCase().includes('UEC')
+}
+
+/**
  * Melt state for one item, given the full hangar list.
  *
  *   `free`     — its pledge holds nothing else; reclaim it and lose only this
@@ -75,9 +89,12 @@ export function hangarMeltSummary(items) {
   let shipCostCents = 0
   let meltablePledges = 0
   let lockedPledges = 0
+  let countedPledges = 0
 
   for (const group of groups.values()) {
     const head = group[0]
+    if (!countsTowardMoney(head)) continue
+    countedPledges += 1
     const cents = head.pledge_value_cents ?? 0
     if (head.pledge_is_reclaimable !== 1) {
       lockedPledges += 1
@@ -93,7 +110,7 @@ export function hangarMeltSummary(items) {
     meltCents,
     keepShipsCents,
     shipCostCents,
-    pledges: groups.size,
+    pledges: countedPledges,
     meltablePledges,
     lockedPledges,
   }

@@ -9,6 +9,7 @@ const item = (over = {}) => ({
   pledge_id: 'pledge_id' in over ? over.pledge_id : 10,
   pledge_value_cents: 'pledge_value_cents' in over ? over.pledge_value_cents : 750,
   pledge_is_reclaimable: 'pledge_is_reclaimable' in over ? over.pledge_is_reclaimable : 1,
+  pledge_currency: 'pledge_currency' in over ? over.pledge_currency : 'Store Credit',
 })
 
 describe('meltStateFor', () => {
@@ -120,5 +121,28 @@ describe('meltStatesFor', () => {
 
   it('handles empty input', () => {
     expect(meltStatesFor([]).size).toBe(0)
+  })
+})
+
+describe('hangarMeltSummary currency and value filters', () => {
+  it('ignores UEC pledges, which are game credits not dollars', () => {
+    // The dashboard and fleet totals already exclude these. If the hangar
+    // counted them the pledge counts would disagree with the money.
+    const items = [
+      item({ id: 1, pledge_id: 1, pledge_value_cents: 500, pledge_currency: 'Store Credit' }),
+      item({ id: 2, pledge_id: 2, pledge_value_cents: 999999, pledge_currency: 'UEC' }),
+    ]
+    const s = hangarMeltSummary(items)
+    expect(s.meltCents).toBe(500)
+    expect(s.pledges).toBe(1)
+    expect(s.meltablePledges).toBe(1)
+  })
+
+  it('ignores zero-value pledges', () => {
+    const items = [
+      item({ id: 1, pledge_id: 1, pledge_value_cents: 500 }),
+      item({ id: 2, pledge_id: 2, pledge_value_cents: 0 }),
+    ]
+    expect(hangarMeltSummary(items).pledges).toBe(1)
   })
 })

@@ -81,17 +81,28 @@ function HangarItemCard({ item, isMelt, melt }) {
           )}
         </div>
         {(pledgeShort || pledgeValue) && (
-          <div className="text-[10px] text-gray-500 font-mono leading-tight pt-1 border-t border-white/[0.05] truncate">
-            {pledgeShort && <span className="truncate">↳ {pledgeShort}</span>}
-            {isMelt
-              ? melt?.state === 'locked'
-                ? <span className="ml-1.5 font-body text-gray-600">· not meltable</span>
-                : (
-                  <span className={`ml-1.5 ${melt?.costsAShip ? 'text-amber-500/80' : 'text-gray-600'}`}>
-                    · {pledgeValue}{melt?.costsAShip ? ' · takes a ship' : melt?.state === 'bundled' ? ` · +${melt.siblings}` : ''}
-                  </span>
-                )
-              : pledgeValue && <span className="ml-1.5 text-gray-600">· {pledgeValue}</span>}
+          // Two rows, not one. A single truncating line let the pledge name eat
+          // the whole width and clip the value off the end — which hid melt
+          // state completely in grid view, the default. The name may truncate;
+          // the number never does.
+          <div className="text-[10px] text-gray-500 font-mono leading-tight pt-1 border-t border-white/[0.05] space-y-0.5">
+            {pledgeShort && <div className="truncate">↳ {pledgeShort}</div>}
+            {isMelt ? (
+              melt?.state === 'locked' ? (
+                <div className="font-body text-gray-600">Not meltable</div>
+              ) : (
+                <div className={melt?.costsAShip ? 'text-amber-500/80' : 'text-gray-400'}>
+                  {pledgeValue}
+                  {melt?.costsAShip
+                    ? <span className="font-body"> · takes a ship</span>
+                    : melt?.state === 'bundled'
+                      ? <span className="font-body"> · +{melt.siblings} in pledge</span>
+                      : null}
+                </div>
+              )
+            ) : (
+              pledgeValue && <div className="text-gray-400">{pledgeValue}</div>
+            )}
           </div>
         )}
       </div>
