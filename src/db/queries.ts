@@ -724,6 +724,10 @@ export interface HangarItemRow {
   pledge_value: string | null;
   pledge_value_cents: number | null;
   pledge_currency: string | null;
+  /** 1 when the owning pledge can be reclaimed for store credit; 0 when not;
+   *  null when the item has no pledge row behind it. Belongs to the pledge,
+   *  not the item — see the note in getHangarItems. */
+  pledge_is_reclaimable: number | null;
   pledge_date_parsed: string | null;
 }
 
@@ -767,6 +771,12 @@ export async function getUserHangarItems(
          up.value AS pledge_value,
          up.value_cents AS pledge_value_cents,
          up.currency AS pledge_currency,
+         -- Reclaiming returns the pledge's value, so melt value IS
+         -- pledge_value_cents when this is 1. Note it belongs to the PLEDGE:
+         -- every item sharing a pledge repeats it, and melting takes all of
+         -- them together. The UI has to say so — a paint bundled with a ship
+         -- cannot be melted without losing the ship.
+         up.is_reclaimable AS pledge_is_reclaimable,
          up.pledge_date_parsed
        FROM user_pledge_items upi
        JOIN user_pledges up ON up.id = upi.user_pledge_id

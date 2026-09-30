@@ -1,4 +1,7 @@
 import React, { useMemo, useState } from 'react'
+import useValueMode from '../hooks/useValueMode'
+import ValueModeToggle from '../components/ValueModeToggle'
+import { meltStatesFor, hangarMeltSummary } from '../lib/hangarMelt'
 import { useSearchParams } from 'react-router-dom'
 import { Package, LayoutGrid, List, ImageOff, Tag, Building2 } from 'lucide-react'
 import { useHangar } from '../hooks/useAPI'
@@ -41,7 +44,7 @@ function FilterChip({ active, onClick, accent, children }) {
   )
 }
 
-function HangarItemCard({ item }) {
+function HangarItemCard({ item, isMelt, melt }) {
   const kind = item.kind ?? 'uncategorised'
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
@@ -78,9 +81,28 @@ function HangarItemCard({ item }) {
           )}
         </div>
         {(pledgeShort || pledgeValue) && (
-          <div className="text-[10px] text-gray-500 font-mono leading-tight pt-1 border-t border-white/[0.05] truncate">
-            {pledgeShort && <span className="truncate">↳ {pledgeShort}</span>}
-            {pledgeValue && <span className="ml-1.5 text-gray-600">· {pledgeValue}</span>}
+          // Two rows, not one. A single truncating line let the pledge name eat
+          // the whole width and clip the value off the end — which hid melt
+          // state completely in grid view, the default. The name may truncate;
+          // the number never does.
+          <div className="text-[10px] text-gray-500 font-mono leading-tight pt-1 border-t border-white/[0.05] space-y-0.5">
+            {pledgeShort && <div className="truncate">↳ {pledgeShort}</div>}
+            {isMelt ? (
+              melt?.state === 'locked' ? (
+                <div className="font-body text-gray-600">Not meltable</div>
+              ) : (
+                <div className={melt?.costsAShip ? 'text-amber-500/80' : 'text-gray-400'}>
+                  {pledgeValue}
+                  {melt?.costsAShip
+                    ? <span className="font-body"> · takes a ship</span>
+                    : melt?.state === 'bundled'
+                      ? <span className="font-body"> · +{melt.siblings} in pledge</span>
+                      : null}
+                </div>
+              )
+            ) : (
+              pledgeValue && <div className="text-gray-400">{pledgeValue}</div>
+            )}
           </div>
         )}
       </div>
@@ -88,7 +110,26 @@ function HangarItemCard({ item }) {
   )
 }
 
-function HangarItemRow({ item }) {
+/** Melt state as a short right-aligned label, width matched to the value slot
+ *  so switching modes never reflows the row. */
+function MeltCell({ melt, value }) {
+  if (melt.state === 'locked') {
+    return <span className="text-[10px] font-body text-gray-600 w-16 text-right shrink-0">Not meltable</span>
+  }
+  return (
+    <span
+      className="text-[10px] font-mono text-gray-500 w-16 text-right shrink-0"
+      title={melt.state === 'bundled'
+        ? `Reclaiming this melts the whole pledge — ${melt.siblings} other item${melt.siblings === 1 ? '' : 's'} go with it${melt.costsAShip ? ', including a ship' : ''}`
+        : 'This pledge holds nothing else — safe to reclaim on its own'}
+    >
+      {value}
+      {melt.costsAShip && <span className="block text-[9px] text-amber-500/70 leading-none">ship</span>}
+    </span>
+  )
+}
+
+function HangarItemRow({ item, isMelt, melt }) {
   const kind = item.kind ?? 'uncategorised'
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
@@ -118,9 +159,11 @@ function HangarItemRow({ item }) {
       {item.manufacturer_code && (
         <span className="text-[10px] font-mono text-gray-500 w-12 text-right">{item.manufacturer_code}</span>
       )}
-      {pledgeValue && (
-        <span className="text-[10px] font-mono text-gray-500 w-16 text-right">{pledgeValue}</span>
-      )}
+      {isMelt
+        ? <MeltCell melt={melt} value={pledgeValue || '—'} />
+        : pledgeValue && (
+            <span className="text-[10px] font-mono text-gray-500 w-16 text-right shrink-0">{pledgeValue}</span>
+          )}
     </div>
   )
 }
@@ -133,6 +176,7 @@ export default function Hangar() {
   const kindFilter = searchParams.get('kind') ?? 'all'
   const mfrFilter = searchParams.get('mfr') ?? 'all'
   const view = searchParams.get('view') === 'list' ? 'list' : 'grid'
+  const { isMelt } = useValueMode()
 
   const updateParam = (key, value) => {
     setSearchParams((prev) => {
@@ -147,6 +191,15 @@ export default function Hangar() {
   const total = data?.total ?? 0
 
   const kinds = useMemo(() => orderedKinds(counts), [counts])
+
+  // Melt facts are computed over the WHOLE hangar, never the filtered view:
+  // "what can I raise?" must not change because someone typed in the search box.
+  const meltSummary = useMemo(() => hangarMeltSummary(items), [items])
+  const meltStates = useMemo(() => meltStatesFor(items), [items])
+  const meltKnown = useMemo(
+    () => items.some((i) => i?.pledge_is_reclaimable != null),
+    [items],
+  )
 
   const manufacturers = useMemo(() => {
     const map = new Map()
@@ -209,6 +262,27 @@ export default function Hangar() {
         />
       ) : (
         <>
+          {meltKnown && (
+            <div className="panel p-4 flex flex-wrap items-end gap-x-8 gap-y-3">
+              <div>
+                <p className="text-2xl font-mono text-sc-accent leading-none">
+                  ${Math.round(meltSummary.keepShipsCents / 100).toLocaleString()}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1.5">Meltable without giving up a ship</p>
+              </div>
+              <div>
+                <p className="text-2xl font-mono text-gray-300 leading-none">
+                  ${Math.round(meltSummary.meltCents / 100).toLocaleString()}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1.5">
+                  Meltable in total, across {meltSummary.meltablePledges} of {meltSummary.pledges} pledges
+                </p>
+              </div>
+              <span className="flex-1" />
+              <ValueModeToggle available={meltKnown} size="sm" />
+            </div>
+          )}
+
           <div className="space-y-3">
             <SearchInput
               value={search}
@@ -275,13 +349,13 @@ export default function Hangar() {
           ) : view === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filtered.map((item) => (
-                <HangarItemCard key={item.id} item={item} />
+                <HangarItemCard key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} />
               ))}
             </div>
           ) : (
             <div className="space-y-1.5">
               {filtered.map((item) => (
-                <HangarItemRow key={item.id} item={item} />
+                <HangarItemRow key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} />
               ))}
             </div>
           )}
