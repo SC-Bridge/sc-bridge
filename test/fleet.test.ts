@@ -79,6 +79,63 @@ describe("Fleet API — /api/vehicles", () => {
       const fleet = (await res.json()) as Array<Record<string, unknown>>;
       expect(fleet).toHaveLength(2);
     });
+
+    it("reports the pledge's current value for a CCU'd ship, not the first upgrade", async () => {
+      // Mr_Xul's Polaris: a 2019 Pisces Expedition pack CCU'd four times.
+      // RSI's upgrade log lists newest first and the import stores it in that
+      // order, with sort_order running across the whole payload. The pledge
+      // row itself already carries the post-upgrade value.
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { name: "Polaris" });
+      await seedFleetEntry(env.DB, userId, vehicleId, {
+        pledge_id: "19126683",
+        pledge_name: "Standalone Ship - Anvil C8X Pisces Expedition - Warband - IAE 2949",
+        pledge_cost: "$745.00",
+      });
+      await env.DB
+        .prepare("INSERT INTO user_hangar_syncs (user_id, source) VALUES (?, 'extension')")
+        .bind(userId)
+        .run();
+      const sync = await env.DB
+        .prepare("SELECT id FROM user_hangar_syncs WHERE user_id = ? ORDER BY id DESC LIMIT 1")
+        .bind(userId)
+        .first<{ id: number }>();
+      await env.DB
+        .prepare(
+          `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value, value_cents, currency, is_upgraded, is_reclaimable)
+           VALUES (?, ?, 19126683, 'Standalone Ship - Anvil C8X Pisces Expedition - Warband - IAE 2949', '$745.00 USD', 74500, 'Store Credit', 1, 1)`,
+        )
+        .bind(userId, sync!.id)
+        .run();
+      const pledge = await env.DB
+        .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = 19126683")
+        .bind(userId)
+        .first<{ id: number }>();
+      const chain = [
+        { order: 14, name: "Upgrade - Perseus to Polaris", cents: 74500 },
+        { order: 15, name: "Upgrade - Carrack Expedition w/C8X to RSI Perseus", cents: 67000 },
+        { order: 16, name: "Upgrade - Caterpillar Best In Show Edition to Carrack Expedition w/C8X", cents: 64000 },
+        { order: 17, name: "Upgrade - C8X Pisces Expedition to Caterpillar Best In Show Edition", cents: 29000 },
+      ];
+      for (const ccu of chain) {
+        await env.DB
+          .prepare(
+            `INSERT INTO user_pledge_upgrades (user_id, user_pledge_id, upgrade_name, new_value_cents, sort_order)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .bind(userId, pledge!.id, ccu.name, ccu.cents, ccu.order)
+          .run();
+      }
+
+      const res = await SELF.fetch("http://localhost/api/vehicles", {
+        headers: await authHeaders(sessionToken),
+      });
+      expect(res.status).toBe(200);
+      const fleet = (await res.json()) as Array<Record<string, unknown>>;
+      expect(fleet).toHaveLength(1);
+      expect(fleet[0].current_value_cents).toBe(74500);
+      expect(fleet[0].pledge_is_reclaimable).toBe(1);
+    });
   });
 
   describe("GET /api/vehicles/with-insurance", () => {
