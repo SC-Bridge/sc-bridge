@@ -413,7 +413,12 @@ async function getFleetList(
         p.image_url_small as paint_image_url_small,
         p.image_url_large as paint_image_url_large,
         COALESCE(rps.key, ps.key) as production_status,
-        COALESCE(latest_upg.new_value_cents, up.value_cents) as current_value_cents,
+        -- The pledge row's value is RSI's post-upgrade figure (js-pledge-value),
+        -- the same number the hangar page and the overview total use. It is NOT
+        -- derived from user_pledge_upgrades: that log is stored newest-first,
+        -- and the last CCU applied is the only row whose value matches — the
+        -- rest are intermediate steps.
+        up.value_cents as current_value_cents,
         -- RSI's own "can be reclaimed for store credit" flag. Melting returns the
         -- pledge's current value, so melt value IS current_value_cents when this
         -- is 1; there is no separate melt figure. NULL means the ship has no
@@ -432,13 +437,6 @@ async function getFleetList(
       LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
       LEFT JOIN user_pledges up ON up.user_id = uf.user_id
         AND up.rsi_pledge_id = CAST(uf.pledge_id AS INTEGER)
-      LEFT JOIN (
-        SELECT user_pledge_id, new_value_cents
-        FROM user_pledge_upgrades
-        WHERE (user_pledge_id, sort_order) IN (
-          SELECT user_pledge_id, MAX(sort_order) FROM user_pledge_upgrades GROUP BY user_pledge_id
-        )
-      ) latest_upg ON latest_upg.user_pledge_id = up.id
       WHERE uf.user_id = ?
       ORDER BY COALESCE(rv.name, v.name)`,
     )

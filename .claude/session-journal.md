@@ -1,5 +1,13 @@
 # Session Journal
 
+## Current Focus (2026-10-28 NZDT) — Fleet page showed the FIRST CCU's value, not the pledge's current value (Mr_Xul's Polaris $290 vs $745)
+**Discord report 2026-10-27 (Mr_Xul): /fleet showed his Polaris melt as $290 while the sync extension's inline "Melt:" read $745. Root cause in `src/routes/fleet.ts` getFleetList: `current_value_cents = COALESCE(latest_upg.new_value_cents, up.value_cents)` where `latest_upg` picked `MAX(sort_order)` per pledge — but RSI's upgrade log is newest-first and import.ts stores it in that order (sort_order = payload index), so MAX is the OLDEST CCU (Pisces→Caterpillar BIS, $290), not the newest (Perseus→Polaris, $745). Pre-dated the melt feature (came in with 6a2429e2, March); the melt toggle just made it visible. Local D1 clone: 78 pledges with upgrade rows, the row the query used matched the pledge value in only 36. Fix (branch `fix/fleet-current-value-from-pledge` off origin/main): drop the upgrade-log join, use `up.value_cents` (RSI's js-pledge-value, already post-upgrade; same source as /hangar and the overview total). Regression test in test/fleet.test.ts seeds Xul's real chain. Worker suite + typecheck + build run before commit. Deploy flow: PR → push to staging → verify on staging.scbridge.app → main.**
+
+### 2026-10-28 — Decision: pledge value is the single source for current value
+- `user_pledges.value_cents` IS the current value; the upgrade chain only ever agreed with it at its newest row (76/78 in the clone; the 2 misses are 2014-era "Ship Upgrades - X to Y" rows the extension's heuristic parser mis-reads). Deriving current value from the chain was redundant and fragile, so it was removed rather than re-ordered (MIN instead of MAX would have "worked" but kept a second source of truth).
+- The `/api/vehicles/:id/upgrades` CCU-chain endpoint is untouched (ORDER BY sort_order ASC = newest first — same convention, now documented in the query comment).
+- Memory correction noted: `gh` IS authenticated on this machine now (deploy-branch-base memory said it was not).
+
 ## Current Focus (2026-09-25 NZST) — Preview Channel panel made data-driven (was hardcoded 4.8.0-ptu)
 **Gavin spotted Settings → Preview Channel still offering "PTU 4.8.0" while LIVE is 4.10.1. Root cause: `frontend/src/pages/Settings.jsx` hardcoded the option array in commit 4cfbdf71 (2026-05-08) and nothing ever updated it. Backend already had everything needed (`GET /api/patches`), but the only consumer was Admin/Versions.jsx — Settings never called it. Fixed: new `frontend/src/lib/previewChannel.js` derives options from /api/patches; panel hidden entirely when no active preview. All tests green (frontend 673, worker 951, typecheck, build). UNCOMMITTED — awaiting Gavin.**
 
