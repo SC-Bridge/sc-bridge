@@ -13,14 +13,14 @@ import { setupTestDatabase } from "./apply-migrations";
  * fails; invitation.createdAt/teamId → org invites fail; session.impersonatedBy
  * → admin impersonation fails).
  *
- * This test asserts every column better-auth 1.6 + our active plugins
+ * This test asserts every column better-auth 1.7 + our active plugins
  * (admin, organization, twoFactor, passkey) expect actually exists. When you
  * bump better-auth, diff its schema (node_modules/better-auth/dist/**​/schema.*)
  * against this list and add a migration for any new column — then update this
  * list. See memory: betterauth-16-twofactor-verified-column-missing.
  */
 
-// Columns better-auth 1.6.13 + active plugins require on each managed table.
+// Columns better-auth 1.7.14 + active plugins require on each managed table.
 // Extra columns (SC Bridge app columns, legacy webauthnUserID) are allowed.
 const REQUIRED_BA_COLUMNS: Record<string, string[]> = {
   user: [
@@ -52,7 +52,11 @@ const REQUIRED_BA_COLUMNS: Record<string, string[]> = {
     "inviterId", "createdAt", "teamId",
   ],
   // twoFactor plugin
-  twoFactor: ["id", "secret", "backupCodes", "userId", "verified"],
+  twoFactor: [
+    "id", "secret", "backupCodes", "userId", "verified",
+    // 1.7 lockout (migration 0274)
+    "failedVerificationCount", "lockedUntil",
+  ],
   // passkey plugin
   passkey: [
     "id", "name", "publicKey", "userId", "credentialID", "counter",
@@ -73,7 +77,7 @@ describe("Better Auth — schema parity", () => {
   });
 
   for (const [table, required] of Object.entries(REQUIRED_BA_COLUMNS)) {
-    it(`${table} has every column better-auth 1.6 expects`, async () => {
+    it(`${table} has every column better-auth 1.7 expects`, async () => {
       const actual = await tableColumns(table);
       const missing = required.filter((c) => !actual.has(c));
       expect(missing, `${table} is missing better-auth columns: ${missing.join(", ")}`).toEqual([]);
