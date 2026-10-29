@@ -1,7 +1,31 @@
 # Session Journal
 
-## Current Focus (2026-10-28 NZDT) — Fleet page showed the FIRST CCU's value, not the pledge's current value (Mr_Xul's Polaris $290 vs $745)
+## Current Focus (2026-10-28 NZDT) — Fleet value fix (#258) + deps/audit gate (#259) LIVE ON STAGING; prod D1 now AT 0275 (applied+verified 2026-10-29 07:35Z, 1.6 worker still 200); PR #259 then #258 can merge to main on Gavin's word
 **Discord report 2026-10-27 (Mr_Xul): /fleet showed his Polaris melt as $290 while the sync extension's inline "Melt:" read $745. Root cause in `src/routes/fleet.ts` getFleetList: `current_value_cents = COALESCE(latest_upg.new_value_cents, up.value_cents)` where `latest_upg` picked `MAX(sort_order)` per pledge — but RSI's upgrade log is newest-first and import.ts stores it in that order (sort_order = payload index), so MAX is the OLDEST CCU (Pisces→Caterpillar BIS, $290), not the newest (Perseus→Polaris, $745). Pre-dated the melt feature (came in with 6a2429e2, March); the melt toggle just made it visible. Local D1 clone: 78 pledges with upgrade rows, the row the query used matched the pledge value in only 36. Fix (branch `fix/fleet-current-value-from-pledge` off origin/main): drop the upgrade-log join, use `up.value_cents` (RSI's js-pledge-value, already post-upgrade; same source as /hangar and the overview total). Regression test in test/fleet.test.ts seeds Xul's real chain. Worker suite + typecheck + build run before commit. Deploy flow: PR → push to staging → verify on staging.scbridge.app → main.**
+
+### 2026-10-29 — Completed: migrations 0274+0275 applied to scbridge-production (Gavin's explicit permission)
+- `!` shell hung on wrangler's confirm prompt, so Gavin told me to run it. `d1 execute` takes `-y`; `migrations apply` does NOT (unknown-arg error) but auto-confirms in a non-interactive shell.
+- Before: tracker 0273, twoFactor id..verified, passkey DDL had `webauthnUserID TEXT NOT NULL` (+ deviceType/backedUp NOT NULL, aaguid), 2 twoFactor rows, 0 passkey rows.
+- After (pragma_table_info, not tracker): 0275 last; twoFactor +failedVerificationCount,lockedUntil (both rows default 0/NULL); passkey has no webauthnUserID. Live 1.6 worker unaffected (status/session/home all 200).
+- Next, on Gavin's word: merge #259 → watch prod deploy → curl checks → resolve #258 journal conflict → merge #258 → check a CCU'd ship on /fleet.
+
+### 2026-10-28 — Plan: prod rollout runbook written for Gavin (migrations 0274+0275 → verify → merge #259 → fix #258 journal conflict → merge #258)
+- Dry merge shows #258 conflicts with #259 ONLY on .claude/session-journal.md (259's journal is a superset) — after #259 lands, merge main into fix/fleet-current-value-from-pledge taking main's journal, push, then merge #258.
+- Migrations are backward compatible with the 1.6 worker (0274 nullable/defaulted adds; 0275 drops a column 1.6 never touches), so applying them BEFORE the deploy is safe and leaves `wrangler rollback` viable.
+- Prod D1 reads/writes are classifier-blocked from this session; Gavin runs the wrangler steps. deploy.yml deploys prod on push to main with NO smoke job (staging only) — manual curl checks after.
+
+### 2026-10-28 — Completed: fleet value fix VERIFIED on staging with Playwright (Xul's real staging account via e2e-admin impersonation)
+- Script: scratchpad/pw/verify-fleet-value.mts (tsx; ESM needs file:// URL imports on Windows; import playwright from the repo's node_modules). Logged in as e2e-admin (super_admin persona), POST /api/auth/admin/impersonate-user {userId: hvQenJZ6…} → session user bloodeagle@gmail.com.
+- /api/vehicles: 19126683 RSI Polaris current_value_cents=74500 (old bug 29000) PASS; 20816061 Apollo Medivac 25500 (old 9500) PASS; 26150209 Liberator 53000 (old 35500) PASS. /fleet page Polaris row text: "… $745 $975 Flight Ready Lifetime …" — $745 present, $290 absent. Screenshot staging-fleet-polaris.png sent to Gavin.
+- Gotcha: stop-impersonating returned 415 without a JSON content-type → the impersonation session (created 08:34Z) lingers until it expires 09:34Z. Script fixed for next time. No e2e persona has pledge/upgrade rows (HangarXplor imports only) — impersonation is the only way to see hangar-sync data as the app renders it.
+
+### 2026-10-28 — Completed: staging LIVE on 5681addc (fleet fix #258 + deps #259); run 40655617799 test/deploy/smoke all green
+- staging.scbridge.app: /api/status 200, /api/auth/get-session 200, frontend 200. Staging D1 at migration 0275 (0274 twoFactor lockout cols, 0275 passkey.webauthnUserID dropped), both verified via pragma_table_info.
+- Local branches: `deps/audit-fixes` (b5dc88fc, = PR #259), `staging-merge-deps` (5681addc = origin/staging), `fix/fleet-current-value-from-pledge` (aa6f440d, = PR #258).
+- NEXT (Gavin): verify a CCU'd ship on staging /fleet (Xul's pledge 19126683 is in the staging DB — expect $745 not $290). Then PROD: apply 0274+0275 to scbridge-production D1 FIRST (classifier blocks prod from this session), verify pragma_table_info('twoFactor') has failedVerificationCount+lockedUntil and passkey lacks webauthnUserID, THEN merge #259 to main (clears the audit gate), then #258. Merging either first would deploy a 1.7 worker that 500s on every request.
+- Lesson: `wrangler tail scbridge-staging` with NO --env (with `--env staging` wrangler looks for `scbridge-staging-staging`). Deploy-time smoke test is what caught it; the suite can't see bootstrap-shape drift unless generate-test-schema.sh mirrors the real DDL (now it does for passkey).
+
+### 2026-10-28 — Started: Gavin approved fix-forward; 0275 applied to staging D1 (passkey cols now id,name,publicKey,userId,counter,deviceType,backedUp,transports,credentialID,createdAt,aaguid; tracker 0275), committing to deps branch, then re-push staging
 
 ### 2026-10-28 — Blocked: staging deploy 40652983636 deployed but EVERY request 500s — better-auth 1.7 rejects passkey.webauthnUserID
 - test+deploy jobs green, smoke-test red (status 500). `wrangler tail scbridge-staging` (positional name, no --env — `--env staging` makes wrangler look for `scbridge-staging-staging`): `Database schema mismatch / Required columns Better Auth never writes / passkey.webauthnUserID / help: make nullable, default, or remove`.

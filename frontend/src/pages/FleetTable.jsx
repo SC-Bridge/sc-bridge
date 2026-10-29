@@ -32,9 +32,9 @@ function isMeltable(entry) {
 }
 
 /** Get display value and numeric sort value for a fleet entry's cost.
- * Prefers current_value_cents (from upgrade chain / pledge data) over raw pledge_cost string. */
+ * Prefers current_value_cents (the pledge row's post-upgrade value) over raw pledge_cost string. */
 function getShipValue(entry) {
-  // Prefer current_value_cents from pledge/upgrade data
+  // Prefer current_value_cents from the pledge row
   if (entry.current_value_cents != null && entry.current_value_cents > 0) {
     const dollars = entry.current_value_cents / 100
     return { display: `$${Math.round(dollars).toLocaleString('en-US')}`, numeric: dollars }
