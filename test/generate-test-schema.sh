@@ -47,9 +47,10 @@ COMBINED="$WORK/combined.sql"
   # a D1 migration file. Must exist BEFORE migration 0256 which ALTERs it.
   echo 'CREATE TABLE IF NOT EXISTS "twoFactor" (id TEXT PRIMARY KEY NOT NULL, secret TEXT NOT NULL, backupCodes TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id));'
   # better-auth passkey plugin table — also runtime-created/out-of-band. Legacy
-  # shape (matches prod: includes webauthnUserID, no aaguid). Migration 0257 adds
-  # aaguid. Must exist BEFORE 0257 ALTERs it.
-  echo 'CREATE TABLE IF NOT EXISTS "passkey" (id TEXT PRIMARY KEY NOT NULL, name TEXT, publicKey TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), webauthnUserID TEXT, counter INTEGER NOT NULL DEFAULT 0, deviceType TEXT, backedUp INTEGER, transports TEXT, credentialID TEXT NOT NULL, createdAt TEXT);'
+  # shape (matches staging/prod: webauthnUserID NOT NULL, no aaguid). 0257 adds
+  # aaguid; 0275 drops webauthnUserID (better-auth 1.7 refuses a NOT NULL column
+  # it never writes). Must exist BEFORE 0257 ALTERs it.
+  echo 'CREATE TABLE IF NOT EXISTS "passkey" (id TEXT PRIMARY KEY NOT NULL, name TEXT, publicKey TEXT NOT NULL, userId TEXT NOT NULL REFERENCES "user"(id), webauthnUserID TEXT NOT NULL, counter INTEGER NOT NULL DEFAULT 0, deviceType TEXT, backedUp INTEGER, transports TEXT, credentialID TEXT NOT NULL, createdAt TEXT);'
   # All migrations in lexical order (matches readD1Migrations).
   COUNT=0
   # Quoted glob (already lexically sorted by the shell) — handles repo paths
