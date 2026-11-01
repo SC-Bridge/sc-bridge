@@ -1,7 +1,32 @@
 # Session Journal
 
-## Current Focus (2026-10-28 NZDT) — Fleet value fix (#258) + deps/audit gate (#259) LIVE ON STAGING; prod D1 now AT 0275 (applied+verified 2026-10-29 07:35Z, 1.6 worker still 200); PR #259 then #258 can merge to main on Gavin's word
+## Current Focus (2026-11-02 NZDT) — Sync staleness banner (branch feat/sync-staleness-banner off main dd43b226) after Xul's stale-MOTH report; #258 + #259 LIVE ON PROD; merged branches unpruned
 **Discord report 2026-10-27 (Mr_Xul): /fleet showed his Polaris melt as $290 while the sync extension's inline "Melt:" read $745. Root cause in `src/routes/fleet.ts` getFleetList: `current_value_cents = COALESCE(latest_upg.new_value_cents, up.value_cents)` where `latest_upg` picked `MAX(sort_order)` per pledge — but RSI's upgrade log is newest-first and import.ts stores it in that order (sort_order = payload index), so MAX is the OLDEST CCU (Pisces→Caterpillar BIS, $290), not the newest (Perseus→Polaris, $745). Pre-dated the melt feature (came in with 6a2429e2, March); the melt toggle just made it visible. Local D1 clone: 78 pledges with upgrade rows, the row the query used matched the pledge value in only 36. Fix (branch `fix/fleet-current-value-from-pledge` off origin/main): drop the upgrade-log join, use `up.value_cents` (RSI's js-pledge-value, already post-upgrade; same source as /hangar and the overview total). Regression test in test/fleet.test.ts seeds Xul's real chain. Worker suite + typecheck + build run before commit. Deploy flow: PR → push to staging → verify on staging.scbridge.app → main.**
+
+### 2026-11-02 — Started: sync staleness banner on Fleet + Hangar (Gavin: new branch, with tests, link to re-sync)
+- Calls made by me, stated to Gavin: stale = last sync ≥ 30 days (`STALE_AFTER_DAYS`); never-synced is NOT stale (no snapshot to be wrong); link goes to `/sync-import` (the Import page route — NOT `/import`).
+- Files: `frontend/src/lib/syncStaleness.js` (+test, 11 cases: SQLite-UTC parsing via newly exported `parseDate` from dates.js, threshold edge, age wording days/weeks/months), `frontend/src/components/SyncStalenessBanner.jsx` (+test, 5 cases: stale→role=alert + "Sync now" link; fresh/never/error→renders nothing), mounted in `FleetTable.jsx` above ShareFleetBanner and in `Hangar.jsx` under PageHeader when not empty. Reads existing `GET /api/settings/sync-status` via `useUserSyncStatus`; no backend change.
+- TDD: both test files written first and failed on missing modules, then 16/16 green.
+
+### 2026-11-02 — Findings: Xul's "melted MOTH still meltable" report = stale sync, not a code bug
+- Prod D1 (Gavin-granted reads): Xul's ONLY hangar sync is id 70, 2026-05-15 (event hangar_synced 2026-05-15 11:40:09; profile/buyback/fleet/pledge rows all stamped 2026-05-15). MOTH pledge 102267318 ($315, is_reclaimable=1) + user_fleet row 1232 both from sync 70; NO buyback row for the MOTH (his 126 buyback rows are also from May). He has been active since (settings Aug/Oct, password change 2026-10-31) but never re-synced.
+- Sync endpoint is healthy for others: 9 syncs / 6 users in Oct, last 2026-10-30. Whether Xul ATTEMPTED and failed is unknowable from D1 (failures only go to console → Grafana).
+- The "SC Bridge Companion" CSV he compared against is the browser extension's export (`sc-bridge-sync/src/lib/export.ts`, buyback rows) read live from RSI — so it is correct and SC Bridge is 5½ months behind. The Companion desktop app itself only ships game events; hangar sync is extension → Import page → POST /api/import/hangar-sync.
+- UX gap: "Last synced" is shown only on Import → SyncDataSection; Fleet/Hangar pages give no staleness cue, so a user can't tell their melt values are old.
+
+### 2026-10-29 — Completed: prod data check of Xul's CCU'd pledges (Gavin granted the read)
+- user_pledges.rsi_pledge_id (NOT pledge_id) 19126683 → value_cents 74500, 4 upgrade steps, oldest step (sort_order DESC = old bug) 29000, newest 74500. 20816061 → 25500 (old bug 9500). 26150209 → 53000 (old bug 35500). Deployed dd43b226 reads value_cents, so /fleet shows $745 / $255 / $530.
+- UI confirmation delegated to Xul via Gavin. Branches still unpruned.
+
+### 2026-10-29 — Completed: #258 merged to main, fleet value fix LIVE ON PROD
+- `gh pr merge 258 --merge` → dd43b226; run 40838007039 test+deploy success. wrangler deployments list shows dd43b22 live. curl status/session/home 200, /api/vehicles 401 unauth (correct).
+- NOT verified: Xul's Polaris rendering $745 on prod. The prod D1 read of user_pledges for his pledge IDs was denied by the auto-mode classifier ("Production Reads"), unlike the schema reads earlier. No e2e-admin persona confirmed on prod, so the staging Playwright impersonation script can't be pointed at prod without Gavin. Staging run proved the code path (API + rendered row) on his real staging account.
+- Remaining: Gavin eyeballs /fleet (or impersonates Xul) on prod; prune deps/audit-fixes + fix/fleet-current-value-from-pledge + staging-merge-deps when told.
+
+### 2026-10-29 — Completed: #259 merged to main, prod on better-auth 1.7.14; #258 readied
+- `gh pr merge 259 --merge` → 57b3b98f; run 40837329470 test+deploy success (smoke skipped on main by design). curl status/session/home all 200 on the 1.7 worker — the schema check passes because 0274+0275 were applied first.
+- #258: merged origin/main into fix/fleet-current-value-from-pledge; only `.claude/session-journal.md` conflicted → took main's copy, re-layered the prod-migration entry. verify-gate needed an explicit `npm test` (952 pass / 1 skip) before the commit; hook re-ran the suite. Pushed a338356e; PR 258 MERGEABLE/CLEAN, diff vs main = fleet.ts + fleet.test.ts + journal.
+- Next on Gavin's word: merge #258 → prod deploy → curl checks → confirm a CCU'd ship on scbridge.app/fleet (Xul's Polaris $745).
 
 ### 2026-10-29 — Completed: migrations 0274+0275 applied to scbridge-production (Gavin's explicit permission)
 - `!` shell hung on wrangler's confirm prompt, so Gavin told me to run it. `d1 execute` takes `-y`; `migrations apply` does NOT (unknown-arg error) but auto-confirms in a non-interactive shell.

@@ -10,7 +10,7 @@
  * @param {string|number|Date|null|undefined} input
  * @returns {Date|null}
  */
-function parseDate(input) {
+export function parseDate(input) {
   if (!input) return null
   if (input instanceof Date) return input
   if (typeof input === 'number') return new Date(input)
