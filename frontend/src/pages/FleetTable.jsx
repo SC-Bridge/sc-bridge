@@ -15,6 +15,7 @@ import StatusBadge from '../components/StatusBadge'
 import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
+import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
 import useValueMode from '../hooks/useValueMode'
@@ -461,6 +462,8 @@ export default function FleetTable() {
       {showAddIngame && (
         <AddIngameShipModal onClose={() => setShowAddIngame(false)} onAdded={refetch} />
       )}
+
+      <SyncStalenessBanner />
 
       <ShareFleetBanner />
 
