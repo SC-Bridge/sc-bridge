@@ -384,6 +384,66 @@ export function parseValueCents(raw: string | null | undefined): number | null {
 }
 
 /**
+ * True when `version` (e.g. "0.6.1", "v0.6.2") is older than `minimum`.
+ * Compares numeric major.minor.patch only (any pre-release suffix is ignored);
+ * missing components count as 0. A missing or unparseable version is treated
+ * as older — every extension that has the fixes this gates sends a real one.
+ */
+export function isExtensionVersionBefore(version: string | null | undefined, minimum: string): boolean {
+  const parse = (v: string): number[] | null => {
+    const m = v.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+    return m ? [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)] : null;
+  };
+  const have = version ? parse(version) : null;
+  const want = parse(minimum);
+  if (!want) throw new Error(`invalid minimum version: ${minimum}`);
+  if (!have) return true;
+  for (let i = 0; i < 3; i++) {
+    if (have[i] !== want[i]) return have[i] < want[i];
+  }
+  return false;
+}
+
+/** First extension version that sends RSI store credit as real cents. */
+export const STORE_CREDIT_FIXED_EXTENSION_VERSION = "0.6.2";
+
+/**
+ * Extension versions before 0.6.2 multiplied RSI's store_credit_cents (already
+ * cents) by 100 — $77.95 arrived as 779500. Undo that for old extensions.
+ */
+export function normaliseStoreCreditCents(
+  cents: number | null | undefined,
+  extensionVersion: string | null | undefined,
+): number | null {
+  if (cents === null || cents === undefined || !Number.isFinite(cents)) return null;
+  return isExtensionVersionBefore(extensionVersion, STORE_CREDIT_FIXED_EXTENSION_VERSION)
+    ? Math.round(cents / 100)
+    : cents;
+}
+
+/** Target entries in a CCU's upgradeData that are not the target ship. */
+const NON_SHIP_CCU_ITEM = /\b(insurance|paint|livery|skin|schematic|blueprint)\b/i;
+
+/**
+ * CCU from/to ship names from a pledge's upgradeData (the extension's
+ * `.js-upgrade-data` JSON): first match_items name, first target_items name
+ * that isn't an insurance / paint / schematic entry. Nulls when absent.
+ */
+export function ccuNamesFromUpgradeData(upgradeData: unknown): { from: string | null; to: string | null } {
+  const firstName = (list: unknown): string | null => {
+    if (!Array.isArray(list)) return null;
+    for (const entry of list) {
+      const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+      if (name && !NON_SHIP_CCU_ITEM.test(name)) return name;
+    }
+    return null;
+  };
+  if (!upgradeData || typeof upgradeData !== "object") return { from: null, to: null };
+  const data = upgradeData as { match_items?: unknown; target_items?: unknown };
+  return { from: firstName(data.match_items), to: firstName(data.target_items) };
+}
+
+/**
  * Fleet sync — UPSERT + cleanup-by-import-tag pattern.
  *
  * Replaces the insert-then-swap pattern (which allowed duplicates on

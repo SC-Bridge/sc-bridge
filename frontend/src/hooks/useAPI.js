@@ -545,6 +545,37 @@ export function useHangar() {
   return useAPI('/hangar')
 }
 
+/**
+ * Hangar Cleanup — the synced hangar (pledges with items, upgrades and linked
+ * ships), store credit, and the user's saved decisions, buy list and ticked
+ * steps, in one payload. Staging-only while the page is in preview.
+ */
+export function useHangarCleanup() {
+  return useAPI('/hangar-cleanup')
+}
+
+export async function saveCleanupDecision(rsiPledgeId, patch) {
+  return putJSON(`/hangar-cleanup/decisions/${rsiPledgeId}`, patch)
+}
+
+export async function saveCleanupBuy(vehicleId, priceCents = null) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { price_cents: priceCents })
+}
+
+// DELETEs send an empty JSON body: browsers only add Content-Length: 0 on their
+// own for POST/PUT, and the /api/* guard returns 411 for a mutation without it.
+export async function removeCleanupBuy(vehicleId) {
+  return apiFetch('DELETE', `/hangar-cleanup/buys/${vehicleId}`, {})
+}
+
+export async function saveCleanupState(patch) {
+  return putJSON('/hangar-cleanup/state', patch)
+}
+
+export async function resetCleanup() {
+  return apiFetch('DELETE', '/hangar-cleanup', {})
+}
+
 export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {
   return apiFetch(isCurrentlyWishlisted ? 'DELETE' : 'POST', `/loot/wishlist/${uuid}`)
 }

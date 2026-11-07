@@ -108,6 +108,10 @@ const USER_TABLES = [
   "user_item_builds",
   // FPS loadouts (0267) — slots cascade via FK on loadout delete
   "user_fps_loadouts",
+  // Hangar Cleanup (0279)
+  "user_hangar_cleanup_decisions",
+  "user_hangar_cleanup_buys",
+  "user_hangar_cleanup_state",
 ] as const;
 
 // Tables with user_id that DON'T cascade (known exceptions).
@@ -542,6 +546,22 @@ describe("GDPR — User Deletion Cascade", () => {
         .prepare(
           `INSERT INTO user_fps_loadouts (user_id, name) VALUES (?, 'GDPR Test Loadout')`
         )
+        .bind(user.userId)
+        .run();
+
+      // Hangar Cleanup (migration 0279)
+      await db
+        .prepare(
+          `INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, 1, 'keep')`
+        )
+        .bind(user.userId)
+        .run();
+      await db
+        .prepare(`INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id) VALUES (?, ?)`)
+        .bind(user.userId, vehicleId)
+        .run();
+      await db
+        .prepare(`INSERT INTO user_hangar_cleanup_state (user_id, done_steps_json) VALUES (?, '[]')`)
         .bind(user.userId)
         .run();
 

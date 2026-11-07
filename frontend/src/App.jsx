@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package } from 'lucide-react'
+import { Rocket, BarChart3, Shield, Upload, RefreshCw, Database, Settings as SettingsIcon, ChevronDown, ChevronRight, ChevronLeft, History, Menu, X, LogOut, LogIn, User, Wrench, Users, Building2, FileText, Search, MapPin, Palette, ShoppingCart, Hammer, Briefcase, Scale, Crosshair, BookOpen, Layers, TrendingUp, Languages, Heart, FlaskConical, SlidersHorizontal, Bookmark, Sparkles, Shirt, Zap, Thermometer, Gauge, Radar, Target, Navigation, Package, Recycle } from 'lucide-react'
 import LoadingState from './components/LoadingState'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireAuth from './components/RequireAuth'
@@ -72,6 +72,7 @@ const LocalizationBuilder = lazy(() => import('./pages/LocalizationBuilder'))
 const Loadout = lazy(() => import('./pages/Loadout'))
 const Components = lazy(() => import('./pages/Components'))
 const FpsLoadout = lazy(() => import('./pages/FpsLoadout'))
+const HangarCleanup = lazy(() => import('./pages/HangarCleanup'))
 const About = lazy(() => import('./pages/About'))
 const Changelog = lazy(() => import('./pages/Changelog'))
 const NotFound = lazy(() => import('./pages/NotFound'))
@@ -143,6 +144,7 @@ const authNavItems = [
     items: [
       { to: '/fleet', icon: Rocket, label: 'Fleet' },
       { to: '/hangar', icon: Package, label: 'Hangar' },
+      { to: '/hangar-cleanup', icon: Recycle, label: 'Hangar Cleanup', featureFlag: 'hangarCleanup' },
       { to: '/insurance', icon: Shield, label: 'Insurance' },
       {
         to: '/analysis',
@@ -775,6 +777,7 @@ export default function App() {
                       <Route path="/fps-loadout" element={<RequireAuth><RequireFeature flag="fpsLoadout"><Suspense fallback={<LoadingState fullScreen />}><FpsLoadout /></Suspense></RequireFeature></RequireAuth>} />
                       <Route path="/fleet" element={<RequireAuth><FleetTable /></RequireAuth>} />
                       <Route path="/hangar" element={<RequireAuth><Suspense fallback={<LoadingState fullScreen />}><Hangar /></Suspense></RequireAuth>} />
+                      <Route path="/hangar-cleanup" element={<RequireAuth><RequireFeature flag="hangarCleanup"><Suspense fallback={<LoadingState fullScreen />}><HangarCleanup /></Suspense></RequireFeature></RequireAuth>} />
                       <Route path="/insurance" element={<RequireAuth><Insurance /></RequireAuth>} />
                       <Route path="/insights" element={<RequireAuth><Insights /></RequireAuth>} />
                       <Route path="/analysis" element={<RequireAuth><Analysis /></RequireAuth>} />

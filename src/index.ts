@@ -20,6 +20,7 @@ import { adminRoutes } from "./routes/admin";
 import { contractRoutes } from "./routes/contracts";
 import { lootRoutes } from "./routes/loot";
 import { hangarRoutes } from "./routes/hangar";
+import { hangarCleanupRoutes } from "./routes/hangar-cleanup";
 import { patchRoutes } from "./routes/patches";
 import { gamedataRoutes } from "./routes/gamedata";
 import { localizationRoutes } from "./routes/localization";
@@ -322,6 +323,8 @@ function requireRole(...roles: string[]) {
 app.use("/api/vehicles/*", requireAuth);
 app.use("/api/hangar", requireAuth);
 app.use("/api/hangar/*", requireAuth);
+app.use("/api/hangar-cleanup", requireAuth);
+app.use("/api/hangar-cleanup/*", requireAuth);
 app.use("/api/import/*", requireAuth);
 app.use("/api/settings/*", requireAuth);
 app.use("/api/localization/*", requireAuth);
@@ -403,6 +406,7 @@ app.get("/api/status", async (c) => {
     },
     features: {
       ops: c.env.ENVIRONMENT !== "production",
+      hangarCleanup: true, // launched 2026-11-08
       fpsLoadout: true, // live everywhere behind the page-level WIP banner
     },
     build: VITE_BUILD_ID ?? c.env.BUILD_ID ?? "dev",
@@ -458,6 +462,7 @@ app.route("/api/admin", adminRoutes());
 app.route("/api/contracts", contractRoutes<HonoEnv>());
 app.route("/api/loot", lootRoutes());
 app.route("/api/hangar", hangarRoutes());
+app.route("/api/hangar-cleanup", hangarCleanupRoutes());
 app.route("/api/patches", patchRoutes());
 app.route("/api/gamedata", gamedataRoutes<HonoEnv>());
 app.route("/api/localization", localizationRoutes());

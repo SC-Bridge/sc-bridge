@@ -647,6 +647,10 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_item_builds WHERE user_id = ?").bind(user.id),
       // FPS loadouts (migration 0267) — slots cascade via FK
       db.prepare("DELETE FROM user_fps_loadouts WHERE user_id = ?").bind(user.id),
+      // Hangar Cleanup decisions / buy list / state (migration 0279)
+      db.prepare("DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_hangar_cleanup_buys WHERE user_id = ?").bind(user.id),
+      db.prepare("DELETE FROM user_hangar_cleanup_state WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values + IP
       db.prepare(
         `UPDATE user_change_history SET
