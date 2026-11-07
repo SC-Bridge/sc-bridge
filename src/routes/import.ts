@@ -22,6 +22,8 @@ import {
   executeTableSwap,
   parseRsiDate,
   parseValueCents,
+  normaliseStoreCreditCents,
+  ccuNamesFromUpgradeData,
 } from "../lib/fleet-import";
 
 /**
@@ -564,7 +566,8 @@ export function importRoutes() {
           acct.concierge_level || null,
           acct.subscriber_type || null,
           acct.subscriber_frequency || null,
-          acct.store_credit_cents ?? null,
+          // Extensions < 0.6.2 sent store credit x100 — corrected here.
+          normaliseStoreCreditCents(acct.store_credit_cents, payload.sync_meta.extension_version),
           acct.uec_balance ?? null,
           acct.rec_balance ?? null,
           acct.referral_code || null,
@@ -726,13 +729,15 @@ export function importRoutes() {
     // Step 1: Upsert pledges (ON CONFLICT updates existing, inserts new)
     const pledgeStmts: D1PreparedStatement[] = [];
     for (const pledge of payload.pledges) {
+      const ccu = ccuNamesFromUpgradeData(pledge.upgradeData);
       pledgeStmts.push(
         db
           .prepare(
             `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value, value_cents,
               configuration_value, currency, pledge_date, pledge_date_parsed,
-              is_upgraded, is_reclaimable, is_giftable, availability)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              is_upgraded, is_reclaimable, is_giftable, availability,
+              is_warbond, ccu_from_name, ccu_to_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, rsi_pledge_id) DO UPDATE SET
               sync_id = excluded.sync_id,
               name = excluded.name,
@@ -745,7 +750,10 @@ export function importRoutes() {
               is_upgraded = excluded.is_upgraded,
               is_reclaimable = excluded.is_reclaimable,
               is_giftable = excluded.is_giftable,
-              availability = excluded.availability`,
+              availability = excluded.availability,
+              is_warbond = excluded.is_warbond,
+              ccu_from_name = excluded.ccu_from_name,
+              ccu_to_name = excluded.ccu_to_name`,
           )
           .bind(
             userID,
@@ -762,6 +770,9 @@ export function importRoutes() {
             pledge.isReclaimable ? 1 : 0,
             pledge.isGiftable ? 1 : 0,
             pledge.availability || null,
+            pledge.isWarbond ? 1 : 0,
+            ccu.from,
+            ccu.to,
           ),
       );
     }
