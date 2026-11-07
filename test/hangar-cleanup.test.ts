@@ -7,7 +7,7 @@ import worker from "../src/index";
 /**
  * /api/hangar-cleanup — the Hangar Cleanup page's backend: one payload with
  * the user's synced hangar, plus storage for their decisions.
- * Staging-only (404 in production).
+ * Live in every environment (launched 2026-11-08).
  */
 
 interface CleanupPayload {
@@ -469,7 +469,8 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
     });
   });
 
-  describe("production gating", () => {
+  // Launched to production 2026-11-08: the page and API are live everywhere.
+  describe("production", () => {
     async function prodFetch(path: string, init?: RequestInit) {
       const ctx = createExecutionContext();
       const res = await worker.fetch(
@@ -481,10 +482,10 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       return res;
     }
 
-    it("404s every /api/hangar-cleanup route in production, even when signed in", async () => {
+    it("serves /api/hangar-cleanup in production to signed-in users and 401s signed-out ones", async () => {
       const headers = await authHeaders(token);
-      expect((await prodFetch("/api/hangar-cleanup", { headers })).status).toBe(404);
-      expect((await prodFetch("/api/hangar-cleanup")).status).toBe(404);
+      expect((await prodFetch("/api/hangar-cleanup", { headers })).status).toBe(200);
+      expect((await prodFetch("/api/hangar-cleanup")).status).toBe(401);
       const json = JSON.stringify({ decision: "keep" });
       expect(
         (await prodFetch(`/api/hangar-cleanup/decisions/${RSI}`, {
@@ -492,16 +493,16 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
           headers: { ...headers, "Content-Type": "application/json", "Content-Length": String(json.length) },
           body: json,
         })).status,
-      ).toBe(404);
+      ).toBe(200);
     });
 
-    it("advertises features.hangarCleanup outside production only", async () => {
+    it("advertises features.hangarCleanup in every environment", async () => {
       const res = await SELF.fetch("http://localhost/api/status");
       const body = (await res.json()) as { features: Record<string, boolean> };
       expect(body.features.hangarCleanup).toBe(true);
       const prod = await prodFetch("/api/status");
       const prodBody = (await prod.json()) as { features: Record<string, boolean> };
-      expect(prodBody.features.hangarCleanup).toBe(false);
+      expect(prodBody.features.hangarCleanup).toBe(true);
     });
   });
 });
