@@ -143,6 +143,12 @@ describe('analyse', () => {
     expect(rows[9].flags).not.toContain('ccu-orphan')
     expect(rows[9].suggestion.action).toBe('keep')
   })
+  it('reads CCU from/to out of the pledge name when the sync has not stored them yet', () => {
+    const oldSync = pledge(30, 'Upgrade - Pulse to Mustang Alpha', 500)
+    const r = byId(analyse(model([pulseToken, oldSync])).rows)
+    expect(displayName(r[30])).toBe('Pulse → Mustang Alpha')
+    expect(r[30].flags).not.toContain('ccu-orphan')
+  })
   it('suggests melting the second copy of an identical item pledge', () => {
     expect(rows[10].suggestion.action).toBe('keep')
     expect(rows[11].suggestion.action).toBe('melt')

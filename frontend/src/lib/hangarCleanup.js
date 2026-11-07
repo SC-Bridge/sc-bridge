@@ -245,6 +245,13 @@ function toRow(p) {
     .filter(Boolean))
   let base = ''
   if (cat === 'Ship') base = chain.length ? chain[0].from : (p.is_upgraded ? cleanHull(p.name) : (shipNames[0] || cleanHull(p.name)))
+  // Syncs before the import stored upgradeData have no ccu_from/ccu_to: read them from the name.
+  let ccuFrom = p.ccu_from
+  let ccuTo = p.ccu_to
+  if (cat === 'CCU' && !ccuFrom && !ccuTo) {
+    const parsed = parseUpgradeName(p.name)
+    if (parsed) { ccuFrom = parsed.from; ccuTo = parsed.to }
+  }
   return {
     id: p.rsi_pledge_id,
     name: p.name,
@@ -262,7 +269,7 @@ function toRow(p) {
     ins: insuranceOf(p),
     base,
     chain,
-    ccu: cat === 'CCU' ? { from: p.ccu_from ? [p.ccu_from] : [], to: p.ccu_to ? [p.ccu_to] : [] } : null,
+    ccu: cat === 'CCU' ? { from: ccuFrom ? [ccuFrom] : [], to: ccuTo ? [ccuTo] : [] } : null,
     paints: (p.items ?? []).filter((i) => i.kind === 'Skin').map((i) => i.title),
     items: (p.items ?? []).map((i) => ({ title: i.title, kind: i.kind ?? '' })),
     flags: [],
