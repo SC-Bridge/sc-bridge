@@ -27,6 +27,12 @@ const DecisionBody = z.object({
   buy_ingame: z.boolean().optional(),
   iae_price_cents: CentsOrNull.optional(),
 });
+// Bulk: one decision for many pledges (the ledger's "apply to all shown").
+const BULK_MAX = 2000;
+const BulkDecisionBody = z.object({
+  rsi_pledge_ids: z.array(z.number().int().positive()).min(1).max(BULK_MAX),
+  decision: z.enum(DECISIONS).nullable(),
+});
 const BuyBody = z.object({
   price_cents: CentsOrNull.optional(),
   // Melt straight after buying, so the ship sits in Buy Back Pledges.
@@ -287,6 +293,39 @@ export function hangarCleanupRoutes() {
         done_steps: parseDoneSteps(state?.done_steps_json),
       },
     });
+  });
+
+  // PUT /decisions — set one decision on many pledges. Only `decision` changes;
+  // each pledge keeps its buy_ingame / iae_price_cents. Pledges the user does
+  // not own are skipped (the INSERT selects from their own user_pledges).
+  routes.put("/decisions", validate("json", BulkDecisionBody), async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const { rsi_pledge_ids, decision } = c.req.valid("json");
+    const ids = [...new Set(rsi_pledge_ids)];
+
+    const upsert = db.prepare(
+      `INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision)
+       SELECT DISTINCT user_id, rsi_pledge_id, ? FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?
+       ON CONFLICT(user_id, rsi_pledge_id) DO UPDATE SET
+         decision = excluded.decision,
+         updated_at = datetime('now')`,
+    );
+    const CHUNK = 50;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      await db.batch(ids.slice(i, i + CHUNK).map((id) => upsert.bind(decision, userId, id)));
+    }
+    if (decision === null) {
+      // Same rule as the single-pledge route: a row that says nothing is deleted.
+      await db
+        .prepare(
+          `DELETE FROM user_hangar_cleanup_decisions
+           WHERE user_id = ? AND decision IS NULL AND buy_ingame = 0 AND iae_price_cents IS NULL`,
+        )
+        .bind(userId)
+        .run();
+    }
+    return c.json({ ok: true });
   });
 
   // PUT /decisions/:rsiPledgeId — partial upsert; an all-empty result deletes the row.

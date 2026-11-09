@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListChecks, Table2, Upload, RotateCcw } from 'lucide-react'
 import {
-  useHangarCleanup, useShips, saveCleanupDecision, saveCleanupBuy, saveCleanupBuyRemelt, removeCleanupBuy,
+  useHangarCleanup, useShips, saveCleanupDecision, saveCleanupDecisions, saveCleanupBuy, saveCleanupBuyRemelt, removeCleanupBuy,
   saveCleanupState, resetCleanup,
 } from '../../hooks/useAPI'
 import PageHeader from '../../components/PageHeader'
@@ -87,6 +87,23 @@ export default function HangarCleanup() {
       return { ...p, decisions }
     })
     persist(() => saveCleanupDecision(id, merged ?? blank))
+  }, [setPlan, persist])
+
+  // One decision for many pledges (the ledger's "apply to all shown"). Each
+  // pledge keeps its own in-game flag and IAE price, as the bulk route does.
+  const onDecideMany = useCallback((ids, decision) => {
+    if (!ids.length) return
+    const blank = { decision: null, buy_ingame: false, iae_price_cents: null }
+    setPlan((p) => {
+      const decisions = { ...p.decisions }
+      for (const id of ids) {
+        const merged = cleanDecision({ ...blank, ...decisions[id], decision })
+        if (merged) decisions[id] = merged
+        else delete decisions[id]
+      }
+      return { ...p, decisions }
+    })
+    persist(() => saveCleanupDecisions(ids, decision))
   }, [setPlan, persist])
 
   const onToggleBuy = useCallback((vehicleId, on) => {
@@ -252,7 +269,7 @@ export default function HangarCleanup() {
           ) : (
             <>
               <Insights rows={rows} tokens={tokens} onJump={onJump} />
-              <Ledger rows={rows} decisions={plan.decisions} onDecide={onDecide} open={open} onToggle={onToggleRow} />
+              <Ledger rows={rows} decisions={plan.decisions} onDecide={onDecide} onDecideMany={onDecideMany} open={open} onToggle={onToggleRow} />
               <BuyList catalog={catalog} owned={owned} buys={plan.buys} remelts={plan.remelts} onToggle={onToggleBuy} onPrice={onBuyPrice} onRemelt={onBuyRemelt} />
             </>
           )}

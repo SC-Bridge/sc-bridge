@@ -7,6 +7,7 @@ import HangarCleanup from './index'
 const api = vi.hoisted(() => ({
   payload: null,
   saveCleanupDecision: vi.fn(() => Promise.resolve({ ok: true })),
+  saveCleanupDecisions: vi.fn(() => Promise.resolve({ ok: true })),
   saveCleanupBuy: vi.fn(() => Promise.resolve({ ok: true })),
   saveCleanupBuyRemelt: vi.fn(() => Promise.resolve({ ok: true })),
   removeCleanupBuy: vi.fn(() => Promise.resolve({ ok: true })),
@@ -21,6 +22,7 @@ vi.mock('../../hooks/useAPI', () => ({
     { id: 20, slug: 'anvl-carrack', name: 'Anvil Carrack', manufacturer_name: 'Anvil Aerospace', focus: 'Exploration', classification: 'Expedition', pledge_price: 600, price_auec: 34398000, is_pledgeable: 1 },
   ] }),
   saveCleanupDecision: api.saveCleanupDecision,
+  saveCleanupDecisions: api.saveCleanupDecisions,
   saveCleanupBuy: api.saveCleanupBuy,
   saveCleanupBuyRemelt: api.saveCleanupBuyRemelt,
   removeCleanupBuy: api.removeCleanupBuy,
@@ -115,6 +117,37 @@ describe('HangarCleanup page', () => {
     renderPage('/hangar-cleanup?view=steps')
     expect(screen.getByText('Buy Anvil Carrack (standalone, 120-month insurance)')).toBeTruthy()
     expect(screen.getByText('Exchange the new Anvil Carrack straight away')).toBeTruthy()
+  })
+
+  it('applies one decision to every pledge shown, after a confirming second click', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText('Decision for all shown pledges'), { target: { value: 'melt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 2 shown' }))
+    expect(api.saveCleanupDecisions).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Click again to set 2 pledges to Melt' }))
+    await waitFor(() => expect(api.saveCleanupDecisions).toHaveBeenCalledWith([4, 5], 'melt'))
+    expect(api.saveCleanupDecision).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Decision for Hull D').value).toBe('melt')
+    expect(screen.getByLabelText('Decision for Fury - 7 Paint Pack').value).toBe('melt')
+    expect(within(screen.getByText('Planned melts').closest('.stat-card')).getByText('2 pledges')).toBeTruthy()
+  })
+
+  it('bulk-applies only to the pledges matching the current filter', async () => {
+    renderPage()
+    fireEvent.click(within(screen.getByRole('region', { name: 'Ledger' })).getByRole('button', { name: /^Paint\s*\d+$/ }))
+    fireEvent.change(screen.getByLabelText('Decision for all shown pledges'), { target: { value: 'keep' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 shown' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Click again to set 1 pledge to Keep' }))
+    await waitFor(() => expect(api.saveCleanupDecisions).toHaveBeenCalledWith([5], 'keep'))
+  })
+
+  it('bulk IAE rebuy skips pledges that are not ships', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText('Decision for all shown pledges'), { target: { value: 'iae' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 1 shown' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Click again to set 1 pledge to/ }))
+    await waitFor(() => expect(api.saveCleanupDecisions).toHaveBeenCalledWith([4], 'iae'))
+    expect(screen.getByLabelText('Decision for Fury - 7 Paint Pack').value).toBe('')
   })
 
   it('restores saved decisions and turns them into steps', () => {

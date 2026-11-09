@@ -375,6 +375,51 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
     });
   });
 
+  describe("PUT /decisions (bulk)", () => {
+    it("sets one decision on many pledges, keeping each pledge's other fields", async () => {
+      await send(token, "PUT", `/decisions/${RSI}`, { iae_price_cents: 55000 });
+      const res = await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "melt" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: "melt", buy_ingame: false, iae_price_cents: 55000 });
+    });
+
+    it("skips pledges the user does not own and leaves other users' rows alone", async () => {
+      const res = await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI, OTHER_RSI, 123456789], decision: "keep" });
+      expect(res.status).toBe(200);
+      expect((await get(token)).decisions[String(RSI)].decision).toBe("keep");
+      const rows = await env.DB
+        .prepare("SELECT user_id, decision FROM user_hangar_cleanup_decisions WHERE rsi_pledge_id IN (?, ?)")
+        .bind(OTHER_RSI, 123456789)
+        .all<{ user_id: string; decision: string }>();
+      expect(rows.results).toHaveLength(1);
+      expect(rows.results[0].user_id).not.toBe(userId);
+      expect(rows.results[0].decision).toBe("melt");
+    });
+
+    it("clears decisions in bulk and deletes rows left with nothing in them", async () => {
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: null });
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: null, buy_ingame: false, iae_price_cents: 55000 });
+      await send(token, "PUT", `/decisions/${RSI}`, { iae_price_cents: null });
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "review" });
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: null });
+      const row = await env.DB
+        .prepare("SELECT COUNT(*) AS n FROM user_hangar_cleanup_decisions WHERE user_id = ?")
+        .bind(userId)
+        .first<{ n: number }>();
+      expect(row!.n).toBe(0);
+    });
+
+    it("rejects invalid input", async () => {
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [], decision: "keep" })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "sell" })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI] })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: ["x"], decision: "keep" })).status).toBe(400);
+      const tooMany = Array.from({ length: 2001 }, (_, i) => i + 1);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: tooMany, decision: "keep" })).status).toBe(400);
+    });
+  });
+
   describe("PUT/DELETE /buys/:vehicleId", () => {
     it("upserts a buy with and without a price", async () => {
       let res = await send(token, "PUT", `/buys/${carrackId}`, {});
