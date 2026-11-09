@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseUpgradeName, insuranceOf, normaliseExport, makeCatalog, analyse,
-  rebuyPrice, buildSteps, stepsAsText, displayName,
+  rebuyPrice, buildSteps, stepsAsText, displayName, limitedReason,
 } from './hangarCleanup'
 
 // ── Fixtures in the GET /api/hangar-cleanup shape ──────────────────────────
@@ -177,6 +177,67 @@ describe('rebuyPrice', () => {
     expect(rebuyPrice(rows[3], {})).toEqual({ cents: 92500, source: 'store' })
     expect(rebuyPrice(rows[3], { 3: { iae_price_cents: 90000 } })).toEqual({ cents: 90000, source: 'yours' })
     expect(rebuyPrice(rows[4], {}).cents).toBeNull()
+  })
+})
+
+// ── Limited paints ──────────────────────────────────────────────────────────
+
+describe('limitedReason', () => {
+  it('names the event, with its year when there is one', () => {
+    expect(limitedReason('Carrack - Best in Show 2952 Red Alert Paint')).toBe('Best in Show 2952')
+    expect(limitedReason('2951 BIS Mercury Star Runner Paint and Jacket')).toBe('Best in Show 2951')
+    expect(limitedReason('Paints - Gladius - Invictus Blue and Gold Paint')).toBe('Invictus')
+    expect(limitedReason('Paints - Retaliator ILW 2950 Paint Pack')).toBe('Invictus 2950')
+    expect(limitedReason('Modify your 400i with this livery specifically designed for the 2951 IAE.')).toBe('IAE 2951')
+    expect(limitedReason('uses the traditional Luminalia colors')).toBe('Luminalia')
+    expect(limitedReason('Cutlass - Foundation Festival Paint')).toBe('Foundation Festival')
+  })
+  it('recognises subscriber, concierge and referral exclusives', () => {
+    expect(limitedReason('Subscribers Store - Nox Overdrive Paint')).toBe('Subscriber exclusive')
+    expect(limitedReason('Concierge Exclusive - Meridian Paint')).toBe('Concierge exclusive')
+    expect(limitedReason('Tumbril Storm & GCD-Army Paint - Referral Reward')).toBe('Referral reward')
+  })
+  it('treats any in-universe year (29xx) as dated', () => {
+    expect(limitedReason('Paints - Mercury Star Runner - 2951 Fortuna Paint')).toBe('dated 2951')
+  })
+  it('returns null for an ordinary paint', () => {
+    expect(limitedReason('Fury - Black Star Paint')).toBeNull()
+    expect(limitedReason('Ares - 3 Paint Pack')).toBeNull()
+    expect(limitedReason(null)).toBeNull()
+  })
+})
+
+describe('analyse: limited paints', () => {
+  const skin = (title, extra = {}) => ({ title, kind: 'Skin', manufacturer_name: null, custom_name: null, insurance_months: null, insurance_lifetime: false, ...extra })
+  const bisFury = pledge(20, 'Fury - Best in Show 2953 Paint', 1000, { items: [skin('Fury - Best in Show 2953 Paint')] })
+  const polar = pledge(21, 'Paints - Ironclad - Glacier Paint', 1100, { items: [skin('Ironclad - Glacier Paint', { paint_description: 'Modify your Ironclad with this livery specifically designed for the 2951 IAE.' })] })
+  const plain = pledge(22, 'Paints - Ironclad - Ember Paint', 1100, { items: [skin('Ironclad - Ember Paint', { paint_description: 'A warm red finish for the Ironclad.' })] })
+  const rows = analyse(model([ironclad, hullD, bisFury, polar, plain])).rows
+  const row = (id) => rows.find((r) => r.id === id)
+
+  it('flags a paint named for an event and stops suggesting a melt for it', () => {
+    expect(row(20).flags).toEqual(expect.arrayContaining(['paint-limited', 'paint-unowned']))
+    expect(row(20).suggestion.action).toBe('review')
+    expect(row(20).suggestion.label).toBe('Review: limited paint')
+    expect(row(20).suggestion.reasons.join(' ')).toMatch(/Best in Show 2953/)
+    expect(row(20).suggestion.reasons.join(' ')).toMatch(/You don't own: Fury/)
+  })
+  it('uses the game description when the paint name gives nothing away', () => {
+    expect(row(21).flags).toContain('paint-limited')
+    expect(row(21).limited).toEqual(['IAE 2951'])
+    expect(row(21).suggestion).toMatchObject({ action: 'keep', label: 'Keep (limited paint)' })
+    expect(row(21).suggestion.reasons.join(' ')).toMatch(/buy-back/i)
+  })
+  it('leaves ordinary paints and dated ship pledges alone', () => {
+    expect(row(22).flags).not.toContain('paint-limited')
+    expect(row(4).name).toMatch(/IAE 2949/)
+    expect(row(4).flags).not.toContain('paint-limited')
+  })
+  it('warns on the melt step of a limited paint', () => {
+    const p = buildSteps({ rows, decisions: { 21: { decision: 'melt' }, 22: { decision: 'melt' } }, buys: [], credit: 0 })
+    const melt = p.phases.find((x) => x.key === 'melt').steps
+    expect(melt.find((s) => s.key === 'melt-21').warn.join(' ')).toMatch(/Limited paint \(IAE 2951\)/)
+    expect(melt.find((s) => s.key === 'melt-22').warn).toEqual([])
   })
 })
 

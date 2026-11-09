@@ -67,6 +67,19 @@ interface ItemRow {
   duration_months: number | null;
   is_lifetime: number | null;
 }
+/**
+ * Paint names differ between RSI ("Carrack - Polar Paint", "Carrack Paint -
+ * Polar") and the game ("Carrack Polar Livery"). Both reduce to "carrack polar".
+ */
+function paintKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&amp;/g, "&")
+    .replace(/\b(paint|livery|skin)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 interface UpgradeRow {
   user_pledge_id: number;
   upgrade_name: string;
@@ -120,7 +133,7 @@ export function hangarCleanupRoutes() {
     const userId = getAuthUser(c).id;
 
     // One round trip, one statement per table, every one scoped by user_id.
-    const [profileRes, syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes] =
+    const [profileRes, syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes, paintRes] =
       await db.batch([
         db.prepare("SELECT synced_at, store_credit_cents FROM user_rsi_profiles WHERE user_id = ?").bind(userId),
         db.prepare("SELECT MAX(synced_at) AS synced_at FROM user_hangar_syncs WHERE user_id = ?").bind(userId),
@@ -187,7 +200,30 @@ export function hangarCleanupRoutes() {
         db
           .prepare("SELECT credit_override_cents, done_steps_json FROM user_hangar_cleanup_state WHERE user_id = ?")
           .bind(userId),
+        // Game paint descriptions that name an event, a year or exclusivity: the
+        // only limited-availability signal we hold ("designed for the 2951 IAE").
+        // A broad prefilter; the page's limitedReason() decides what it means.
+        db.prepare(
+          `SELECT name, description FROM paints
+           WHERE COALESCE(is_deleted, 0) = 0 AND description IS NOT NULL AND (
+             description GLOB '*29[0-9][0-9]*'
+             OR description LIKE '%Best in Show%' OR description LIKE '%Invictus%'
+             OR description LIKE '%IAE%' OR description LIKE '%Aerospace Expo%'
+             OR description LIKE '%Luminalia%' OR description LIKE '%Foundation Festival%'
+             OR description LIKE '%Stella Fortuna%' OR description LIKE '%Red Festival%'
+             OR description LIKE '%Lunar New Year%' OR description LIKE '%Coramor%'
+             OR description LIKE '%Pirate Week%' OR description LIKE '%Alien Week%'
+             OR description LIKE '%Day of the Vara%' OR description LIKE '%CitizenCon%'
+             OR description LIKE '%subscriber%' OR description LIKE '%concierge%'
+             OR description LIKE '%referral%' OR description LIKE '%limited%edition%'
+             OR description LIKE '%exclusive%' OR description LIKE '%commemorat%')`,
+        ),
       ]);
+
+    const paintNotes = new Map<string, string>();
+    for (const p of paintRes.results as Array<{ name: string; description: string }>) {
+      paintNotes.set(paintKey(p.name), p.description);
+    }
 
     const profile = (profileRes.results as Array<{ synced_at: string | null; store_credit_cents: number | null }>)[0];
     const latestSync = (syncRes.results as Array<{ synced_at: string | null }>)[0];
@@ -227,6 +263,7 @@ export function hangarCleanupRoutes() {
       ccu_to: p.ccu_to_name,
       items: (itemsByPledge.get(p.id) ?? []).map((i) => {
         const isInsurance = i.kind === "Insurance";
+        const paintNote = i.kind === "Skin" ? paintNotes.get(paintKey(i.title)) : undefined;
         return {
           title: i.title,
           kind: i.kind,
@@ -234,6 +271,8 @@ export function hangarCleanupRoutes() {
           custom_name: i.custom_name,
           insurance_months: isInsurance ? i.duration_months : null,
           insurance_lifetime: isInsurance && !!i.is_lifetime,
+          // Present only on a paint whose game description hints it is limited.
+          ...(paintNote ? { paint_description: paintNote } : {}),
         };
       }),
       upgrades: (upgradesByPledge.get(p.id) ?? []).map((u) => ({

@@ -190,11 +190,60 @@ export function normaliseExport(json, catalog) {
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 
+// ── Limited paints ──────────────────────────────────────────────────────────
+// There is no availability data for paints, so this reads the words RSI and
+// the game use: an event name, an exclusivity word, or an in-universe year.
+// It is a caution, not a fact: some of these return to the store every year.
+
+const PAINT_EVENTS = [
+  [/best in show|\bbis\b/i, 'Best in Show'],
+  [/invictus|\bilw\b/i, 'Invictus'],
+  [/\biae\b|aerospace expo/i, 'IAE'],
+  [/luminalia/i, 'Luminalia'],
+  [/foundation festival/i, 'Foundation Festival'],
+  [/stella fortuna/i, 'Stella Fortuna'],
+  [/red festival|lunar new year/i, 'Red Festival'],
+  [/coramor/i, 'Coramor'],
+  [/pirate week/i, 'Pirate Week'],
+  [/alien week/i, 'Alien Week'],
+  [/day of the vara/i, 'Day of the Vara'],
+  [/citizencon/i, 'CitizenCon'],
+]
+const PAINT_EXCLUSIVES = [
+  [/subscriber/i, 'Subscriber exclusive'],
+  [/concierge/i, 'Concierge exclusive'],
+  [/referral/i, 'Referral reward'],
+  [/limited[- ]edition/i, 'Limited edition'],
+  [/\bexclusive\b/i, 'Exclusive'],
+  [/commemorat/i, 'Commemorative'],
+]
+
+/**
+ * Why a paint looks limited, from a pledge name, item title or game
+ * description: "Best in Show 2952", "Subscriber exclusive", "dated 2951".
+ * Null when nothing in the text says so.
+ */
+export function limitedReason(text) {
+  if (!text) return null
+  const year = /\b29\d\d\b/.exec(text)?.[0]
+  const event = PAINT_EVENTS.find(([re]) => re.test(text))?.[1]
+  if (event) return year ? `${event} ${year}` : event
+  const exclusive = PAINT_EXCLUSIVES.find(([re]) => re.test(text))?.[1]
+  if (exclusive) return exclusive
+  return year ? `dated ${year}` : null
+}
+
+/** True when everything in the pledge except insurance is a paint. */
+function paintOnly(p) {
+  const items = (p.items ?? []).filter((i) => i.kind !== 'Insurance')
+  return items.length > 0 && items.every((i) => i.kind === 'Skin')
+}
+
 function category(p) {
   const n = p.name ?? ''
   if (p.ccu_from || p.ccu_to || /^upgrade\s*-/i.test(n)) return 'CCU'
   if ((p.items ?? []).some((i) => i.kind === 'Ship') || (p.ships ?? []).length) return 'Ship'
-  if (/^paints?\s*-/i.test(n)) return 'Paint'
+  if (/^paints?\s*-/i.test(n) || paintOnly(p)) return 'Paint'
   if (/^(gear|subscribers exclusive)\s*-/i.test(n)) return 'Gear'
   if (/^add-ons?\s*-/i.test(n)) return (p.items ?? []).some((i) => i.kind === 'Component') ? 'Add-on' : 'Gear'
   if (/^(package|digital goodies)/i.test(n)) return 'Package'
@@ -213,6 +262,7 @@ export const FLAGS = {
   'dupe-item': { label: 'Duplicate', tone: 'warn', tip: 'Identical pledge owned more than once' },
   'paint-unowned': { label: 'Paint, no ship', tone: 'warn', tip: "Paint for a ship you don't own" },
   'paint-partial': { label: 'Some paints unowned', tone: 'mute', tip: "Pack includes paints for ships you don't own" },
+  'paint-limited': { label: 'Limited paint', tone: 'info', tip: 'Event, dated or exclusive paint: not sold in the store year-round' },
   'ccu-orphan': { label: 'CCU, no base', tone: 'warn', tip: "You can't reach this CCU's from-ship" },
   'ccu-dupe': { label: 'Multiple CCUs', tone: 'mute', tip: 'Several identical CCUs' },
   warbond: { label: 'Warbond', tone: 'mute', tip: 'Warbond pricing' },
@@ -271,6 +321,12 @@ function toRow(p) {
     chain,
     ccu: cat === 'CCU' ? { from: ccuFrom ? [ccuFrom] : [], to: ccuTo ? [ccuTo] : [] } : null,
     paints: (p.items ?? []).filter((i) => i.kind === 'Skin').map((i) => i.title),
+    // What can say a paint is limited: each paint's title and game description,
+    // plus the pledge name when the pledge is nothing but paint.
+    paintTexts: [
+      ...(p.items ?? []).filter((i) => i.kind === 'Skin').flatMap((i) => [i.title, i.paint_description]),
+      ...(cat === 'Paint' ? [p.name] : []),
+    ].filter(Boolean),
     items: (p.items ?? []).map((i) => ({ title: i.title, kind: i.kind ?? '' })),
     flags: [],
     suggestion: null,
@@ -347,6 +403,16 @@ export function analyse(model) {
   }
 
   for (const r of rows) {
+    if (!r.paints.length || r.cat === 'CCU') continue
+    const found = [...new Set(r.paintTexts.map(limitedReason).filter(Boolean))]
+    // "dated 2951" adds nothing next to "IAE 2951".
+    const reasons = found.filter((x) => !x.startsWith('dated ') || !found.some((y) => y !== x && y.endsWith(x.slice(6))))
+    if (!reasons.length) continue
+    r.limited = reasons
+    r.flags.push('paint-limited')
+  }
+
+  for (const r of rows) {
     if (!r.meltable) r.flags.push('not-meltable')
     else if (r.value === 0) r.flags.push('zero-melt')
     if (r.warbond) r.flags.push('warbond')
@@ -387,10 +453,18 @@ function suggest(r, tokens) {
     if (r.flags.includes('ccu-dupe') && r.dupeIndex > 0) return { action: 'review', label: 'Review: extra copy', reasons: [`You hold ${r.dupeOf} copies. Keep only as many as you will apply.`] }
     return { action: 'keep', label: 'Keep (usable CCU)', reasons: ['Applies to a hull you own or can reach.'] }
   }
-  if (r.flags.includes('paint-unowned')) return { action: 'melt', label: 'Melt (no ship)', reasons: [`You don't own: ${r.paintUnowned.join(', ')}.`] }
-  if (r.flags.includes('dupe-item') && r.dupeIndex > 0) return { action: 'melt', label: 'Melt (duplicate)', reasons: [`Extra copy ${r.dupeIndex + 1} of ${r.dupeOf}. Item pledges add nothing when doubled.`] }
-  const reasons = r.flags.includes('paint-partial') ? [`Some paints are for ships you don't own: ${r.paintUnowned.join(', ')}.`] : ['Nothing flags this as redundant.']
-  return { action: 'keep', label: 'Keep', reasons }
+  // A limited paint is never an automatic melt: the store may not sell it again.
+  const limited = r.flags.includes('paint-limited')
+    ? `Limited paint (${r.limited.join(', ')}): it is not sold in the store year-round. After a melt, buy-back is the only sure way to get it back.`
+    : null
+  const melt = (label, why) => (limited
+    ? { action: 'review', label: 'Review: limited paint', reasons: [limited, why] }
+    : { action: 'melt', label, reasons: [why] })
+  if (r.flags.includes('paint-unowned')) return melt('Melt (no ship)', `You don't own: ${r.paintUnowned.join(', ')}.`)
+  if (r.flags.includes('dupe-item') && r.dupeIndex > 0) return melt('Melt (duplicate)', `Extra copy ${r.dupeIndex + 1} of ${r.dupeOf}. Item pledges add nothing when doubled.`)
+  const partial = r.flags.includes('paint-partial') ? [`Some paints are for ships you don't own: ${r.paintUnowned.join(', ')}.`] : []
+  if (limited) return { action: 'keep', label: 'Keep (limited paint)', reasons: [limited, ...partial] }
+  return { action: 'keep', label: 'Keep', reasons: partial.length ? partial : ['Nothing flags this as redundant.'] }
 }
 
 // ── Display helpers ─────────────────────────────────────────────────────────
@@ -491,6 +565,7 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
         if (r.cat === 'Ship' && (r.upgraded || r.chain.length)) warn.push(`Melting returns the full value but loses its CCU chain from ${r.base || 'the base hull'}.`)
         if (r.warbond) warn.push('Warbond: you get back what you paid; buying it again costs standard price.')
         if (r.currency && !/store credit/i.test(r.currency)) warn.push(`Originally paid with ${r.currency}.`)
+        if (r.limited?.length) warn.push(`Limited paint (${r.limited.join(', ')}): it may not come back to the store. Buy-back is the only sure way to get it again.`)
         const why = dec(r) === 'iae-remelt' ? 'To rebuy at IAE and remelt for a buy-back token (steps below).' : dec(r) === 'iae' ? `To rebuy at IAE with ${IAE_MONTHS}-month insurance (step below).` : dec(r) === 'melt-ig' ? 'You will buy it in-game instead (step below).' : ''
         return { key: `melt-${r.id}`, title: `Exchange “${displayName(r)}”`, meta: [`Pledge #${r.id} · ${r.name}`, why].filter(Boolean), money: [`+${usd(r.value)} store credit`, `credit ≈ ${usd(bal)}`], warn }
       }),

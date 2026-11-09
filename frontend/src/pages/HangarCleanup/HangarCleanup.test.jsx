@@ -150,6 +150,14 @@ describe('HangarCleanup page', () => {
     expect(screen.getByLabelText('Decision for Fury - 7 Paint Pack').value).toBe('')
   })
 
+  it('marks a limited paint and suggests reviewing it instead of melting', () => {
+    api.payload = payload({ pledges: [pledgeHullD, { ...paint, rsi_pledge_id: 6, name: 'Fury - Best in Show 2953 Paint', items: [{ ...paint.items[0], title: 'Fury - Best in Show 2953 Paint' }] }] })
+    renderPage()
+    const ledger = screen.getByRole('region', { name: 'Ledger' })
+    expect(within(ledger).getAllByText('Limited paint').length).toBeGreaterThan(0)
+    expect(within(ledger).getByText('Review: limited paint')).toBeTruthy()
+  })
+
   it('restores saved decisions and turns them into steps', () => {
     api.payload = payload({ decisions: { 4: { decision: 'iae', buy_ingame: false, iae_price_cents: null } } })
     renderPage('/hangar-cleanup?view=steps')

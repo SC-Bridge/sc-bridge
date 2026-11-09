@@ -317,6 +317,32 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
     expect(body.decisions[String(OTHER_RSI)]).toBeUndefined();
   });
 
+  it("adds the game's paint description to a synced paint when it names an event", async () => {
+    const painter = await createTestUser(env.DB);
+    await seedHangar(painter.userId, { rsiBase: 770001, vehicleId: carrackId, fromVehicleId: cutlassId });
+    const pledgeRow = await env.DB
+      .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?")
+      .bind(painter.userId, 770001)
+      .first<{ id: number }>();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES ('Carrack Polar Livery', 'Specifically designed for the 2951 IAE.')"),
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES ('Carrack Ember Livery', 'A warm red finish.')"),
+      ...["Carrack - Polar Paint", "Carrack Paint - Polar", "Carrack - Ember Paint"].map((title, i) =>
+        env.DB
+          .prepare("INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, sort_order) VALUES (?, ?, ?, 'Skin', ?)")
+          .bind(painter.userId, pledgeRow!.id, title, 10 + i),
+      ),
+    ]);
+
+    const body = await get(painter.sessionToken);
+    const items = body.pledges.find((p) => p.rsi_pledge_id === 770001)!.items as Array<{ title: string; paint_description?: string }>;
+    const byTitle = (t: string) => items.find((i) => i.title === t)!;
+    expect(byTitle("Carrack - Polar Paint").paint_description).toBe("Specifically designed for the 2951 IAE.");
+    expect(byTitle("Carrack Paint - Polar").paint_description).toBe("Specifically designed for the 2951 IAE.");
+    expect(byTitle("Carrack - Ember Paint").paint_description).toBeUndefined();
+    expect(byTitle("Carrack Paint").paint_description).toBeUndefined();
+  });
+
   describe("PUT /decisions/:rsiPledgeId", () => {
     it("upserts a decision and returns { ok: true }", async () => {
       const res = await send(token, "PUT", `/decisions/${RSI}`, { decision: "melt" });
