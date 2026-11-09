@@ -57,7 +57,7 @@ interface CleanupPayload {
     to_vehicle_name: string | null;
   }>;
   decisions: Record<string, { decision: string | null; buy_ingame: boolean; iae_price_cents: number | null }>;
-  buys: Array<{ vehicle_id: number; price_cents: number | null }>;
+  buys: Array<{ vehicle_id: number; price_cents: number | null; remelt?: boolean }>;
   state: { credit_override_cents: number | null; done_steps: string[] };
 }
 
@@ -366,6 +366,13 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       expect((await send(token, "PUT", `/decisions/${RSI}`, { buy_ingame: "yes" })).status).toBe(400);
       expect((await send(token, "PUT", "/decisions/abc", { decision: "keep" })).status).toBe(400);
     });
+    it("accepts the rebuy-and-remelt decision", async () => {
+      const res = await send(token, "PUT", `/decisions/${RSI}`, { decision: "iae-remelt" });
+      expect(res.status).toBe(200);
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: "iae-remelt", buy_ingame: false, iae_price_cents: null });
+      await send(token, "PUT", `/decisions/${RSI}`, { decision: null });
+      expect((await get(token)).decisions[String(RSI)]).toBeUndefined();
+    });
   });
 
   describe("PUT/DELETE /buys/:vehicleId", () => {
@@ -390,6 +397,23 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       expect((await send(token, "PUT", "/buys/99999999", {})).status).toBe(404);
       expect((await send(token, "PUT", `/buys/${carrackId}`, { price_cents: -5 })).status).toBe(400);
       expect((await send(token, "PUT", "/buys/abc", {})).status).toBe(400);
+    });
+
+    it("stores the remelt-for-buy-back flag independently of the price", async () => {
+      let res = await send(token, "PUT", `/buys/${carrackId}`, { remelt: true });
+      expect(res.status).toBe(200);
+      expect((await get(token)).buys).toEqual([{ vehicle_id: carrackId, price_cents: null, remelt: true }]);
+
+      // A price-only update keeps the flag; a flag-only update keeps the price.
+      await send(token, "PUT", `/buys/${carrackId}`, { price_cents: 45000 });
+      expect((await get(token)).buys).toEqual([{ vehicle_id: carrackId, price_cents: 45000, remelt: true }]);
+      res = await send(token, "PUT", `/buys/${carrackId}`, { remelt: false });
+      expect(res.status).toBe(200);
+      const buys = (await get(token)).buys;
+      expect(buys).toEqual([{ vehicle_id: carrackId, price_cents: 45000 }]);
+      expect(buys[0].remelt).toBeUndefined();
+
+      expect((await send(token, "PUT", `/buys/${carrackId}`, { remelt: "yes" })).status).toBe(400);
     });
 
     it("deletes a buy", async () => {

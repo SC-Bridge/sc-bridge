@@ -207,6 +207,27 @@ describe('buildSteps', () => {
   it('is empty when nothing is decided', () => {
     expect(buildSteps({ rows, decisions: {}, buys: [], credit: 0 }).actionable).toBe(0)
   })
+  it('remelts an IAE rebuy straight after buying it, so the price comes back as credit', () => {
+    const p = buildSteps({ rows, decisions: { 3: { decision: 'iae-remelt' } }, buys: [], credit: 7795 })
+    const ph = (k) => p.phases.find((x) => x.key === k)
+    expect(ph('melt').steps.map((s) => s.key)).toEqual(['melt-3'])
+    expect(ph('buy').steps[0].money.join(' ')).toMatch(/\$827\.95 from credit \+ \$97\.05 by card/)
+    const remelt = ph('remelt').steps
+    expect(remelt.map((s) => s.key)).toEqual(['remelt-3'])
+    expect(remelt[0].title).toMatch(/Exchange the new .*Pioneer/)
+    expect(remelt[0].money.join(' ')).toMatch(/\+\$925\.00 store credit.*credit ≈ \$925\.00/)
+    expect(p.counts.remelts).toBe(1)
+    expect(p.phases.map((x) => x.key).indexOf('remelt')).toBeGreaterThan(p.phases.map((x) => x.key).indexOf('buy'))
+  })
+  it('remelts a buy-list ship marked for a buy-back token and reports what comes back', () => {
+    const p = buildSteps({ rows, decisions: {}, buys: [{ vehicle_id: 77, name: 'Carrack', price_cents: 60000, remelt: true }, { vehicle_id: 78, name: 'Polaris', price_cents: 10000 }], credit: 100000 })
+    const ph = (k) => p.phases.find((x) => x.key === k)
+    expect(ph('buy').steps).toHaveLength(2)
+    expect(ph('remelt').steps.map((s) => s.key)).toEqual(['remelt-buy-77'])
+    expect(ph('remelt').steps[0].money.join(' ')).toMatch(/\+\$600\.00 store credit.*credit ≈ \$900\.00/)
+    expect(ph('prep').steps[0].money.join(' ')).toMatch(/Remelts return \$600\.00/)
+    expect(ph('prep').steps[0].money.join(' ')).toMatch(/Credit left ~\$900\.00/)
+  })
   it('renders a plain-text checklist with ticks', () => {
     const text = stepsAsText(plan, ['melt-3'])
     expect(text).toMatch(/\[x\] 2\. Exchange/)

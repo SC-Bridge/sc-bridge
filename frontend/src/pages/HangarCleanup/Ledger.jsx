@@ -2,13 +2,13 @@ import React, { useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import {
-  usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS,
+  usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS, REBUY_DECISIONS,
 } from '../../lib/hangarCleanup'
 import { Pill, Chip, MoneyInput, DECISIONS, SUGGESTION_TONE } from './ui'
 
 const INS_TONE = { LTI: 'text-sc-lti', long: 'text-sc-warn', short: 'text-red-300', none: 'text-red-300' }
 // Left edge colour on a decided row, so a scan down the table shows what's planned.
-const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500' }
+const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', 'iae-remelt': 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500' }
 
 function effectiveSuggestion(r, d) {
   if (d?.buy_ingame && r.meltable && r.value > 0 && r.cat !== 'CCU') {
@@ -63,9 +63,9 @@ function Detail({ r, d, decisions, onDecide }) {
                 {price.source === 'yours' && <button type="button" className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => onDecide(r.id, { iae_price_cents: null })}>Use store price</button>}
               </div>
               <ul className="list-disc pl-4 space-y-1 text-gray-300">{iaeReasons(r, decisions).map((x) => <li key={x}>{x}</li>)}</ul>
-              {d?.decision !== 'iae'
+              {!REBUY_DECISIONS.has(d?.decision)
                 ? <button type="button" className="btn-secondary !py-1 !px-3 text-xs" onClick={() => onDecide(r.id, { decision: 'iae' })}>Plan this rebuy</button>
-                : <p className="text-[11px] text-gray-500">Planned: counted in IAE rebuys and credit after.</p>}
+                : <p className="text-[11px] text-gray-500">{d.decision === 'iae-remelt' ? 'Planned: rebuy, then remelt. The rebuy price comes back as credit and the ship sits in Buy Back Pledges.' : 'Planned: counted in IAE rebuys and credit after.'}</p>}
             </div>
           )}
         </div>
@@ -179,7 +179,7 @@ export default function Ledger({ rows, decisions, onDecide, open, onToggle }) {
                         aria-label={`Decision for ${displayName(r)}`}
                         className="bg-sc-darker border border-sc-border/60 rounded px-1.5 py-1 text-xs text-gray-200 max-w-[11rem]"
                       >
-                        {DECISIONS.filter(([v]) => v !== 'iae' || canIae || d?.decision === 'iae').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {DECISIONS.filter(([v]) => !REBUY_DECISIONS.has(v) || canIae || d?.decision === v).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     </td>
                     <td className="table-cell min-w-[14rem]">

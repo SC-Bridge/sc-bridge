@@ -11,7 +11,7 @@ import { validate } from "../lib/validation";
  * the mutations store the user's decisions. User data — never cached.
  */
 
-const DECISIONS = ["keep", "melt", "melt-ig", "iae", "ins", "review"] as const;
+const DECISIONS = ["keep", "melt", "melt-ig", "iae", "iae-remelt", "ins", "review"] as const;
 
 const CentsOrNull = z.number().int().min(0).nullable();
 
@@ -29,6 +29,8 @@ const DecisionBody = z.object({
 });
 const BuyBody = z.object({
   price_cents: CentsOrNull.optional(),
+  // Melt straight after buying, so the ship sits in Buy Back Pledges.
+  remelt: z.boolean().optional(),
 });
 const StateBody = z.object({
   credit_override_cents: CentsOrNull.optional(),
@@ -174,7 +176,7 @@ export function hangarCleanupRoutes() {
           )
           .bind(userId),
         db
-          .prepare("SELECT vehicle_id, price_cents FROM user_hangar_cleanup_buys WHERE user_id = ? ORDER BY id")
+          .prepare("SELECT vehicle_id, price_cents, remelt FROM user_hangar_cleanup_buys WHERE user_id = ? ORDER BY id")
           .bind(userId),
         db
           .prepare("SELECT credit_override_cents, done_steps_json FROM user_hangar_cleanup_state WHERE user_id = ?")
@@ -274,9 +276,11 @@ export function hangarCleanupRoutes() {
         to_vehicle_name: b.to_vehicle_name,
       })),
       decisions,
-      buys: (buyRes.results as Array<{ vehicle_id: number; price_cents: number | null }>).map((b) => ({
+      // remelt is only present when set, so plain buys keep their two-key shape.
+      buys: (buyRes.results as Array<{ vehicle_id: number; price_cents: number | null; remelt: number }>).map((b) => ({
         vehicle_id: b.vehicle_id,
         price_cents: b.price_cents,
+        ...(b.remelt ? { remelt: true } : {}),
       })),
       state: {
         credit_override_cents: state?.credit_override_cents ?? null,
@@ -338,7 +342,7 @@ export function hangarCleanupRoutes() {
     },
   );
 
-  // PUT /buys/:vehicleId — add to the buy list; price_cents omitted keeps the stored price.
+  // PUT /buys/:vehicleId — add to the buy list; price_cents / remelt omitted keep the stored value.
   routes.put(
     "/buys/:vehicleId",
     validate("param", VehicleIdParam),
@@ -353,14 +357,23 @@ export function hangarCleanupRoutes() {
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
       const priceProvided = body.price_cents !== undefined;
+      const remeltProvided = body.remelt !== undefined;
       await db
         .prepare(
-          `INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id, price_cents)
-           VALUES (?, ?, ?)
+          `INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id, price_cents, remelt)
+           VALUES (?, ?, ?, ?)
            ON CONFLICT(user_id, vehicle_id) DO UPDATE SET
-             price_cents = CASE WHEN ? THEN excluded.price_cents ELSE user_hangar_cleanup_buys.price_cents END`,
+             price_cents = CASE WHEN ? THEN excluded.price_cents ELSE user_hangar_cleanup_buys.price_cents END,
+             remelt = CASE WHEN ? THEN excluded.remelt ELSE user_hangar_cleanup_buys.remelt END`,
         )
-        .bind(userId, vehicleId, priceProvided ? body.price_cents : null, priceProvided ? 1 : 0)
+        .bind(
+          userId,
+          vehicleId,
+          priceProvided ? body.price_cents : null,
+          body.remelt ? 1 : 0,
+          priceProvided ? 1 : 0,
+          remeltProvided ? 1 : 0,
+        )
         .run();
       return c.json({ ok: true });
     },

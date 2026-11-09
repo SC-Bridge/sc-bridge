@@ -431,19 +431,24 @@ export function iaeReasons(r, decisions) {
 
 // ── Process plan ────────────────────────────────────────────────────────────
 
-const MELT_DECISIONS = new Set(['melt', 'melt-ig', 'iae'])
+/** Decisions that melt the pledge, and those that then buy the ship again at IAE. */
+export const MELT_DECISIONS = new Set(['melt', 'melt-ig', 'iae', 'iae-remelt'])
+export const REBUY_DECISIONS = new Set(['iae', 'iae-remelt'])
 
 /**
  * Turn decisions into an ordered checklist. Melts come first so the credit
  * exists before anything is bought; purchases carry a running balance that
  * shows where store credit runs out.
  *
- * `buys` is [{ vehicle_id, name, price_cents }] with the effective price.
+ * `buys` is [{ vehicle_id, name, price_cents, remelt }] with the effective
+ * price. A remelt (a buy-list ship marked for it, or an 'iae-remelt' decision)
+ * is melted straight after purchase: the price comes back as store credit and
+ * the ship sits in Buy Back Pledges.
  */
 export function buildSteps({ rows, decisions, buys, credit, catalog }) {
   const dec = (r) => decisions?.[r.id]?.decision ?? null
   const melts = rows.filter((r) => MELT_DECISIONS.has(dec(r))).sort((a, b) => b.value - a.value)
-  const rebuys = rows.filter((r) => dec(r) === 'iae')
+  const rebuys = rows.filter((r) => REBUY_DECISIONS.has(dec(r)))
   const inGame = rows.filter((r) => dec(r) === 'melt-ig')
   const insWork = rows.filter((r) => dec(r) === 'ins')
   const review = rows.filter((r) => dec(r) === 'review')
@@ -453,12 +458,24 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
   const meltTotal = melts.reduce((a, r) => a + r.value, 0)
   const spend = rebuys.reduce((a, r) => a + (rebuyPrice(r, decisions).cents ?? 0), 0) + buyList.reduce((a, b) => a + (b.price_cents ?? 0), 0)
   const shortfall = Math.max(0, spend - start - meltTotal)
+  const remelts = [
+    ...rebuys.filter((r) => dec(r) === 'iae-remelt').map((r) => ({ key: `remelt-${r.id}`, name: r.current, cents: rebuyPrice(r, decisions).cents })),
+    ...buyList.filter((b) => b.remelt).map((b) => ({ key: `remelt-buy-${b.vehicle_id}`, name: b.name, cents: b.price_cents })),
+  ]
+  const remeltTotal = remelts.reduce((a, x) => a + (x.cents ?? 0), 0)
+  // Credit once every purchase is paid for; a card payment never takes it below zero.
+  const afterBuys = Math.max(0, start + meltTotal - spend)
   const phases = []
 
   phases.push({ key: 'prep', title: 'Before you start', steps: [{
     key: 'prep-check', title: 'Check the plan adds up',
     meta: ['Prices are estimates. Check each one on RSI before you buy.'],
-    money: [`Store credit now ${usd(start)}`, `Melts add ${usd(meltTotal)}`, `Purchases cost ~${usd(spend)}`, shortfall ? `Card needed ~${usd(shortfall)}` : `Credit left ~${usd(start + meltTotal - spend)}`],
+    money: [
+      `Store credit now ${usd(start)}`, `Melts add ${usd(meltTotal)}`, `Purchases cost ~${usd(spend)}`,
+      ...(remelts.length ? [`Remelts return ${usd(remeltTotal)}`] : []),
+      ...(shortfall ? [`Card needed ~${usd(shortfall)}`] : []),
+      ...(!shortfall || remelts.length ? [`Credit left ~${usd(afterBuys + remeltTotal)}`] : []),
+    ],
     warn: shortfall ? ['Your credit does not cover everything. The purchase steps show where a card payment starts.'] : [],
   }] })
 
@@ -474,7 +491,7 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
         if (r.cat === 'Ship' && (r.upgraded || r.chain.length)) warn.push(`Melting returns the full value but loses its CCU chain from ${r.base || 'the base hull'}.`)
         if (r.warbond) warn.push('Warbond: you get back what you paid; buying it again costs standard price.')
         if (r.currency && !/store credit/i.test(r.currency)) warn.push(`Originally paid with ${r.currency}.`)
-        const why = dec(r) === 'iae' ? `To rebuy at IAE with ${IAE_MONTHS}-month insurance (step below).` : dec(r) === 'melt-ig' ? 'You will buy it in-game instead (step below).' : ''
+        const why = dec(r) === 'iae-remelt' ? 'To rebuy at IAE and remelt for a buy-back token (steps below).' : dec(r) === 'iae' ? `To rebuy at IAE with ${IAE_MONTHS}-month insurance (step below).` : dec(r) === 'melt-ig' ? 'You will buy it in-game instead (step below).' : ''
         return { key: `melt-${r.id}`, title: `Exchange “${displayName(r)}”`, meta: [`Pledge #${r.id} · ${r.name}`, why].filter(Boolean), money: [`+${usd(r.value)} store credit`, `credit ≈ ${usd(bal)}`], warn }
       }),
     })
@@ -503,8 +520,25 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
       intro: 'During IAE, open the RSI pledge store, find each ship in the IAE sale, and buy the standalone ship. Check the insurance on the product page before paying.',
       steps: [
         ...rebuys.map((r) => buyStep(`rebuy-${r.id}`, `Buy ${r.current} (standalone, ${IAE_MONTHS}-month insurance)`, rebuyPrice(r, decisions).cents, [`Replaces the pledge you melted: ${r.name}`], r.ins.tier === 'LTI' ? ['The old pledge was LTI; this one will not be.'] : [])),
-        ...buyList.map((b) => buyStep(`buy-${b.vehicle_id}`, `Buy ${b.name} (standalone, ${IAE_MONTHS}-month insurance)`, b.price_cents, ['From your IAE buy list'], [])),
+        ...buyList.map((b) => buyStep(`buy-${b.vehicle_id}`, `Buy ${b.name} (standalone, ${IAE_MONTHS}-month insurance)`, b.price_cents, [b.remelt ? 'From your IAE buy list, to remelt for a buy-back token' : 'From your IAE buy list'], [])),
       ],
+    })
+  }
+
+  if (remelts.length) {
+    let bal = afterBuys
+    phases.push({
+      key: 'remelt', title: 'Remelt for buy-back',
+      intro: 'Once each purchase shows in My Gear, open it and click Exchange. It then sits in Buy Back Pledges at the price you paid. Buying it back with store credit uses a buy-back token; buying it back with new money does not.',
+      steps: remelts.map((x) => {
+        bal += x.cents ?? 0
+        return {
+          key: x.key, title: `Exchange the new ${x.name} straight away`,
+          meta: ['It moves to Buy Back Pledges, ready to reclaim later.'],
+          money: [x.cents != null ? `+${usd(x.cents)} store credit` : 'price unknown', `credit ≈ ${usd(bal)}`],
+          warn: ['Anything you paid by card comes back as store credit, not as a refund.'],
+        }
+      }),
     })
   }
 
@@ -529,7 +563,7 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
     phases.push({ key: 'review', title: 'Still to decide', steps: review.map((r) => ({ key: `rev-${r.id}`, title: displayName(r), meta: r.suggestion.reasons.slice(0, 2), money: [usd(r.value)], warn: [] })) })
   }
 
-  const counts = { melts: melts.length, buys: rebuys.length + buyList.length, inGame: inGame.length, ins: insWork.length, review: review.length }
+  const counts = { melts: melts.length, buys: rebuys.length + buyList.length, remelts: remelts.length, inGame: inGame.length, ins: insWork.length, review: review.length }
   return { phases, counts, actionable: Object.values(counts).reduce((a, n) => a + n, 0), shortfall }
 }
 

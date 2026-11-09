@@ -562,6 +562,11 @@ export async function saveCleanupBuy(vehicleId, priceCents = null) {
   return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { price_cents: priceCents })
 }
 
+/** Mark a buy-list ship to be melted straight after purchase (it lands in Buy Back Pledges). */
+export async function saveCleanupBuyRemelt(vehicleId, remelt) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { remelt })
+}
+
 // DELETEs send an empty JSON body: browsers only add Content-Length: 0 on their
 // own for POST/PUT, and the /api/* guard returns 411 for a mutation without it.
 export async function removeCleanupBuy(vehicleId) {
