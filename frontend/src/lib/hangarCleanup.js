@@ -190,11 +190,68 @@ export function normaliseExport(json, catalog) {
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 
+// ── Limited paints ──────────────────────────────────────────────────────────
+// There is no availability data for paints, so this reads the words RSI and
+// the game use: an event name, an exclusivity word, or an in-universe year.
+// It is a caution, not a fact: some of these return to the store every year.
+
+const PAINT_EVENTS = [
+  [/best in show|\bbis\b/i, 'Best in Show'],
+  [/invictus|\bilw\b/i, 'Invictus'],
+  [/\biae\b|aerospace expo/i, 'IAE'],
+  [/luminalia/i, 'Luminalia'],
+  [/foundation festival/i, 'Foundation Festival'],
+  [/stella fortuna/i, 'Stella Fortuna'],
+  [/red festival|lunar new year/i, 'Red Festival'],
+  [/coramor/i, 'Coramor'],
+  [/pirate week/i, 'Pirate Week'],
+  [/alien week/i, 'Alien Week'],
+  [/day of the vara/i, 'Day of the Vara'],
+  [/citizencon/i, 'CitizenCon'],
+]
+const PAINT_EXCLUSIVES = [
+  [/subscriber/i, 'Subscriber exclusive'],
+  [/concierge/i, 'Concierge exclusive'],
+  [/referral/i, 'Referral reward'],
+  [/limited[- ]edition/i, 'Limited edition'],
+  [/\bexclusive\b/i, 'Exclusive'],
+  [/commemorat/i, 'Commemorative'],
+]
+// Event paint series that neither RSI's name nor the game's description ties
+// to an event. A hand-kept list: add a series here when it is known to be one.
+const PAINT_EVENT_SERIES = ['Frostbite', 'Keystone', 'Meridian']
+const PAINT_SERIES_RE = PAINT_EVENT_SERIES.map((s) => [new RegExp(`\\b${s}\\b`, 'i'), `${s} event series`])
+const REWARD_PAINT = 'Reward, never sold'
+
+/**
+ * Why a paint looks limited, from a pledge name, item title or game
+ * description: "Best in Show 2952", "Subscriber exclusive", "Frostbite event
+ * series", "dated 2951".
+ * Null when nothing in the text says so.
+ */
+export function limitedReason(text) {
+  if (!text) return null
+  const year = /\b29\d\d\b/.exec(text)?.[0]
+  const event = PAINT_EVENTS.find(([re]) => re.test(text))?.[1]
+  if (event) return year ? `${event} ${year}` : event
+  const exclusive = PAINT_EXCLUSIVES.find(([re]) => re.test(text))?.[1]
+  if (exclusive) return exclusive
+  const series = PAINT_SERIES_RE.find(([re]) => re.test(text))?.[1]
+  if (series) return series
+  return year ? `dated ${year}` : null
+}
+
+/** True when everything in the pledge except insurance is a paint. */
+function paintOnly(p) {
+  const items = (p.items ?? []).filter((i) => i.kind !== 'Insurance')
+  return items.length > 0 && items.every((i) => i.kind === 'Skin')
+}
+
 function category(p) {
   const n = p.name ?? ''
   if (p.ccu_from || p.ccu_to || /^upgrade\s*-/i.test(n)) return 'CCU'
   if ((p.items ?? []).some((i) => i.kind === 'Ship') || (p.ships ?? []).length) return 'Ship'
-  if (/^paints?\s*-/i.test(n)) return 'Paint'
+  if (/^paints?\s*-/i.test(n) || paintOnly(p)) return 'Paint'
   if (/^(gear|subscribers exclusive)\s*-/i.test(n)) return 'Gear'
   if (/^add-ons?\s*-/i.test(n)) return (p.items ?? []).some((i) => i.kind === 'Component') ? 'Add-on' : 'Gear'
   if (/^(package|digital goodies)/i.test(n)) return 'Package'
@@ -213,6 +270,7 @@ export const FLAGS = {
   'dupe-item': { label: 'Duplicate', tone: 'warn', tip: 'Identical pledge owned more than once' },
   'paint-unowned': { label: 'Paint, no ship', tone: 'warn', tip: "Paint for a ship you don't own" },
   'paint-partial': { label: 'Some paints unowned', tone: 'mute', tip: "Pack includes paints for ships you don't own" },
+  'paint-limited': { label: 'Limited paint', tone: 'info', tip: 'Event, dated, exclusive or reward paint: not sold in the store year-round' },
   'ccu-orphan': { label: 'CCU, no base', tone: 'warn', tip: "You can't reach this CCU's from-ship" },
   'ccu-dupe': { label: 'Multiple CCUs', tone: 'mute', tip: 'Several identical CCUs' },
   warbond: { label: 'Warbond', tone: 'mute', tip: 'Warbond pricing' },
@@ -271,6 +329,12 @@ function toRow(p) {
     chain,
     ccu: cat === 'CCU' ? { from: ccuFrom ? [ccuFrom] : [], to: ccuTo ? [ccuTo] : [] } : null,
     paints: (p.items ?? []).filter((i) => i.kind === 'Skin').map((i) => i.title),
+    // What can say a paint is limited: each paint's title and game description,
+    // plus the pledge name when the pledge is nothing but paint.
+    paintTexts: [
+      ...(p.items ?? []).filter((i) => i.kind === 'Skin').flatMap((i) => [i.title, i.paint_description]),
+      ...(cat === 'Paint' ? [p.name] : []),
+    ].filter(Boolean),
     items: (p.items ?? []).map((i) => ({ title: i.title, kind: i.kind ?? '' })),
     flags: [],
     suggestion: null,
@@ -347,6 +411,18 @@ export function analyse(model) {
   }
 
   for (const r of rows) {
+    if (!r.paints.length || r.cat === 'CCU') continue
+    const found = [...new Set(r.paintTexts.map(limitedReason).filter(Boolean))]
+    // "dated 2951" adds nothing next to "IAE 2951".
+    const reasons = found.filter((x) => !x.startsWith('dated ') || !found.some((y) => y !== x && y.endsWith(x.slice(6))))
+    // A pledge that cost nothing was handed out, not sold: the store never had it.
+    if (r.value === 0 && r.cat !== 'Ship') reasons.push(REWARD_PAINT)
+    if (!reasons.length) continue
+    r.limited = reasons
+    r.flags.push('paint-limited')
+  }
+
+  for (const r of rows) {
     if (!r.meltable) r.flags.push('not-meltable')
     else if (r.value === 0) r.flags.push('zero-melt')
     if (r.warbond) r.flags.push('warbond')
@@ -360,7 +436,10 @@ export function analyse(model) {
 
 function suggest(r, tokens) {
   if (!r.meltable) return { action: 'keep', label: "Can't melt", reasons: ['RSI marks this pledge as not reclaimable.'] }
-  if (r.value === 0) return { action: 'keep', label: 'Keep ($0 melt)', reasons: ['Melting returns nothing.'] }
+  if (r.value === 0) {
+    const reward = r.limited?.length ? [`Limited paint (${r.limited.join(', ')}): it cannot be bought in the store.`] : []
+    return { action: 'keep', label: 'Keep ($0 melt)', reasons: ['Melting returns nothing.', ...reward] }
+  }
   if (r.cat === 'Ship') {
     if (r.flags.includes('dupe-ship') && !r.dupeKeep) {
       return { action: 'melt', label: 'Melt (duplicate)', reasons: [`You own ${r.dupeOf} pledges with this hull; another copy has equal or better insurance.`] }
@@ -387,10 +466,18 @@ function suggest(r, tokens) {
     if (r.flags.includes('ccu-dupe') && r.dupeIndex > 0) return { action: 'review', label: 'Review: extra copy', reasons: [`You hold ${r.dupeOf} copies. Keep only as many as you will apply.`] }
     return { action: 'keep', label: 'Keep (usable CCU)', reasons: ['Applies to a hull you own or can reach.'] }
   }
-  if (r.flags.includes('paint-unowned')) return { action: 'melt', label: 'Melt (no ship)', reasons: [`You don't own: ${r.paintUnowned.join(', ')}.`] }
-  if (r.flags.includes('dupe-item') && r.dupeIndex > 0) return { action: 'melt', label: 'Melt (duplicate)', reasons: [`Extra copy ${r.dupeIndex + 1} of ${r.dupeOf}. Item pledges add nothing when doubled.`] }
-  const reasons = r.flags.includes('paint-partial') ? [`Some paints are for ships you don't own: ${r.paintUnowned.join(', ')}.`] : ['Nothing flags this as redundant.']
-  return { action: 'keep', label: 'Keep', reasons }
+  // A limited paint is never an automatic melt: the store may not sell it again.
+  const limited = r.flags.includes('paint-limited')
+    ? `Limited paint (${r.limited.join(', ')}): it is not sold in the store year-round. After a melt, buy-back is the only sure way to get it back.`
+    : null
+  const melt = (label, why) => (limited
+    ? { action: 'review', label: 'Review: limited paint', reasons: [limited, why] }
+    : { action: 'melt', label, reasons: [why] })
+  if (r.flags.includes('paint-unowned')) return melt('Melt (no ship)', `You don't own: ${r.paintUnowned.join(', ')}.`)
+  if (r.flags.includes('dupe-item') && r.dupeIndex > 0) return melt('Melt (duplicate)', `Extra copy ${r.dupeIndex + 1} of ${r.dupeOf}. Item pledges add nothing when doubled.`)
+  const partial = r.flags.includes('paint-partial') ? [`Some paints are for ships you don't own: ${r.paintUnowned.join(', ')}.`] : []
+  if (limited) return { action: 'keep', label: 'Keep (limited paint)', reasons: [limited, ...partial] }
+  return { action: 'keep', label: 'Keep', reasons: partial.length ? partial : ['Nothing flags this as redundant.'] }
 }
 
 // ── Display helpers ─────────────────────────────────────────────────────────
@@ -431,19 +518,24 @@ export function iaeReasons(r, decisions) {
 
 // ── Process plan ────────────────────────────────────────────────────────────
 
-const MELT_DECISIONS = new Set(['melt', 'melt-ig', 'iae'])
+/** Decisions that melt the pledge, and those that then buy the ship again at IAE. */
+export const MELT_DECISIONS = new Set(['melt', 'melt-ig', 'iae', 'iae-remelt'])
+export const REBUY_DECISIONS = new Set(['iae', 'iae-remelt'])
 
 /**
  * Turn decisions into an ordered checklist. Melts come first so the credit
  * exists before anything is bought; purchases carry a running balance that
  * shows where store credit runs out.
  *
- * `buys` is [{ vehicle_id, name, price_cents }] with the effective price.
+ * `buys` is [{ vehicle_id, name, price_cents, remelt }] with the effective
+ * price. A remelt (a buy-list ship marked for it, or an 'iae-remelt' decision)
+ * is melted straight after purchase: the price comes back as store credit and
+ * the ship sits in Buy Back Pledges.
  */
 export function buildSteps({ rows, decisions, buys, credit, catalog }) {
   const dec = (r) => decisions?.[r.id]?.decision ?? null
   const melts = rows.filter((r) => MELT_DECISIONS.has(dec(r))).sort((a, b) => b.value - a.value)
-  const rebuys = rows.filter((r) => dec(r) === 'iae')
+  const rebuys = rows.filter((r) => REBUY_DECISIONS.has(dec(r)))
   const inGame = rows.filter((r) => dec(r) === 'melt-ig')
   const insWork = rows.filter((r) => dec(r) === 'ins')
   const review = rows.filter((r) => dec(r) === 'review')
@@ -453,12 +545,24 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
   const meltTotal = melts.reduce((a, r) => a + r.value, 0)
   const spend = rebuys.reduce((a, r) => a + (rebuyPrice(r, decisions).cents ?? 0), 0) + buyList.reduce((a, b) => a + (b.price_cents ?? 0), 0)
   const shortfall = Math.max(0, spend - start - meltTotal)
+  const remelts = [
+    ...rebuys.filter((r) => dec(r) === 'iae-remelt').map((r) => ({ key: `remelt-${r.id}`, name: r.current, cents: rebuyPrice(r, decisions).cents })),
+    ...buyList.filter((b) => b.remelt).map((b) => ({ key: `remelt-buy-${b.vehicle_id}`, name: b.name, cents: b.price_cents })),
+  ]
+  const remeltTotal = remelts.reduce((a, x) => a + (x.cents ?? 0), 0)
+  // Credit once every purchase is paid for; a card payment never takes it below zero.
+  const afterBuys = Math.max(0, start + meltTotal - spend)
   const phases = []
 
   phases.push({ key: 'prep', title: 'Before you start', steps: [{
     key: 'prep-check', title: 'Check the plan adds up',
     meta: ['Prices are estimates. Check each one on RSI before you buy.'],
-    money: [`Store credit now ${usd(start)}`, `Melts add ${usd(meltTotal)}`, `Purchases cost ~${usd(spend)}`, shortfall ? `Card needed ~${usd(shortfall)}` : `Credit left ~${usd(start + meltTotal - spend)}`],
+    money: [
+      `Store credit now ${usd(start)}`, `Melts add ${usd(meltTotal)}`, `Purchases cost ~${usd(spend)}`,
+      ...(remelts.length ? [`Remelts return ${usd(remeltTotal)}`] : []),
+      ...(shortfall ? [`Card needed ~${usd(shortfall)}`] : []),
+      ...(!shortfall || remelts.length ? [`Credit left ~${usd(afterBuys + remeltTotal)}`] : []),
+    ],
     warn: shortfall ? ['Your credit does not cover everything. The purchase steps show where a card payment starts.'] : [],
   }] })
 
@@ -474,7 +578,8 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
         if (r.cat === 'Ship' && (r.upgraded || r.chain.length)) warn.push(`Melting returns the full value but loses its CCU chain from ${r.base || 'the base hull'}.`)
         if (r.warbond) warn.push('Warbond: you get back what you paid; buying it again costs standard price.')
         if (r.currency && !/store credit/i.test(r.currency)) warn.push(`Originally paid with ${r.currency}.`)
-        const why = dec(r) === 'iae' ? `To rebuy at IAE with ${IAE_MONTHS}-month insurance (step below).` : dec(r) === 'melt-ig' ? 'You will buy it in-game instead (step below).' : ''
+        if (r.limited?.length) warn.push(`Limited paint (${r.limited.join(', ')}): it may not come back to the store. Buy-back is the only sure way to get it again.`)
+        const why = dec(r) === 'iae-remelt' ? 'To rebuy at IAE and remelt for a buy-back token (steps below).' : dec(r) === 'iae' ? `To rebuy at IAE with ${IAE_MONTHS}-month insurance (step below).` : dec(r) === 'melt-ig' ? 'You will buy it in-game instead (step below).' : ''
         return { key: `melt-${r.id}`, title: `Exchange “${displayName(r)}”`, meta: [`Pledge #${r.id} · ${r.name}`, why].filter(Boolean), money: [`+${usd(r.value)} store credit`, `credit ≈ ${usd(bal)}`], warn }
       }),
     })
@@ -503,8 +608,25 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
       intro: 'During IAE, open the RSI pledge store, find each ship in the IAE sale, and buy the standalone ship. Check the insurance on the product page before paying.',
       steps: [
         ...rebuys.map((r) => buyStep(`rebuy-${r.id}`, `Buy ${r.current} (standalone, ${IAE_MONTHS}-month insurance)`, rebuyPrice(r, decisions).cents, [`Replaces the pledge you melted: ${r.name}`], r.ins.tier === 'LTI' ? ['The old pledge was LTI; this one will not be.'] : [])),
-        ...buyList.map((b) => buyStep(`buy-${b.vehicle_id}`, `Buy ${b.name} (standalone, ${IAE_MONTHS}-month insurance)`, b.price_cents, ['From your IAE buy list'], [])),
+        ...buyList.map((b) => buyStep(`buy-${b.vehicle_id}`, `Buy ${b.name} (standalone, ${IAE_MONTHS}-month insurance)`, b.price_cents, [b.remelt ? 'From your IAE buy list, to remelt for a buy-back token' : 'From your IAE buy list'], [])),
       ],
+    })
+  }
+
+  if (remelts.length) {
+    let bal = afterBuys
+    phases.push({
+      key: 'remelt', title: 'Remelt for buy-back',
+      intro: 'Once each purchase shows in My Gear, open it and click Exchange. It then sits in Buy Back Pledges at the price you paid. Buying it back with store credit uses a buy-back token; buying it back with new money does not.',
+      steps: remelts.map((x) => {
+        bal += x.cents ?? 0
+        return {
+          key: x.key, title: `Exchange the new ${x.name} straight away`,
+          meta: ['It moves to Buy Back Pledges, ready to reclaim later.'],
+          money: [x.cents != null ? `+${usd(x.cents)} store credit` : 'price unknown', `credit ≈ ${usd(bal)}`],
+          warn: ['Anything you paid by card comes back as store credit, not as a refund.'],
+        }
+      }),
     })
   }
 
@@ -529,7 +651,7 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
     phases.push({ key: 'review', title: 'Still to decide', steps: review.map((r) => ({ key: `rev-${r.id}`, title: displayName(r), meta: r.suggestion.reasons.slice(0, 2), money: [usd(r.value)], warn: [] })) })
   }
 
-  const counts = { melts: melts.length, buys: rebuys.length + buyList.length, inGame: inGame.length, ins: insWork.length, review: review.length }
+  const counts = { melts: melts.length, buys: rebuys.length + buyList.length, remelts: remelts.length, inGame: inGame.length, ins: insWork.length, review: review.length }
   return { phases, counts, actionable: Object.values(counts).reduce((a, n) => a + n, 0), shortfall }
 }
 

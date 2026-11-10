@@ -57,7 +57,7 @@ interface CleanupPayload {
     to_vehicle_name: string | null;
   }>;
   decisions: Record<string, { decision: string | null; buy_ingame: boolean; iae_price_cents: number | null }>;
-  buys: Array<{ vehicle_id: number; price_cents: number | null }>;
+  buys: Array<{ vehicle_id: number; price_cents: number | null; remelt?: boolean }>;
   state: { credit_override_cents: number | null; done_steps: string[] };
 }
 
@@ -317,6 +317,64 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
     expect(body.decisions[String(OTHER_RSI)]).toBeUndefined();
   });
 
+  it("adds the game's paint description to a synced paint when it names an event", async () => {
+    const painter = await createTestUser(env.DB);
+    await seedHangar(painter.userId, { rsiBase: 770001, vehicleId: carrackId, fromVehicleId: cutlassId });
+    const pledgeRow = await env.DB
+      .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?")
+      .bind(painter.userId, 770001)
+      .first<{ id: number }>();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES ('Carrack Polar Livery', 'Specifically designed for the 2951 IAE.')"),
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES ('Carrack Ember Livery', 'A warm red finish.')"),
+      ...["Carrack - Polar Paint", "Carrack Paint - Polar", "Carrack - Ember Paint"].map((title, i) =>
+        env.DB
+          .prepare("INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, sort_order) VALUES (?, ?, ?, 'Skin', ?)")
+          .bind(painter.userId, pledgeRow!.id, title, 10 + i),
+      ),
+    ]);
+
+    const body = await get(painter.sessionToken);
+    const items = body.pledges.find((p) => p.rsi_pledge_id === 770001)!.items as Array<{ title: string; paint_description?: string }>;
+    const byTitle = (t: string) => items.find((i) => i.title === t)!;
+    expect(byTitle("Carrack - Polar Paint").paint_description).toBe("Specifically designed for the 2951 IAE.");
+    expect(byTitle("Carrack Paint - Polar").paint_description).toBe("Specifically designed for the 2951 IAE.");
+    expect(byTitle("Carrack - Ember Paint").paint_description).toBeUndefined();
+    expect(byTitle("Carrack Paint").paint_description).toBeUndefined();
+  });
+
+  it("applies an event paint series to ships whose paint name does not match exactly", async () => {
+    const painter = await createTestUser(env.DB);
+    await seedHangar(painter.userId, { rsiBase: 780001, vehicleId: carrackId, fromVehicleId: cutlassId });
+    const pledgeRow = await env.DB
+      .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?")
+      .bind(painter.userId, 780001)
+      .first<{ id: number }>();
+    const paint = (name: string, description: string) =>
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES (?, ?)").bind(name, description);
+    await env.DB.batch([
+      paint("Sabre Glacier Camo Livery", "Designed for the 2950 IAE event on microTech."),
+      paint("Nomad Glacier Livery", "Specifically designed for the 2951 IAE."),
+      paint("Ares Glacier Livery", "Specifically designed for the 2951 IAE."),
+      // A common word is not a series: most paints with "crimson" say nothing.
+      paint("Sabre Crimson Livery", "A deep red finish."),
+      paint("Nomad Crimson Livery", "A deep red finish."),
+      paint("Ares Crimson Alert Livery", "Winner of the 2952 Best in Show."),
+      ...["Hurricane - Glacier Paint", "Sabre - Glacier Paint", "Hurricane - Crimson Paint"].map((title, i) =>
+        env.DB
+          .prepare("INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, sort_order) VALUES (?, ?, ?, 'Skin', ?)")
+          .bind(painter.userId, pledgeRow!.id, title, 10 + i),
+      ),
+    ]);
+
+    const body = await get(painter.sessionToken);
+    const items = body.pledges.find((p) => p.rsi_pledge_id === 780001)!.items as Array<{ title: string; paint_description?: string }>;
+    const byTitle = (t: string) => items.find((i) => i.title === t)!;
+    expect(byTitle("Hurricane - Glacier Paint").paint_description).toMatch(/IAE/);
+    expect(byTitle("Sabre - Glacier Paint").paint_description).toBe("Designed for the 2950 IAE event on microTech.");
+    expect(byTitle("Hurricane - Crimson Paint").paint_description).toBeUndefined();
+  });
+
   describe("PUT /decisions/:rsiPledgeId", () => {
     it("upserts a decision and returns { ok: true }", async () => {
       const res = await send(token, "PUT", `/decisions/${RSI}`, { decision: "melt" });
@@ -366,6 +424,58 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       expect((await send(token, "PUT", `/decisions/${RSI}`, { buy_ingame: "yes" })).status).toBe(400);
       expect((await send(token, "PUT", "/decisions/abc", { decision: "keep" })).status).toBe(400);
     });
+    it("accepts the rebuy-and-remelt decision", async () => {
+      const res = await send(token, "PUT", `/decisions/${RSI}`, { decision: "iae-remelt" });
+      expect(res.status).toBe(200);
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: "iae-remelt", buy_ingame: false, iae_price_cents: null });
+      await send(token, "PUT", `/decisions/${RSI}`, { decision: null });
+      expect((await get(token)).decisions[String(RSI)]).toBeUndefined();
+    });
+  });
+
+  describe("PUT /decisions (bulk)", () => {
+    it("sets one decision on many pledges, keeping each pledge's other fields", async () => {
+      await send(token, "PUT", `/decisions/${RSI}`, { iae_price_cents: 55000 });
+      const res = await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "melt" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: "melt", buy_ingame: false, iae_price_cents: 55000 });
+    });
+
+    it("skips pledges the user does not own and leaves other users' rows alone", async () => {
+      const res = await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI, OTHER_RSI, 123456789], decision: "keep" });
+      expect(res.status).toBe(200);
+      expect((await get(token)).decisions[String(RSI)].decision).toBe("keep");
+      const rows = await env.DB
+        .prepare("SELECT user_id, decision FROM user_hangar_cleanup_decisions WHERE rsi_pledge_id IN (?, ?)")
+        .bind(OTHER_RSI, 123456789)
+        .all<{ user_id: string; decision: string }>();
+      expect(rows.results).toHaveLength(1);
+      expect(rows.results[0].user_id).not.toBe(userId);
+      expect(rows.results[0].decision).toBe("melt");
+    });
+
+    it("clears decisions in bulk and deletes rows left with nothing in them", async () => {
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: null });
+      expect((await get(token)).decisions[String(RSI)]).toEqual({ decision: null, buy_ingame: false, iae_price_cents: 55000 });
+      await send(token, "PUT", `/decisions/${RSI}`, { iae_price_cents: null });
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "review" });
+      await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: null });
+      const row = await env.DB
+        .prepare("SELECT COUNT(*) AS n FROM user_hangar_cleanup_decisions WHERE user_id = ?")
+        .bind(userId)
+        .first<{ n: number }>();
+      expect(row!.n).toBe(0);
+    });
+
+    it("rejects invalid input", async () => {
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [], decision: "keep" })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI], decision: "sell" })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: [RSI] })).status).toBe(400);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: ["x"], decision: "keep" })).status).toBe(400);
+      const tooMany = Array.from({ length: 2001 }, (_, i) => i + 1);
+      expect((await send(token, "PUT", "/decisions", { rsi_pledge_ids: tooMany, decision: "keep" })).status).toBe(400);
+    });
   });
 
   describe("PUT/DELETE /buys/:vehicleId", () => {
@@ -390,6 +500,23 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       expect((await send(token, "PUT", "/buys/99999999", {})).status).toBe(404);
       expect((await send(token, "PUT", `/buys/${carrackId}`, { price_cents: -5 })).status).toBe(400);
       expect((await send(token, "PUT", "/buys/abc", {})).status).toBe(400);
+    });
+
+    it("stores the remelt-for-buy-back flag independently of the price", async () => {
+      let res = await send(token, "PUT", `/buys/${carrackId}`, { remelt: true });
+      expect(res.status).toBe(200);
+      expect((await get(token)).buys).toEqual([{ vehicle_id: carrackId, price_cents: null, remelt: true }]);
+
+      // A price-only update keeps the flag; a flag-only update keeps the price.
+      await send(token, "PUT", `/buys/${carrackId}`, { price_cents: 45000 });
+      expect((await get(token)).buys).toEqual([{ vehicle_id: carrackId, price_cents: 45000, remelt: true }]);
+      res = await send(token, "PUT", `/buys/${carrackId}`, { remelt: false });
+      expect(res.status).toBe(200);
+      const buys = (await get(token)).buys;
+      expect(buys).toEqual([{ vehicle_id: carrackId, price_cents: 45000 }]);
+      expect(buys[0].remelt).toBeUndefined();
+
+      expect((await send(token, "PUT", `/buys/${carrackId}`, { remelt: "yes" })).status).toBe(400);
     });
 
     it("deletes a buy", async () => {

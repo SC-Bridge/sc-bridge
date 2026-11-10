@@ -558,8 +558,18 @@ export async function saveCleanupDecision(rsiPledgeId, patch) {
   return putJSON(`/hangar-cleanup/decisions/${rsiPledgeId}`, patch)
 }
 
+/** Set one decision (or null to clear) on many pledges at once. */
+export async function saveCleanupDecisions(rsiPledgeIds, decision) {
+  return putJSON('/hangar-cleanup/decisions', { rsi_pledge_ids: rsiPledgeIds, decision })
+}
+
 export async function saveCleanupBuy(vehicleId, priceCents = null) {
   return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { price_cents: priceCents })
+}
+
+/** Mark a buy-list ship to be melted straight after purchase (it lands in Buy Back Pledges). */
+export async function saveCleanupBuyRemelt(vehicleId, remelt) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { remelt })
 }
 
 // DELETEs send an empty JSON body: browsers only add Content-Length: 0 on their

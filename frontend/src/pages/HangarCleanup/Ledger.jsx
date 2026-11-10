@@ -1,14 +1,70 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import {
-  usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS,
+  usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS, REBUY_DECISIONS,
 } from '../../lib/hangarCleanup'
 import { Pill, Chip, MoneyInput, DECISIONS, SUGGESTION_TONE } from './ui'
 
 const INS_TONE = { LTI: 'text-sc-lti', long: 'text-sc-warn', short: 'text-red-300', none: 'text-red-300' }
 // Left edge colour on a decided row, so a scan down the table shows what's planned.
-const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500' }
+const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', 'iae-remelt': 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500' }
+
+/** Only ship pledges with melt value can be rebought at IAE. */
+const canRebuy = (r) => r.cat === 'Ship' && r.meltable && r.value > 0
+
+/**
+ * Apply one decision to every pledge the filters currently show. The second
+ * click confirms, because it overwrites whatever those pledges were set to.
+ */
+function BulkDecide({ visible, onDecideMany }) {
+  const [choice, setChoice] = useState('none')
+  const [confirm, setConfirm] = useState(false)
+  const decision = choice === 'clear' ? null : choice
+  const targets = useMemo(
+    () => (choice === 'none' ? [] : visible.filter((r) => !REBUY_DECISIONS.has(choice) || canRebuy(r))),
+    [visible, choice],
+  )
+  const skipped = choice === 'none' ? 0 : visible.length - targets.length
+  const label = DECISIONS.find(([v]) => v === (decision ?? ''))?.[1]
+  const key = targets.map((r) => r.id).join(',')
+
+  // A changed filter or choice means a different set: ask again.
+  useEffect(() => { setConfirm(false) }, [key, choice])
+  useEffect(() => {
+    if (!confirm) return undefined
+    const t = setTimeout(() => setConfirm(false), 5000)
+    return () => clearTimeout(t)
+  }, [confirm])
+
+  const apply = () => {
+    if (!confirm) { setConfirm(true); return }
+    onDecideMany(targets.map((r) => r.id), decision)
+    setConfirm(false)
+    setChoice('none')
+  }
+  const n = targets.length
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <label htmlFor="hc-bulk" className="text-gray-400">Set all shown to</label>
+      <select
+        id="hc-bulk"
+        value={choice}
+        onChange={(e) => setChoice(e.target.value)}
+        aria-label="Decision for all shown pledges"
+        className="bg-sc-darker border border-sc-border/60 rounded px-2 py-1 text-xs text-gray-200"
+      >
+        <option value="none">Choose…</option>
+        {DECISIONS.map(([v, l]) => <option key={v || 'clear'} value={v || 'clear'}>{l}</option>)}
+      </select>
+      <button type="button" className={confirm ? 'btn-primary !py-1 !px-3 text-xs' : 'btn-secondary !py-1 !px-3 text-xs'} disabled={n === 0} onClick={apply}>
+        {confirm ? `Click again to set ${n} pledge${n === 1 ? '' : 's'} to ${label}` : `Apply to ${n} shown`}
+      </button>
+      {skipped > 0 && <span className="text-[11px] text-gray-500">{skipped} shown {skipped === 1 ? 'pledge is not a ship' : 'pledges are not ships'} and will be skipped.</span>}
+    </div>
+  )
+}
 
 function effectiveSuggestion(r, d) {
   if (d?.buy_ingame && r.meltable && r.value > 0 && r.cat !== 'CCU') {
@@ -20,7 +76,7 @@ function effectiveSuggestion(r, d) {
 function Detail({ r, d, decisions, onDecide }) {
   const s = effectiveSuggestion(r, d)
   const canIg = r.meltable && r.value > 0 && r.cat !== 'CCU'
-  const canIae = r.cat === 'Ship' && r.meltable && r.value > 0
+  const canIae = canRebuy(r)
   const price = canIae ? rebuyPrice(r, decisions) : null
   const items = r.items.filter((i) => i.kind !== 'Insurance')
   const auec = r.ships.find((x) => x.price_auec)?.price_auec
@@ -63,9 +119,9 @@ function Detail({ r, d, decisions, onDecide }) {
                 {price.source === 'yours' && <button type="button" className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => onDecide(r.id, { iae_price_cents: null })}>Use store price</button>}
               </div>
               <ul className="list-disc pl-4 space-y-1 text-gray-300">{iaeReasons(r, decisions).map((x) => <li key={x}>{x}</li>)}</ul>
-              {d?.decision !== 'iae'
+              {!REBUY_DECISIONS.has(d?.decision)
                 ? <button type="button" className="btn-secondary !py-1 !px-3 text-xs" onClick={() => onDecide(r.id, { decision: 'iae' })}>Plan this rebuy</button>
-                : <p className="text-[11px] text-gray-500">Planned: counted in IAE rebuys and credit after.</p>}
+                : <p className="text-[11px] text-gray-500">{d.decision === 'iae-remelt' ? 'Planned: rebuy, then remelt. The rebuy price comes back as credit and the ship sits in Buy Back Pledges.' : 'Planned: counted in IAE rebuys and credit after.'}</p>}
             </div>
           )}
         </div>
@@ -96,7 +152,7 @@ const SORTS = {
 }
 
 /** The full pledge ledger: filters, decision per pledge, and an expandable detail row. */
-export default function Ledger({ rows, decisions, onDecide, open, onToggle }) {
+export default function Ledger({ rows, decisions, onDecide, onDecideMany, open, onToggle }) {
   const [q, setQ] = useState('')
   const [meltOnly, setMeltOnly] = useState(true)
   const [cats, setCats] = useState(new Set())
@@ -138,6 +194,7 @@ export default function Ledger({ rows, decisions, onDecide, open, onToggle }) {
       <div className="flex flex-wrap gap-1.5">
         {Object.entries(FLAGS).map(([k, f]) => { const n = base.filter((r) => r.flags.includes(k)).length; return n ? <Chip key={k} active={flags.has(k)} count={n} title={f.tip} onClick={() => toggleSet(flags, setFlags, k)}>{f.label}</Chip> : null })}
       </div>
+      <BulkDecide visible={visible} onDecideMany={onDecideMany} />
       <div className="panel overflow-x-auto">
         <table className="w-full min-w-[1040px]">
           <thead>
@@ -162,7 +219,7 @@ export default function Ledger({ rows, decisions, onDecide, open, onToggle }) {
               const d = decisions[r.id]
               const s = effectiveSuggestion(r, d)
               const isOpen = open.has(r.id)
-              const canIae = r.cat === 'Ship' && r.meltable && r.value > 0
+              const canIae = canRebuy(r)
               const sub = r.name + (r.cat === 'Ship' && r.chain.length ? ` · ${r.chain.length} CCU step${r.chain.length > 1 ? 's' : ''}` : '') + (r.cat !== 'Ship' && r.cat !== 'CCU' ? ` · ${r.items.length} item${r.items.length === 1 ? '' : 's'}` : '')
               return (
                 <React.Fragment key={r.id}>
@@ -179,7 +236,7 @@ export default function Ledger({ rows, decisions, onDecide, open, onToggle }) {
                         aria-label={`Decision for ${displayName(r)}`}
                         className="bg-sc-darker border border-sc-border/60 rounded px-1.5 py-1 text-xs text-gray-200 max-w-[11rem]"
                       >
-                        {DECISIONS.filter(([v]) => v !== 'iae' || canIae || d?.decision === 'iae').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {DECISIONS.filter(([v]) => !REBUY_DECISIONS.has(v) || canIae || d?.decision === v).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                     </td>
                     <td className="table-cell min-w-[14rem]">

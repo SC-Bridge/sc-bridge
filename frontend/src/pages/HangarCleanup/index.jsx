@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListChecks, Table2, Upload, RotateCcw } from 'lucide-react'
 import {
-  useHangarCleanup, useShips, saveCleanupDecision, saveCleanupBuy, removeCleanupBuy,
+  useHangarCleanup, useShips, saveCleanupDecision, saveCleanupDecisions, saveCleanupBuy, saveCleanupBuyRemelt, removeCleanupBuy,
   saveCleanupState, resetCleanup,
 } from '../../hooks/useAPI'
 import PageHeader from '../../components/PageHeader'
@@ -10,13 +10,13 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import SyncStalenessBanner from '../../components/SyncStalenessBanner'
-import { makeCatalog, normaliseExport, analyse, rebuyPrice, buildSteps } from '../../lib/hangarCleanup'
+import { makeCatalog, normaliseExport, analyse, rebuyPrice, buildSteps, MELT_DECISIONS, REBUY_DECISIONS } from '../../lib/hangarCleanup'
 import { Totals, Insights } from './Overview'
 import Ledger from './Ledger'
 import BuyList from './BuyList'
 import ProcessView from './ProcessView'
 
-const EMPTY_PLAN = { decisions: {}, buys: {}, creditOverride: null, done: [] }
+const EMPTY_PLAN = { decisions: {}, buys: {}, remelts: {}, creditOverride: null, done: [] }
 
 /** Server payload → the plan shape the page edits. */
 function planFromServer(data) {
@@ -24,6 +24,8 @@ function planFromServer(data) {
   return {
     decisions: data.decisions ?? {},
     buys: Object.fromEntries((data.buys ?? []).map((b) => [b.vehicle_id, b.price_cents ?? null])),
+    // Buy-list ships to melt straight after purchase (buy-back token plan).
+    remelts: Object.fromEntries((data.buys ?? []).filter((b) => b.remelt).map((b) => [b.vehicle_id, true])),
     creditOverride: data.state?.credit_override_cents ?? null,
     done: data.state?.done_steps ?? [],
   }
@@ -87,12 +89,30 @@ export default function HangarCleanup() {
     persist(() => saveCleanupDecision(id, merged ?? blank))
   }, [setPlan, persist])
 
+  // One decision for many pledges (the ledger's "apply to all shown"). Each
+  // pledge keeps its own in-game flag and IAE price, as the bulk route does.
+  const onDecideMany = useCallback((ids, decision) => {
+    if (!ids.length) return
+    const blank = { decision: null, buy_ingame: false, iae_price_cents: null }
+    setPlan((p) => {
+      const decisions = { ...p.decisions }
+      for (const id of ids) {
+        const merged = cleanDecision({ ...blank, ...decisions[id], decision })
+        if (merged) decisions[id] = merged
+        else delete decisions[id]
+      }
+      return { ...p, decisions }
+    })
+    persist(() => saveCleanupDecisions(ids, decision))
+  }, [setPlan, persist])
+
   const onToggleBuy = useCallback((vehicleId, on) => {
     setPlan((p) => {
       const buys = { ...p.buys }
+      const remelts = { ...p.remelts }
       if (on) buys[vehicleId] = null
-      else delete buys[vehicleId]
-      return { ...p, buys }
+      else { delete buys[vehicleId]; delete remelts[vehicleId] }
+      return { ...p, buys, remelts }
     })
     persist(() => (on ? saveCleanupBuy(vehicleId, null) : removeCleanupBuy(vehicleId)))
   }, [setPlan, persist])
@@ -100,6 +120,16 @@ export default function HangarCleanup() {
   const onBuyPrice = useCallback((vehicleId, cents) => {
     setPlan((p) => ({ ...p, buys: { ...p.buys, [vehicleId]: cents } }))
     persist(() => saveCleanupBuy(vehicleId, cents))
+  }, [setPlan, persist])
+
+  const onBuyRemelt = useCallback((vehicleId, on) => {
+    setPlan((p) => {
+      const remelts = { ...p.remelts }
+      if (on) remelts[vehicleId] = true
+      else delete remelts[vehicleId]
+      return { ...p, remelts }
+    })
+    persist(() => saveCleanupBuyRemelt(vehicleId, on))
   }, [setPlan, persist])
 
   const onCredit = useCallback((cents) => {
@@ -148,25 +178,28 @@ export default function HangarCleanup() {
   const credit = plan.creditOverride ?? model?.store_credit_cents ?? 0
   const buyList = useMemo(() => Object.entries(plan.buys).map(([id, price]) => {
     const s = catalog.byId.get(Number(id))
-    return { vehicle_id: Number(id), name: s?.name ?? `Ship #${id}`, price_cents: price ?? s?.pledge_price_cents ?? null }
-  }), [plan.buys, catalog])
+    return { vehicle_id: Number(id), name: s?.name ?? `Ship #${id}`, price_cents: price ?? s?.pledge_price_cents ?? null, remelt: !!plan.remelts[id] }
+  }), [plan.buys, plan.remelts, catalog])
   const owned = useMemo(() => new Set(rows.flatMap((r) => r.ships.map((s) => s.vehicle_id))), [rows])
 
   const totals = useMemo(() => {
     const d = (r) => plan.decisions[r.id]
     const meltable = rows.filter((r) => r.meltable && r.value > 0)
     const suggested = meltable.filter((r) => r.suggestion.action === 'melt' || (d(r)?.buy_ingame && r.cat !== 'CCU'))
-    const planned = rows.filter((r) => ['melt', 'melt-ig', 'iae'].includes(d(r)?.decision))
-    const rebuys = rows.filter((r) => d(r)?.decision === 'iae')
+    const planned = rows.filter((r) => MELT_DECISIONS.has(d(r)?.decision))
+    const rebuys = rows.filter((r) => REBUY_DECISIONS.has(d(r)?.decision))
     const sum = (list, f) => list.reduce((a, x) => a + (f(x) || 0), 0)
     const plannedV = sum(planned, (r) => r.value)
     const rebuyV = sum(rebuys, (r) => rebuyPrice(r, plan.decisions).cents)
     const buyV = sum(buyList, (b) => b.price_cents)
+    // A remelted purchase returns its price as store credit.
+    const remeltV = sum(rebuys.filter((r) => d(r).decision === 'iae-remelt'), (r) => rebuyPrice(r, plan.decisions).cents)
+      + sum(buyList.filter((b) => b.remelt), (b) => b.price_cents)
     return {
       meltableV: sum(meltable, (r) => r.value), meltableN: meltable.length,
       suggestedV: sum(suggested, (r) => r.value), suggestedN: suggested.length,
       plannedV, plannedN: planned.length, rebuyV, rebuyN: rebuys.length, buyV, buyN: buyList.length,
-      after: credit + plannedV - rebuyV - buyV,
+      after: credit + plannedV - rebuyV - buyV + remeltV,
       insN: rows.filter((r) => r.suggestion.action === 'ins').length,
     }
   }, [rows, plan.decisions, buyList, credit])
@@ -236,8 +269,8 @@ export default function HangarCleanup() {
           ) : (
             <>
               <Insights rows={rows} tokens={tokens} onJump={onJump} />
-              <Ledger rows={rows} decisions={plan.decisions} onDecide={onDecide} open={open} onToggle={onToggleRow} />
-              <BuyList catalog={catalog} owned={owned} buys={plan.buys} onToggle={onToggleBuy} onPrice={onBuyPrice} />
+              <Ledger rows={rows} decisions={plan.decisions} onDecide={onDecide} onDecideMany={onDecideMany} open={open} onToggle={onToggleRow} />
+              <BuyList catalog={catalog} owned={owned} buys={plan.buys} remelts={plan.remelts} onToggle={onToggleBuy} onPrice={onBuyPrice} onRemelt={onBuyRemelt} />
             </>
           )}
         </>

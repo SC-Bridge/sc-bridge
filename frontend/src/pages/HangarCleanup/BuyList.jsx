@@ -7,7 +7,7 @@ import { Pill, MoneyInput } from './ui'
  * Every pledgeable ship with its RSI store price, to plan IAE purchases.
  * Ticked ships come off "Credit after" and appear in the step-by-step plan.
  */
-export default function BuyList({ catalog, owned, buys, onToggle, onPrice }) {
+export default function BuyList({ catalog, owned, buys, remelts, onToggle, onPrice, onRemelt }) {
   const [q, setQ] = useState('')
   const [maker, setMaker] = useState('')
   const [hideOwned, setHideOwned] = useState(false)
@@ -19,6 +19,7 @@ export default function BuyList({ catalog, owned, buys, onToggle, onPrice }) {
   const picked = Object.keys(buys)
   const priceOf = (s) => (buys[s.id] != null ? buys[s.id] : s.pledge_price_cents)
   const total = picked.reduce((a, id) => { const s = catalog.byId.get(Number(id)); return a + ((buys[id] ?? s?.pledge_price_cents) || 0) }, 0)
+  const remeltCount = picked.filter((id) => remelts[id]).length
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -49,23 +50,24 @@ export default function BuyList({ catalog, owned, buys, onToggle, onPrice }) {
       </div>
       <p className="text-sm text-gray-400">
         {picked.length
-          ? <>Buy list: <span className="font-mono text-gray-100">{picked.length}</span> ship{picked.length > 1 ? 's' : ''}, <span className="font-mono text-gray-100">{usd(total)}</span></>
+          ? <>Buy list: <span className="font-mono text-gray-100">{picked.length}</span> ship{picked.length > 1 ? 's' : ''}, <span className="font-mono text-gray-100">{usd(total)}</span>{remeltCount > 0 && `, ${remeltCount} to remelt for a buyback token`}</>
           : 'Tick ships to plan IAE purchases. Their cost comes off "Credit after".'}
       </p>
       <div className="panel overflow-x-auto max-h-[38rem] overflow-y-auto">
-        <table className="w-full min-w-[760px]">
+        <table className="w-full min-w-[900px]">
           <thead className="sticky top-0 bg-sc-panel z-10">
             <tr>
               <th className="table-header w-10">Buy</th>
               {head('name', 'Ship')}
               {head('maker', 'Maker')}
               {head('role', 'Role')}
+              <th className="table-header whitespace-nowrap">After buying</th>
               {head('price', 'Expected price', 'text-right')}
               {head('auec', 'In-game (aUEC)', 'text-right')}
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 && <tr><td colSpan={6} className="table-cell text-gray-500 py-6">No ships match.</td></tr>}
+            {visible.length === 0 && <tr><td colSpan={7} className="table-cell text-gray-500 py-6">No ships match.</td></tr>}
             {visible.map((s) => {
               const isPicked = s.id in buys
               return (
@@ -77,6 +79,19 @@ export default function BuyList({ catalog, owned, buys, onToggle, onPrice }) {
                   </td>
                   <td className="table-cell text-xs text-gray-300">{s.maker}</td>
                   <td className="table-cell text-xs text-gray-300">{s.role || <span className="text-gray-600">—</span>}</td>
+                  <td className="table-cell">
+                    {isPicked && (
+                      <select
+                        value={remelts[s.id] ? 'remelt' : 'keep'}
+                        onChange={(e) => onRemelt(s.id, e.target.value === 'remelt')}
+                        aria-label={`After buying ${s.name}`}
+                        className="bg-sc-darker border border-sc-border/60 rounded px-2 py-1 text-xs text-gray-200 max-w-[16rem]"
+                      >
+                        <option value="keep">Buy and keep</option>
+                        <option value="remelt">Buy and immediately remelt for buyback token</option>
+                      </select>
+                    )}
+                  </td>
                   <td className="table-cell text-right font-mono tabular-nums">
                     {isPicked
                       ? <MoneyInput label={`Price for ${s.name}`} cents={priceOf(s)} onCommit={(c) => onPrice(s.id, c == null || c === s.pledge_price_cents ? null : c)} />
@@ -91,7 +106,8 @@ export default function BuyList({ catalog, owned, buys, onToggle, onPrice }) {
       </div>
       <p className="text-[11px] text-gray-500 max-w-4xl">
         Expected price is RSI’s current store price, before tax. IAE prices and which ships are offered change by day, so edit the price on anything in your buy list.
-        Standalone ships bought during IAE have usually come with {IAE_MONTHS}-month insurance. The in-game column is SC Bridge’s aUEC price; blank means no known shop sells it.
+        Standalone ships bought during IAE have usually come with {IAE_MONTHS}-month insurance.
+        “Buy and immediately remelt” puts the ship in Buy Back Pledges at the price you paid and returns that price as store credit. The in-game column is SC Bridge’s aUEC price; blank means no known shop sells it.
       </p>
     </section>
   )

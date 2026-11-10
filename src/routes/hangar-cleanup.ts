@@ -11,7 +11,7 @@ import { validate } from "../lib/validation";
  * the mutations store the user's decisions. User data — never cached.
  */
 
-const DECISIONS = ["keep", "melt", "melt-ig", "iae", "ins", "review"] as const;
+const DECISIONS = ["keep", "melt", "melt-ig", "iae", "iae-remelt", "ins", "review"] as const;
 
 const CentsOrNull = z.number().int().min(0).nullable();
 
@@ -27,8 +27,16 @@ const DecisionBody = z.object({
   buy_ingame: z.boolean().optional(),
   iae_price_cents: CentsOrNull.optional(),
 });
+// Bulk: one decision for many pledges (the ledger's "apply to all shown").
+const BULK_MAX = 2000;
+const BulkDecisionBody = z.object({
+  rsi_pledge_ids: z.array(z.number().int().positive()).min(1).max(BULK_MAX),
+  decision: z.enum(DECISIONS).nullable(),
+});
 const BuyBody = z.object({
   price_cents: CentsOrNull.optional(),
+  // Melt straight after buying, so the ship sits in Buy Back Pledges.
+  remelt: z.boolean().optional(),
 });
 const StateBody = z.object({
   credit_override_cents: CentsOrNull.optional(),
@@ -59,6 +67,60 @@ interface ItemRow {
   duration_months: number | null;
   is_lifetime: number | null;
 }
+/**
+ * Paint names differ between RSI ("Carrack - Polar Paint", "Carrack Paint -
+ * Polar") and the game ("Carrack Polar Livery"). Both reduce to "carrack polar".
+ */
+function paintKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&amp;/g, "&")
+    .replace(/\b(paint|livery|skin)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** The series half of an RSI paint title: "Hurricane - Polar Paint" and "Spartan Paint - Polar" both give "polar". */
+function paintSeriesKey(title: string): string | null {
+  const parts = title.split(" - ");
+  return parts.length > 1 ? paintKey(parts[parts.length - 1]) || null : null;
+}
+
+interface GamePaint {
+  key: string;
+  description: string | null;
+  hinted: boolean;
+}
+
+// A series counts as an event series when nearly all of its paints say so.
+const SERIES_MIN_PAINTS = 2;
+const SERIES_MIN_HINTED = 0.8;
+
+/**
+ * The game description that says a synced paint is limited, or undefined.
+ * Exact name first. Failing that, the paint's series: RSI and the game name
+ * ships differently ("Constellation Mk IV - Polar Paint" vs "Constellation
+ * Polar Livery"), but when the other Polar paints were made for an event, so
+ * was this one. The closest-named paint of the series supplies the wording.
+ */
+function limitedPaintNote(title: string, paints: GamePaint[], byKey: Map<string, GamePaint>): string | undefined {
+  const key = paintKey(title);
+  const exact = byKey.get(key);
+  if (exact?.hinted && exact.description) return exact.description;
+
+  const series = paintSeriesKey(title);
+  if (!series) return undefined;
+  const inSeries = paints.filter((p) => ` ${p.key} `.includes(` ${series} `));
+  const hinted = inSeries.filter((p) => p.hinted && p.description);
+  if (inSeries.length < SERIES_MIN_PAINTS || hinted.length / inSeries.length < SERIES_MIN_HINTED) return undefined;
+
+  const words = new Set(key.split(" "));
+  const shared = (p: GamePaint) => p.key.split(" ").filter((w) => words.has(w)).length;
+  let best = hinted[0];
+  for (const p of hinted) if (shared(p) > shared(best)) best = p;
+  return best.description ?? undefined;
+}
+
 interface UpgradeRow {
   user_pledge_id: number;
   upgrade_name: string;
@@ -112,7 +174,7 @@ export function hangarCleanupRoutes() {
     const userId = getAuthUser(c).id;
 
     // One round trip, one statement per table, every one scoped by user_id.
-    const [profileRes, syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes] =
+    const [profileRes, syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes, paintRes] =
       await db.batch([
         db.prepare("SELECT synced_at, store_credit_cents FROM user_rsi_profiles WHERE user_id = ?").bind(userId),
         db.prepare("SELECT MAX(synced_at) AS synced_at FROM user_hangar_syncs WHERE user_id = ?").bind(userId),
@@ -174,12 +236,37 @@ export function hangarCleanupRoutes() {
           )
           .bind(userId),
         db
-          .prepare("SELECT vehicle_id, price_cents FROM user_hangar_cleanup_buys WHERE user_id = ? ORDER BY id")
+          .prepare("SELECT vehicle_id, price_cents, remelt FROM user_hangar_cleanup_buys WHERE user_id = ? ORDER BY id")
           .bind(userId),
         db
           .prepare("SELECT credit_override_cents, done_steps_json FROM user_hangar_cleanup_state WHERE user_id = ?")
           .bind(userId),
+        // Every game paint, marked when its description names an event, a year
+        // or exclusivity: the only limited-availability signal we hold ("designed
+        // for the 2951 IAE"). A broad mark; the page's limitedReason() decides
+        // what it means. Unmarked paints are needed to judge a whole series.
+        db.prepare(
+          `SELECT name, description, CASE WHEN description IS NOT NULL AND (
+             description GLOB '*29[0-9][0-9]*'
+             OR description LIKE '%Best in Show%' OR description LIKE '%Invictus%'
+             OR description LIKE '%IAE%' OR description LIKE '%Aerospace Expo%'
+             OR description LIKE '%Luminalia%' OR description LIKE '%Foundation Festival%'
+             OR description LIKE '%Stella Fortuna%' OR description LIKE '%Red Festival%'
+             OR description LIKE '%Lunar New Year%' OR description LIKE '%Coramor%'
+             OR description LIKE '%Pirate Week%' OR description LIKE '%Alien Week%'
+             OR description LIKE '%Day of the Vara%' OR description LIKE '%CitizenCon%'
+             OR description LIKE '%subscriber%' OR description LIKE '%concierge%'
+             OR description LIKE '%referral%' OR description LIKE '%limited%edition%'
+             OR description LIKE '%exclusive%' OR description LIKE '%commemorat%')
+           THEN 1 ELSE 0 END AS hinted
+           FROM paints WHERE COALESCE(is_deleted, 0) = 0`,
+        ),
       ]);
+
+    const gamePaints: GamePaint[] = (
+      paintRes.results as Array<{ name: string; description: string | null; hinted: number }>
+    ).map((p) => ({ key: paintKey(p.name), description: p.description, hinted: !!p.hinted }));
+    const gamePaintByKey = new Map(gamePaints.map((p) => [p.key, p]));
 
     const profile = (profileRes.results as Array<{ synced_at: string | null; store_credit_cents: number | null }>)[0];
     const latestSync = (syncRes.results as Array<{ synced_at: string | null }>)[0];
@@ -219,6 +306,7 @@ export function hangarCleanupRoutes() {
       ccu_to: p.ccu_to_name,
       items: (itemsByPledge.get(p.id) ?? []).map((i) => {
         const isInsurance = i.kind === "Insurance";
+        const paintNote = i.kind === "Skin" ? limitedPaintNote(i.title, gamePaints, gamePaintByKey) : undefined;
         return {
           title: i.title,
           kind: i.kind,
@@ -226,6 +314,8 @@ export function hangarCleanupRoutes() {
           custom_name: i.custom_name,
           insurance_months: isInsurance ? i.duration_months : null,
           insurance_lifetime: isInsurance && !!i.is_lifetime,
+          // Present only on a paint whose game description hints it is limited.
+          ...(paintNote ? { paint_description: paintNote } : {}),
         };
       }),
       upgrades: (upgradesByPledge.get(p.id) ?? []).map((u) => ({
@@ -274,15 +364,50 @@ export function hangarCleanupRoutes() {
         to_vehicle_name: b.to_vehicle_name,
       })),
       decisions,
-      buys: (buyRes.results as Array<{ vehicle_id: number; price_cents: number | null }>).map((b) => ({
+      // remelt is only present when set, so plain buys keep their two-key shape.
+      buys: (buyRes.results as Array<{ vehicle_id: number; price_cents: number | null; remelt: number }>).map((b) => ({
         vehicle_id: b.vehicle_id,
         price_cents: b.price_cents,
+        ...(b.remelt ? { remelt: true } : {}),
       })),
       state: {
         credit_override_cents: state?.credit_override_cents ?? null,
         done_steps: parseDoneSteps(state?.done_steps_json),
       },
     });
+  });
+
+  // PUT /decisions — set one decision on many pledges. Only `decision` changes;
+  // each pledge keeps its buy_ingame / iae_price_cents. Pledges the user does
+  // not own are skipped (the INSERT selects from their own user_pledges).
+  routes.put("/decisions", validate("json", BulkDecisionBody), async (c) => {
+    const db = c.env.DB;
+    const userId = getAuthUser(c).id;
+    const { rsi_pledge_ids, decision } = c.req.valid("json");
+    const ids = [...new Set(rsi_pledge_ids)];
+
+    const upsert = db.prepare(
+      `INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision)
+       SELECT DISTINCT user_id, rsi_pledge_id, ? FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?
+       ON CONFLICT(user_id, rsi_pledge_id) DO UPDATE SET
+         decision = excluded.decision,
+         updated_at = datetime('now')`,
+    );
+    const CHUNK = 50;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      await db.batch(ids.slice(i, i + CHUNK).map((id) => upsert.bind(decision, userId, id)));
+    }
+    if (decision === null) {
+      // Same rule as the single-pledge route: a row that says nothing is deleted.
+      await db
+        .prepare(
+          `DELETE FROM user_hangar_cleanup_decisions
+           WHERE user_id = ? AND decision IS NULL AND buy_ingame = 0 AND iae_price_cents IS NULL`,
+        )
+        .bind(userId)
+        .run();
+    }
+    return c.json({ ok: true });
   });
 
   // PUT /decisions/:rsiPledgeId — partial upsert; an all-empty result deletes the row.
@@ -338,7 +463,7 @@ export function hangarCleanupRoutes() {
     },
   );
 
-  // PUT /buys/:vehicleId — add to the buy list; price_cents omitted keeps the stored price.
+  // PUT /buys/:vehicleId — add to the buy list; price_cents / remelt omitted keep the stored value.
   routes.put(
     "/buys/:vehicleId",
     validate("param", VehicleIdParam),
@@ -353,14 +478,23 @@ export function hangarCleanupRoutes() {
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
       const priceProvided = body.price_cents !== undefined;
+      const remeltProvided = body.remelt !== undefined;
       await db
         .prepare(
-          `INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id, price_cents)
-           VALUES (?, ?, ?)
+          `INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id, price_cents, remelt)
+           VALUES (?, ?, ?, ?)
            ON CONFLICT(user_id, vehicle_id) DO UPDATE SET
-             price_cents = CASE WHEN ? THEN excluded.price_cents ELSE user_hangar_cleanup_buys.price_cents END`,
+             price_cents = CASE WHEN ? THEN excluded.price_cents ELSE user_hangar_cleanup_buys.price_cents END,
+             remelt = CASE WHEN ? THEN excluded.remelt ELSE user_hangar_cleanup_buys.remelt END`,
         )
-        .bind(userId, vehicleId, priceProvided ? body.price_cents : null, priceProvided ? 1 : 0)
+        .bind(
+          userId,
+          vehicleId,
+          priceProvided ? body.price_cents : null,
+          body.remelt ? 1 : 0,
+          priceProvided ? 1 : 0,
+          remeltProvided ? 1 : 0,
+        )
         .run();
       return c.json({ ok: true });
     },

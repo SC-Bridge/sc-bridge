@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseUpgradeName, insuranceOf, normaliseExport, makeCatalog, analyse,
-  rebuyPrice, buildSteps, stepsAsText, displayName,
+  rebuyPrice, buildSteps, stepsAsText, displayName, limitedReason,
 } from './hangarCleanup'
 
 // ── Fixtures in the GET /api/hangar-cleanup shape ──────────────────────────
@@ -180,6 +180,103 @@ describe('rebuyPrice', () => {
   })
 })
 
+// ── Limited paints ──────────────────────────────────────────────────────────
+
+describe('limitedReason', () => {
+  it('names the event, with its year when there is one', () => {
+    expect(limitedReason('Carrack - Best in Show 2952 Red Alert Paint')).toBe('Best in Show 2952')
+    expect(limitedReason('2951 BIS Mercury Star Runner Paint and Jacket')).toBe('Best in Show 2951')
+    expect(limitedReason('Paints - Gladius - Invictus Blue and Gold Paint')).toBe('Invictus')
+    expect(limitedReason('Paints - Retaliator ILW 2950 Paint Pack')).toBe('Invictus 2950')
+    expect(limitedReason('Modify your 400i with this livery specifically designed for the 2951 IAE.')).toBe('IAE 2951')
+    expect(limitedReason('uses the traditional Luminalia colors')).toBe('Luminalia')
+    expect(limitedReason('Cutlass - Foundation Festival Paint')).toBe('Foundation Festival')
+  })
+  it('recognises subscriber, concierge and referral exclusives', () => {
+    expect(limitedReason('Subscribers Store - Nox Overdrive Paint')).toBe('Subscriber exclusive')
+    expect(limitedReason('Concierge Exclusive - Meridian Paint')).toBe('Concierge exclusive')
+    expect(limitedReason('Tumbril Storm & GCD-Army Paint - Referral Reward')).toBe('Referral reward')
+  })
+  it('treats any in-universe year (29xx) as dated', () => {
+    expect(limitedReason('Paints - Mercury Star Runner - 2951 Fortuna Paint')).toBe('dated 2951')
+  })
+  it('knows the event paint series whose names give nothing away', () => {
+    expect(limitedReason('Paints - Gladius - Frostbite Paint')).toBe('Frostbite event series')
+    expect(limitedReason('ATLS - Keystone Paint')).toBe('Keystone event series')
+    expect(limitedReason('Paints - Hercules - Meridian Paint')).toBe('Meridian event series')
+  })
+  it('returns null for an ordinary paint', () => {
+    expect(limitedReason('Fury - Black Star Paint')).toBeNull()
+    expect(limitedReason('Ares - 3 Paint Pack')).toBeNull()
+    expect(limitedReason(null)).toBeNull()
+  })
+})
+
+describe('analyse: limited paints', () => {
+  const skin = (title, extra = {}) => ({ title, kind: 'Skin', manufacturer_name: null, custom_name: null, insurance_months: null, insurance_lifetime: false, ...extra })
+  const bisFury = pledge(20, 'Fury - Best in Show 2953 Paint', 1000, { items: [skin('Fury - Best in Show 2953 Paint')] })
+  const polar = pledge(21, 'Paints - Ironclad - Glacier Paint', 1100, { items: [skin('Ironclad - Glacier Paint', { paint_description: 'Modify your Ironclad with this livery specifically designed for the 2951 IAE.' })] })
+  const plain = pledge(22, 'Paints - Ironclad - Ember Paint', 1100, { items: [skin('Ironclad - Ember Paint', { paint_description: 'A warm red finish for the Ironclad.' })] })
+  const rows = analyse(model([ironclad, hullD, bisFury, polar, plain])).rows
+  const row = (id) => rows.find((r) => r.id === id)
+
+  it('flags a paint named for an event and stops suggesting a melt for it', () => {
+    expect(row(20).flags).toEqual(expect.arrayContaining(['paint-limited', 'paint-unowned']))
+    expect(row(20).suggestion.action).toBe('review')
+    expect(row(20).suggestion.label).toBe('Review: limited paint')
+    expect(row(20).suggestion.reasons.join(' ')).toMatch(/Best in Show 2953/)
+    expect(row(20).suggestion.reasons.join(' ')).toMatch(/You don't own: Fury/)
+  })
+  it('uses the game description when the paint name gives nothing away', () => {
+    expect(row(21).flags).toContain('paint-limited')
+    expect(row(21).limited).toEqual(['IAE 2951'])
+    expect(row(21).suggestion).toMatchObject({ action: 'keep', label: 'Keep (limited paint)' })
+    expect(row(21).suggestion.reasons.join(' ')).toMatch(/buy-back/i)
+  })
+  it('leaves ordinary paints and dated ship pledges alone', () => {
+    expect(row(22).flags).not.toContain('paint-limited')
+    expect(row(4).name).toMatch(/IAE 2949/)
+    expect(row(4).flags).not.toContain('paint-limited')
+  })
+  it('warns on the melt step of a limited paint', () => {
+    const p = buildSteps({ rows, decisions: { 21: { decision: 'melt' }, 22: { decision: 'melt' } }, buys: [], credit: 0 })
+    const melt = p.phases.find((x) => x.key === 'melt').steps
+    expect(melt.find((s) => s.key === 'melt-21').warn.join(' ')).toMatch(/Limited paint \(IAE 2951\)/)
+    expect(melt.find((s) => s.key === 'melt-22').warn).toEqual([])
+  })
+})
+
+describe('analyse: reward paints', () => {
+  const skin = (title) => ({ title, kind: 'Skin', manufacturer_name: null, custom_name: null, insurance_months: null, insurance_lifetime: false })
+  const gear = (title) => ({ ...skin(title), kind: 'Gear' })
+  const dyingStar = pledge(30, 'Ironclad - Dying Star Paint', 0, { items: [skin('Ironclad - Dying Star Paint')] })
+  const driveReward = pledge(31, 'Hurston Resource Drive Reward - Tier 3', 0, { items: [gear('Hurston Flight Jacket'), skin('Ironclad - Hurston Paint')] })
+  const paidPaint = pledge(32, 'Paints - Ironclad - Ember Paint', 1100, { items: [skin('Ironclad - Ember Paint')] })
+  const freeShip = pledge(33, 'Referral Bonus Ship', 0, { items: [shipItem('Pulse'), skin('Pulse - Dominion Paint')], ships: [ship('Mirai Pulse', { vehicle_id: 2 })] })
+  const freeFury = pledge(34, 'Fury - Nightweaver Paint', 0, { items: [skin('Fury - Nightweaver Paint')] })
+  const rows = analyse(model([ironclad, dyingStar, driveReward, paidPaint, freeShip, freeFury])).rows
+  const row = (id) => rows.find((r) => r.id === id)
+
+  it('flags a paint pledge that cost nothing as a reward that was never sold', () => {
+    expect(row(30).flags).toContain('paint-limited')
+    expect(row(30).limited).toEqual(['Reward, never sold'])
+    expect(row(30).suggestion).toMatchObject({ action: 'keep', label: 'Keep ($0 melt)' })
+    expect(row(30).suggestion.reasons.join(' ')).toMatch(/Reward, never sold/)
+  })
+  it('flags a free reward pack that includes a paint', () => {
+    expect(row(31).limited).toEqual(['Reward, never sold'])
+  })
+  it('does not suggest melting a free reward paint for a ship you do not own', () => {
+    expect(row(34).flags).toEqual(expect.arrayContaining(['paint-limited', 'paint-unowned']))
+    expect(row(34).suggestion.action).toBe('keep')
+    expect(row(34).suggestion.reasons.join(' ')).toMatch(/cannot be bought/)
+  })
+  it('leaves paid paints and free ship pledges alone', () => {
+    expect(row(32).flags).not.toContain('paint-limited')
+    expect(row(33).flags).not.toContain('paint-limited')
+  })
+})
+
 // ── Process plan ────────────────────────────────────────────────────────────
 
 describe('buildSteps', () => {
@@ -206,6 +303,27 @@ describe('buildSteps', () => {
   })
   it('is empty when nothing is decided', () => {
     expect(buildSteps({ rows, decisions: {}, buys: [], credit: 0 }).actionable).toBe(0)
+  })
+  it('remelts an IAE rebuy straight after buying it, so the price comes back as credit', () => {
+    const p = buildSteps({ rows, decisions: { 3: { decision: 'iae-remelt' } }, buys: [], credit: 7795 })
+    const ph = (k) => p.phases.find((x) => x.key === k)
+    expect(ph('melt').steps.map((s) => s.key)).toEqual(['melt-3'])
+    expect(ph('buy').steps[0].money.join(' ')).toMatch(/\$827\.95 from credit \+ \$97\.05 by card/)
+    const remelt = ph('remelt').steps
+    expect(remelt.map((s) => s.key)).toEqual(['remelt-3'])
+    expect(remelt[0].title).toMatch(/Exchange the new .*Pioneer/)
+    expect(remelt[0].money.join(' ')).toMatch(/\+\$925\.00 store credit.*credit ≈ \$925\.00/)
+    expect(p.counts.remelts).toBe(1)
+    expect(p.phases.map((x) => x.key).indexOf('remelt')).toBeGreaterThan(p.phases.map((x) => x.key).indexOf('buy'))
+  })
+  it('remelts a buy-list ship marked for a buy-back token and reports what comes back', () => {
+    const p = buildSteps({ rows, decisions: {}, buys: [{ vehicle_id: 77, name: 'Carrack', price_cents: 60000, remelt: true }, { vehicle_id: 78, name: 'Polaris', price_cents: 10000 }], credit: 100000 })
+    const ph = (k) => p.phases.find((x) => x.key === k)
+    expect(ph('buy').steps).toHaveLength(2)
+    expect(ph('remelt').steps.map((s) => s.key)).toEqual(['remelt-buy-77'])
+    expect(ph('remelt').steps[0].money.join(' ')).toMatch(/\+\$600\.00 store credit.*credit ≈ \$900\.00/)
+    expect(ph('prep').steps[0].money.join(' ')).toMatch(/Remelts return \$600\.00/)
+    expect(ph('prep').steps[0].money.join(' ')).toMatch(/Credit left ~\$900\.00/)
   })
   it('renders a plain-text checklist with ticks', () => {
     const text = stepsAsText(plan, ['melt-3'])

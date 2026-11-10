@@ -72,6 +72,7 @@ export const DECISIONS = [
   ['melt', 'Melt'],
   ['melt-ig', 'Melt, buy in-game'],
   ['iae', 'Melt, rebuy at IAE (10-yr)'],
+  ['iae-remelt', 'Melt, rebuy at IAE, remelt for buyback token'],
   ['ins', 'Upgrade insurance'],
   ['review', 'Review later'],
 ]
