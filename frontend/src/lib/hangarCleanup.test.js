@@ -200,6 +200,11 @@ describe('limitedReason', () => {
   it('treats any in-universe year (29xx) as dated', () => {
     expect(limitedReason('Paints - Mercury Star Runner - 2951 Fortuna Paint')).toBe('dated 2951')
   })
+  it('knows the event paint series whose names give nothing away', () => {
+    expect(limitedReason('Paints - Gladius - Frostbite Paint')).toBe('Frostbite event series')
+    expect(limitedReason('ATLS - Keystone Paint')).toBe('Keystone event series')
+    expect(limitedReason('Paints - Hercules - Meridian Paint')).toBe('Meridian event series')
+  })
   it('returns null for an ordinary paint', () => {
     expect(limitedReason('Fury - Black Star Paint')).toBeNull()
     expect(limitedReason('Ares - 3 Paint Pack')).toBeNull()
@@ -238,6 +243,37 @@ describe('analyse: limited paints', () => {
     const melt = p.phases.find((x) => x.key === 'melt').steps
     expect(melt.find((s) => s.key === 'melt-21').warn.join(' ')).toMatch(/Limited paint \(IAE 2951\)/)
     expect(melt.find((s) => s.key === 'melt-22').warn).toEqual([])
+  })
+})
+
+describe('analyse: reward paints', () => {
+  const skin = (title) => ({ title, kind: 'Skin', manufacturer_name: null, custom_name: null, insurance_months: null, insurance_lifetime: false })
+  const gear = (title) => ({ ...skin(title), kind: 'Gear' })
+  const dyingStar = pledge(30, 'Ironclad - Dying Star Paint', 0, { items: [skin('Ironclad - Dying Star Paint')] })
+  const driveReward = pledge(31, 'Hurston Resource Drive Reward - Tier 3', 0, { items: [gear('Hurston Flight Jacket'), skin('Ironclad - Hurston Paint')] })
+  const paidPaint = pledge(32, 'Paints - Ironclad - Ember Paint', 1100, { items: [skin('Ironclad - Ember Paint')] })
+  const freeShip = pledge(33, 'Referral Bonus Ship', 0, { items: [shipItem('Pulse'), skin('Pulse - Dominion Paint')], ships: [ship('Mirai Pulse', { vehicle_id: 2 })] })
+  const freeFury = pledge(34, 'Fury - Nightweaver Paint', 0, { items: [skin('Fury - Nightweaver Paint')] })
+  const rows = analyse(model([ironclad, dyingStar, driveReward, paidPaint, freeShip, freeFury])).rows
+  const row = (id) => rows.find((r) => r.id === id)
+
+  it('flags a paint pledge that cost nothing as a reward that was never sold', () => {
+    expect(row(30).flags).toContain('paint-limited')
+    expect(row(30).limited).toEqual(['Reward, never sold'])
+    expect(row(30).suggestion).toMatchObject({ action: 'keep', label: 'Keep ($0 melt)' })
+    expect(row(30).suggestion.reasons.join(' ')).toMatch(/Reward, never sold/)
+  })
+  it('flags a free reward pack that includes a paint', () => {
+    expect(row(31).limited).toEqual(['Reward, never sold'])
+  })
+  it('does not suggest melting a free reward paint for a ship you do not own', () => {
+    expect(row(34).flags).toEqual(expect.arrayContaining(['paint-limited', 'paint-unowned']))
+    expect(row(34).suggestion.action).toBe('keep')
+    expect(row(34).suggestion.reasons.join(' ')).toMatch(/cannot be bought/)
+  })
+  it('leaves paid paints and free ship pledges alone', () => {
+    expect(row(32).flags).not.toContain('paint-limited')
+    expect(row(33).flags).not.toContain('paint-limited')
   })
 })
 

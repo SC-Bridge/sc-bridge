@@ -217,10 +217,16 @@ const PAINT_EXCLUSIVES = [
   [/\bexclusive\b/i, 'Exclusive'],
   [/commemorat/i, 'Commemorative'],
 ]
+// Event paint series that neither RSI's name nor the game's description ties
+// to an event. A hand-kept list: add a series here when it is known to be one.
+const PAINT_EVENT_SERIES = ['Frostbite', 'Keystone', 'Meridian']
+const PAINT_SERIES_RE = PAINT_EVENT_SERIES.map((s) => [new RegExp(`\\b${s}\\b`, 'i'), `${s} event series`])
+const REWARD_PAINT = 'Reward, never sold'
 
 /**
  * Why a paint looks limited, from a pledge name, item title or game
- * description: "Best in Show 2952", "Subscriber exclusive", "dated 2951".
+ * description: "Best in Show 2952", "Subscriber exclusive", "Frostbite event
+ * series", "dated 2951".
  * Null when nothing in the text says so.
  */
 export function limitedReason(text) {
@@ -230,6 +236,8 @@ export function limitedReason(text) {
   if (event) return year ? `${event} ${year}` : event
   const exclusive = PAINT_EXCLUSIVES.find(([re]) => re.test(text))?.[1]
   if (exclusive) return exclusive
+  const series = PAINT_SERIES_RE.find(([re]) => re.test(text))?.[1]
+  if (series) return series
   return year ? `dated ${year}` : null
 }
 
@@ -262,7 +270,7 @@ export const FLAGS = {
   'dupe-item': { label: 'Duplicate', tone: 'warn', tip: 'Identical pledge owned more than once' },
   'paint-unowned': { label: 'Paint, no ship', tone: 'warn', tip: "Paint for a ship you don't own" },
   'paint-partial': { label: 'Some paints unowned', tone: 'mute', tip: "Pack includes paints for ships you don't own" },
-  'paint-limited': { label: 'Limited paint', tone: 'info', tip: 'Event, dated or exclusive paint: not sold in the store year-round' },
+  'paint-limited': { label: 'Limited paint', tone: 'info', tip: 'Event, dated, exclusive or reward paint: not sold in the store year-round' },
   'ccu-orphan': { label: 'CCU, no base', tone: 'warn', tip: "You can't reach this CCU's from-ship" },
   'ccu-dupe': { label: 'Multiple CCUs', tone: 'mute', tip: 'Several identical CCUs' },
   warbond: { label: 'Warbond', tone: 'mute', tip: 'Warbond pricing' },
@@ -407,6 +415,8 @@ export function analyse(model) {
     const found = [...new Set(r.paintTexts.map(limitedReason).filter(Boolean))]
     // "dated 2951" adds nothing next to "IAE 2951".
     const reasons = found.filter((x) => !x.startsWith('dated ') || !found.some((y) => y !== x && y.endsWith(x.slice(6))))
+    // A pledge that cost nothing was handed out, not sold: the store never had it.
+    if (r.value === 0 && r.cat !== 'Ship') reasons.push(REWARD_PAINT)
     if (!reasons.length) continue
     r.limited = reasons
     r.flags.push('paint-limited')
@@ -426,7 +436,10 @@ export function analyse(model) {
 
 function suggest(r, tokens) {
   if (!r.meltable) return { action: 'keep', label: "Can't melt", reasons: ['RSI marks this pledge as not reclaimable.'] }
-  if (r.value === 0) return { action: 'keep', label: 'Keep ($0 melt)', reasons: ['Melting returns nothing.'] }
+  if (r.value === 0) {
+    const reward = r.limited?.length ? [`Limited paint (${r.limited.join(', ')}): it cannot be bought in the store.`] : []
+    return { action: 'keep', label: 'Keep ($0 melt)', reasons: ['Melting returns nothing.', ...reward] }
+  }
   if (r.cat === 'Ship') {
     if (r.flags.includes('dupe-ship') && !r.dupeKeep) {
       return { action: 'melt', label: 'Melt (duplicate)', reasons: [`You own ${r.dupeOf} pledges with this hull; another copy has equal or better insurance.`] }

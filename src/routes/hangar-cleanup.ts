@@ -80,6 +80,47 @@ function paintKey(name: string): string {
     .trim();
 }
 
+/** The series half of an RSI paint title: "Hurricane - Polar Paint" and "Spartan Paint - Polar" both give "polar". */
+function paintSeriesKey(title: string): string | null {
+  const parts = title.split(" - ");
+  return parts.length > 1 ? paintKey(parts[parts.length - 1]) || null : null;
+}
+
+interface GamePaint {
+  key: string;
+  description: string | null;
+  hinted: boolean;
+}
+
+// A series counts as an event series when nearly all of its paints say so.
+const SERIES_MIN_PAINTS = 2;
+const SERIES_MIN_HINTED = 0.8;
+
+/**
+ * The game description that says a synced paint is limited, or undefined.
+ * Exact name first. Failing that, the paint's series: RSI and the game name
+ * ships differently ("Constellation Mk IV - Polar Paint" vs "Constellation
+ * Polar Livery"), but when the other Polar paints were made for an event, so
+ * was this one. The closest-named paint of the series supplies the wording.
+ */
+function limitedPaintNote(title: string, paints: GamePaint[], byKey: Map<string, GamePaint>): string | undefined {
+  const key = paintKey(title);
+  const exact = byKey.get(key);
+  if (exact?.hinted && exact.description) return exact.description;
+
+  const series = paintSeriesKey(title);
+  if (!series) return undefined;
+  const inSeries = paints.filter((p) => ` ${p.key} `.includes(` ${series} `));
+  const hinted = inSeries.filter((p) => p.hinted && p.description);
+  if (inSeries.length < SERIES_MIN_PAINTS || hinted.length / inSeries.length < SERIES_MIN_HINTED) return undefined;
+
+  const words = new Set(key.split(" "));
+  const shared = (p: GamePaint) => p.key.split(" ").filter((w) => words.has(w)).length;
+  let best = hinted[0];
+  for (const p of hinted) if (shared(p) > shared(best)) best = p;
+  return best.description ?? undefined;
+}
+
 interface UpgradeRow {
   user_pledge_id: number;
   upgrade_name: string;
@@ -200,12 +241,12 @@ export function hangarCleanupRoutes() {
         db
           .prepare("SELECT credit_override_cents, done_steps_json FROM user_hangar_cleanup_state WHERE user_id = ?")
           .bind(userId),
-        // Game paint descriptions that name an event, a year or exclusivity: the
-        // only limited-availability signal we hold ("designed for the 2951 IAE").
-        // A broad prefilter; the page's limitedReason() decides what it means.
+        // Every game paint, marked when its description names an event, a year
+        // or exclusivity: the only limited-availability signal we hold ("designed
+        // for the 2951 IAE"). A broad mark; the page's limitedReason() decides
+        // what it means. Unmarked paints are needed to judge a whole series.
         db.prepare(
-          `SELECT name, description FROM paints
-           WHERE COALESCE(is_deleted, 0) = 0 AND description IS NOT NULL AND (
+          `SELECT name, description, CASE WHEN description IS NOT NULL AND (
              description GLOB '*29[0-9][0-9]*'
              OR description LIKE '%Best in Show%' OR description LIKE '%Invictus%'
              OR description LIKE '%IAE%' OR description LIKE '%Aerospace Expo%'
@@ -216,14 +257,16 @@ export function hangarCleanupRoutes() {
              OR description LIKE '%Day of the Vara%' OR description LIKE '%CitizenCon%'
              OR description LIKE '%subscriber%' OR description LIKE '%concierge%'
              OR description LIKE '%referral%' OR description LIKE '%limited%edition%'
-             OR description LIKE '%exclusive%' OR description LIKE '%commemorat%')`,
+             OR description LIKE '%exclusive%' OR description LIKE '%commemorat%')
+           THEN 1 ELSE 0 END AS hinted
+           FROM paints WHERE COALESCE(is_deleted, 0) = 0`,
         ),
       ]);
 
-    const paintNotes = new Map<string, string>();
-    for (const p of paintRes.results as Array<{ name: string; description: string }>) {
-      paintNotes.set(paintKey(p.name), p.description);
-    }
+    const gamePaints: GamePaint[] = (
+      paintRes.results as Array<{ name: string; description: string | null; hinted: number }>
+    ).map((p) => ({ key: paintKey(p.name), description: p.description, hinted: !!p.hinted }));
+    const gamePaintByKey = new Map(gamePaints.map((p) => [p.key, p]));
 
     const profile = (profileRes.results as Array<{ synced_at: string | null; store_credit_cents: number | null }>)[0];
     const latestSync = (syncRes.results as Array<{ synced_at: string | null }>)[0];
@@ -263,7 +306,7 @@ export function hangarCleanupRoutes() {
       ccu_to: p.ccu_to_name,
       items: (itemsByPledge.get(p.id) ?? []).map((i) => {
         const isInsurance = i.kind === "Insurance";
-        const paintNote = i.kind === "Skin" ? paintNotes.get(paintKey(i.title)) : undefined;
+        const paintNote = i.kind === "Skin" ? limitedPaintNote(i.title, gamePaints, gamePaintByKey) : undefined;
         return {
           title: i.title,
           kind: i.kind,

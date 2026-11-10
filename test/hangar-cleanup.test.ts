@@ -343,6 +343,38 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
     expect(byTitle("Carrack Paint").paint_description).toBeUndefined();
   });
 
+  it("applies an event paint series to ships whose paint name does not match exactly", async () => {
+    const painter = await createTestUser(env.DB);
+    await seedHangar(painter.userId, { rsiBase: 780001, vehicleId: carrackId, fromVehicleId: cutlassId });
+    const pledgeRow = await env.DB
+      .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?")
+      .bind(painter.userId, 780001)
+      .first<{ id: number }>();
+    const paint = (name: string, description: string) =>
+      env.DB.prepare("INSERT INTO paints (name, description) VALUES (?, ?)").bind(name, description);
+    await env.DB.batch([
+      paint("Sabre Glacier Camo Livery", "Designed for the 2950 IAE event on microTech."),
+      paint("Nomad Glacier Livery", "Specifically designed for the 2951 IAE."),
+      paint("Ares Glacier Livery", "Specifically designed for the 2951 IAE."),
+      // A common word is not a series: most paints with "crimson" say nothing.
+      paint("Sabre Crimson Livery", "A deep red finish."),
+      paint("Nomad Crimson Livery", "A deep red finish."),
+      paint("Ares Crimson Alert Livery", "Winner of the 2952 Best in Show."),
+      ...["Hurricane - Glacier Paint", "Sabre - Glacier Paint", "Hurricane - Crimson Paint"].map((title, i) =>
+        env.DB
+          .prepare("INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, sort_order) VALUES (?, ?, ?, 'Skin', ?)")
+          .bind(painter.userId, pledgeRow!.id, title, 10 + i),
+      ),
+    ]);
+
+    const body = await get(painter.sessionToken);
+    const items = body.pledges.find((p) => p.rsi_pledge_id === 780001)!.items as Array<{ title: string; paint_description?: string }>;
+    const byTitle = (t: string) => items.find((i) => i.title === t)!;
+    expect(byTitle("Hurricane - Glacier Paint").paint_description).toMatch(/IAE/);
+    expect(byTitle("Sabre - Glacier Paint").paint_description).toBe("Designed for the 2950 IAE event on microTech.");
+    expect(byTitle("Hurricane - Crimson Paint").paint_description).toBeUndefined();
+  });
+
   describe("PUT /decisions/:rsiPledgeId", () => {
     it("upserts a decision and returns { ok: true }", async () => {
       const res = await send(token, "PUT", `/decisions/${RSI}`, { decision: "melt" });
