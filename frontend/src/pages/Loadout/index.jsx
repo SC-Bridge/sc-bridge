@@ -13,6 +13,7 @@ import LockedPort from './LockedPort'
 import DamageBreakdown from './DamageBreakdown'
 import PowerPips from './PowerPips'
 import ModulesSection from './ModulesSection'
+import { CargoInline } from '../../components/ModularCargo'
 import GadgetSlots from './GadgetSlots'
 import PaintsSection from './PaintsSection'
 import LocationPlanner from './LocationPlanner'
@@ -349,7 +350,7 @@ export default function Loadout() {
                   {ship.hull_hp > 0 && <span>HP <span className="text-gray-300">{fmtInt(ship.hull_hp)}</span></span>}
                   {ship.speed_scm > 0 && <span>SCM <span className="text-gray-300">{ship.speed_scm}</span> m/s</span>}
                   {ship.mass > 0 && <span>Mass <span className="text-gray-300">{fmtInt(ship.mass)}</span> kg</span>}
-                  {ship.cargo > 0 && <span>Cargo <span className="text-gray-300">{ship.cargo}</span> SCU</span>}
+                  <CargoInline hull={ship.cargo} modules={modules} selections={canPersist ? moduleSelections : undefined} />
                 </div>
               )}
             </div>

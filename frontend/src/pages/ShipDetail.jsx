@@ -2,11 +2,13 @@ import React, { useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, ExternalLink, X, Wrench,
-  Rocket, Zap, Box, Package, Palette, LayoutGrid, List,
+  Rocket, Zap, Box, Palette, LayoutGrid, List,
   Tag, DollarSign, Calendar, PenLine, ArrowUpRight, CircleDot,
 } from 'lucide-react'
 import { useShip, useShipLoadout, useShipPaints, useShipSalvage, useWeaponRacks, useSuitLockers, useFleet, useFleetEntryUpgrades, useShipModules, useOwnedModules, useOwnedPaints } from '../hooks/useAPI'
 import ModulesSection from './Loadout/ModulesSection'
+import { CargoTile } from '../components/ModularCargo'
+import { maxCargo } from '../lib/moduleCargo'
 import StorageBreakdown from './Ships/StorageBreakdown'
 import { useSession } from '../lib/auth-client'
 import ShipImage from '../components/ShipImage'
@@ -966,6 +968,7 @@ function PaintsTab({ slug, isAuthed }) {
 function InteriorTab({ ship }) {
   const { data: allRacks, loading: racksLoading } = useWeaponRacks()
   const { data: allLockers, loading: lockersLoading } = useSuitLockers()
+  const { data: modules } = useShipModules(ship.slug)
 
   const loading = racksLoading || lockersLoading
 
@@ -975,7 +978,9 @@ function InteriorTab({ ship }) {
 
   if (loading) return <LoadingState message="Loading interior data..." />
 
-  const hasCargoGrid = ship.cargo != null && ship.cargo > 0
+  // Modular hulls (Retaliator) have no grid of their own: the tile still shows,
+  // with a dash and what the cargo modules add.
+  const hasCargoGrid = maxCargo(ship.cargo, modules) != null
   const hasPersonalStorage = ship.vehicle_inventory != null && ship.vehicle_inventory > 0
   const hasRacks = racks.length > 0
   const hasLockers = lockers.length > 0
@@ -1001,19 +1006,7 @@ function InteriorTab({ ship }) {
         <div className="panel">
           <div className="panel-header">Storage</div>
           <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {hasCargoGrid && (
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-sc-highlight/10 text-sc-highlight">
-                  <Package className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xl font-mono font-semibold text-white">
-                    {ship.cargo.toLocaleString()} <span className="text-sm text-gray-400">SCU</span>
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">Cargo grid</p>
-                </div>
-              </div>
-            )}
+            {hasCargoGrid && <CargoTile hull={ship.cargo} modules={modules} />}
             {hasPersonalStorage && (
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-lg bg-sc-accent2/10 text-sc-accent2">

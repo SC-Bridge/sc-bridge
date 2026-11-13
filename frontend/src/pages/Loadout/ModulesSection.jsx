@@ -101,6 +101,11 @@ export default function ModulesSection({ modules, ownedTitles, selections, onSel
                         <span className={`flex-1 ${installed || m.is_default ? 'text-gray-200' : 'text-gray-400'}`}>
                           {m.display_name}
                         </span>
+                        {m.cargo > 0 && (
+                          <span className="text-[11px] text-sky-300 flex-shrink-0 tabular-nums">
+                            {m.cargo.toLocaleString()} SCU
+                          </span>
+                        )}
                         {m.price != null ? (
                           <span className="text-[11px] text-amber-300 flex-shrink-0 tabular-nums">
                             {Math.round(m.price).toLocaleString()} aUEC
