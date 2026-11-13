@@ -18,6 +18,12 @@ describe('ModulesSection', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
+  it('shows the cargo a module carries, and nothing for a module without a grid', () => {
+    render(<ModulesSection modules={[{ ...modules[0], cargo: 38 }, { ...modules[1], cargo: null }]} ownedTitles={[]} />)
+    expect(screen.getByText('38 SCU')).toBeInTheDocument()
+    expect(screen.getAllByText(/SCU/)).toHaveLength(1)
+  })
+
   it('groups by port and labels the default', () => {
     render(<ModulesSection modules={modules} ownedTitles={[]} />)
     expect(screen.getByText('Front Module')).toBeInTheDocument()

@@ -565,10 +565,13 @@ export async function getShipModules(db: D1Database, slug: string, isPTU = false
   // a NULL class_name, so we link by display_name. `price` is the cheapest effective
   // buy price across terminals (COALESCE latest→base, see pricing-sql). NULL when the
   // module has no UEX item (e.g. Retaliator base bays) → UI shows "—". Additive field.
+  // `cargo` is the SCU of the grids in the module's own loadout (NULL = none);
+  // vehicles.cargo already includes the default modules, so the UI applies
+  // hull + (equipped - default) — see frontend/src/lib/moduleCargo.js.
   const result = await db
     .prepare(
       `SELECT vm.id, vm.uuid, vm.port_name, vm.class_name, vm.display_name,
-              vm.size, vm.is_default, vm.has_loadout,
+              vm.size, vm.is_default, vm.has_loadout, vm.cargo,
               (SELECT ROUND(MIN(${buyPriceSQL("ti")}))
                  FROM ${ti} ti
                  JOIN ${lm} lm ON lm.uuid = ti.item_uuid
