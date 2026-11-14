@@ -1,7 +1,6 @@
 import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
-import { SET_SLUG_REWARD_TEXTS } from "../lib/loot-sets";
 import {
   getLootItems,
   getLootByUuid,
@@ -19,6 +18,7 @@ import {
   removeFromLootWishlist,
   getLootSets,
   getLootSetBySlug,
+  getContractsAwardingItems,
   reportUserItemPrice,
 } from "../db/queries";
 import { validate } from "../lib/validation";
@@ -254,16 +254,11 @@ export function lootRoutes() {
         const set = await getLootSetBySlug(c.env.DB, setSlug, isPTU);
         if (!set) return null;
 
-        const rewardTexts = SET_SLUG_REWARD_TEXTS[setSlug];
-        let awardingContracts: { id: number; title: string; giver_slug: string }[] = [];
-        if (rewardTexts && rewardTexts.length > 0) {
-          const placeholders = rewardTexts.map(() => "?").join(",");
-          const result = await c.env.DB
-            .prepare(`SELECT id, title, giver_slug FROM contracts WHERE reward_text IN (${placeholders})`)
-            .bind(...rewardTexts)
-            .all<{ id: number; title: string; giver_slug: string }>();
-          awardingContracts = result.results ?? [];
-        }
+        const awardingContracts = await getContractsAwardingItems(
+          c.env.DB,
+          set.pieces.map((p) => p.name as string),
+          isPTU,
+        );
 
         return { ...set, awardingContracts };
       },

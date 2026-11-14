@@ -13,7 +13,7 @@ import type {
   UserLLMConfig,
   AIAnalysis,
 } from "../lib/types";
-import { extractSetName, makeSetSlug } from "../lib/loot-sets";
+import { extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
 import { ptuShadowExists } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
@@ -2351,6 +2351,61 @@ export async function getLootSetBySlug(
   });
 
   return { setName, manufacturer, pieces };
+}
+
+/**
+ * Armour set slug for each named loot item that is an armour set piece.
+ * Names are matched exactly against loot_map.name, and the set is resolved
+ * with the same extractSetName/makeSetSlug grouping as getLootSets, so a
+ * returned slug always opens a real /loot/sets/:slug page.
+ */
+export async function getArmourSetSlugsByItemName(
+  db: D1Database,
+  itemNames: string[],
+  isPTU = false,
+): Promise<Map<string, string>> {
+  const slugs = new Map<string, string>();
+  if (itemNames.length === 0) return slugs;
+  const lm = isPTU ? "ptu_loot_map" : "loot_map";
+  const result = await db
+    .prepare(
+      `SELECT lm.name, lm.manufacturer_name
+       FROM ${lm} lm
+       WHERE lm.name IN (SELECT value FROM json_each(?))
+         AND lm.category IN ('armour', 'helmet', 'undersuit')`,
+    )
+    .bind(JSON.stringify(itemNames))
+    .all<{ name: string; manufacturer_name: string | null }>();
+  for (const row of result.results) {
+    const setName = extractSetName(row.name, row.manufacturer_name);
+    if (setName) slugs.set(row.name, makeSetSlug(setName));
+  }
+  return slugs;
+}
+
+/**
+ * Active contracts whose reward items include any of the given loot item
+ * names (an armour set's pieces). Rewards are read from reward_text via
+ * parseRewardItemNames — the contracts table carries no reward item ids.
+ */
+export async function getContractsAwardingItems(
+  db: D1Database,
+  itemNames: string[],
+  isPTU = false,
+): Promise<{ id: number; title: string; giver_slug: string }[]> {
+  if (itemNames.length === 0) return [];
+  const contracts = isPTU ? "ptu_contracts" : "contracts";
+  const wanted = new Set(itemNames);
+  const result = await db
+    .prepare(
+      `SELECT id, title, giver_slug, reward_text FROM ${contracts}
+       WHERE is_active = 1 AND reward_text IS NOT NULL
+       ORDER BY giver_slug, sequence_num, id`,
+    )
+    .all<{ id: number; title: string; giver_slug: string; reward_text: string }>();
+  return result.results
+    .filter((c) => parseRewardItemNames(c.reward_text).some((n) => wanted.has(n)))
+    .map(({ id, title, giver_slug }) => ({ id, title, giver_slug }));
 }
 
 // ============================================================
