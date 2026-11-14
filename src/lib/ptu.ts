@@ -10,12 +10,11 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { HonoEnv } from "./types";
 
 /**
- * All 86 versioned game-data tables, in FK-safe deletion order
+ * All 94 versioned game-data tables, in FK-safe deletion order
  * (children before parents). Used for PTU table creation and purge.
  */
 export const VERSIONED_TABLES = [
   // Vehicle children → vehicles → manufacturers
-  "vehicle_storage",
   "vehicle_weapon_racks", "vehicle_suit_lockers", "vehicle_ports",
   "vehicle_modules", "vehicle_roles", "vehicle_careers",
   "salvageable_ships",

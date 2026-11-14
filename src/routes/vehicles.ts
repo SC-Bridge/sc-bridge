@@ -73,14 +73,13 @@ export function vehicleRoutes<E extends HonoEnv>() {
     const isPTU = isPTUChannel(getActiveChannel(c));
     const vehiclesT = resolveTable("vehicles", isPTU);
     const manufacturersT = resolveTable("manufacturers", isPTU);
-    const storageT = resolveTable("vehicle_storage", isPTU);
     return cachedJson(c, `ships:detail:${cacheSlug(slug)}`, async () => {
       const vehicle = await db
         .prepare(
           `SELECT v.id, v.uuid, v.slug, v.name, v.class_name,
             v.size, v.size_label, v.focus, v.classification, v.description,
             v.length, v.beam, v.height, v.mass, v.cargo,
-            v.internal_cargo_scu, v.external_cargo_scu, v.fuel_cargo_scu,
+            v.external_cargo_scu, v.fuel_cargo_scu,
             v.personal_grid_microscu, v.locker_count,
             v.crew_min, v.crew_max, v.speed_scm, v.speed_max, v.hull_hp, v.hull_damage_normalization,
             v.vehicle_inventory, v.pledge_price, v.on_sale,
@@ -112,28 +111,7 @@ export function vehicleRoutes<E extends HonoEnv>() {
         )
         .bind(slug, slug, slug)
         .first<Record<string, unknown>>();
-      if (!vehicle) return null;
-      const storage = await db
-        .prepare(
-          `SELECT id, storage_type, container_class_name,
-            scu_capacity, microscu_capacity, count, location_label
-          FROM ${storageT}
-          WHERE vehicle_id = ? AND is_deleted = 0
-          ORDER BY
-            CASE storage_type
-              WHEN 'internal_grid' THEN 1
-              WHEN 'external_pod' THEN 2
-              WHEN 'fuel_cargo' THEN 3
-              WHEN 'personal_locker' THEN 4
-              WHEN 'suit_locker' THEN 5
-              WHEN 'weapon_rack' THEN 6
-              ELSE 7
-            END,
-            scu_capacity DESC NULLS LAST`,
-        )
-        .bind(vehicle.id)
-        .all();
-      return { ...vehicle, storage: storage.results ?? [] };
+      return vehicle;
     });
   });
 
