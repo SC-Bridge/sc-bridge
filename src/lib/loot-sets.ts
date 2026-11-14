@@ -70,23 +70,43 @@ export function makeSetSlug(setName: string): string {
   return slugFromName(setName);
 }
 
-/**
- * Maps contract reward_text values to armor set slugs.
- * Only entries where matching items exist in loot_map are included.
- * Slugs must match what makeSetSlug(extractSetName(...)) produces.
- */
-export const ARMOR_SET_REWARD_MAP: Record<string, string> = {
-  "Geist Armor Snow Camo Set": "geist-armor-snow-camo",
-  "Heavy Utility Suit": "novikov",
-  "Battle Armor Set": "microid-battle-suit",
-  "Vanduul-style Armor Set": "snarling-vanduul",
-  "Irradiated Armor Set": "antium",
-  "Molten Armor Set": "strata",
-};
+/** Leading stack quantity on a reward entry, e.g. "20x " in "20x Rifle Battery". */
+const REWARD_QUANTITY_PREFIX = /^\d+x\s+/;
 
-/** Reverse map: set slug → list of reward_text values that reference it */
-export const SET_SLUG_REWARD_TEXTS: Record<string, string[]> = {};
-for (const [text, slug] of Object.entries(ARMOR_SET_REWARD_MAP)) {
-  if (!SET_SLUG_REWARD_TEXTS[slug]) SET_SLUG_REWARD_TEXTS[slug] = [];
-  SET_SLUG_REWARD_TEXTS[slug].push(text);
+/**
+ * Split a contract's reward_text into reward item display names.
+ *
+ * The contracts extractor writes reward_text as the rewarded items' game
+ * display names joined with ", ", stacked items prefixed with "<n>x ". Those
+ * names are the same localised names loot_map.name carries, so an exact name
+ * match links a reward to its loot item. Item names never contain ", "
+ * (currency rewards such as "15,000 aUEC" have no space after the comma).
+ */
+export function parseRewardItemNames(rewardText: string | null | undefined): string[] {
+  if (!rewardText) return [];
+  const names: string[] = [];
+  for (const part of rewardText.split(", ")) {
+    const name = part.trim().replace(REWARD_QUANTITY_PREFIX, "");
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Armour set slugs a reward covers, most rewarded pieces first (ties keep
+ * reward order). `setSlugByItemName` maps loot item name → set slug for the
+ * armour pieces among the rewards; non-armour rewards are simply absent.
+ */
+export function rankRewardSets(
+  itemNames: string[],
+  setSlugByItemName: Map<string, string>,
+): string[] {
+  const counts = new Map<string, number>();
+  for (const name of itemNames) {
+    const slug = setSlugByItemName.get(name);
+    if (slug) counts.set(slug, (counts.get(slug) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([slug]) => slug);
 }

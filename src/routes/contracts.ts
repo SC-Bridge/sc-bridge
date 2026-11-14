@@ -1,7 +1,8 @@
 import { Hono } from "hono"
 import type { HonoEnv } from "../lib/types"
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
-import { ARMOR_SET_REWARD_MAP } from "../lib/loot-sets"
+import { parseRewardItemNames, rankRewardSets } from "../lib/loot-sets"
+import { getArmourSetSlugsByItemName } from "../db/queries"
 import { cachedJson, cacheSlug } from "../lib/cache"
 
 /**
@@ -37,11 +38,23 @@ export function contractRoutes<E extends HonoEnv>() {
 
       const { results } = await db.prepare(query).bind(...params).all()
 
-      // Attach armor set slugs for rewards that match known sets
-      for (const row of results as Record<string, unknown>[]) {
+      // Attach armour set slugs derived from the reward items: each reward
+      // name is matched exactly to a loot_map armour piece, and the pieces
+      // are grouped into sets the same way /api/loot/sets groups them.
+      const rows = results as Record<string, unknown>[]
+      const rewardNames = new Map<Record<string, unknown>, string[]>()
+      for (const row of rows) {
         if (!row.reward_vehicle_slug && row.reward_text) {
-          const setSlug = ARMOR_SET_REWARD_MAP[row.reward_text as string]
-          if (setSlug) row.reward_set_slug = setSlug
+          rewardNames.set(row, parseRewardItemNames(row.reward_text as string))
+        }
+      }
+      const allNames = [...new Set([...rewardNames.values()].flat())]
+      const setSlugByItemName = await getArmourSetSlugsByItemName(db, allNames, isPTU)
+      for (const [row, names] of rewardNames) {
+        const setSlugs = rankRewardSets(names, setSlugByItemName)
+        if (setSlugs.length > 0) {
+          row.reward_set_slug = setSlugs[0]
+          row.reward_set_slugs = setSlugs
         }
       }
 
