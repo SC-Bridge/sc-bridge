@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Gem, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
 import {
   resourceColor, resourceBgColor, resourceBorderColor,
-  formatQuantity, quantityUnits,
+  formatQuantity, quantityUnits, isItemSlot,
   humanizeLocationName, qualityBandProbabilities, QUALITY_BANDS, ROCK_TIER_INFO,
 } from './craftingUtils'
 
@@ -22,6 +22,16 @@ function QuantityBadge({ quantity }) {
         ))}
         <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900/95 border-b border-r border-white/[0.08] rotate-45" />
       </span>
+    </span>
+  )
+}
+
+// Item slots need a number of one specific item, not a cargo volume.
+function ItemCountBadge({ quantity }) {
+  if (quantity == null) return <span className="text-xs text-gray-400 font-mono">—</span>
+  return (
+    <span className="text-xs text-gray-400 font-mono" title={`${quantity} ${quantity === 1 ? 'item' : 'items'}`}>
+      ×{quantity}
     </span>
   )
 }
@@ -215,7 +225,9 @@ export default function SlotCard({ slot, index = 0, resourceLocations }) {
             <Gem className="w-3 h-3" />
             {slot.resource_name}
           </span>
-          <QuantityBadge quantity={slot.quantity} />
+          {isItemSlot(slot)
+            ? <ItemCountBadge quantity={slot.quantity} />
+            : <QuantityBadge quantity={slot.quantity} />}
         </div>
       </div>
       {locations && locations.length > 0 && (
