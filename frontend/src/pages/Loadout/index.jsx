@@ -18,6 +18,7 @@ import { CargoInline } from '../../components/ModularCargo'
 import GadgetSlots from './GadgetSlots'
 import PaintsSection from './PaintsSection'
 import LocationPlanner from './LocationPlanner'
+import { hullTotal } from '../../lib/hullHp'
 import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape } from './loadoutHelpers'
 
 export default function Loadout() {
@@ -350,7 +351,7 @@ export default function Loadout() {
               </p>
               {ship && (
                 <div className="flex items-center gap-4 mt-2 text-[12px] text-gray-500 font-mono flex-wrap">
-                  {ship.hull_hp > 0 && <span>HP <span className="text-gray-300">{fmtInt(ship.hull_hp)}</span></span>}
+                  {hullTotal(ship) > 0 && <span>Hull HP <span className="text-gray-300">{fmtInt(hullTotal(ship))}</span>{ship.hull_hp_total != null && ship.hull_hp > 0 && <span> (body <span className="text-gray-300">{fmtInt(ship.hull_hp)}</span>)</span>}</span>}
                   {ship.speed_scm > 0 && <span>SCM <span className="text-gray-300">{ship.speed_scm}</span> m/s</span>}
                   {ship.mass > 0 && <span>Mass <span className="text-gray-300">{fmtInt(ship.mass)}</span> kg</span>}
                   <CargoInline hull={ship.cargo} modules={modules} selections={canPersist ? moduleSelections : undefined} />
@@ -460,7 +461,7 @@ export default function Loadout() {
               <div className="flex gap-px">
                 <StatCell label="Shield HP" value={combat?.totalShieldHp} format={fmtCompact} color="text-blue-400" unit="hp" />
                 <StatCell label="Regen/s" value={combat?.totalShieldRegen} format={fmtCompact} color="text-blue-300" unit="hp/s" />
-                <StatCell label="Hull HP" value={ship?.armor_hp || ship?.hull_hp} format={fmtCompact} color="text-amber-400" unit="hp" />
+                <StatCell label="Hull HP" value={ship?.armor_hp || hullTotal(ship)} format={fmtCompact} color="text-amber-400" unit="hp" />
               </div>
               {/* Vitals: Fuel + Speed */}
               <div className="flex gap-px">

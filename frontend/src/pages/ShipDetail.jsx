@@ -11,6 +11,8 @@ import { CargoTile } from '../components/ModularCargo'
 import PersonalInventoryTile from '../components/PersonalInventoryTile'
 import { maxCargo } from '../lib/moduleCargo'
 import { StoragePanel } from './Ships/StorageBreakdown'
+import HullPanel from './Ships/HullPanel'
+import { hullTotal } from '../lib/hullHp'
 import { visibleModules } from '../lib/moduleVisibility'
 import { useSession } from '../lib/auth-client'
 import ShipImage from '../components/ShipImage'
@@ -596,7 +598,7 @@ function OverviewTab({ ship, isAuthed }) {
             {/* Physical */}
             <SpecRow label="Dimensions (L × B × H)" value={dims} />
             <SpecRow label="Mass" value={ship.mass ? `${ship.mass.toLocaleString()} kg` : null} />
-            <SpecRow label="Hull HP" value={ship.hull_hp ? ship.hull_hp.toLocaleString() : null} />
+            <SpecRow label="Hull HP" value={hullTotal(ship) ? hullTotal(ship).toLocaleString() : null} />
             {/* Propulsion */}
             <SpecRow label="H₂ Fuel" value={ship.fuel_capacity_hydrogen != null ? `${ship.fuel_capacity_hydrogen} SCU` : null} />
             <SpecRow label="QT Fuel" value={ship.fuel_capacity_quantum != null ? `${ship.fuel_capacity_quantum} SCU` : null} />
@@ -614,6 +616,8 @@ function OverviewTab({ ship, isAuthed }) {
         </div>
 
         <StoragePanel ship={ship} modules={modules} />
+
+        <HullPanel ship={ship} />
 
         {ship.description && (
           <div className="panel">
