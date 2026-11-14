@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { ChevronDown, ChevronRight, Package, Check } from 'lucide-react'
+import { visibleModules, visibleSelections, moduleLabel } from '../../lib/moduleVisibility'
 
 function formatPortName(raw) {
   return raw
@@ -22,17 +23,24 @@ function isModuleOwned(displayName, ownedTitles) {
  * in the loadout planner when `onSelect` is provided — clicking an option
  * installs it. `selections` maps port_name → chosen module uuid; the effective
  * installed module per port is the selection, else the ship's default module.
+ *
+ * Modules with no display name (template / unreleased rows) are not listed —
+ * see lib/moduleVisibility.js. A port left with nothing to list is dropped from
+ * the section and the slot count, and a selection pointing at a hidden module
+ * is ignored so the default shows as installed.
  */
 export default function ModulesSection({ modules, ownedTitles, selections, onSelect }) {
   const [collapsed, setCollapsed] = useState(false)
   const editable = typeof onSelect === 'function'
 
-  if (!modules?.length) return null
+  const shown = visibleModules(modules)
+  if (!shown.length) return null
+  const shownSelections = visibleSelections(modules, selections)
 
   // Group by port, de-duped by uuid.
   const seen = new Set()
   const byPort = new Map()
-  for (const m of modules) {
+  for (const m of shown) {
     if (m.uuid && seen.has(m.uuid)) continue
     if (m.uuid) seen.add(m.uuid)
     const port = m.port_name || 'Default'
@@ -43,7 +51,7 @@ export default function ModulesSection({ modules, ownedTitles, selections, onSel
   // Effective installed uuid per port: the user's selection, else the default.
   const installedByPort = {}
   for (const [port, list] of byPort.entries()) {
-    const chosen = selections?.[port]
+    const chosen = shownSelections?.[port]
     const def = list.find(m => m.is_default)
     installedByPort[port] = chosen || def?.uuid || null
   }
@@ -83,6 +91,7 @@ export default function ModulesSection({ modules, ownedTitles, selections, onSel
                     return (
                       <Row
                         key={m.id ?? m.uuid}
+                        data-testid="module-row"
                         {...(editable ? { onClick: () => onSelect(portName, m), type: 'button' } : {})}
                         className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-sm text-left transition-colors
                           ${installed
@@ -99,7 +108,7 @@ export default function ModulesSection({ modules, ownedTitles, selections, onSel
                           </span>
                         )}
                         <span className={`flex-1 ${installed || m.is_default ? 'text-gray-200' : 'text-gray-400'}`}>
-                          {m.display_name}
+                          {moduleLabel(m)}
                         </span>
                         {m.cargo > 0 && (
                           <span className="text-[11px] text-sky-300 flex-shrink-0 tabular-nums">
