@@ -8,6 +8,7 @@ import {
 import { useShip, useShipLoadout, useShipPaints, useShipSalvage, useWeaponRacks, useSuitLockers, useFleet, useFleetEntryUpgrades, useShipModules, useOwnedModules, useOwnedPaints } from '../hooks/useAPI'
 import ModulesSection from './Loadout/ModulesSection'
 import { CargoTile } from '../components/ModularCargo'
+import PersonalInventoryTile from '../components/PersonalInventoryTile'
 import { maxCargo } from '../lib/moduleCargo'
 import { StoragePanel } from './Ships/StorageBreakdown'
 import { visibleModules } from '../lib/moduleVisibility'
@@ -993,7 +994,6 @@ function InteriorTab({ ship }) {
     )
   }
 
-  const personalSCU = hasPersonalStorage ? ship.vehicle_inventory / 1000000 : 0
   const totalRackSlots = racks.reduce((sum, r) => sum + (r.total_ports || 0), 0)
   const totalRifleSlots = racks.reduce((sum, r) => sum + (r.rifle_ports || 0), 0)
   const totalPistolSlots = racks.reduce((sum, r) => sum + (r.pistol_ports || 0), 0)
@@ -1005,19 +1005,7 @@ function InteriorTab({ ship }) {
           <div className="panel-header">Storage</div>
           <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {hasCargoGrid && <CargoTile hull={ship.cargo} modules={modules} />}
-            {hasPersonalStorage && (
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-lg bg-sc-accent2/10 text-sc-accent2">
-                  <Box className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xl font-mono font-semibold text-white">
-                    {personalSCU.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-sm text-gray-400">SCU</span>
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">Personal inventory</p>
-                </div>
-              </div>
-            )}
+            <PersonalInventoryTile scu={ship.vehicle_inventory} />
           </div>
         </div>
       )}
