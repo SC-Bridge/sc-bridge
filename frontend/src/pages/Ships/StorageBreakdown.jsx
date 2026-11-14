@@ -1,5 +1,22 @@
 // PART L L8 — Storage taxonomy display for ship detail.
 // Summary tiles (rolled-up totals) + collapsible per-feature detail list.
+//
+// The summary columns (internal_cargo_scu, external_cargo_scu, ...) are a
+// one-off backfill the pipeline does not maintain: NULL for ships added since,
+// out of date for others. `vehicles.cargo` is the maintained figure, so
+// StoragePanel (the ship overview) leads with it and passes it down as
+// `liveCargo`, which decides what the two cargo tiles may still say:
+//   - Interior Cargo is never shown: it is the same quantity as the cargo
+//     figure, so it either repeats it (Carrack 456) or contradicts it (MOLE 96
+//     vs 32).
+//   - External Pods is a split of the cargo figure, shown only when it fits
+//     inside it (0 < external <= cargo). When the pods are all of the cargo
+//     (Hull C) the tile says so instead of repeating the number.
+// Refuel cargo, personal grid, lockers and the detail list measure other things
+// and are shown as before.
+
+import { CargoTile } from '../../components/ModularCargo'
+import { maxCargo } from '../../lib/moduleCargo'
 
 const TYPE_LABELS = {
   internal_grid: 'Interior Grid',
@@ -64,15 +81,51 @@ function DetailRow({ row }) {
   )
 }
 
-export default function StorageBreakdown({ storage, summary }) {
-  const hasSummary = summary && (
-    summary.internal_cargo_scu > 0
-    || summary.external_cargo_scu > 0
-    || summary.fuel_cargo_scu > 0
-    || summary.personal_grid_microscu > 0
-    || summary.locker_count > 0
+function externalPodsValue(external, liveCargo) {
+  if (liveCargo === undefined) return fmtScu(external)
+  if (!(external > 0) || !(external <= liveCargo)) return null
+  return external === liveCargo ? 'All cargo' : fmtScu(external)
+}
+
+/** Summary tiles that have something to show. `liveCargo` — see the file header. */
+function summaryTiles(summary, liveCargo) {
+  if (!summary) return []
+  return [
+    { label: 'Interior Cargo', value: liveCargo === undefined ? fmtScu(summary.internal_cargo_scu) : null },
+    { label: 'External Pods', value: externalPodsValue(summary.external_cargo_scu, liveCargo), accent: 'text-emerald-400' },
+    { label: 'Refuel Cargo', value: fmtScu(summary.fuel_cargo_scu), accent: 'text-sky-400' },
+    { label: 'Personal Grid', value: fmtMicroScu(summary.personal_grid_microscu) },
+    { label: 'Suit Lockers', value: summary.locker_count > 0 ? String(summary.locker_count) : null },
+  ].filter(t => t.value != null)
+}
+
+const hasDetailRows = (storage) => Array.isArray(storage) && storage.length > 0
+
+/**
+ * Ship overview "Storage" panel: the live cargo figure (with the ceiling its
+ * modules reach) followed by whatever StorageBreakdown still has to add.
+ * Renders nothing at all — no header — when there is nothing to show.
+ */
+export function StoragePanel({ ship, modules }) {
+  const hasCargo = maxCargo(ship.cargo, modules) != null
+  const liveCargo = ship.cargo ?? null
+  const hasBreakdown = summaryTiles(ship, liveCargo).length > 0 || hasDetailRows(ship.storage)
+  if (!hasCargo && !hasBreakdown) return null
+  return (
+    <div className="panel">
+      <div className="panel-header">Storage</div>
+      <div className="p-4 space-y-4">
+        {hasCargo && <CargoTile hull={ship.cargo} modules={modules} />}
+        <StorageBreakdown storage={ship.storage} summary={ship} liveCargo={liveCargo} />
+      </div>
+    </div>
   )
-  const hasDetail = Array.isArray(storage) && storage.length > 0
+}
+
+export default function StorageBreakdown({ storage, summary, liveCargo }) {
+  const tiles = summaryTiles(summary, liveCargo)
+  const hasSummary = tiles.length > 0
+  const hasDetail = hasDetailRows(storage)
   if (!hasSummary && !hasDetail) return null
 
   const sortedStorage = hasDetail
@@ -88,11 +141,7 @@ export default function StorageBreakdown({ storage, summary }) {
     <div className="space-y-3">
       {hasSummary && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <SummaryTile label="Interior Cargo" value={fmtScu(summary.internal_cargo_scu)} />
-          <SummaryTile label="External Pods" value={fmtScu(summary.external_cargo_scu)} accent="text-emerald-400" />
-          <SummaryTile label="Refuel Cargo" value={fmtScu(summary.fuel_cargo_scu)} accent="text-sky-400" />
-          <SummaryTile label="Personal Grid" value={fmtMicroScu(summary.personal_grid_microscu)} />
-          <SummaryTile label="Suit Lockers" value={summary.locker_count > 0 ? String(summary.locker_count) : null} />
+          {tiles.map(t => <SummaryTile key={t.label} label={t.label} value={t.value} accent={t.accent} />)}
         </div>
       )}
       {hasDetail && (

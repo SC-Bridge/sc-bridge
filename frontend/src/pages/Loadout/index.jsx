@@ -13,6 +13,7 @@ import LockedPort from './LockedPort'
 import DamageBreakdown from './DamageBreakdown'
 import PowerPips from './PowerPips'
 import ModulesSection from './ModulesSection'
+import { visibleModules, visibleSelections } from '../../lib/moduleVisibility'
 import { CargoInline } from '../../components/ModularCargo'
 import GadgetSlots from './GadgetSlots'
 import PaintsSection from './PaintsSection'
@@ -204,12 +205,14 @@ export default function Loadout() {
     else if (fleetId) { await resetFleetLoadout(fleetId); refetchFleetLoadout() }
   }, [fleetId, loanerVehicleId, refetchFleetLoadout, refetchLoanerLoadout])
 
-  // Module slot selections (port_name → chosen module uuid).
+  // Module slot selections (port_name → chosen module uuid). A saved choice that
+  // points at a module the section does not list is dropped, so the header cargo
+  // and the Modules section agree on what is installed (the default).
   const moduleSelections = useMemo(() => {
     const map = {}
     for (const s of moduleSelData?.selections || []) map[s.port_name] = s.module_uuid
-    return map
-  }, [moduleSelData])
+    return visibleSelections(modules, map)
+  }, [moduleSelData, modules])
 
   const handleSelectModule = useCallback(async (portName, module) => {
     if (!canPersist) return
@@ -543,7 +546,7 @@ export default function Loadout() {
         </div>
 
         {/* MODULES (full-width) */}
-        {modules?.length > 0 && (
+        {visibleModules(modules).length > 0 && (
           <div className="mt-4">
             <ModulesSection
               modules={modules}
