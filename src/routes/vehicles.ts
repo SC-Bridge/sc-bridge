@@ -3,6 +3,28 @@ import type { HonoEnv } from "../lib/types";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 
+/** One structural hull part, as the tools pipeline writes it to vehicles.hull_parts_json. */
+export interface HullPart {
+  name: string;
+  hp: number;
+  parent: string | null;
+  vital: boolean;
+}
+
+/**
+ * vehicles.hull_parts_json → parts array, or null when the column is empty or
+ * unreadable. A bad value drops the breakdown instead of failing the page.
+ */
+export function parseHullParts(raw: unknown): HullPart[] | null {
+  if (typeof raw !== "string" || raw === "") return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as HullPart[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * /api/ships/* — Ship reference database (all vehicles in the game)
  *
@@ -82,6 +104,7 @@ export function vehicleRoutes<E extends HonoEnv>() {
             v.external_cargo_scu, v.fuel_cargo_scu,
             v.personal_grid_microscu, v.locker_count,
             v.crew_min, v.crew_max, v.speed_scm, v.speed_max, v.hull_hp, v.hull_damage_normalization,
+            v.hull_hp_total, v.hull_parts_json,
             v.vehicle_inventory, v.pledge_price, v.on_sale,
             v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
             v.pledge_url, v.price_auec, v.acquisition_type, v.acquisition_source_name,
@@ -111,7 +134,9 @@ export function vehicleRoutes<E extends HonoEnv>() {
         )
         .bind(slug, slug, slug)
         .first<Record<string, unknown>>();
-      return vehicle;
+      if (!vehicle) return vehicle;
+      const { hull_parts_json, ...rest } = vehicle;
+      return { ...rest, hull_parts: parseHullParts(hull_parts_json) };
     });
   });
 
