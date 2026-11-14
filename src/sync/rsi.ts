@@ -574,6 +574,24 @@ export async function applyPledgeableFlags(
  *   3. Build a "prefix-stripped" index of DB names (e.g. "RSI Aurora Mk I MR" → "aurora mk i mr")
  *      and match against that
  */
+/**
+ * The cargo figure the ship matrix may write for a vehicle, or null for none.
+ *
+ * Only RSI-only concept ships (no game record, so a NULL uuid) take the matrix
+ * figure, and only while they have no cargo yet; 0 is a valid value for them.
+ * A ship with a game record gets its cargo from the game files: NULL there
+ * means the hull has no cargo grid (the site shows a dash; modular hulls add
+ * their module's cargo), so the matrix must not fill it.
+ */
+export function cargoBackfillValue(
+  dbRow: { uuid: string | null; cargo: number | null },
+  ship: { cargocapacity: number | null },
+): number | null {
+  if (dbRow.uuid !== null) return null;
+  if (dbRow.cargo !== null) return null;
+  return typeof ship.cargocapacity === "number" ? ship.cargocapacity : null;
+}
+
 export async function syncShipProductionStatus(db: D1Database): Promise<void> {
   const syncID = await insertSyncHistory(
     db,
@@ -607,7 +625,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
     // NULLs, never overwrite p4k-sourced data.
     const { results: dbVehicles } = await db
       .prepare(
-        `SELECT v.id, v.name, v.slug, v.cargo, v.vehicle_type,
+        `SELECT v.id, v.uuid, v.name, v.slug, v.cargo, v.vehicle_type,
                 v.speed_scm, v.production_status_id, v.class_name,
                 v.length, v.beam, v.height, v.mass,
                 v.crew_min, v.crew_max, v.classification, v.focus,
@@ -619,6 +637,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       )
       .all<{
         id: number;
+        uuid: string | null;
         name: string;
         slug: string;
         cargo: number | null;
@@ -685,6 +704,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
     //
     // Backfill rule: only UPDATE when the DB column is NULL. p4k data wins
     // over RSI when both exist (p4k is authoritative for per-ship mechanics).
+    // Cargo is stricter: see cargoBackfillValue — concept ships only.
     const matchedIds = new Set<number>();
     const statusUpdates: Array<{ id: number; statusId: number }> = [];
     const cargoUpdates: Array<{ id: number; cargo: number }> = [];
@@ -776,10 +796,8 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       // RSI concern, not a p4k one).
       if (statusId) statusUpdates.push({ id: dbId, statusId });
 
-      // cargo — only fill if DB is NULL. Accept 0 as a valid value.
-      if (dbRow.cargo === null && typeof ship.cargocapacity === "number") {
-        cargoUpdates.push({ id: dbId, cargo: ship.cargocapacity });
-      }
+      const cargo = cargoBackfillValue(dbRow, ship);
+      if (cargo !== null) cargoUpdates.push({ id: dbId, cargo });
 
       // vehicle_type — only fill if NULL. ship-matrix 'type' values map to
       // our convention: 'ground' → ground_vehicle, everything else → spaceship.
