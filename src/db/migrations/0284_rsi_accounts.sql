@@ -4,8 +4,16 @@
 --
 -- 1. user_rsi_accounts — one row per RSI account a user has synced.
 -- 2. Backfill: one primary account per user who has a user_rsi_profiles row
---    or any row in the hangar tables. From user_rsi_profiles when present;
---    otherwise a placeholder ('Imported hangar', no handle).
+--    or any row in the hangar tables, chosen in this order:
+--    a. user_rsi_profiles present: handle, referral code and profile fields
+--       from it. verified_at is user_rsi_profile.verified_at only when that
+--       bio verification is for the same handle (case-insensitive);
+--       otherwise the extension sync time (user_rsi_profiles.synced_at).
+--    b. No user_rsi_profiles row, hangar rows, and a bio-verified handle in
+--       user_rsi_profile: a real account (not a placeholder) with that
+--       verified_handle, its verified_at, and display_name / avatar_url /
+--       enlisted_at from user_rsi_profile.
+--    c. Otherwise: a placeholder ('Imported hangar', no handle, unverified).
 -- 3. rsi_account_id on user_fleet, user_pledges, user_pledge_items,
 --    user_pledge_upgrades, user_buyback_pledges, user_hangar_syncs, stamped
 --    with the user's account.
@@ -72,7 +80,9 @@ INSERT INTO user_rsi_accounts (
 )
 SELECT
   p.user_id, p.rsi_handle, p.referral_code, NULL, 1, 0,
-  COALESCE(rp.verified_at, p.synced_at), p.synced_at, p.rsi_displayname,
+  CASE WHEN rp.verified_at IS NOT NULL AND LOWER(rp.verified_handle) = LOWER(p.rsi_handle)
+       THEN rp.verified_at ELSE p.synced_at END,
+  p.synced_at, p.rsi_displayname,
   p.avatar_url, p.enlisted_since, p.country, p.concierge_level,
   p.subscriber_type, p.subscriber_frequency, p.store_credit_cents,
   p.uec_balance, p.rec_balance, p.has_game_package, p.orgs_json,
@@ -81,7 +91,29 @@ FROM user_rsi_profiles p
 LEFT JOIN user_rsi_profile rp ON rp.user_id = p.user_id
 WHERE p.user_id IN (SELECT id FROM user);
 
--- 2b. Placeholder accounts for users with hangar rows but no profile
+-- 2b. Users with hangar rows and a bio-verified handle (user_rsi_profile)
+--     but no extension profile: a real, verified account for that handle
+INSERT INTO user_rsi_accounts (
+  user_id, rsi_handle, label, is_primary, is_placeholder, verified_at,
+  display_name, avatar_url, enlisted_since
+)
+SELECT rp.user_id, rp.verified_handle, NULL, 1, 0, rp.verified_at,
+       rp.display_name, rp.avatar_url, rp.enlisted_at
+FROM user_rsi_profile rp
+WHERE rp.verified_handle IS NOT NULL
+  AND rp.user_id IN (SELECT id FROM user)
+  AND rp.user_id NOT IN (SELECT user_id FROM user_rsi_accounts)
+  AND rp.user_id IN (
+    SELECT user_id FROM user_fleet
+    UNION SELECT user_id FROM user_pledges
+    UNION SELECT user_id FROM user_pledge_items
+    UNION SELECT user_id FROM user_pledge_upgrades
+    UNION SELECT user_id FROM user_buyback_pledges
+    UNION SELECT user_id FROM user_hangar_syncs
+    UNION SELECT user_id FROM user_paints
+  );
+
+-- 2c. Placeholder accounts for users with hangar rows and neither of the above
 INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder)
 SELECT u.user_id, 'Imported hangar', 1, 1
 FROM (
