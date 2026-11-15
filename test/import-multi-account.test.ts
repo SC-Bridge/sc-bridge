@@ -90,6 +90,31 @@ async function sync(sessionToken: string, body: unknown) {
   });
 }
 
+function xplorEntry(name: string, pledgeId: number) {
+  return {
+    ship_code: name.replace(" ", "_").toUpperCase(),
+    manufacturer_code: "ZZ",
+    manufacturer_name: "Zzma",
+    lti: true,
+    name,
+    warbond: false,
+    entity_type: "ship",
+    pledge_id: String(pledgeId),
+    pledge_name: `Standalone Ship - ${name}`,
+    pledge_date: "May 1, 2023",
+    pledge_cost: "$50.00 USD",
+  };
+}
+
+async function hangarXplor(sessionToken: string, body: unknown, accountId?: number) {
+  const qs = accountId === undefined ? "" : `?rsi_account_id=${accountId}`;
+  return SELF.fetch(`http://localhost/api/import/hangarxplor${qs}`, {
+    method: "POST",
+    headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** Move every account's last sync back past the 5-minute rate limit. */
 async function pastRateLimit(userId: string) {
   await env.DB
@@ -453,5 +478,98 @@ describe("POST /api/import/hangar-sync — multi-account", () => {
     });
     expect(accounts[0].verified_at).not.toBeNull();
     expect(await pledgeIdsOf(userId, placeholderId)).toEqual([2201]);
+  });
+
+  it("409 needs_mapping offers no new account when the handle already belongs to a real one", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    expect((await sync(sessionToken, makePayload({ handle: "Alpha", referral: "STAR-A", pledgeIds: [2301] }))).status).toBe(200);
+    const res = await sync(sessionToken, makePayload({ handle: "alpha", referral: "STAR-DIFFERENT", pledgeIds: [2302] }));
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { reason: string; can_add: boolean };
+    expect(body.reason).toBe("partial");
+    expect(body.can_add).toBe(false);
+    expect(await accountsOf(userId)).toHaveLength(1);
+  });
+
+  it("a later sync moves a pledge to the account that now holds it, without touching the rest", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const P = 3001;
+    expect((await sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds: [P, 3002] }))).status).toBe(200);
+    const [a] = await accountsOf(userId);
+
+    const resB = await sync(sessionToken, makePayload({ handle: "Bravo", pledgeIds: [P, 3003], target: { mode: "new" } }));
+    expect(resB.status).toBe(200);
+    const b = (await accountsOf(userId)).find((x) => x.id !== a.id)!;
+
+    const childCounts = async () => {
+      const row = await env.DB
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM user_pledge_items i JOIN user_pledges p ON p.id = i.user_pledge_id
+                WHERE p.user_id = ? AND p.rsi_pledge_id = ?) AS items,
+             (SELECT COUNT(*) FROM user_pledge_upgrades u JOIN user_pledges p ON p.id = u.user_pledge_id
+                WHERE p.user_id = ? AND p.rsi_pledge_id = ?) AS upgrades`,
+        )
+        .bind(userId, P, userId, P)
+        .first<{ items: number; upgrades: number }>();
+      return row!;
+    };
+    const afterB = await childCounts();
+    expect(afterB.items).toBeGreaterThan(0);
+    expect(afterB.upgrades).toBeGreaterThan(0);
+    const bBefore = await countsFor(userId, b.id);
+
+    await pastRateLimit(userId);
+    const resA = await sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds: [3002] }));
+    expect(resA.status).toBe(200);
+
+    expect(await pledgeIdsOf(userId, b.id)).toEqual([P, 3003]);
+    expect(await pledgeIdsOf(userId, a.id)).toEqual([3002]);
+    const copies = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = ?")
+      .bind(userId, P)
+      .first<{ n: number }>();
+    expect(copies!.n).toBe(1);
+    expect(await childCounts()).toEqual(afterB);
+    expect(await countsFor(userId, b.id)).toEqual(bBefore);
+  });
+
+  it("hangarxplor with no accounts creates a placeholder primary", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const res = await hangarXplor(sessionToken, [xplorEntry("Zzma Shipa", 4001)]);
+    expect(res.status).toBe(200);
+    const accounts = await accountsOf(userId);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ is_placeholder: 1, is_primary: 1 });
+    expect(await countFor("user_fleet", userId, accounts[0].id)).toBe(1);
+  });
+
+  it("hangarxplor into a chosen account sweeps only that account", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    expect((await sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds: [4101] }))).status).toBe(200);
+    expect((await sync(sessionToken, makePayload({ handle: "Bravo", pledgeIds: [4102], target: { mode: "new" } }))).status).toBe(200);
+    const [a, b] = await accountsOf(userId);
+    const aBefore = await countFor("user_fleet", userId, a.id);
+    expect(aBefore).toBeGreaterThan(0);
+    // hangarxplor refuses a second import within 30s of the user's last fleet write
+    await env.DB.prepare("UPDATE user_fleet SET imported_at = datetime('now', '-10 minutes') WHERE user_id = ?").bind(userId).run();
+
+    const res = await hangarXplor(sessionToken, [xplorEntry("Zzma Shipb", 4103)], b.id);
+    expect(res.status).toBe(200);
+    expect(await countFor("user_fleet", userId, a.id)).toBe(aBefore);
+    const bRows = await env.DB
+      .prepare("SELECT pledge_id FROM user_fleet WHERE user_id = ? AND rsi_account_id = ?")
+      .bind(userId, b.id)
+      .all<{ pledge_id: string }>();
+    expect(bRows.results.map((r) => r.pledge_id)).toEqual(["4103"]);
+  });
+
+  it("hangarxplor rejects an account that is not the user's", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const other = await createTestUser(env.DB);
+    const otherAccountId = await getOrCreatePrimaryAccountId(env.DB, other.userId);
+    const res = await hangarXplor(sessionToken, [xplorEntry("Zzma Shipa", 4201)], otherAccountId);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBeTruthy();
   });
 });

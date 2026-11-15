@@ -63,7 +63,16 @@ export function importRoutes() {
     }
 
     const entries: HangarXplorEntry[] = c.req.valid("json");
-    const accountId = await getOrCreatePrimaryAccountId(db, userID);
+    const requested = c.req.query("rsi_account_id");
+    let accountId: number;
+    if (requested !== undefined) {
+      const wanted = Number(requested);
+      const owned = Number.isInteger(wanted) ? (await listRsiAccounts(db, userID)).find((a) => a.id === wanted) : undefined;
+      if (!owned) return c.json({ error: "RSI account not found" }, 400);
+      accountId = owned.id;
+    } else {
+      accountId = await getOrCreatePrimaryAccountId(db, userID);
+    }
 
     // Single timestamp for every row in this import — used by
     // executeFleetSwap to delete rows the current hangar no longer
@@ -243,6 +252,12 @@ export function importRoutes() {
       identity.referralCode !== null &&
       accounts.some((a) => a.id !== accountId && sameText(a.referral_code, identity.referralCode));
 
+    // True when "new" would be refused: the identity already belongs to a real account.
+    const alreadyLinked =
+      accounts.some(
+        (a) => !a.is_placeholder && (sameText(a.rsi_handle, identity.handle) || sameText(a.referral_code, identity.referralCode)),
+      ) || referralHeldElsewhere(null);
+
     let accountId: number | null = null;
     // Write the incoming handle / referral code onto the account (match, map, adopt).
     let writeIdentity = false;
@@ -262,10 +277,7 @@ export function importRoutes() {
       writeIdentity = hasIdentity;
     } else if (target?.mode === "new") {
       if (!canAdd) return c.json({ error: "You cannot add another RSI account" }, 400);
-      const duplicate = accounts.some(
-        (a) => !a.is_placeholder && (sameText(a.rsi_handle, identity.handle) || sameText(a.referral_code, identity.referralCode)),
-      );
-      if (duplicate || referralHeldElsewhere(null)) {
+      if (alreadyLinked) {
         return c.json({ error: "That RSI account is already linked — map the sync onto it instead" }, 400);
       }
       createNew = true;
@@ -306,7 +318,7 @@ export function importRoutes() {
               is_placeholder: a.is_placeholder,
               overlap: overlap.get(a.id) ?? 0,
             })),
-            can_add: canAdd,
+            can_add: canAdd && !alreadyLinked,
           },
           409,
         );

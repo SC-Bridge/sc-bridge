@@ -41,6 +41,22 @@ describe("In-game-purchased ships", () => {
     expect(added!.custom_name).toBe("My aUEC Ship");
   });
 
+  it("in-game ship is stamped with the primary account", async () => {
+    const user = await createTestUser(env.DB);
+    const primary = await getOrCreatePrimaryAccountId(env.DB, user.userId);
+    const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
+      method: "POST",
+      headers: { ...(await authHeaders(user.sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle_id: vid2 }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB
+      .prepare("SELECT rsi_account_id FROM user_fleet WHERE user_id = ? AND vehicle_id = ? AND source = 'ingame'")
+      .bind(user.userId, vid2)
+      .first<{ rsi_account_id: number }>();
+    expect(row!.rsi_account_id).toBe(primary);
+  });
+
   it("POST /ingame 404s for a non-existent vehicle", async () => {
     const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
       method: "POST", headers: await jsonAuth(),
