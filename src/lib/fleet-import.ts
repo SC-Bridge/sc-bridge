@@ -467,10 +467,14 @@ export function ccuNamesFromUpgradeData(upgradeData: unknown): { from: string | 
  *
  * `pledge_id IS NULL` rows (unmatched ships) bypass the UNIQUE constraint.
  * They're still cleaned up by the imported_at sweep.
+ *
+ * The sweep is confined to one RSI account: syncing one of a user's accounts
+ * must never delete another account's ships.
  */
 export async function executeFleetSwap(
   db: D1Database,
   userID: string,
+  rsiAccountId: number,
   insertStmts: D1PreparedStatement[],
   importTag: string,
 ): Promise<void> {
@@ -485,9 +489,9 @@ export async function executeFleetSwap(
   // purchases (source='ingame') are user-managed and must survive re-imports.
   await db
     .prepare(
-      "DELETE FROM user_fleet WHERE user_id = ? AND imported_at < ? AND source = 'pledge'",
+      "DELETE FROM user_fleet WHERE user_id = ? AND rsi_account_id = ? AND imported_at < ? AND source = 'pledge'",
     )
-    .bind(userID, importTag)
+    .bind(userID, rsiAccountId, importTag)
     .run();
 }
 
@@ -500,19 +504,22 @@ export async function executeFleetSwap(
  *
  * If inserts fail, old data is preserved. If delete fails, both old and new
  * data coexist (duplicates, but no data loss).
+ *
+ * Scoped to one RSI account — other accounts' rows are never read or deleted.
  */
 export async function executeTableSwap(
   db: D1Database,
   table: string,
   userID: string,
+  rsiAccountId: number,
   insertStmts: D1PreparedStatement[],
   batchSize = 1000,
 ): Promise<void> {
   if (insertStmts.length === 0) return;
 
   const maxRow = await db
-    .prepare(`SELECT MAX(id) as max_id FROM ${table} WHERE user_id = ?`)
-    .bind(userID)
+    .prepare(`SELECT MAX(id) as max_id FROM ${table} WHERE user_id = ? AND rsi_account_id = ?`)
+    .bind(userID, rsiAccountId)
     .first<{ max_id: number | null }>();
   const maxExistingId = maxRow?.max_id ?? 0;
 
@@ -521,7 +528,7 @@ export async function executeTableSwap(
   }
 
   await db
-    .prepare(`DELETE FROM ${table} WHERE user_id = ? AND id <= ?`)
-    .bind(userID, maxExistingId)
+    .prepare(`DELETE FROM ${table} WHERE user_id = ? AND rsi_account_id = ? AND id <= ?`)
+    .bind(userID, rsiAccountId, maxExistingId)
     .run();
 }

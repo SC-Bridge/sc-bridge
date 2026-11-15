@@ -9,7 +9,16 @@ import { normaliseTitle } from "../lib/titleNorm";
 import { logUserChange } from "../lib/change-history";
 import { validate, HangarXplorImportSchema, HangarSyncPayloadSchema, SYNC_ANOMALY_THRESHOLDS } from "../lib/validation";
 import { isTrustedExtension } from "../lib/constants";
-import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
+import {
+  getOrCreatePrimaryAccountId,
+  identityFromPayload,
+  listRsiAccounts,
+  resolveSyncAccount,
+  canAddAccount,
+  canMapOnto,
+  multiAccountEnabled,
+  createRsiAccount,
+} from "../lib/rsi-accounts";
 import {
   preloadVehicleMap,
   findVehicleSlugLocal,
@@ -175,7 +184,7 @@ export function importRoutes() {
     }
 
     // UPSERT + cleanup-by-import-tag (replaces old insert-then-swap).
-    await executeFleetSwap(db, userID, insertStmts, importTag);
+    await executeFleetSwap(db, userID, accountId, insertStmts, importTag);
     const imported = insertStmts.length;
 
     console.log(`[import] HangarXplor import complete: ${imported}/${entries.length}, ${skippedShips.length} skipped`);
@@ -221,25 +230,119 @@ export function importRoutes() {
 
     const payload = c.req.valid("json");
 
-    // Rate limit: reject if synced within last 5 minutes
-    const existingProfile = await db
-      .prepare("SELECT synced_at FROM user_rsi_profiles WHERE user_id = ?")
-      .bind(userID)
-      .first<{ synced_at: string }>();
-    if (existingProfile) {
-      const lastSync = new Date(existingProfile.synced_at + "Z").getTime();
-      const now = Date.now();
-      if (now - lastSync < 5 * 60 * 1000) {
-        return c.json({ error: "Sync rate limited — please wait 5 minutes between syncs" }, 429);
+    // --- Which RSI account does this sync belong to? ---
+    // Every write, delete and sweep below is confined to this one account,
+    // so syncing one account never touches another account's rows.
+    const identity = identityFromPayload(payload.account);
+    const hasIdentity = identity.handle !== null || identity.referralCode !== null;
+    const accounts = await listRsiAccounts(db, userID);
+    const canAdd = canAddAccount({ enabled: multiAccountEnabled(c.env), accountCount: accounts.length });
+    const sameText = (a: string | null, b: string | null) =>
+      a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+    const referralHeldElsewhere = (accountId: number | null) =>
+      identity.referralCode !== null &&
+      accounts.some((a) => a.id !== accountId && sameText(a.referral_code, identity.referralCode));
+
+    let accountId: number | null = null;
+    // Write the incoming handle / referral code onto the account (match, map, adopt).
+    let writeIdentity = false;
+    let createNew = false;
+    const target = payload.target;
+
+    if (target?.mode === "map") {
+      const mapped = accounts.find((a) => a.id === target.rsi_account_id);
+      if (!mapped) return c.json({ error: "RSI account not found" }, 400);
+      if (!canMapOnto(mapped, identity)) {
+        return c.json({ error: "A sync without an RSI identity can only go onto a verified account" }, 400);
+      }
+      if (referralHeldElsewhere(mapped.id)) {
+        return c.json({ error: "That referral code already belongs to another of your RSI accounts" }, 400);
+      }
+      accountId = mapped.id;
+      writeIdentity = hasIdentity;
+    } else if (target?.mode === "new") {
+      if (!canAdd) return c.json({ error: "You cannot add another RSI account" }, 400);
+      const duplicate = accounts.some(
+        (a) => !a.is_placeholder && (sameText(a.rsi_handle, identity.handle) || sameText(a.referral_code, identity.referralCode)),
+      );
+      if (duplicate || referralHeldElsewhere(null)) {
+        return c.json({ error: "That RSI account is already linked — map the sync onto it instead" }, 400);
+      }
+      createNew = true;
+    } else if (hasIdentity && accounts.length === 1 && accounts[0].is_placeholder) {
+      // The user's only account is a placeholder (e.g. from a HangarXplor
+      // import) — this sync tells us who it is, so adopt it.
+      accountId = accounts[0].id;
+      writeIdentity = true;
+    } else {
+      const resolution = resolveSyncAccount(identity, accounts);
+      if (resolution.kind === "first") {
+        createNew = true;
+      } else if (resolution.kind === "matched") {
+        accountId = resolution.accountId;
+        writeIdentity = true;
+      } else {
+        // Ask the user which account this is — nothing has been written yet.
+        const pledgeIds = payload.pledges.map((p) => Number(p.id)).filter((n) => Number.isFinite(n));
+        const overlapRows = await db
+          .prepare(
+            `SELECT rsi_account_id, COUNT(*) AS n FROM user_pledges
+             WHERE user_id = ? AND rsi_pledge_id IN (SELECT value FROM json_each(?))
+             GROUP BY rsi_account_id`,
+          )
+          .bind(userID, JSON.stringify(pledgeIds))
+          .all<{ rsi_account_id: number | null; n: number }>();
+        const overlap = new Map(overlapRows.results.map((r) => [r.rsi_account_id, r.n]));
+        return c.json(
+          {
+            error: "needs_mapping",
+            reason: resolution.reason,
+            identity: { handle: identity.handle, referral_code: identity.referralCode },
+            candidate_id: resolution.candidateId,
+            accounts: accounts.map((a) => ({
+              id: a.id,
+              label: a.label,
+              rsi_handle: a.rsi_handle,
+              is_placeholder: a.is_placeholder,
+              overlap: overlap.get(a.id) ?? 0,
+            })),
+            can_add: canAdd,
+          },
+          409,
+        );
       }
     }
+
+    if (createNew) {
+      accountId = await createRsiAccount(db, userID, {
+        handle: identity.handle,
+        referralCode: identity.referralCode,
+        placeholder: !hasIdentity,
+      });
+      writeIdentity = hasIdentity;
+    } else {
+      // Rate limit: reject if this account synced within the last 5 minutes.
+      // synced_at is written by datetime('now') — "YYYY-MM-DD HH:MM:SS", UTC.
+      const existing = accounts.find((a) => a.id === accountId);
+      if (existing?.synced_at) {
+        const lastSync = new Date(existing.synced_at.replace(" ", "T") + "Z").getTime();
+        if (Date.now() - lastSync < 5 * 60 * 1000) {
+          return c.json({ error: "Sync rate limited — please wait 5 minutes between syncs" }, 429);
+        }
+      }
+    }
+    if (accountId === null) throw new Error("RSI account not resolved");
+
+    const accountRow = await db
+      .prepare("SELECT is_primary FROM user_rsi_accounts WHERE id = ? AND user_id = ?")
+      .bind(accountId, userID)
+      .first<{ is_primary: number }>();
+    const isPrimary = accountRow?.is_primary === 1;
 
     // Single timestamp for every row in this sync — used by
     // executeFleetSwap to delete rows the current hangar no longer
     // contains (anything imported_at < importTag is stale).
     const importTag = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
-
-    const accountId = await getOrCreatePrimaryAccountId(db, userID);
 
     // --- Anomaly detection ---
     const totalFleetValueCents = payload.pledges.reduce(
@@ -401,7 +504,7 @@ export function importRoutes() {
 
     // Fleet UPSERT + cleanup-by-import-tag
     if (insertStmts.length > 0) {
-      await executeFleetSwap(db, userID, insertStmts, importTag);
+      await executeFleetSwap(db, userID, accountId, insertStmts, importTag);
     }
     const imported = insertStmts.length;
 
@@ -429,9 +532,12 @@ export function importRoutes() {
       }
     }
 
-    // Paint swap — delete-then-insert (UNIQUE(user_id, paint_id) prevents insert-then-swap)
+    // Paint swap — delete-then-insert (UNIQUE(rsi_account_id, paint_id) prevents insert-then-swap)
     if (paintInsertStmts.length > 0) {
-      await db.prepare("DELETE FROM user_paints WHERE user_id = ?").bind(userID).run();
+      await db
+        .prepare("DELETE FROM user_paints WHERE user_id = ? AND rsi_account_id = ?")
+        .bind(userID, accountId)
+        .run();
       for (let i = 0; i < paintInsertStmts.length; i += 500) {
         await db.batch(paintInsertStmts.slice(i, i + 500));
       }
@@ -452,9 +558,9 @@ export function importRoutes() {
         SELECT DISTINCT ?, ?, pv.paint_id, '', 'Default Paint', 0, datetime('now')
         FROM user_fleet uf
         JOIN paint_vehicles pv ON pv.vehicle_id = uf.vehicle_id AND pv.is_default_for_vehicle = 1
-        WHERE uf.user_id = ?`,
+        WHERE uf.user_id = ? AND uf.rsi_account_id = ?`,
       )
-      .bind(userID, accountId, userID)
+      .bind(userID, accountId, userID, accountId)
       .run();
     const defaultPaintsAdded = defaultPaintResult.meta?.changes ?? 0;
     if (defaultPaintsAdded > 0) {
@@ -534,9 +640,70 @@ export function importRoutes() {
       );
     }
 
-    // --- Profile upsert ---
+    // --- RSI account row ---
+    // With an identity, the account takes the incoming handle / referral code
+    // (this is how a rename is accepted) and profile fields. Without one, only
+    // synced_at moves — the account's identity and profile stay as they were.
     let hasProfile = false;
-    if (payload.account) {
+    if (writeIdentity && payload.account) {
+      const acct = payload.account;
+      await db
+        .prepare(
+          `UPDATE user_rsi_accounts SET
+            rsi_handle = COALESCE(?, rsi_handle),
+            referral_code = COALESCE(?, referral_code),
+            label = CASE WHEN is_placeholder = 1 THEN NULL ELSE label END,
+            is_placeholder = 0,
+            verified_at = datetime('now'),
+            display_name = ?,
+            avatar_url = ?,
+            enlisted_since = ?,
+            country = ?,
+            concierge_level = ?,
+            subscriber_type = ?,
+            subscriber_frequency = ?,
+            store_credit_cents = ?,
+            uec_balance = ?,
+            rec_balance = ?,
+            has_game_package = ?,
+            orgs_json = ?,
+            badges_json = ?,
+            featured_badges_json = ?,
+            synced_at = datetime('now')
+          WHERE id = ? AND user_id = ?`,
+        )
+        .bind(
+          identity.handle,
+          identity.referralCode,
+          acct.displayname || null,
+          acct.avatar_url || null,
+          acct.enlisted_since || null,
+          acct.country || null,
+          acct.concierge_level || null,
+          acct.subscriber_type || null,
+          acct.subscriber_frequency || null,
+          normaliseStoreCreditCents(acct.store_credit_cents, payload.sync_meta.extension_version),
+          acct.uec_balance ?? null,
+          acct.rec_balance ?? null,
+          acct.has_game_package ? 1 : 0,
+          acct.orgs ? JSON.stringify(acct.orgs) : null,
+          acct.all_badges ? JSON.stringify(acct.all_badges) : null,
+          acct.featured_badges ? JSON.stringify(acct.featured_badges) : null,
+          accountId,
+          userID,
+        )
+        .run();
+      hasProfile = true;
+    } else {
+      await db
+        .prepare("UPDATE user_rsi_accounts SET synced_at = datetime('now') WHERE id = ? AND user_id = ?")
+        .bind(accountId, userID)
+        .run();
+    }
+
+    // --- Legacy profile (user_rsi_profiles) — primary account only ---
+    // Other features still read user_rsi_profiles as "the" RSI profile.
+    if (hasProfile && isPrimary) {
       const acct = payload.account;
       await db
         .prepare(
@@ -585,7 +752,6 @@ export function importRoutes() {
           acct.featured_badges ? JSON.stringify(acct.featured_badges) : null,
         )
         .run();
-      hasProfile = true;
 
       // Auto-verify RSI identity ONLY when request comes from a trusted extension
       // (running on the user's authenticated RSI session). Non-extension callers
@@ -635,8 +801,9 @@ export function importRoutes() {
             .run();
         }
       }
-    } else {
-      console.warn(`[hangar-sync] No account data in payload for user=${userID}`);
+    }
+    if (!hasProfile) {
+      console.warn(`[hangar-sync] No RSI identity in payload for user=${userID}`);
     }
 
     // --- Buy-back pledges: insert-then-swap ---
@@ -708,7 +875,7 @@ export function importRoutes() {
         );
       }
 
-      await executeTableSwap(db, "user_buyback_pledges", userID, bbStmts, 1000);
+      await executeTableSwap(db, "user_buyback_pledges", userID, accountId, bbStmts, 1000);
       buybackCount = bbStmts.length;
     }
 
@@ -731,9 +898,21 @@ export function importRoutes() {
     // --- Populate user_pledges (upsert + delete-reinsert children) ---
     // user_pledges has UNIQUE(user_id, rsi_pledge_id) so we upsert pledges.
     // Items and upgrades have no natural key so we delete and reinsert them.
+    // Scoped to this account, plus the children of any incoming pledge still
+    // held by another account (the upsert below moves that pledge here, and
+    // its old children would otherwise sit beside the reinserted ones).
+    const incomingPledgeIds = JSON.stringify(
+      payload.pledges.map((p) => Number(p.id)).filter((n) => Number.isFinite(n)),
+    );
+    const childScope = `user_id = ? AND (rsi_account_id = ? OR user_pledge_id IN (
+        SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id IN (SELECT value FROM json_each(?))))`;
     await db.batch([
-      db.prepare("DELETE FROM user_pledge_upgrades WHERE user_id = ?").bind(userID),
-      db.prepare("DELETE FROM user_pledge_items WHERE user_id = ?").bind(userID),
+      db
+        .prepare(`DELETE FROM user_pledge_upgrades WHERE ${childScope}`)
+        .bind(userID, accountId, userID, incomingPledgeIds),
+      db
+        .prepare(`DELETE FROM user_pledge_items WHERE ${childScope}`)
+        .bind(userID, accountId, userID, incomingPledgeIds),
     ]);
 
     // Step 1: Upsert pledges (ON CONFLICT updates existing, inserts new)
@@ -797,14 +976,14 @@ export function importRoutes() {
     // After upsert, all current pledges have the new sync_id. Stale pledges have old sync_ids.
     // This avoids the D1 100-bind-parameter limit that a NOT IN (...) clause would hit.
     await db
-      .prepare("DELETE FROM user_pledges WHERE user_id = ? AND sync_id != ?")
-      .bind(userID, syncId)
+      .prepare("DELETE FROM user_pledges WHERE user_id = ? AND rsi_account_id = ? AND sync_id != ?")
+      .bind(userID, accountId, syncId)
       .run();
 
     // Step 2: Build pledge ID map (all current pledges)
     const pledgeMapRows = await db
-      .prepare("SELECT id, rsi_pledge_id FROM user_pledges WHERE user_id = ?")
-      .bind(userID)
+      .prepare("SELECT id, rsi_pledge_id FROM user_pledges WHERE user_id = ? AND rsi_account_id = ?")
+      .bind(userID, accountId)
       .all<{ id: number; rsi_pledge_id: number }>();
     const pledgeIdMap = new Map<number, number>();
     for (const row of pledgeMapRows.results) {
@@ -950,6 +1129,7 @@ export function importRoutes() {
       pledge_count: pledgeStmts.length,
       pledge_item_count: pledgeItemCount,
       has_profile: hasProfile,
+      rsi_account_id: accountId,
       message: "Hangar sync complete",
     });
    } catch (err) {
