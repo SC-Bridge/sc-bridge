@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -324,12 +325,13 @@ export function fleetRoutes() {
       const vehicle = await db.prepare("SELECT id FROM vehicles WHERE id = ?").bind(vehicle_id).first();
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
+      const accountId = await getOrCreatePrimaryAccountId(db, userID);
       await db
         .prepare(
-          `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at)
-           VALUES (?, ?, 'ingame', ?, datetime('now'))`,
+          `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at, rsi_account_id)
+           VALUES (?, ?, 'ingame', ?, datetime('now'), ?)`,
         )
-        .bind(userID, vehicle_id, custom_name || null)
+        .bind(userID, vehicle_id, custom_name || null, accountId)
         .run();
       c.executionCtx.waitUntil(
         resolveVerifiedHandle(db, userID)

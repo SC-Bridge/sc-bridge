@@ -9,6 +9,7 @@ import { normaliseTitle } from "../lib/titleNorm";
 import { logUserChange } from "../lib/change-history";
 import { validate, HangarXplorImportSchema, HangarSyncPayloadSchema, SYNC_ANOMALY_THRESHOLDS } from "../lib/validation";
 import { isTrustedExtension } from "../lib/constants";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 import {
   preloadVehicleMap,
   findVehicleSlugLocal,
@@ -53,6 +54,7 @@ export function importRoutes() {
     }
 
     const entries: HangarXplorEntry[] = c.req.valid("json");
+    const accountId = await getOrCreatePrimaryAccountId(db, userID);
 
     // Single timestamp for every row in this import — used by
     // executeFleetSwap to delete rows the current hangar no longer
@@ -132,11 +134,12 @@ export function importRoutes() {
         db
           .prepare(
             `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
-              pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at)
+              pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at, rsi_account_id)
             VALUES (?, (SELECT id FROM vehicles WHERE slug = ? LIMIT 1), ?, ?, ?,
-              ?, ?, ?, ?, ?, ?)
+              ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, pledge_id, vehicle_id) WHERE pledge_id IS NOT NULL
             DO UPDATE SET
+              rsi_account_id = excluded.rsi_account_id,
               insurance_type_id = excluded.insurance_type_id,
               warbond = excluded.warbond,
               pledge_name = excluded.pledge_name,
@@ -157,6 +160,7 @@ export function importRoutes() {
             entry.pledge_date || null,
             customName || null,
             importTag,
+            accountId,
           ),
       );
     }
@@ -234,6 +238,8 @@ export function importRoutes() {
     // executeFleetSwap to delete rows the current hangar no longer
     // contains (anything imported_at < importTag is stale).
     const importTag = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+
+    const accountId = await getOrCreatePrimaryAccountId(db, userID);
 
     // --- Anomaly detection ---
     const totalFleetValueCents = payload.pledges.reduce(
@@ -351,11 +357,12 @@ export function importRoutes() {
           db
             .prepare(
               `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
-                pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at)
+                pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at, rsi_account_id)
               VALUES (?, (SELECT id FROM vehicles WHERE slug = ? LIMIT 1), ?, ?, ?,
-                ?, ?, ?, ?, ?, ?)
+                ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(user_id, pledge_id, vehicle_id) WHERE pledge_id IS NOT NULL
               DO UPDATE SET
+                rsi_account_id = excluded.rsi_account_id,
                 insurance_type_id = excluded.insurance_type_id,
                 warbond = excluded.warbond,
                 pledge_name = excluded.pledge_name,
@@ -376,6 +383,7 @@ export function importRoutes() {
               pledge.date || null,
               customName,
               importTag,
+              accountId,
             ),
         );
       }
@@ -413,10 +421,10 @@ export function importRoutes() {
         paintInsertStmts.push(
           db
             .prepare(
-              `INSERT OR IGNORE INTO user_paints (user_id, paint_id, pledge_id, pledge_name, is_buyback, synced_at)
-              VALUES (?, ?, ?, ?, 0, datetime('now'))`,
+              `INSERT OR IGNORE INTO user_paints (user_id, rsi_account_id, paint_id, pledge_id, pledge_name, is_buyback, synced_at)
+              VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
             )
-            .bind(userID, paintId, String(pledge.id ?? ""), pledge.name || null),
+            .bind(userID, accountId, paintId, String(pledge.id ?? ""), pledge.name || null),
         );
       }
     }
@@ -440,13 +448,13 @@ export function importRoutes() {
     // INSERT OR IGNORE ensures we don't duplicate paints the user already owns.
     const defaultPaintResult = await db
       .prepare(
-        `INSERT OR IGNORE INTO user_paints (user_id, paint_id, pledge_id, pledge_name, is_buyback, synced_at)
-        SELECT DISTINCT ?, pv.paint_id, '', 'Default Paint', 0, datetime('now')
+        `INSERT OR IGNORE INTO user_paints (user_id, rsi_account_id, paint_id, pledge_id, pledge_name, is_buyback, synced_at)
+        SELECT DISTINCT ?, ?, pv.paint_id, '', 'Default Paint', 0, datetime('now')
         FROM user_fleet uf
         JOIN paint_vehicles pv ON pv.vehicle_id = uf.vehicle_id AND pv.is_default_for_vehicle = 1
         WHERE uf.user_id = ?`,
       )
-      .bind(userID, userID)
+      .bind(userID, accountId, userID)
       .run();
     const defaultPaintsAdded = defaultPaintResult.meta?.changes ?? 0;
     if (defaultPaintsAdded > 0) {
@@ -679,8 +687,8 @@ export function importRoutes() {
             .prepare(
               `INSERT INTO user_buyback_pledges (user_id, rsi_pledge_id, name, value_cents, date,
                 is_credit_reclaimable, items_json, buyback_type, vehicle_id, paint_id,
-                from_vehicle_id, to_vehicle_id, synced_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                from_vehicle_id, to_vehicle_id, rsi_account_id, synced_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
             )
             .bind(
               userID,
@@ -695,6 +703,7 @@ export function importRoutes() {
               paintId,
               fromVehicleId,
               toVehicleId,
+              accountId,
             ),
         );
       }
@@ -706,11 +715,12 @@ export function importRoutes() {
     // --- Sync record ---
     const syncResult = await db
       .prepare(
-        `INSERT INTO user_hangar_syncs (user_id, source, pledge_count, ship_count, item_count)
-        VALUES (?, 'extension', ?, ?, ?)`,
+        `INSERT INTO user_hangar_syncs (user_id, rsi_account_id, source, pledge_count, ship_count, item_count)
+        VALUES (?, ?, 'extension', ?, ?, ?)`,
       )
       .bind(
         userID,
+        accountId,
         payload.pledges.length,
         imported,
         payload.pledges.reduce((sum, p) => sum + (p.items ?? []).length, 0 as number),
@@ -736,10 +746,11 @@ export function importRoutes() {
             `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value, value_cents,
               configuration_value, currency, pledge_date, pledge_date_parsed,
               is_upgraded, is_reclaimable, is_giftable, availability,
-              is_warbond, ccu_from_name, ccu_to_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              is_warbond, ccu_from_name, ccu_to_name, rsi_account_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, rsi_pledge_id) DO UPDATE SET
               sync_id = excluded.sync_id,
+              rsi_account_id = excluded.rsi_account_id,
               name = excluded.name,
               value = excluded.value,
               value_cents = excluded.value_cents,
@@ -773,6 +784,7 @@ export function importRoutes() {
             pledge.isWarbond ? 1 : 0,
             ccu.from,
             ccu.to,
+            accountId,
           ),
       );
     }
@@ -831,8 +843,8 @@ export function importRoutes() {
             .prepare(
               `INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind,
                 manufacturer_code, manufacturer_name, image_url, custom_name, serial,
-                is_nameable, insurance_type_id, sort_order)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                is_nameable, insurance_type_id, sort_order, rsi_account_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .bind(
               userID,
@@ -847,6 +859,7 @@ export function importRoutes() {
               item.isNameable ? 1 : 0,
               insuranceTypeId,
               idx,
+              accountId,
             ),
         );
       }
@@ -867,8 +880,8 @@ export function importRoutes() {
         db
           .prepare(
             `INSERT INTO user_pledge_upgrades (user_id, user_pledge_id, upgrade_name,
-              applied_at, applied_at_parsed, new_value, new_value_cents, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              applied_at, applied_at_parsed, new_value, new_value_cents, sort_order, rsi_account_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             userID,
@@ -879,6 +892,7 @@ export function importRoutes() {
             upgrade.new_value || null,
             parseValueCents(upgrade.new_value),
             idx,
+            accountId,
           ),
       );
     }

@@ -52,6 +52,7 @@ async function deleteUserFull(db: D1Database, userId: string): Promise<void> {
 // ADD NEW USER TABLES HERE when they are created.
 const USER_TABLES = [
   "user_fleet",
+  "user_rsi_accounts",
   "user_paints",
   "user_settings",
   "user_llm_configs",
@@ -167,6 +168,14 @@ describe("GDPR — User Deletion Cascade", () => {
       await db
         .prepare("INSERT INTO user_paints (user_id, paint_id) VALUES (?, ?)")
         .bind(user.userId, paintRow!.id)
+        .run();
+
+      // user_rsi_accounts
+      await db
+        .prepare(
+          "INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder) VALUES (?, 'Imported hangar', 1, 1)"
+        )
+        .bind(user.userId)
         .run();
 
       // user_settings
