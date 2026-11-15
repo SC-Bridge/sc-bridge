@@ -480,6 +480,58 @@ describe("POST /api/import/hangar-sync — multi-account", () => {
     expect(await pledgeIdsOf(userId, placeholderId)).toEqual([2201]);
   });
 
+  it("imports a no-identity sync onto the user's only account when it is a placeholder", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const placeholderId = await getOrCreatePrimaryAccountId(env.DB, userId);
+
+    const res = await sync(sessionToken, makePayload({ noAccount: true, pledgeIds: [2251, 2252] }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { rsi_account_id: number }).rsi_account_id).toBe(placeholderId);
+
+    const accounts = await accountsOf(userId);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      id: placeholderId,
+      rsi_handle: null,
+      referral_code: null,
+      label: "Imported hangar",
+      is_placeholder: 1,
+      is_primary: 1,
+      verified_at: null,
+      display_name: null,
+    });
+    const synced = await env.DB
+      .prepare("SELECT synced_at FROM user_rsi_accounts WHERE id = ?")
+      .bind(placeholderId)
+      .first<{ synced_at: string | null }>();
+    expect(synced!.synced_at).not.toBeNull();
+
+    for (const t of HANGAR_TABLES) {
+      const all = await env.DB
+        .prepare(`SELECT COUNT(*) AS n, SUM(rsi_account_id = ?) AS stamped FROM ${t} WHERE user_id = ?`)
+        .bind(placeholderId, userId)
+        .first<{ n: number; stamped: number }>();
+      expect(all!.n, t).toBeGreaterThan(0);
+      expect(all!.stamped, t).toBe(all!.n);
+    }
+    expect(await pledgeIdsOf(userId, placeholderId)).toEqual([2251, 2252]);
+  });
+
+  it("a no-identity sync still needs mapping when a placeholder is one of two accounts", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await getOrCreatePrimaryAccountId(env.DB, userId);
+    await env.DB
+      .prepare("INSERT INTO user_rsi_accounts (user_id, rsi_handle, is_primary, is_placeholder, verified_at) VALUES (?, 'Real', 0, 0, datetime('now'))")
+      .bind(userId)
+      .run();
+
+    const res = await sync(sessionToken, makePayload({ noAccount: true, pledgeIds: [2261] }));
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { error: string; reason: string }).toMatchObject({ error: "needs_mapping", reason: "no_identity" });
+    const { n } = (await env.DB.prepare("SELECT COUNT(*) AS n FROM user_pledges WHERE user_id = ?").bind(userId).first<{ n: number }>())!;
+    expect(n).toBe(0);
+  });
+
   it("409 needs_mapping offers no new account when the handle already belongs to a real one", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     expect((await sync(sessionToken, makePayload({ handle: "Alpha", referral: "STAR-A", pledgeIds: [2301] }))).status).toBe(200);

@@ -70,7 +70,7 @@ export function rsiAccountRoutes() {
     validate(
       "json",
       z.object({
-        label: z.string().max(40, { message: "Label must be 40 characters or fewer" }).optional(),
+        label: z.string().trim().max(40, { message: "Label must be 40 characters or fewer" }).optional(),
         is_primary: z.literal(true, { message: "is_primary can only be set to true" }).optional(),
       }),
     ),
@@ -99,7 +99,7 @@ export function rsiAccountRoutes() {
         );
       }
       if (body.label !== undefined) {
-        const label = body.label.trim();
+        const label = body.label;
         statements.push(
           db
             .prepare("UPDATE user_rsi_accounts SET label = ? WHERE id = ? AND user_id = ?")

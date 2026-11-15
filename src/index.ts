@@ -323,6 +323,8 @@ function requireRole(...roles: string[]) {
 
 // Protected: user fleet, import, settings, localization, analysis, LLM
 app.use("/api/vehicles/*", requireAuth);
+app.use("/api/rsi-accounts", requireAuth);
+app.use("/api/rsi-accounts/*", requireAuth);
 app.use("/api/hangar", requireAuth);
 app.use("/api/hangar/*", requireAuth);
 app.use("/api/hangar-cleanup", requireAuth);

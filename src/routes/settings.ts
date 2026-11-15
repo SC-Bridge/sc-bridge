@@ -5,6 +5,7 @@ import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
 import { logUserChange } from "../lib/change-history";
 import { validate, LLMProvider } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
+import { deleteRsiAccount, listRsiAccounts } from "../lib/rsi-accounts";
 
 /**
  * /api/settings/* — User settings and LLM configuration
@@ -270,7 +271,15 @@ export function settingsRoutes() {
       db.prepare("SELECT 1 FROM user_rsi_profiles WHERE user_id = ?").bind(userID).first(),
     ]);
 
-    // Delete all synced data in a batch
+    // Every RSI account goes, with every hangar row stamped with it (fleet,
+    // pledges + items + upgrades, buy-backs, paints, syncs, cleanup decisions).
+    // deleteRsiAccount removes each account's hangar rows before the account row
+    // itself — D1 enforces the foreign key.
+    for (const account of await listRsiAccounts(db, userID)) {
+      await deleteRsiAccount(db, userID, account.id);
+    }
+
+    // Then any rows that never carried an account id, the legacy profile, and consent.
     await db.batch([
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(userID),
       db.prepare("DELETE FROM user_buyback_pledges WHERE user_id = ?").bind(userID),

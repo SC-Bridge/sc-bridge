@@ -94,10 +94,6 @@ function n(val: string | undefined | null): string | null {
   return val ?? null;
 }
 
-function nNum(val: number | undefined | null): number | null {
-  return val ?? null;
-}
-
 export async function getAllVehicles(db: D1Database): Promise<Vehicle[]> {
   const result = await db
     .prepare(
@@ -1060,27 +1056,6 @@ export async function getVehicleSlugsWithPaints(db: D1Database): Promise<string[
 // ============================================================
 // User Fleet Operations
 // ============================================================
-
-export async function insertUserFleetEntry(
-  db: D1Database,
-  entry: Partial<UserFleetEntry> & { user_id: number; vehicle_id: number },
-): Promise<number> {
-  const result = await db
-    .prepare(
-      `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
-        pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, equipped_paint_id, imported_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-    )
-    .bind(
-      entry.user_id, entry.vehicle_id, nNum(entry.insurance_type_id),
-      entry.warbond ? 1 : 0, entry.is_loaner ? 1 : 0,
-      n(entry.pledge_id), n(entry.pledge_name), n(entry.pledge_cost),
-      n(entry.pledge_date), n(entry.custom_name), nNum(entry.equipped_paint_id),
-    )
-    .run();
-
-  return result.meta.last_row_id ?? 0;
-}
 
 export async function clearUserFleet(db: D1Database, userID: number): Promise<void> {
   await db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(userID).run();

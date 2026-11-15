@@ -108,6 +108,19 @@ describe("RSI accounts API", () => {
     expect(row2!.label).toBeNull();
   });
 
+  it("PATCH trims before the 40-character check", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "Trim", ...real });
+    const forty = "y".repeat(40);
+    const res = await api(sessionToken, `/api/rsi-accounts/${a}`, {
+      method: "PATCH",
+      body: JSON.stringify({ label: `   ${forty}   ` }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare("SELECT label FROM user_rsi_accounts WHERE id = ?").bind(a).first<{ label: string | null }>();
+    expect(row!.label).toBe(forty);
+  });
+
   it("PATCH rejects bad bodies and accounts owned by someone else", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     const other = await createTestUser(env.DB);
@@ -148,6 +161,91 @@ describe("RSI accounts API", () => {
       .bind(userId)
       .all<{ rsi_account_id: number }>();
     expect(fleet.results).toEqual([{ rsi_account_id: a }]);
+  });
+
+  it("DELETE /api/account removes the user's RSI accounts", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "Gone1", ...real });
+    await createRsiAccount(env.DB, userId, { handle: "Gone2", ...real });
+    const v = await seedVehicle(env.DB, { name: "Delete Ship" });
+    await seedShip(userId, a, v, 8501, 100);
+
+    const res = await api(sessionToken, "/api/account", {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation: "DELETE" }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM user_rsi_accounts WHERE user_id = ?")
+      .bind(userId)
+      .first<{ n: number }>();
+    expect(row!.n).toBe(0);
+  });
+
+  it("DELETE /api/settings/sync-data removes every account and its hangar rows; a resync is not rate-limited", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "SdA", ...real });
+    const b = await createRsiAccount(env.DB, userId, { handle: "SdB", ...real });
+    const v = await seedVehicle(env.DB, { name: "SyncData Ship" });
+    await seedShip(userId, a, v, 8601, 100);
+    await seedShip(userId, b, v, 8602, 200);
+    const pledge = await env.DB
+      .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_account_id = ?")
+      .bind(userId, a)
+      .first<{ id: number }>();
+    await env.DB
+      .prepare("INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, rsi_account_id) VALUES (?, ?, 'Item', 'Ship', ?)")
+      .bind(userId, pledge!.id, a)
+      .run();
+    await env.DB
+      .prepare("INSERT INTO paints (name, class_name, is_base_variant) VALUES ('SyncData Livery', 'syncdata_livery', 0)")
+      .run();
+    const paint = await env.DB.prepare("SELECT id FROM paints WHERE class_name = 'syncdata_livery'").first<{ id: number }>();
+    await env.DB
+      .prepare("INSERT INTO user_paints (user_id, rsi_account_id, paint_id, pledge_id, is_buyback) VALUES (?, ?, ?, '8601', 0)")
+      .bind(userId, b, paint!.id)
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO user_buyback_pledges (user_id, rsi_pledge_id, name, value_cents, rsi_account_id)
+         VALUES (?, 8603, 'Buyback', 100, ?)`,
+      )
+      .bind(userId, a)
+      .run();
+    await env.DB
+      .prepare("UPDATE user_rsi_accounts SET synced_at = datetime('now') WHERE user_id = ?")
+      .bind(userId)
+      .run();
+
+    const res = await api(sessionToken, "/api/settings/sync-data", { method: "DELETE", body: "{}" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ fleet_deleted: 2, buyback_deleted: 1 });
+
+    for (const table of [
+      "user_rsi_accounts",
+      "user_pledges",
+      "user_pledge_items",
+      "user_paints",
+      "user_buyback_pledges",
+      "user_fleet",
+    ]) {
+      const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`).bind(userId).first<{ n: number }>();
+      expect(row!.n, table).toBe(0);
+    }
+
+    // No account row is left, so no synced_at — an immediate resync goes through.
+    const resync = await api(sessionToken, "/api/import/hangar-sync", {
+      method: "POST",
+      body: JSON.stringify({
+        pledges: [],
+        buyback_pledges: [],
+        upgrades: [],
+        account: { nickname: "SdA", referral_code: null },
+        named_ships: [],
+        sync_meta: { extension_version: "0.6.2", synced_at: "2026-11-15T00:00:00Z" },
+      }),
+    });
+    expect(resync.status).toBe(200);
   });
 
   it("fleet list returns each ship's account id and its own account's pledge value", async () => {

@@ -286,6 +286,11 @@ export function importRoutes() {
       // import) — this sync tells us who it is, so adopt it.
       accountId = accounts[0].id;
       writeIdentity = true;
+    } else if (!hasIdentity && accounts.length === 1 && accounts[0].is_placeholder) {
+      // No identity, and the user's only account is a placeholder: there is
+      // no other account this sync could belong to, so import onto it. It
+      // stays a placeholder — only synced_at moves (writeIdentity is false).
+      accountId = accounts[0].id;
     } else {
       const resolution = resolveSyncAccount(identity, accounts);
       if (resolution.kind === "first") {
@@ -666,6 +671,7 @@ export function importRoutes() {
             referral_code = COALESCE(?, referral_code),
             label = CASE WHEN is_placeholder = 1 THEN NULL ELSE label END,
             is_placeholder = 0,
+            -- verified_at = "seen in an authenticated sync payload", not proof of RSI identity
             verified_at = datetime('now'),
             display_name = ?,
             avatar_url = ?,

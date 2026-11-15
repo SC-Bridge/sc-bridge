@@ -18,6 +18,11 @@ export interface RsiAccountRow {
   label: string | null;
   is_primary: number;
   is_placeholder: number;
+  /**
+   * Set when this account's handle / referral code was seen in an
+   * authenticated hangar-sync payload (src/routes/import.ts). It is NOT proof
+   * of RSI identity — per-account RSI verification is a later phase.
+   */
   verified_at: string | null;
   synced_at: string | null;
 }
@@ -88,6 +93,8 @@ export function canAddAccount(opts: { enabled: boolean; accountCount: number }):
 /**
  * With no identity in the sync, hand mapping is only safe onto a verified,
  * non-placeholder account. With an identity, any account may be mapped onto.
+ * "Verified" here means verified_at is set — the account was seen in an
+ * authenticated sync payload — not that its RSI identity was proven.
  */
 export function canMapOnto(target: RsiAccountRow, identity: SyncIdentity): boolean {
   if (!identity.handle && !identity.referralCode) {
