@@ -63,7 +63,12 @@ export function resolveSyncAccount(identity: SyncIdentity, accounts: RsiAccountR
     if (stored !== null && incoming !== null && stored.toLowerCase() !== incoming.toLowerCase()) {
       return { kind: "needs_mapping", reason: "partial", candidateId: byHandle.id };
     }
-    return { kind: "matched", accountId: byHandle.id, fillReferral: stored === null && incoming !== null };
+    const fillReferral = stored === null && incoming !== null;
+    // Filling would violate the (user_id, referral_code) unique index when another account holds it.
+    if (fillReferral && accounts.some((a) => a.id !== byHandle.id && sameText(a.referral_code, incoming))) {
+      return { kind: "needs_mapping", reason: "partial", candidateId: byHandle.id };
+    }
+    return { kind: "matched", accountId: byHandle.id, fillReferral };
   }
 
   const byReferral = real.find((a) => sameText(a.referral_code, identity.referralCode));
@@ -80,9 +85,14 @@ export function canAddAccount(opts: { enabled: boolean; accountCount: number }):
   return opts.accountCount < cap;
 }
 
-/** A placeholder account can only be mapped onto when the sync carries an identity to adopt. */
+/**
+ * With no identity in the sync, hand mapping is only safe onto a verified,
+ * non-placeholder account. With an identity, any account may be mapped onto.
+ */
 export function canMapOnto(target: RsiAccountRow, identity: SyncIdentity): boolean {
-  if (target.is_placeholder && !identity.handle && !identity.referralCode) return false;
+  if (!identity.handle && !identity.referralCode) {
+    return !target.is_placeholder && target.verified_at !== null;
+  }
   return true;
 }
 

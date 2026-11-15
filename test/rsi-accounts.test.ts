@@ -185,6 +185,16 @@ describe("resolveSyncAccount", () => {
     });
   });
 
+  it("needs mapping (partial) instead of filling a referral another account already holds", () => {
+    const noRef = acct({ id: 1, rsi_handle: "Foo", is_primary: 1 });
+    const holder = acct({ id: 2, rsi_handle: "Bar", referral_code: "STAR-7" });
+    expect(resolveSyncAccount({ handle: "Foo", referralCode: "STAR-7" }, [noRef, holder])).toEqual({
+      kind: "needs_mapping",
+      reason: "partial",
+      candidateId: 1,
+    });
+  });
+
   it("needs mapping (partial) when referral matches but handle differs", () => {
     expect(resolveSyncAccount({ handle: "Bar", referralCode: "STAR-1" }, [foo])).toEqual({
       kind: "needs_mapping",
@@ -238,6 +248,8 @@ describe("canAddAccount / canMapOnto / multiAccountEnabled / identityFromPayload
     expect(canMapOnto(placeholder, { handle: null, referralCode: null })).toBe(false);
     expect(canMapOnto(placeholder, { handle: "Foo", referralCode: null })).toBe(true);
     expect(canMapOnto(verified, { handle: null, referralCode: null })).toBe(true);
+    const unverified = acct({ id: 3, rsi_handle: "Bar" });
+    expect(canMapOnto(unverified, { handle: null, referralCode: null })).toBe(false);
   });
 
   it("multiAccountEnabled is false only in production", () => {
