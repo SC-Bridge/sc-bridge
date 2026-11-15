@@ -103,30 +103,32 @@ FROM user_rsi_profile rp
 WHERE rp.verified_handle IS NOT NULL
   AND rp.user_id IN (SELECT id FROM user)
   AND rp.user_id NOT IN (SELECT user_id FROM user_rsi_accounts)
-  AND rp.user_id IN (
-    SELECT user_id FROM user_fleet
-    UNION SELECT user_id FROM user_pledges
-    UNION SELECT user_id FROM user_pledge_items
-    UNION SELECT user_id FROM user_pledge_upgrades
-    UNION SELECT user_id FROM user_buyback_pledges
-    UNION SELECT user_id FROM user_hangar_syncs
-    UNION SELECT user_id FROM user_paints
+  AND (
+       EXISTS (SELECT 1 FROM user_fleet           t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_pledges         t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_pledge_items    t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_pledge_upgrades t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_buyback_pledges t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_hangar_syncs    t WHERE t.user_id = rp.user_id)
+    OR EXISTS (SELECT 1 FROM user_paints          t WHERE t.user_id = rp.user_id)
   );
 
--- 2c. Placeholder accounts for users with hangar rows and neither of the above
+-- 2c. Placeholder accounts for users with hangar rows and neither of the above.
+--     (EXISTS, not a UNION of the seven tables: D1 rejects a compound SELECT
+--     with more than 5 terms.)
 INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder)
-SELECT u.user_id, 'Imported hangar', 1, 1
-FROM (
-  SELECT user_id FROM user_fleet
-  UNION SELECT user_id FROM user_pledges
-  UNION SELECT user_id FROM user_pledge_items
-  UNION SELECT user_id FROM user_pledge_upgrades
-  UNION SELECT user_id FROM user_buyback_pledges
-  UNION SELECT user_id FROM user_hangar_syncs
-  UNION SELECT user_id FROM user_paints
-) u
-WHERE u.user_id IN (SELECT id FROM user)
-  AND u.user_id NOT IN (SELECT user_id FROM user_rsi_accounts);
+SELECT u.id, 'Imported hangar', 1, 1
+FROM user u
+WHERE u.id NOT IN (SELECT user_id FROM user_rsi_accounts)
+  AND (
+       EXISTS (SELECT 1 FROM user_fleet           t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_pledges         t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_pledge_items    t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_pledge_upgrades t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_buyback_pledges t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_hangar_syncs    t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_paints          t WHERE t.user_id = u.id)
+  );
 
 -- 3a. Account column on the hangar tables
 ALTER TABLE user_fleet           ADD COLUMN rsi_account_id INTEGER REFERENCES user_rsi_accounts(id);
