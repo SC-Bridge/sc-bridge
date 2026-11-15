@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import type { Env, HonoEnv } from "./lib/types";
 import { createAuth } from "./lib/auth";
 import { fleetRoutes } from "./routes/fleet";
+import { rsiAccountRoutes } from "./routes/rsi-accounts";
 import { vehicleRoutes } from "./routes/vehicles";
 import { getShipLoadout, getSalvageForShip, listSalvageableShips, listChangelogEntries } from "./db/queries";
 import { paintRoutes } from "./routes/paints";
@@ -43,6 +44,7 @@ import { itemBuildRoutes } from "./routes/itemBuilds";
 import { fpsLoadoutRoutes } from "./routes/fpsLoadouts";
 import { characterRoutes } from "./routes/characters";
 import { validateEncryptionKey } from "./lib/crypto";
+import { multiAccountEnabled } from "./lib/rsi-accounts";
 import { logEvent } from "./lib/logger";
 import { isTrustedExtension } from "./lib/constants";
 import { cachedJson, cacheSlug } from "./lib/cache";
@@ -408,6 +410,7 @@ app.get("/api/status", async (c) => {
       ops: c.env.ENVIRONMENT !== "production",
       hangarCleanup: true, // launched 2026-11-08
       fpsLoadout: true, // live everywhere behind the page-level WIP banner
+      multiAccount: multiAccountEnabled(c.env),
     },
     build: VITE_BUILD_ID ?? c.env.BUILD_ID ?? "dev",
   });
@@ -448,6 +451,7 @@ app.get("/api/changelog", async (c) => {
 // Mount route groups — matches Go router URL structure exactly
 app.route("/api/ships", vehicleRoutes<HonoEnv>());
 app.route("/api/vehicles", fleetRoutes());
+app.route("/api/rsi-accounts", rsiAccountRoutes());
 app.route("/api/paints", paintRoutes<HonoEnv>());
 app.route("/api/import", importRoutes());
 app.route("/api/settings", settingsRoutes());

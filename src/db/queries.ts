@@ -712,6 +712,7 @@ export async function getUserOwnedModuleTitles(db: D1Database, userId: string): 
 
 export interface HangarItemRow {
   id: number;
+  rsi_account_id: number | null;
   title: string;
   kind: string | null;
   manufacturer_code: string | null;
@@ -769,6 +770,7 @@ export async function getUserHangarItems(
          upi.is_nameable,
          upi.sort_order,
          upi.user_pledge_id AS pledge_id,
+         up.rsi_account_id,
          up.rsi_pledge_id,
          up.name AS pledge_name,
          up.value AS pledge_value,
