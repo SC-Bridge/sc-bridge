@@ -59,7 +59,8 @@ export default function SyncMappingDialog({ mapping, onResolve, onCancel }) {
     )
   } else if (single) {
     const only = accounts[0]
-    title = 'This sync is for a different RSI account'
+    // With no identity we can't say the sync is from a different account.
+    if (!noIdentity) title = 'This sync is for a different RSI account'
     body = (
       <>
         <ReasonLine mapping={mapping} accounts={accounts} />

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useFleet, useFleetLoaners, useUserOrgs, updateShipVisibility, bulkSetVisibility, deleteIngameShip, clearIngameShips } from '../hooks/useAPI'
+import { useFleet, useFleetLoaners, useUserOrgs, useStatus, useRsiAccounts, updateShipVisibility, bulkSetVisibility, deleteIngameShip, clearIngameShips } from '../hooks/useAPI'
 import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check, KeyRound, Plus, Trash2, Coins } from 'lucide-react'
 import AddIngameShipModal from './AddIngameShipModal'
 import AlertBanner from '../components/AlertBanner'
@@ -212,6 +212,9 @@ export default function FleetTable() {
   const { data: fleet, loading, error, refetch } = useFleet()
   const { data: loaners } = useFleetLoaners()
   const { data: orgsData } = useUserOrgs()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
   const [searchParams, setSearchParams] = useSearchParams()
   const { isMelt } = useValueMode()
   const navigate = useNavigate()
@@ -682,7 +685,7 @@ export default function FleetTable() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-white">{v.vehicle_name}</span>
-                            <AccountBadge rsiAccountId={v.rsi_account_id} />
+                            <AccountBadge rsiAccountId={v.rsi_account_id} accounts={rsiAccounts} />
                             {isLoaner && (
                               <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded">
                                 <KeyRound className="w-3 h-3" aria-hidden="true" /> Loaner

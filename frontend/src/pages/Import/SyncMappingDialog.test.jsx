@@ -67,4 +67,17 @@ describe('SyncMappingDialog', () => {
     fireEvent.click(screen.getByText(/Replace Main.s hangar/))
     expect(onResolve).toHaveBeenCalledWith({ mode: 'map', rsi_account_id: 1 })
   })
+
+  it('keeps the default title for the single-account variant when no_identity', () => {
+    const { onResolve } = setup({ reason: 'no_identity', can_add: false, accounts: [accounts[0]] })
+    expect(screen.getByText('Which RSI account is this?')).toBeTruthy()
+    expect(screen.queryByText('This sync is for a different RSI account')).toBeNull()
+    fireEvent.click(screen.getByText(/Replace Main.s hangar/))
+    expect(onResolve).toHaveBeenCalledWith({ mode: 'map', rsi_account_id: 1 })
+  })
+
+  it('uses the different-account title for the single-account variant when partial', () => {
+    setup({ reason: 'partial', can_add: false, accounts: [accounts[0]] })
+    expect(screen.getByText('This sync is for a different RSI account')).toBeTruthy()
+  })
 })

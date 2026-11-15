@@ -556,9 +556,9 @@ export function useHangarCleanup() {
 
 // --- RSI accounts (multi-account) ---
 
-/** The user's RSI accounts. `{ accounts, max, can_add }`. */
-export function useRsiAccounts() {
-  return useAPI('/rsi-accounts')
+/** The user's RSI accounts. `{ accounts, max, can_add }`. `skip` sends no request. */
+export function useRsiAccounts({ skip = false } = {}) {
+  return useAPI('/rsi-accounts', { skip })
 }
 
 export async function updateRsiAccount(id, patch) {
