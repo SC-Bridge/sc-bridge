@@ -554,6 +554,22 @@ export function useHangarCleanup() {
   return useAPI('/hangar-cleanup')
 }
 
+// --- RSI accounts (multi-account) ---
+
+/** The user's RSI accounts. `{ accounts, max, can_add }`. */
+export function useRsiAccounts() {
+  return useAPI('/rsi-accounts')
+}
+
+export async function updateRsiAccount(id, patch) {
+  return patchJSON(`/rsi-accounts/${id}`, patch)
+}
+
+// DELETE needs an empty JSON body or /api/* answers 411 (see removeCleanupBuy).
+export async function deleteRsiAccount(id) {
+  return apiFetch('DELETE', `/rsi-accounts/${id}`, {})
+}
+
 export async function saveCleanupDecision(rsiPledgeId, patch) {
   return putJSON(`/hangar-cleanup/decisions/${rsiPledgeId}`, patch)
 }

@@ -10,6 +10,7 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
+import AccountBadge from '../components/AccountBadge'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import {
   buildItemFilter, cleanPledgeName, formatPledgeValue,
@@ -71,6 +72,7 @@ function HangarItemCard({ item, isMelt, melt }) {
             {item.custom_name && (
               <span className="ml-1 text-[10px] font-mono text-sc-accent/80">"{item.custom_name}"</span>
             )}
+            <span className="ml-1 align-middle"><AccountBadge rsiAccountId={item.rsi_account_id} /></span>
           </h3>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -149,6 +151,7 @@ function HangarItemRow({ item, isMelt, melt }) {
           {item.custom_name && (
             <span className="ml-1.5 text-[10px] font-mono text-sc-accent/80">"{item.custom_name}"</span>
           )}
+          <span className="ml-1.5 align-middle"><AccountBadge rsiAccountId={item.rsi_account_id} /></span>
         </div>
         {pledgeShort && (
           <div className="text-[10px] text-gray-500 font-mono truncate">↳ {pledgeShort}</div>

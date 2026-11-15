@@ -15,6 +15,7 @@ import StatusBadge from '../components/StatusBadge'
 import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
+import AccountBadge from '../components/AccountBadge'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
@@ -681,6 +682,7 @@ export default function FleetTable() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-white">{v.vehicle_name}</span>
+                            <AccountBadge rsiAccountId={v.rsi_account_id} />
                             {isLoaner && (
                               <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded">
                                 <KeyRound className="w-3 h-3" aria-hidden="true" /> Loaner
