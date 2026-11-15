@@ -3,6 +3,7 @@ import { RefreshCw, Users, HardDrive } from 'lucide-react'
 import { useStatus, usePreferences, setPreferences, useUserSyncStatus, deleteSyncData, useCharacters } from '../../hooks/useAPI'
 import useHangarSync, { SYNC_CATEGORIES } from '../../hooks/useHangarSync'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import SyncMappingDialog from './SyncMappingDialog'
 import SyncSection from './SyncSection'
 import SyncDataSection from './SyncDataSection'
 import CharacterBackup from './CharacterBackup'
@@ -190,6 +191,8 @@ export default function Import() {
 
       {/* Extension */}
       <ExtensionSection />
+
+      <SyncMappingDialog mapping={sync.status === 'needs_mapping' ? sync.mapping : null} onResolve={sync.resolveMapping} onCancel={sync.cancelMapping} />
 
       {/* Sync Categories Dialog */}
       <ConfirmDialog

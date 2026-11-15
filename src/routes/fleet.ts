@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -324,12 +325,13 @@ export function fleetRoutes() {
       const vehicle = await db.prepare("SELECT id FROM vehicles WHERE id = ?").bind(vehicle_id).first();
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
+      const accountId = await getOrCreatePrimaryAccountId(db, userID);
       await db
         .prepare(
-          `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at)
-           VALUES (?, ?, 'ingame', ?, datetime('now'))`,
+          `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at, rsi_account_id)
+           VALUES (?, ?, 'ingame', ?, datetime('now'), ?)`,
         )
-        .bind(userID, vehicle_id, custom_name || null)
+        .bind(userID, vehicle_id, custom_name || null, accountId)
         .run();
       c.executionCtx.waitUntil(
         resolveVerifiedHandle(db, userID)
@@ -388,7 +390,7 @@ async function getFleetList(
 ) {
   const result = await db
     .prepare(
-      `SELECT uf.id, uf.user_id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
+      `SELECT uf.id, uf.user_id, uf.rsi_account_id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
         uf.equipped_paint_id, uf.imported_at, uf.org_visibility, uf.available_for_ops, uf.source,
         COALESCE(rv.name, v.name) as vehicle_name,
@@ -437,6 +439,7 @@ async function getFleetList(
       LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
       LEFT JOIN user_pledges up ON up.user_id = uf.user_id
         AND up.rsi_pledge_id = CAST(uf.pledge_id AS INTEGER)
+        AND up.rsi_account_id = uf.rsi_account_id
       WHERE uf.user_id = ?
       ORDER BY COALESCE(rv.name, v.name)`,
     )

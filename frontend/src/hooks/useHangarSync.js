@@ -40,6 +40,10 @@ export default function useHangarSync() {
   const hintTimerRef = useRef(null)
   const statusRef = useRef(status)
   const categoriesRef = useRef(null)
+  // The scraped payload is held while the user answers the mapping dialog, so the
+  // extension does not have to scrape again.
+  const payloadRef = useRef(null)
+  const [mapping, setMapping] = useState(null)
 
   useEffect(() => {
     statusRef.current = status
@@ -89,6 +93,62 @@ export default function useHangarSync() {
 
   useEffect(() => { detect() }, [detect])
 
+  // POST the held payload. `target` is only sent after the user has answered the
+  // mapping dialog: { mode: 'new' } or { mode: 'map', rsi_account_id }.
+  const upload = useCallback(async (payload, target) => {
+    setStatus('uploading')
+    try {
+      const res = await fetch('/api/import/hangar-sync', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target ? { ...payload, target } : payload),
+      })
+
+      if (res.status === 401) {
+        window.location.href = '/login'
+        return
+      }
+
+      if (res.status === 409) {
+        const body = await res.json().catch(() => null)
+        if (body?.error === 'needs_mapping') {
+          setMapping(body)
+          setStatus('needs_mapping')
+          return
+        }
+        throw new Error(body?.error || res.statusText)
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error || res.statusText)
+      }
+
+      const data = await res.json()
+      payloadRef.current = null
+      setMapping(null)
+      setResult(data)
+      setStatus('complete')
+    } catch (err) {
+      payloadRef.current = null
+      setMapping(null)
+      setError(err.message)
+      setStatus('error')
+    }
+  }, [])
+
+  const resolveMapping = useCallback((target) => {
+    if (!payloadRef.current) return Promise.resolve()
+    return upload(payloadRef.current, target)
+  }, [upload])
+
+  const cancelMapping = useCallback(() => {
+    payloadRef.current = null
+    setMapping(null)
+    setStatus('ready')
+  }, [])
+
   const startSync = useCallback((categories) => {
     if (statusRef.current !== 'ready' && statusRef.current !== 'complete' && statusRef.current !== 'error') return
 
@@ -136,32 +196,8 @@ export default function useHangarSync() {
           if (cats.shipNames === false) payload.named_ships = []
         }
 
-        setStatus('uploading')
-        try {
-          const res = await fetch('/api/import/hangar-sync', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-
-          if (res.status === 401) {
-            window.location.href = '/login'
-            return
-          }
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }))
-            throw new Error(err.error || res.statusText)
-          }
-
-          const data = await res.json()
-          setResult(data)
-          setStatus('complete')
-        } catch (err) {
-          setError(err.message)
-          setStatus('error')
-        }
+        payloadRef.current = payload
+        await upload(payload, undefined)
       }
     }
 
@@ -189,7 +225,7 @@ export default function useHangarSync() {
         }
       }
     }, 600000) // 10 min — large hangars (600+ pledges) need time for RSI page loading + buyback collection
-  }, [showHangarHint])
+  }, [showHangarHint, upload])
 
   /**
    * Open the RSI hangar in a new tab so the extension's hangar.content
@@ -212,6 +248,9 @@ export default function useHangarSync() {
     status,
     error,
     result,
+    mapping,
+    resolveMapping,
+    cancelMapping,
     extensionVersion,
     showHangarHint,
     startSync,

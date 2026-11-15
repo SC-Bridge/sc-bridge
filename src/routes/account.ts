@@ -651,6 +651,9 @@ export function accountRoutes() {
       db.prepare("DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_hangar_cleanup_buys WHERE user_id = ?").bind(user.id),
       db.prepare("DELETE FROM user_hangar_cleanup_state WHERE user_id = ?").bind(user.id),
+      // RSI accounts (migration 0284) — the user row is soft-deleted so ON DELETE CASCADE never
+      // fires; the hangar tables reference this with no action, so it goes after all of them.
+      db.prepare("DELETE FROM user_rsi_accounts WHERE user_id = ?").bind(user.id),
       // Scrub PII from change history — keep rows (event log) but wipe values + IP
       db.prepare(
         `UPDATE user_change_history SET
@@ -713,7 +716,7 @@ async function collectUserData(
   db: D1Database,
   user: { id: string; name: string; email: string; role?: string | null },
 ) {
-  const [fleet, paints, llmConfigs, settings, analyses, lootCollection, lootWishlist, authUser] = await Promise.all([
+  const [fleet, paints, llmConfigs, settings, analyses, lootCollection, lootWishlist, authUser, rsiAccounts] = await Promise.all([
     db.prepare(
       `SELECT uf.id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
@@ -745,24 +748,29 @@ async function collectUserData(
       FROM ai_analyses WHERE user_id = ? ORDER BY created_at DESC`,
     ).bind(user.id).all(),
     db.prepare(
-      `SELECT ulc.id, ulc.loot_map_id, ulc.quantity, ulc.created_at, lm.name, lm.type
+      `SELECT ulc.id, ulc.loot_map_id, ulc.quantity, ulc.collected_at AS created_at, lm.name, lm.type
       FROM user_loot_collection ulc
       LEFT JOIN loot_map lm ON lm.id = ulc.loot_map_id
       WHERE ulc.user_id = ? ORDER BY lm.name`,
     ).bind(user.id).all(),
     db.prepare(
-      `SELECT ulw.id, ulw.loot_map_id, ulw.quantity, ulw.created_at, lm.name, lm.type
+      `SELECT ulw.id, ulw.loot_map_id, ulw.quantity, ulw.added_at AS created_at, lm.name, lm.type
       FROM user_loot_wishlist ulw
       LEFT JOIN loot_map lm ON lm.id = ulw.loot_map_id
       WHERE ulw.user_id = ? ORDER BY lm.name`,
     ).bind(user.id).all(),
     db.prepare("SELECT id, email, name, role, createdAt FROM user WHERE id = ?")
       .bind(user.id).first(),
+    db.prepare(
+      `SELECT id, label, rsi_handle, display_name, is_primary, is_placeholder, verified_at, synced_at, created_at
+      FROM user_rsi_accounts WHERE user_id = ? ORDER BY id`,
+    ).bind(user.id).all(),
   ]);
 
   return {
     exported_at: new Date().toISOString(),
     account: authUser || { id: user.id, email: user.email, name: user.name, role: user.role },
+    rsi_accounts: rsiAccounts.results,
     fleet: fleet.results,
     paints: paints.results,
     llm_configs: llmConfigs.results.map((cfg: Record<string, unknown>) => ({

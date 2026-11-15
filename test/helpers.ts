@@ -5,6 +5,7 @@
  * authenticated test contexts without going through the auth flow.
  */
 import { TEST_GAME_VERSION_ID } from "./apply-migrations";
+import { getOrCreatePrimaryAccountId } from "../src/lib/rsi-accounts";
 
 interface TestUser {
   userId: string;
@@ -193,11 +194,13 @@ export async function seedFleetEntry(
     custom_name?: string;
   }
 ): Promise<number> {
+  // Every production user_fleet writer stamps an RSI account — mirror that.
+  const rsiAccountId = await getOrCreatePrimaryAccountId(db, userId);
   await db
     .prepare(
       `INSERT INTO user_fleet (user_id, vehicle_id, insurance_type_id, warbond, is_loaner,
-         pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, datetime('now'))`
+         pledge_id, pledge_name, pledge_cost, pledge_date, custom_name, imported_at, rsi_account_id)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, datetime('now'), ?)`
     )
     .bind(
       userId,
@@ -208,7 +211,8 @@ export async function seedFleetEntry(
       overrides?.pledge_name ?? null,
       overrides?.pledge_cost ?? null,
       overrides?.pledge_date ?? null,
-      overrides?.custom_name ?? null
+      overrides?.custom_name ?? null,
+      rsiAccountId
     )
     .run();
 

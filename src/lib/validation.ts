@@ -95,6 +95,14 @@ export const HangarSyncPayloadSchema = z.object({
   upgrades: z.array(z.any()).max(5000).default([]),
   account: z.any().optional().default(null),
   named_ships: z.array(z.any()).max(500).default([]),
+  // Which of the user's RSI accounts this sync belongs to, when the server
+  // could not tell on its own (answer to a 409 needs_mapping).
+  target: z
+    .discriminatedUnion("mode", [
+      z.object({ mode: z.literal("new") }),
+      z.object({ mode: z.literal("map"), rsi_account_id: z.number().int().positive() }),
+    ])
+    .optional(),
   sync_meta: z.object({
     extension_version: z.string().max(50).default("unknown"),
     synced_at: z.string().max(50).default(""),
