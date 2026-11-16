@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 
 const BASE = '/api'
 
@@ -57,14 +57,20 @@ export function useAPI(path, { skip = false } = {}) {
   const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
 
+  // Latest-request guard: when the path changes while a fetch is in flight,
+  // the older response must never overwrite the newer one (or end loading).
+  const latestPath = useRef(path)
+
   const refetch = useCallback(() => {
     if (skip) return
+    latestPath.current = path
+    const isLatest = () => latestPath.current === path
     setLoading(true)
     setError(null)
     sharedFetchJSON(path)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+      .then((d) => { if (isLatest()) setData(d) })
+      .catch((e) => { if (isLatest()) setError(e.message) })
+      .finally(() => { if (isLatest()) setLoading(false) })
   }, [path, skip])
 
   useEffect(() => { refetch() }, [refetch])

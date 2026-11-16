@@ -18,10 +18,14 @@ export default function Dashboard() {
   const { data: session, isPending: sessionPending } = useSession()
   const isLoggedIn = !!session?.user
   const { data: status, loading: statusLoading, error: statusError } = useStatus()
-  const { data: rsiAccountsData } = useRsiAccounts({ skip: !isLoggedIn || !status?.features?.multiAccount })
+  const { data: rsiAccountsData, error: rsiAccountsError } = useRsiAccounts({ skip: !isLoggedIn || !status?.features?.multiAccount })
   const rsiAccounts = rsiAccountsData?.accounts
   const accountFilter = useAccountFilter(rsiAccounts)
-  const { data: analysis, loading: analysisLoading, error: analysisError } = useAnalysis({ accounts: accountFilter.apiParam, skip: !isLoggedIn })
+  // Hold the analysis request until the account list has settled, so a plain
+  // (all-accounts) request never races the narrowed one.
+  const waitingForAccounts = statusLoading || (isLoggedIn && !!status?.features?.multiAccount && !rsiAccountsData && !rsiAccountsError)
+  const { data: analysis, loading: analysisFetching, error: analysisError } = useAnalysis({ accounts: accountFilter.apiParam, skip: !isLoggedIn || waitingForAccounts })
+  const analysisLoading = analysisFetching || waitingForAccounts
 
   if (sessionPending || statusLoading || (isLoggedIn && analysisLoading)) {
     return <LoadingState variant="skeleton" />
@@ -136,7 +140,7 @@ export default function Dashboard() {
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="FLEET OVERVIEW"
-        subtitle={`${status?.vehicles || 0} ships in fleet · ${status?.ships || 0} in reference database`}
+        subtitle={`${totalVehicles} ships in fleet · ${status?.ships || 0} in reference database`}
       />
 
       <AccountFilter accounts={rsiAccounts} filter={accountFilter} />

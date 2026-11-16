@@ -6,15 +6,15 @@ import Insurance from './Insurance'
 import Insights from './Insights'
 import Dashboard from './Dashboard'
 
-const api = vi.hoisted(() => ({ analysisCalls: [], accounts: [], multiAccount: true, analysis: null }))
+const api = vi.hoisted(() => ({ analysisCalls: [], accounts: [], multiAccount: true, analysis: null, accountsPending: false }))
 
 vi.mock('../hooks/useAPI', () => ({
   useAnalysis: (opts) => {
     api.analysisCalls.push(opts)
     return { data: api.analysis, loading: false, error: null, refetch: vi.fn() }
   },
-  useStatus: () => ({ data: { ships: 10, features: { multiAccount: api.multiAccount } }, loading: false, error: null }),
-  useRsiAccounts: () => ({ data: { accounts: api.accounts } }),
+  useStatus: () => ({ data: { ships: 10, vehicles: 99, features: { multiAccount: api.multiAccount } }, loading: false, error: null }),
+  useRsiAccounts: () => ({ data: api.accountsPending ? null : { accounts: api.accounts }, error: null }),
 }))
 vi.mock('../lib/auth-client', () => ({
   useSession: () => ({ data: { user: { id: 'u1' } }, isPending: false }),
@@ -50,6 +50,7 @@ describe('Analysis pages follow the account filter', () => {
     localStorage.clear()
     api.analysisCalls = []
     api.multiAccount = true
+    api.accountsPending = false
     api.accounts = [
       { id: 1, label: 'Main', color: '#22d3ee', is_primary: 1 },
       { id: 2, label: 'Alt', color: '#f97316', is_primary: 0 },
@@ -95,5 +96,41 @@ describe('Analysis pages follow the account filter', () => {
       expect(screen.queryByRole('group', { name: /filter by rsi account/i })).not.toBeInTheDocument()
       unmount()
     }
+  })
+
+  it('holds the analysis request until the account list has loaded', () => {
+    api.accountsPending = true
+    for (const Page of [Insurance, Insights, Dashboard]) {
+      api.analysisCalls = []
+      const { unmount } = renderAt(Page, '')
+      expect(api.analysisCalls.length).toBeGreaterThan(0)
+      expect(api.analysisCalls.every((o) => o.skip === true)).toBe(true)
+      unmount()
+    }
+  })
+
+  it('does not hold the analysis request when multi-account is off', () => {
+    api.multiAccount = false
+    api.accountsPending = true
+    for (const Page of [Insurance, Insights, Dashboard]) {
+      api.analysisCalls = []
+      const { unmount } = renderAt(Page, '')
+      expect(api.analysisCalls.at(-1).skip).toBeFalsy()
+      unmount()
+    }
+  })
+
+  it('Dashboard subtitle counts the filtered fleet, not the unfiltered status', () => {
+    renderAt(Dashboard, '?accts=1')
+    expect(screen.getByText(/2 ships in fleet/)).toBeInTheDocument()
+    expect(screen.queryByText(/99 ships in fleet/)).not.toBeInTheDocument()
+  })
+
+  it('Insurance shows a marker on Unknown-insurance rows', () => {
+    api.analysis.insurance_summary.lti_ships = []
+    api.analysis.insurance_summary.unknown_ships = [{ ship_name: 'Mystery Ship', rsi_account_id: 2 }]
+    renderAt(Insurance, '?accts=2')
+    expect(screen.getByText('Mystery Ship')).toBeInTheDocument()
+    expect(screen.getAllByRole('img', { name: 'Alt' }).length).toBeGreaterThan(0)
   })
 })

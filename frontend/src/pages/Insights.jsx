@@ -22,11 +22,15 @@ const PRIORITY_CONFIG = {
 }
 
 export default function Insights() {
-  const { data: appStatus } = useStatus()
-  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const { data: appStatus, loading: statusLoading } = useStatus()
+  const { data: rsiAccountsData, error: rsiAccountsError } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
   const rsiAccounts = rsiAccountsData?.accounts
   const accountFilter = useAccountFilter(rsiAccounts)
-  const { data: analysis, loading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam })
+  // Hold the analysis request until the account list has settled, so a plain
+  // (all-accounts) request never races the narrowed one.
+  const waitingForAccounts = statusLoading || (!!appStatus?.features?.multiAccount && !rsiAccountsData && !rsiAccountsError)
+  const { data: analysis, loading: analysisLoading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam, skip: waitingForAccounts })
+  const loading = analysisLoading || waitingForAccounts
 
   if (loading) return <LoadingState message="Analysing fleet..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />

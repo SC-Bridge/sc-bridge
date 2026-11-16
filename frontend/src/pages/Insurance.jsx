@@ -22,11 +22,15 @@ function formatPledgeDate(raw) {
 }
 
 export default function Insurance() {
-  const { data: appStatus } = useStatus()
-  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const { data: appStatus, loading: statusLoading } = useStatus()
+  const { data: rsiAccountsData, error: rsiAccountsError } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
   const rsiAccounts = rsiAccountsData?.accounts
   const accountFilter = useAccountFilter(rsiAccounts)
-  const { data: analysis, loading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam })
+  // Hold the analysis request until the account list has settled, so a plain
+  // (all-accounts) request never races the narrowed one.
+  const waitingForAccounts = statusLoading || (!!appStatus?.features?.multiAccount && !rsiAccountsData && !rsiAccountsError)
+  const { data: analysis, loading: analysisLoading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam, skip: waitingForAccounts })
+  const loading = analysisLoading || waitingForAccounts
   const [searchParams, setSearchParams] = useSearchParams()
   const filterLTI = searchParams.get('lti') || 'all'
   const filterWarbond = searchParams.get('warbond') || 'all'
@@ -165,11 +169,12 @@ export default function Insurance() {
           </p>
           <div className="divide-y divide-sc-border/50">
             {unknown.map((ship, i) => (
-              <div key={i} className="px-5 py-3 flex items-center gap-3">
+              <div key={i} className="relative px-5 py-3 flex items-center gap-3">
                 <span className="text-sm text-gray-400">{ship.ship_name}</span>
                 {ship.custom_name && (
                   <span className="text-xs text-gray-400 italic">"{ship.custom_name}"</span>
                 )}
+                <AccountMarker rsiAccountId={ship.rsi_account_id} accounts={rsiAccounts} variant="row" />
               </div>
             ))}
           </div>
