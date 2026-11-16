@@ -695,13 +695,17 @@ export async function getHeadGadgets(
   return { head_uuid: headUuid, head_name: head.name, head_type: head.type, kind, slots: slotsOut };
 }
 
-export async function getUserOwnedModuleTitles(db: D1Database, userId: string): Promise<string[]> {
+export async function getUserOwnedModuleTitles(
+  db: D1Database,
+  userId: string,
+  accountId: number | null,
+): Promise<string[]> {
   const result = await db
     .prepare(
       `SELECT DISTINCT title FROM user_pledge_items
-       WHERE user_id = ? AND kind = 'Component' AND LOWER(title) LIKE '%module%'`
+       WHERE user_id = ? AND kind = 'Component' AND LOWER(title) LIKE '%module%'${accountId === null ? "" : " AND rsi_account_id = ?"}`
     )
-    .bind(userId)
+    .bind(...(accountId === null ? [userId] : [userId, accountId]))
     .all<{ title: string }>();
   return result.results.map((r) => r.title);
 }

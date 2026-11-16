@@ -28,20 +28,23 @@ export default function Loadout() {
   const fleetId = searchParams.get('fleet_id') ? parseInt(searchParams.get('fleet_id'), 10) : null
   // Loaners are derived (no fleet id) — they persist by their vehicle id instead.
   const loanerVehicleId = searchParams.get('loaner_vehicle_id') ? parseInt(searchParams.get('loaner_vehicle_id'), 10) : null
+  // Which RSI account a loaner's settings belong to (FleetTable passes it).
+  const loanerAccountId = searchParams.get('account') ? parseInt(searchParams.get('account'), 10) : null
   const canPersist = !!(fleetId || loanerVehicleId)
 
   const { data: ship } = useShip(slug)
   const { data: stockComponents, loading: stockLoading, error: stockError } = useLoadoutComponents(slug)
   const { data: modules } = useShipModules(slug)
-  const { data: ownedModules } = useOwnedModules(slug)
   const { data: fleetLoadout, refetch: refetchFleetLoadout } = useFleetLoadout(fleetId)
-  const { data: loanerLoadout, refetch: refetchLoanerLoadout } = useLoanerLoadout(loanerVehicleId)
+  const { data: loanerLoadout, refetch: refetchLoanerLoadout } = useLoanerLoadout(loanerVehicleId, loanerAccountId)
 
   // Module selections persist against the same owner (fleet entry or loaner vehicle).
   const moduleOwnerKind = loanerVehicleId ? 'loaner' : 'fleet'
   const moduleOwnerId = loanerVehicleId || fleetId
-  const { data: moduleSelData, refetch: refetchModuleSel } = useModuleSelections(moduleOwnerKind, moduleOwnerId)
-  const { data: gadgetSelData, refetch: refetchGadgetSel } = useGadgetSelections(moduleOwnerKind, moduleOwnerId)
+  // A fleet ship's account is read from its row server-side; only loaners pass one.
+  const selectionAccountId = loanerVehicleId ? loanerAccountId : null
+  const { data: moduleSelData, refetch: refetchModuleSel } = useModuleSelections(moduleOwnerKind, moduleOwnerId, selectionAccountId)
+  const { data: gadgetSelData, refetch: refetchGadgetSel } = useGadgetSelections(moduleOwnerKind, moduleOwnerId, selectionAccountId)
   const { data: fleetEntries, refetch: refetchFleet } = useFleet()
   const { data: appStatus } = useStatus()
   const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
@@ -54,6 +57,8 @@ export default function Loadout() {
     [fleetEntries, fleetId],
   )
   const equippedPaintId = fleetEntry?.equipped_paint_id ?? null
+  // Owned modules count only the account the ship (or loaner) belongs to.
+  const { data: ownedModules } = useOwnedModules(slug, loanerVehicleId ? loanerAccountId : fleetEntry?.rsi_account_id)
 
   const [overrides, setOverrides] = useState({})
   const [pickerPortId, setPickerPortId] = useState(null)
@@ -195,19 +200,19 @@ export default function Loadout() {
       port_id: parseInt(portId, 10), component_id: data.component_id,
     }))
     if (loanerVehicleId) {
-      await saveLoanerLoadout(loanerVehicleId, overrideList)
+      await saveLoanerLoadout(loanerVehicleId, overrideList, loanerAccountId)
       refetchLoanerLoadout()
     } else {
       await saveFleetLoadout(fleetId, overrideList)
       refetchFleetLoadout()
     }
-  }, [canPersist, fleetId, loanerVehicleId, overrides, refetchFleetLoadout, refetchLoanerLoadout])
+  }, [canPersist, fleetId, loanerVehicleId, loanerAccountId, overrides, refetchFleetLoadout, refetchLoanerLoadout])
 
   const handleResetAll = useCallback(async () => {
     setOverrides({})
-    if (loanerVehicleId) { await resetLoanerLoadout(loanerVehicleId); refetchLoanerLoadout() }
+    if (loanerVehicleId) { await resetLoanerLoadout(loanerVehicleId, loanerAccountId); refetchLoanerLoadout() }
     else if (fleetId) { await resetFleetLoadout(fleetId); refetchFleetLoadout() }
-  }, [fleetId, loanerVehicleId, refetchFleetLoadout, refetchLoanerLoadout])
+  }, [fleetId, loanerVehicleId, loanerAccountId, refetchFleetLoadout, refetchLoanerLoadout])
 
   // Module slot selections (port_name → chosen module uuid). A saved choice that
   // points at a module the section does not list is dropped, so the header cargo
@@ -222,12 +227,12 @@ export default function Loadout() {
     if (!canPersist) return
     // Choosing the default clears the override (back to stock); else save the choice.
     if (module.is_default) {
-      await resetModuleSelection(moduleOwnerKind, moduleOwnerId, portName)
+      await resetModuleSelection(moduleOwnerKind, moduleOwnerId, portName, selectionAccountId)
     } else {
-      await saveModuleSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: portName, module_uuid: module.uuid }])
+      await saveModuleSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: portName, module_uuid: module.uuid }], selectionAccountId)
     }
     refetchModuleSel()
-  }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchModuleSel])
+  }, [canPersist, moduleOwnerKind, moduleOwnerId, selectionAccountId, refetchModuleSel])
 
   // Gadget slot selections (composite slot key '<headPortName>#<slotIndex>' → uuid).
   const gadgetSelections = useMemo(() => {
@@ -239,12 +244,12 @@ export default function Loadout() {
   const handleSelectGadget = useCallback(async (slotKey, gadget, kind) => {
     if (!canPersist) return
     if (!gadget) {
-      await resetGadgetSelection(moduleOwnerKind, moduleOwnerId, slotKey)
+      await resetGadgetSelection(moduleOwnerKind, moduleOwnerId, slotKey, selectionAccountId)
     } else {
-      await saveGadgetSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: slotKey, module_uuid: gadget.uuid, module_kind: kind }])
+      await saveGadgetSelections(moduleOwnerKind, moduleOwnerId, [{ port_name: slotKey, module_uuid: gadget.uuid, module_kind: kind }], selectionAccountId)
     }
     refetchGadgetSel()
-  }, [canPersist, moduleOwnerKind, moduleOwnerId, refetchGadgetSel])
+  }, [canPersist, moduleOwnerKind, moduleOwnerId, selectionAccountId, refetchGadgetSel])
 
   // Render gadget consumable slots inline under a mining laser / salvage head.
   // Returns null for any other component. The equipped head's uuid keys the slots.

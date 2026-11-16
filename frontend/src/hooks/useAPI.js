@@ -681,8 +681,12 @@ export function useShipModules(slug) {
   return useAPI(slug ? `/loadout/${slug}/modules` : null, { skip: !slug })
 }
 
-export function useOwnedModules(slug) {
-  return useAPI(slug ? `/loadout/${slug}/modules/owned` : null, { skip: !slug })
+// Loaner and owned-module settings are per RSI account; a missing id lets the
+// server choose (primary account for loaners, every account for owned modules).
+const accountQuery = (accountId) => (accountId ? `?account=${accountId}` : '')
+
+export function useOwnedModules(slug, accountId) {
+  return useAPI(slug ? `/loadout/${slug}/modules/owned${accountQuery(accountId)}` : null, { skip: !slug })
 }
 
 export function useCompatibleComponents(slug, portId) {
@@ -707,30 +711,30 @@ export async function resetFleetLoadoutPort(fleetId, portId) {
 
 // Loaner equivalents — derived loaners have no fleet id, so their loadout is
 // keyed by the loaner's vehicle id (user_loaner_loadout).
-export function useLoanerLoadout(loanerVehicleId) {
-  return useAPI(loanerVehicleId ? `/loadout/loaner/${loanerVehicleId}` : null, { skip: !loanerVehicleId })
+export function useLoanerLoadout(loanerVehicleId, accountId) {
+  return useAPI(loanerVehicleId ? `/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}` : null, { skip: !loanerVehicleId })
 }
 
-export async function saveLoanerLoadout(loanerVehicleId, overrides) {
-  return putJSON(`/loadout/loaner/${loanerVehicleId}`, { overrides })
+export async function saveLoanerLoadout(loanerVehicleId, overrides, accountId) {
+  return putJSON(`/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}`, { overrides })
 }
 
-export async function resetLoanerLoadout(loanerVehicleId) {
-  return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}`)
+export async function resetLoanerLoadout(loanerVehicleId, accountId) {
+  return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}`)
 }
 
 // Module selections — bay/room module choices per slot. ownerKind is 'fleet'
 // (ownerId = fleet entry id) or 'loaner' (ownerId = loaner vehicle id).
-export function useModuleSelections(ownerKind, ownerId) {
-  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/modules` : null, { skip: !ownerId })
+export function useModuleSelections(ownerKind, ownerId, accountId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/modules${accountQuery(accountId)}` : null, { skip: !ownerId })
 }
 
-export async function saveModuleSelections(ownerKind, ownerId, selections) {
-  return putJSON(`/loadout/${ownerKind}/${ownerId}/modules`, { selections })
+export async function saveModuleSelections(ownerKind, ownerId, selections, accountId) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/modules${accountQuery(accountId)}`, { selections })
 }
 
-export async function resetModuleSelection(ownerKind, ownerId, portName) {
-  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}`)
+export async function resetModuleSelection(ownerKind, ownerId, portName, accountId) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}${accountQuery(accountId)}`)
 }
 
 // Gadget consumable slots inside a tool head (mining laser / salvage head).
@@ -738,16 +742,16 @@ export function useHeadGadgets(headUuid) {
   return useAPI(headUuid ? `/loadout/head/${headUuid}/gadgets` : null, { skip: !headUuid })
 }
 
-export function useGadgetSelections(ownerKind, ownerId) {
-  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/gadgets` : null, { skip: !ownerId })
+export function useGadgetSelections(ownerKind, ownerId, accountId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/gadgets${accountQuery(accountId)}` : null, { skip: !ownerId })
 }
 
-export async function saveGadgetSelections(ownerKind, ownerId, selections) {
-  return putJSON(`/loadout/${ownerKind}/${ownerId}/gadgets`, { selections })
+export async function saveGadgetSelections(ownerKind, ownerId, selections, accountId) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/gadgets${accountQuery(accountId)}`, { selections })
 }
 
-export async function resetGadgetSelection(ownerKind, ownerId, slotKey) {
-  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/gadgets/${encodeURIComponent(slotKey)}`)
+export async function resetGadgetSelection(ownerKind, ownerId, slotKey, accountId) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/gadgets/${encodeURIComponent(slotKey)}${accountQuery(accountId)}`)
 }
 
 export function useLoadoutCart() {
