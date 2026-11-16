@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useAnalysis } from '../hooks/useAPI'
+import { useAnalysis, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import PrivacyMask from '../components/PrivacyMask'
 import { Shield, ShieldAlert, ShieldQuestion, Calendar, Tag, Rocket } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
@@ -9,6 +9,9 @@ import ErrorState from '../components/ErrorState'
 import StatCard from '../components/StatCard'
 import FilterSelect from '../components/FilterSelect'
 import InsuranceBadge from '../components/InsuranceBadge'
+import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 
 /** "December 15, 2015" → "Dec 15, 2015" (fixed-width 3-char month) */
 function formatPledgeDate(raw) {
@@ -19,7 +22,15 @@ function formatPledgeDate(raw) {
 }
 
 export default function Insurance() {
-  const { data: analysis, loading, error, refetch } = useAnalysis()
+  const { data: appStatus, loading: statusLoading } = useStatus()
+  const { data: rsiAccountsData, error: rsiAccountsError } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  // Hold the analysis request until the account list has settled, so a plain
+  // (all-accounts) request never races the narrowed one.
+  const waitingForAccounts = statusLoading || (!!appStatus?.features?.multiAccount && !rsiAccountsData && !rsiAccountsError)
+  const { data: analysis, loading: analysisLoading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam, skip: waitingForAccounts })
+  const loading = analysisLoading || waitingForAccounts
   const [searchParams, setSearchParams] = useSearchParams()
   const filterLTI = searchParams.get('lti') || 'all'
   const filterWarbond = searchParams.get('warbond') || 'all'
@@ -60,6 +71,7 @@ export default function Insurance() {
     return (
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader title="INSURANCE TRACKER" />
+        <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
         <div className="panel p-12 text-center">
           <Shield className="w-16 h-16 mx-auto mb-4 text-sc-accent/60" />
           <h2 className="font-display font-bold text-2xl text-white mb-2">No insurance data yet</h2>
@@ -80,6 +92,8 @@ export default function Insurance() {
         title="INSURANCE TRACKER"
         subtitle="Sync your hangar to populate insurance info"
       />
+
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -122,7 +136,7 @@ export default function Insurance() {
           </div>
           <div className="divide-y divide-sc-border/50">
             {lti.map((ship, i) => (
-              <InsuranceRow key={i} ship={ship} />
+              <InsuranceRow key={i} ship={ship} accounts={rsiAccounts} />
             ))}
           </div>
         </div>
@@ -137,7 +151,7 @@ export default function Insurance() {
           </div>
           <div className="divide-y divide-sc-border/50">
             {nonLTI.map((ship, i) => (
-              <InsuranceRow key={i} ship={ship} />
+              <InsuranceRow key={i} ship={ship} accounts={rsiAccounts} />
             ))}
           </div>
         </div>
@@ -155,11 +169,12 @@ export default function Insurance() {
           </p>
           <div className="divide-y divide-sc-border/50">
             {unknown.map((ship, i) => (
-              <div key={i} className="px-5 py-3 flex items-center gap-3">
+              <div key={i} className="relative px-5 py-3 flex items-center gap-3">
                 <span className="text-sm text-gray-400">{ship.ship_name}</span>
                 {ship.custom_name && (
                   <span className="text-xs text-gray-400 italic">"{ship.custom_name}"</span>
                 )}
+                <AccountMarker rsiAccountId={ship.rsi_account_id} accounts={rsiAccounts} variant="row" />
               </div>
             ))}
           </div>
@@ -169,9 +184,9 @@ export default function Insurance() {
   )
 }
 
-function InsuranceRow({ ship }) {
+function InsuranceRow({ ship, accounts }) {
   return (
-    <div className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+    <div className="relative px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-white">{ship.ship_name}</span>
@@ -216,6 +231,7 @@ function InsuranceRow({ ship }) {
           <InsuranceBadge isLifetime={ship.is_lifetime} label={ship.insurance_label || (ship.is_lifetime ? 'LTI' : 'Standard')} />
         </span>
       </div>
+      <AccountMarker rsiAccountId={ship.rsi_account_id} accounts={accounts} variant="row" />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam } from "../lib/validation";
 import {
+  ACCOUNT_COLORS,
   MAX_RSI_ACCOUNTS,
   canAddAccount,
   deleteRsiAccount,
@@ -22,7 +23,7 @@ export function rsiAccountRoutes() {
     const { results } = await c.env.DB
       .prepare(
         `SELECT a.id, a.label, a.rsi_handle, a.display_name, a.is_primary, a.is_placeholder,
-                a.verified_at, a.synced_at,
+                a.verified_at, a.synced_at, a.color,
                 (SELECT COUNT(*) FROM user_fleet uf WHERE uf.rsi_account_id = a.id) AS ship_count,
                 (SELECT COUNT(*) FROM user_pledges up WHERE up.rsi_account_id = a.id) AS pledge_count
          FROM user_rsi_accounts a
@@ -39,6 +40,7 @@ export function rsiAccountRoutes() {
         is_placeholder: number;
         verified_at: string | null;
         synced_at: string | null;
+        color: string;
         ship_count: number;
         pledge_count: number;
       }>();
@@ -52,12 +54,14 @@ export function rsiAccountRoutes() {
       is_placeholder: !!a.is_placeholder,
       verified: a.verified_at !== null && !a.is_placeholder,
       synced_at: a.synced_at,
+      color: a.color,
       ship_count: a.ship_count,
       pledge_count: a.pledge_count,
     }));
 
     return c.json({
       accounts,
+      palette: ACCOUNT_COLORS,
       max: MAX_RSI_ACCOUNTS,
       can_add: canAddAccount({ enabled: multiAccountEnabled(c.env), accountCount: accounts.length }),
     });
@@ -72,6 +76,7 @@ export function rsiAccountRoutes() {
       z.object({
         label: z.string().trim().max(40, { message: "Label must be 40 characters or fewer" }).optional(),
         is_primary: z.literal(true, { message: "is_primary can only be set to true" }).optional(),
+        color: z.enum(ACCOUNT_COLORS as [string, ...string[]], { message: "Colour must be one of the palette" }).optional(),
       }),
     ),
     async (c) => {
@@ -80,7 +85,7 @@ export function rsiAccountRoutes() {
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
 
-      if (body.label === undefined && body.is_primary === undefined) {
+      if (body.label === undefined && body.is_primary === undefined && body.color === undefined) {
         return c.json({ error: "Nothing to update" }, 400);
       }
 
@@ -104,6 +109,11 @@ export function rsiAccountRoutes() {
           db
             .prepare("UPDATE user_rsi_accounts SET label = ? WHERE id = ? AND user_id = ?")
             .bind(label === "" ? null : label, id, userID),
+        );
+      }
+      if (body.color !== undefined) {
+        statements.push(
+          db.prepare("UPDATE user_rsi_accounts SET color = ? WHERE id = ? AND user_id = ?").bind(body.color, id, userID),
         );
       }
       await db.batch(statements);

@@ -170,6 +170,7 @@ export default function Import() {
       {/* Sync Data */}
       <SyncDataSection
         syncStatus={syncStatus}
+        multiAccount={!!appStatus?.features?.multiAccount}
         onDelete={handleDeleteSyncData}
         notification={notification}
       />

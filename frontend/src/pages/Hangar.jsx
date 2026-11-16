@@ -10,11 +10,14 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
-import AccountBadge from '../components/AccountBadge'
+import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import {
   buildItemFilter, cleanPledgeName, formatPledgeValue,
   kindLabel, orderedKinds, normaliseMediaUrl,
+  countKinds,
 } from './Hangar.helpers'
 
 /** Per-kind colour palette — stays subdued so the page reads as a list, not a circus. */
@@ -52,6 +55,7 @@ function HangarItemCard({ item, isMelt, melt, accounts }) {
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
     <div className="group relative bg-white/[0.03] border border-white/[0.08] rounded-lg overflow-hidden hover:border-sc-accent/30 transition-all">
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="card" />
       <div className="aspect-[16/9] bg-gradient-to-br from-sc-darker to-black/40 flex items-center justify-center overflow-hidden">
         {item.image_url ? (
           <img
@@ -72,7 +76,6 @@ function HangarItemCard({ item, isMelt, melt, accounts }) {
             {item.custom_name && (
               <span className="ml-1 text-[10px] font-mono text-sc-accent/80">"{item.custom_name}"</span>
             )}
-            <span className="ml-1 align-middle"><AccountBadge rsiAccountId={item.rsi_account_id} accounts={accounts} /></span>
           </h3>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -137,7 +140,7 @@ function HangarItemRow({ item, isMelt, melt, accounts }) {
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.05] rounded hover:border-sc-accent/20 transition-all">
+    <div className="relative flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.05] rounded hover:border-sc-accent/20 transition-all">
       <div className="w-12 h-7 flex-shrink-0 bg-sc-darker rounded overflow-hidden flex items-center justify-center">
         {item.image_url ? (
           <img src={normaliseMediaUrl(item.image_url)} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
@@ -151,7 +154,6 @@ function HangarItemRow({ item, isMelt, melt, accounts }) {
           {item.custom_name && (
             <span className="ml-1.5 text-[10px] font-mono text-sc-accent/80">"{item.custom_name}"</span>
           )}
-          <span className="ml-1.5 align-middle"><AccountBadge rsiAccountId={item.rsi_account_id} accounts={accounts} /></span>
         </div>
         {pledgeShort && (
           <div className="text-[10px] text-gray-500 font-mono truncate">↳ {pledgeShort}</div>
@@ -168,6 +170,7 @@ function HangarItemRow({ item, isMelt, melt, accounts }) {
         : pledgeValue && (
             <span className="text-[10px] font-mono text-gray-500 w-16 text-right shrink-0">{pledgeValue}</span>
           )}
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="row" />
     </div>
   )
 }
@@ -193,9 +196,15 @@ export default function Hangar() {
     }, { replace: true })
   }
 
-  const items = data?.items ?? []
-  const counts = data?.counts ?? {}
-  const total = data?.total ?? 0
+  const accountFilter = useAccountFilter(rsiAccounts)
+  const allItems = data?.items ?? []
+  // The account filter narrows everything below: counts, melt totals, search.
+  const items = useMemo(
+    () => allItems.filter((i) => accountFilter.matches(i.rsi_account_id)),
+    [allItems, accountFilter.matches],
+  )
+  const counts = useMemo(() => countKinds(items), [items])
+  const total = items.length
 
   const kinds = useMemo(() => orderedKinds(counts), [counts])
 
@@ -228,7 +237,7 @@ export default function Hangar() {
   if (loading) return <LoadingState fullScreen message="Loading hangar..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
 
-  const isEmpty = total === 0
+  const isEmpty = (data?.total ?? 0) === 0
   const isFilteredEmpty = !isEmpty && filtered.length === 0
   const hasActiveFilters = search || kindFilter !== 'all' || mfrFilter !== 'all'
 
@@ -261,7 +270,9 @@ export default function Hangar() {
         )}
       />
 
-      {!isEmpty && <SyncStalenessBanner />}
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
+
+      {!isEmpty && <SyncStalenessBanner accountIds={accountFilter.active ? accountFilter.selectedIds : null} />}
 
       {isEmpty ? (
         <EmptyState
