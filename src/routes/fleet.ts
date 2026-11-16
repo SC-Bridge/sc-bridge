@@ -159,9 +159,9 @@ export function fleetRoutes() {
 
       // Confirm the fleet entry belongs to the user; capture vehicle_id for FK check.
       const fleetEntry = await db
-        .prepare("SELECT id, vehicle_id FROM user_fleet WHERE id = ? AND user_id = ?")
+        .prepare("SELECT id, vehicle_id, rsi_account_id FROM user_fleet WHERE id = ? AND user_id = ?")
         .bind(id, userID)
-        .first<{ id: number; vehicle_id: number }>();
+        .first<{ id: number; vehicle_id: number; rsi_account_id: number | null }>();
 
       if (!fleetEntry) {
         return c.json({ error: "Fleet entry not found" }, 404);
@@ -182,10 +182,10 @@ export function fleetRoutes() {
           );
         }
 
-        // User must own the paint.
+        // The paint must be owned on the ship's own RSI account.
         const owned = await db
-          .prepare("SELECT 1 FROM user_paints WHERE user_id = ? AND paint_id = ?")
-          .bind(userID, paint_id)
+          .prepare("SELECT 1 FROM user_paints WHERE user_id = ? AND paint_id = ? AND rsi_account_id IS ?")
+          .bind(userID, paint_id, fleetEntry.rsi_account_id)
           .first();
         if (!owned) {
           return c.json({ error: "You do not own this paint" }, 403);
