@@ -11,10 +11,13 @@ import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
 import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import {
   buildItemFilter, cleanPledgeName, formatPledgeValue,
   kindLabel, orderedKinds, normaliseMediaUrl,
+  countKinds,
 } from './Hangar.helpers'
 
 /** Per-kind colour palette — stays subdued so the page reads as a list, not a circus. */
@@ -193,9 +196,15 @@ export default function Hangar() {
     }, { replace: true })
   }
 
-  const items = data?.items ?? []
-  const counts = data?.counts ?? {}
-  const total = data?.total ?? 0
+  const accountFilter = useAccountFilter(rsiAccounts)
+  const allItems = data?.items ?? []
+  // The account filter narrows everything below: counts, melt totals, search.
+  const items = useMemo(
+    () => allItems.filter((i) => accountFilter.matches(i.rsi_account_id)),
+    [allItems, accountFilter.matches],
+  )
+  const counts = useMemo(() => countKinds(items), [items])
+  const total = items.length
 
   const kinds = useMemo(() => orderedKinds(counts), [counts])
 
@@ -228,7 +237,7 @@ export default function Hangar() {
   if (loading) return <LoadingState fullScreen message="Loading hangar..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
 
-  const isEmpty = total === 0
+  const isEmpty = (data?.total ?? 0) === 0
   const isFilteredEmpty = !isEmpty && filtered.length === 0
   const hasActiveFilters = search || kindFilter !== 'all' || mfrFilter !== 'all'
 
@@ -260,6 +269,8 @@ export default function Hangar() {
           </div>
         )}
       />
+
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
       {!isEmpty && <SyncStalenessBanner />}
 

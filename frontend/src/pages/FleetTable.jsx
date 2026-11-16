@@ -16,6 +16,8 @@ import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
 import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 import { accountStripeStyle } from '../lib/accounts'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import FleetTagCell from './FleetTagCell'
@@ -227,9 +229,12 @@ export default function FleetTable() {
   const tagFilter = searchParams.get('tag') || 'all'
 
   // Owned ships + derived loaner ships, in one list for the unified view.
+  // The account filter narrows owned ships before search, sorting and totals;
+  // loaners are derived rows with no account, so they always match.
+  const accountFilter = useAccountFilter(rsiAccounts)
   const combined = useMemo(
-    () => [...(fleet || []), ...(loaners || [])],
-    [fleet, loaners],
+    () => [...(fleet || []), ...(loaners || [])].filter((v) => accountFilter.matches(v.rsi_account_id)),
+    [fleet, loaners, accountFilter.matches],
   )
 
   const categoryCounts = useMemo(() => {
@@ -384,8 +389,8 @@ export default function FleetTable() {
     return items
   }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, tagFilter, sortKey, sortDir])
 
-  // Fleet-wide money facts. Deliberately computed over the WHOLE fleet, not the
-  // filtered view — "what is my fleet worth" shouldn't change because someone
+  // Money facts for the selected accounts. Deliberately NOT narrowed by the
+  // search box — "what is my fleet worth" shouldn't change because someone
   // typed in the search box. Grouping first is what stops a multi-ship pack
   // being counted once per ship.
   const meltTotals = useMemo(() => {
@@ -467,6 +472,8 @@ export default function FleetTable() {
       {showAddIngame && (
         <AddIngameShipModal onClose={() => setShowAddIngame(false)} onAdded={refetch} />
       )}
+
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
       <SyncStalenessBanner />
 

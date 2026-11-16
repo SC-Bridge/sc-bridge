@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { RotateCcw, ShoppingCart, ChevronDown, ChevronRight, FlaskConical, ExternalLink } from 'lucide-react'
-import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout, useModuleSelections, saveModuleSelections, resetModuleSelection, useGadgetSelections, saveGadgetSelections, resetGadgetSelection } from '../../hooks/useAPI'
+import { useShip, useLoadoutComponents, useShipModules, useOwnedModules, useFleetLoadout, useLoadoutCart, useFleet, useStatus, useRsiAccounts, saveFleetLoadout, resetFleetLoadout, addToLoadoutCart, useLoanerLoadout, saveLoanerLoadout, resetLoanerLoadout, useModuleSelections, saveModuleSelections, resetModuleSelection, useGadgetSelections, saveGadgetSelections, resetGadgetSelection } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
+import AccountMarker from '../../components/AccountMarker'
 import ComponentPicker from './ComponentPicker'
 import StatsPanel from './StatsPanel'
 import CartPanel from './CartPanel'
@@ -42,6 +43,8 @@ export default function Loadout() {
   const { data: moduleSelData, refetch: refetchModuleSel } = useModuleSelections(moduleOwnerKind, moduleOwnerId)
   const { data: gadgetSelData, refetch: refetchGadgetSel } = useGadgetSelections(moduleOwnerKind, moduleOwnerId)
   const { data: fleetEntries, refetch: refetchFleet } = useFleet()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
   const { data: cartData, loading: cartLoading, refetch: refetchCart } = useLoadoutCart()
 
   // Resolve this fleet entry's currently-equipped paint (if any). Drives the
@@ -335,6 +338,9 @@ export default function Loadout() {
                 </h1>
                 {fleetId && (
                   <span className="text-[11px] bg-sc-accent/10 text-sc-accent px-2 py-0.5 rounded border border-sc-accent/20 font-medium">Fleet Ship</span>
+                )}
+                {fleetEntry && (
+                  <AccountMarker rsiAccountId={fleetEntry.rsi_account_id} accounts={rsiAccountsData?.accounts} variant="cell" />
                 )}
                 {loanerVehicleId && (
                   <span className="text-[11px] bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded border border-amber-500/20 font-medium">Loaner</span>

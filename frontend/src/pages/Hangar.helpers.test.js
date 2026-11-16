@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildItemFilter, cleanPledgeName, formatPledgeValue,
-  kindLabel, orderedKinds, KIND_ORDER, normaliseMediaUrl,
+  kindLabel, orderedKinds, KIND_ORDER, normaliseMediaUrl, countKinds,
 } from './Hangar.helpers'
 
 describe('cleanPledgeName', () => {
@@ -167,5 +167,17 @@ describe('buildItemFilter', () => {
   it('returns nothing when search has no hits', () => {
     const fn = buildItemFilter({ search: 'zzz-no-match', kindFilter: 'all', mfrFilter: 'all' })
     expect(sample.filter(fn)).toEqual([])
+  })
+})
+
+describe('countKinds', () => {
+  it('counts items per kind and buckets a null kind as uncategorised', () => {
+    expect(countKinds([
+      { kind: 'Ship' }, { kind: 'Ship' }, { kind: 'Skin' }, { kind: null }, {},
+    ])).toEqual({ Ship: 2, Skin: 1, uncategorised: 2 })
+  })
+
+  it('returns an empty object for no items', () => {
+    expect(countKinds([])).toEqual({})
   })
 })
