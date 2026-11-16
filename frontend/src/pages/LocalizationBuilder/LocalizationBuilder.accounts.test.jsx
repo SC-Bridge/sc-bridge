@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   fleet: [],
   ships: [],
   initialOrder: null,
+  orderState: null,
   refetch: () => {},
 }))
 api.initialOrder = structuredClone(api.order)
@@ -23,7 +24,7 @@ vi.mock('../../hooks/useAPI', () => ({
   saveLocalizationConfig: vi.fn().mockResolvedValue({}),
   useLocalizationShipOrder: (query) => {
     api.orderQueries.push(query)
-    return { data: api.order, loading: false, refetch: api.refetch }
+    return { ...(api.orderState ?? { data: api.order, loading: false, error: null }), refetch: api.refetch }
   },
   saveLocalizationShipOrder: (...args) => api.saveShipOrder(...args),
   useFleet: () => ({ data: api.fleet }),
@@ -47,6 +48,7 @@ describe('LocalizationBuilder ship order per account', () => {
   beforeEach(() => {
     localStorage.clear()
     api.order = structuredClone(api.initialOrder)
+    api.orderState = null
     api.orderQueries = []
     api.saveShipOrder = vi.fn().mockResolvedValue({})
     api.accounts = [
@@ -108,9 +110,35 @@ describe('LocalizationBuilder ship order per account', () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
     renderAt('?accts=1')
     fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
-    // switch to Alt only; the mock keeps serving Main's order, as useAPI does while a new path loads
+    // Alt's order is still loading: useAPI keeps serving Main's data meanwhile
+    api.orderState = { data: api.order, loading: true, error: null }
     fireEvent.click(screen.getByRole('checkbox', { name: /Alt/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: /Main/ }))
+    makeConfigDirty()
+    clickSave()
+    await waitFor(() => expect(screen.queryByText('Settings saved')).toBeInTheDocument())
+    expect(api.saveShipOrder).not.toHaveBeenCalled()
+  })
+
+  it("does not save A's order as B's when B's fetch fails", async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    // a fresh element each time: React skips a rerender of the identical element
+    const ui = () => (
+      <MemoryRouter initialEntries={['/localization?accts=1']}>
+        <LocalizationBuilder />
+      </MemoryRouter>
+    )
+    const { rerender } = render(ui())
+    // A's order loaded; switch to B, whose GET starts loading with A's data still served
+    api.orderState = { data: api.order, loading: true, error: null }
+    fireEvent.click(screen.getByRole('checkbox', { name: /Alt/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Main/ }))
+    rerender(ui())
+    // the GET fails: stale data, an error, loading false again
+    api.orderState = { data: api.order, loading: false, error: 'Network error' }
+    rerender(ui())
+    // the user edits the (stale) list and saves
+    fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
     makeConfigDirty()
     clickSave()
     await waitFor(() => expect(screen.queryByText('Settings saved')).toBeInTheDocument())

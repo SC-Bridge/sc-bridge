@@ -74,7 +74,8 @@ export default function LocalizationBuilder() {
   const [loadedQuery, setLoadedQuery] = useState(null)
   const [orderDirty, setOrderDirty] = useState(false)
   const accountsQuery = accountFilter.active ? `?accounts=${accountFilter.apiParam}` : ''
-  const { data: shipOrder, loading: orderLoading, refetch: refetchOrder } = useLocalizationShipOrder(orderQuery)
+  const { data: shipOrder, loading: orderLoading, error: orderError, refetch: refetchOrder } = useLocalizationShipOrder(orderQuery)
+  const appliedOrderRef = useRef(null)
   const orderQueryRef = useRef(orderQuery)
   orderQueryRef.current = orderQuery
   const { data: fleet } = useFleet()
@@ -104,7 +105,10 @@ export default function LocalizationBuilder() {
   // ── Init ship order (from saved only) ─────────────────────────────
   useEffect(() => {
     if (orderLoading) return
-    if (!shipOrder?.items) return
+    // Apply each response once. A failed fetch leaves the previous path's data in
+    // place and re-runs this effect; that data does not belong to the new query.
+    if (!shipOrder?.items || orderError || appliedOrderRef.current === shipOrder) return
+    appliedOrderRef.current = shipOrder
     setOrderedShips(shipOrder.items.map(item => ({
       vehicleId: item.vehicle_id,
       vehicleName: item.vehicle_name,
@@ -113,7 +117,7 @@ export default function LocalizationBuilder() {
     })))
     setLoadedQuery(orderQueryRef.current)
     setOrderDirty(false)
-  }, [shipOrder, orderLoading])
+  }, [shipOrder, orderLoading, orderError])
 
   // ── Load active community overlay packs ───────────────────────────
   useEffect(() => {
@@ -265,6 +269,7 @@ export default function LocalizationBuilder() {
             })),
             orderAccountId,
           )
+          setOrderDirty(false)
         }
       } catch (e) {
         showNotification('Save failed: ' + e.message, 'error')
