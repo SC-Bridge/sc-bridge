@@ -7,6 +7,7 @@ import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
 import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets } from "../db/queries";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 
 // D1 has a 100-parameter limit per prepared statement.
 // Batch an IN-clause query into chunks, merging all results.
@@ -211,15 +212,16 @@ async function saveGadgetSelections(
     }
     if (!valid) return { ok: false, error: `Gadget ${s.module_uuid} is not a valid ${s.module_kind}` };
   }
+  const accountId = await getOrCreatePrimaryAccountId(db, userId);
   const stmts = selections.map((s) =>
     db
       .prepare(
-        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, module_kind, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+        `INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid, module_kind, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, rsi_account_id, owner_kind, owner_id, port_name)
          DO UPDATE SET module_uuid = excluded.module_uuid, module_kind = excluded.module_kind, updated_at = datetime('now')`,
       )
-      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid, s.module_kind),
+      .bind(userId, accountId, ownerKind, ownerId, s.port_name, s.module_uuid, s.module_kind),
   );
   if (stmts.length > 0) await db.batch(stmts);
   return { ok: true };
@@ -239,15 +241,16 @@ async function saveModuleSelections(
       .first();
     if (!valid) return { ok: false, error: `Module ${s.module_uuid} is not valid for port ${s.port_name}` };
   }
+  const accountId = await getOrCreatePrimaryAccountId(db, userId);
   const stmts = selections.map((s) =>
     db
       .prepare(
-        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, updated_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))
-         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+        `INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, rsi_account_id, owner_kind, owner_id, port_name)
          DO UPDATE SET module_uuid = excluded.module_uuid, updated_at = datetime('now')`,
       )
-      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid),
+      .bind(userId, accountId, ownerKind, ownerId, s.port_name, s.module_uuid),
   );
   if (stmts.length > 0) await db.batch(stmts);
   return { ok: true };
@@ -724,15 +727,16 @@ export function loadoutRoutes() {
 
       const { overrides } = c.req.valid("json");
       const db = c.env.DB;
+      const accountId = await getOrCreatePrimaryAccountId(db, user.id);
       const stmts = overrides.map((o) =>
         db
           .prepare(
-            `INSERT INTO user_loaner_loadout (user_id, loaner_vehicle_id, port_id, component_id, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'))
-             ON CONFLICT (user_id, loaner_vehicle_id, port_id)
+            `INSERT INTO user_loaner_loadout (user_id, rsi_account_id, loaner_vehicle_id, port_id, component_id, updated_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT (user_id, rsi_account_id, loaner_vehicle_id, port_id)
              DO UPDATE SET component_id = excluded.component_id, updated_at = datetime('now')`,
           )
-          .bind(user.id, vehicleId, o.port_id, o.component_id),
+          .bind(user.id, accountId, vehicleId, o.port_id, o.component_id),
       );
       if (stmts.length > 0) await db.batch(stmts);
       return c.json({ ok: true });

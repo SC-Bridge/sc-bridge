@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { validate } from "../lib/validation";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 import {
   type AsopEntry,
   type ItemRow,
@@ -271,6 +272,7 @@ export function localizationRoutes() {
       const { items } = c.req.valid("json");
 
       // Full replace: delete then insert
+      const accountId = await getOrCreatePrimaryAccountId(db, userId);
       const stmts: D1PreparedStatement[] = [
         db
           .prepare("DELETE FROM user_localization_ship_order WHERE user_id = ?")
@@ -281,10 +283,10 @@ export function localizationRoutes() {
         stmts.push(
           db
             .prepare(
-              `INSERT INTO user_localization_ship_order (user_id, vehicle_id, sort_position, custom_label)
-               VALUES (?, ?, ?, ?)`,
+              `INSERT INTO user_localization_ship_order (user_id, rsi_account_id, vehicle_id, sort_position, custom_label)
+               VALUES (?, ?, ?, ?, ?)`,
             )
-            .bind(userId, item.vehicleId, item.sortPosition, item.customLabel ?? null),
+            .bind(userId, accountId, item.vehicleId, item.sortPosition, item.customLabel ?? null),
         );
       }
 

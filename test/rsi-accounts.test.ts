@@ -12,6 +12,7 @@ import {
   listRsiAccounts,
   createRsiAccount,
   deleteRsiAccount,
+  resolveAccountId,
   claimSyncSlot,
   ACCOUNT_COLORS,
   nextAccountColor,
@@ -545,5 +546,79 @@ describe("account colours", () => {
       (await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(id).first<{ color: string }>())!.color;
     expect([await colour(a1), await colour(a2), await colour(a3)]).toEqual(ACCOUNT_COLORS.slice(0, 3));
     expect(await colour(b1)).toBe(ACCOUNT_COLORS[0]);
+  });
+});
+
+describe("resolveAccountId", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("returns primary for no value, the id for an owned one, null for a foreign or bad id", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const other = await createTestUser(env.DB);
+    const primaryId = await createRsiAccount(env.DB, userId, { handle: "RA1", referralCode: null, placeholder: false });
+    const second = await createRsiAccount(env.DB, userId, { handle: "RA2", referralCode: null, placeholder: false });
+    const foreign = await createRsiAccount(env.DB, other.userId, { handle: "RA3", referralCode: null, placeholder: false });
+
+    expect(await resolveAccountId(env.DB, userId, undefined)).toBe(primaryId);
+    expect(await resolveAccountId(env.DB, userId, null)).toBe(primaryId);
+    expect(await resolveAccountId(env.DB, userId, second)).toBe(second);
+    expect(await resolveAccountId(env.DB, userId, String(second))).toBe(second);
+    expect(await resolveAccountId(env.DB, userId, foreign)).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, "abc")).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, "1.5")).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, 0)).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, 987654321)).toBeNull();
+  });
+});
+
+describe("deleteRsiAccount vehicle settings", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("removes the account's loaner loadouts, module selections and ship order", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "DV1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "DV2", referralCode: null, placeholder: false });
+    const veh = await seedVehicle(env.DB, { slug: "zzdv-ship", name: "Zzdv Ship" });
+    await env.DB
+      .prepare("INSERT INTO vehicle_ports (uuid, vehicle_id, name, port_type, game_version_id) VALUES ('zzdv-p', ?, 'p', 'shield', 1)")
+      .bind(veh)
+      .run();
+    const port = (await env.DB.prepare("SELECT id FROM vehicle_ports WHERE uuid = 'zzdv-p'").first<{ id: number }>())!.id;
+    await env.DB
+      .prepare(
+        `INSERT INTO vehicle_components (uuid, name, slug, type, size, grade, game_version_id, created_at, updated_at)
+         VALUES ('zzdv-c', 'C', 'zzdv-c', 'shield', 1, 1, 1, datetime('now'), datetime('now'))`,
+      )
+      .run();
+    const comp = (await env.DB.prepare("SELECT id FROM vehicle_components WHERE uuid = 'zzdv-c'").first<{ id: number }>())!.id;
+
+    for (const acct of [a, b]) {
+      await env.DB
+        .prepare("INSERT INTO user_loaner_loadout (user_id, rsi_account_id, loaner_vehicle_id, port_id, component_id) VALUES (?, ?, ?, ?, ?)")
+        .bind(userId, acct, veh, port, comp)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid) VALUES (?, ?, 'loaner', ?, 'bay', 'm')")
+        .bind(userId, acct, veh)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_localization_ship_order (user_id, rsi_account_id, vehicle_id, sort_position) VALUES (?, ?, ?, 1)")
+        .bind(userId, acct, veh)
+        .run();
+    }
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    for (const t of ["user_loaner_loadout", "user_module_selection", "user_localization_ship_order"]) {
+      const left = await env.DB
+        .prepare(`SELECT rsi_account_id FROM ${t} WHERE user_id = ?`)
+        .bind(userId)
+        .all<{ rsi_account_id: number }>();
+      expect(left.results.map((r) => r.rsi_account_id)).toEqual([b]);
+    }
   });
 });

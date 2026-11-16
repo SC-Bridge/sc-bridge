@@ -251,6 +251,26 @@ export async function getOrCreatePrimaryAccountId(db: D1Database, userId: string
 }
 
 /**
+ * Resolve the `?account=` value of a per-account vehicle-settings request.
+ * No value means the primary account. An owned id returns itself. A foreign,
+ * unknown or non-integer id returns null, which the route turns into a 404.
+ */
+export async function resolveAccountId(
+  db: D1Database,
+  userId: string,
+  raw: number | string | undefined | null,
+): Promise<number | null> {
+  if (raw === undefined || raw === null || raw === "") return getOrCreatePrimaryAccountId(db, userId);
+  const id = typeof raw === "number" ? raw : /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const owned = await db
+    .prepare("SELECT id FROM user_rsi_accounts WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
+    .first<{ id: number }>();
+  return owned ? owned.id : null;
+}
+
+/**
  * Delete an RSI account and every hangar row stamped with it. Order matters —
  * D1 enforces foreign keys. Throws when the account is not the user's.
  */
@@ -270,11 +290,16 @@ export async function deleteRsiAccount(db: D1Database, userId: string, accountId
     db
       .prepare(`DELETE FROM org_op_ships WHERE owner_user_id = ? AND user_fleet_id IN (${fleetIds})`)
       .bind(userId, userId, accountId),
+    // Fleet selections stamped before 0286 reached them (the deploy window) have
+    // no rsi_account_id, so they are also found through the ship they belong to.
     db
       .prepare(
         `DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = 'fleet' AND owner_id IN (${fleetIds})`,
       )
       .bind(userId, userId, accountId),
+    del("user_module_selection"),
+    del("user_loaner_loadout"),
+    del("user_localization_ship_order"),
     db
       .prepare(`DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ? AND rsi_pledge_id IN (${pledgeIds})`)
       .bind(userId, userId, accountId),
