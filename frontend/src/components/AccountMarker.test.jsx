@@ -20,22 +20,39 @@ describe('AccountMarker', () => {
     expect(render(<AccountMarker rsiAccountId={99} accounts={accts} />).container.innerHTML).toBe('')
   })
 
-  it('draws a stripe and an avatar in the account colour', () => {
-    render(<AccountMarker rsiAccountId={2} accounts={accts} />)
+  it('row variant draws a stripe and an initial avatar in the account colour', () => {
+    render(<AccountMarker rsiAccountId={2} accounts={accts} variant="row" />)
     const avatar = screen.getByRole('img', { name: 'RASKYL' })
     expect(avatar.style.backgroundColor).toBe('rgb(249, 115, 22)')
     expect(avatar.textContent).toBe('R')
     expect(screen.getByTestId('account-stripe').style.backgroundColor).toBe('rgb(249, 115, 22)')
   })
 
-  it('card variant stays above the card image, which scales on hover and would otherwise paint over it', () => {
+  it('card variant: left stripe plus a centred name band in the account colour, no initial avatar', () => {
     render(<AccountMarker rsiAccountId={2} accounts={accts} />)
-    expect(screen.getByRole('img', { name: 'RASKYL' }).className).toMatch(/\bz-10\b/)
+    const band = screen.getByTestId('account-band')
+    expect(band.textContent).toBe('RASKYL')
+    expect(band.title).toBe('RASKYL')
+    expect(band.style.backgroundColor).toBe('rgb(249, 115, 22)')
+    expect(band.className).toMatch(/\btext-center\b/)
+    expect(band.className).toMatch(/\btruncate\b/)
+    expect(band.className).not.toContain('absolute')
+    expect(screen.getByTestId('account-stripe').style.backgroundColor).toBe('rgb(249, 115, 22)')
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  it('card band shows the nickname when one is set', () => {
+    render(<AccountMarker rsiAccountId={1} accounts={accts} />)
+    expect(screen.getByTestId('account-band').textContent).toBe('Main')
+  })
+
+  it('card stripe stays above the card image, which scales on hover and would otherwise paint over it', () => {
+    render(<AccountMarker rsiAccountId={2} accounts={accts} />)
     expect(screen.getByTestId('account-stripe').className).toMatch(/\bz-10\b/)
   })
 
   it('falls back when label and handle are empty', () => {
-    render(<AccountMarker rsiAccountId={3} accounts={accts} />)
+    render(<AccountMarker rsiAccountId={3} accounts={accts} variant="row" />)
     const avatar = screen.getByRole('img', { name: 'Imported hangar' })
     expect(avatar.textContent).toBe('I')
   })
