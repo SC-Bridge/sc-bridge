@@ -10,7 +10,11 @@ import {
   saveLocalizationShipOrder,
   useFleet,
   useShips,
+  useStatus,
+  useRsiAccounts,
 } from '../../hooks/useAPI'
+import AccountFilter from '../../components/AccountFilter'
+import useAccountFilter from '../../hooks/useAccountFilter'
 import { LABEL_CATEGORIES, CATEGORY_FIELDS } from './constants'
 import FleetOrderSection from './FleetOrderSection'
 import ItemLabelsSection from './ItemLabelsSection'
@@ -52,7 +56,20 @@ const SECTIONS = [
 
 export default function LocalizationBuilder() {
   const { data: serverConfig, loading: configLoading, refetch: refetchConfig } = useLocalizationConfig()
-  const { data: shipOrder, loading: orderLoading, refetch: refetchOrder } = useLocalizationShipOrder()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  // One account selected: edit its order. Several: show the merged order read-only.
+  const orderReadOnly = accountFilter.active && accountFilter.selectedIds.size > 1
+  const orderAccountId = accountFilter.active && accountFilter.selectedIds.size === 1
+    ? [...accountFilter.selectedIds][0]
+    : undefined
+  const orderQuery = orderReadOnly
+    ? `?accounts=${accountFilter.apiParam}`
+    : orderAccountId ? `?account=${orderAccountId}` : ''
+  const accountsQuery = accountFilter.active ? `?accounts=${accountFilter.apiParam}` : ''
+  const { data: shipOrder, loading: orderLoading, refetch: refetchOrder } = useLocalizationShipOrder(orderQuery)
   const { data: fleet } = useFleet()
   const { data: allShips } = useShips()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -80,14 +97,13 @@ export default function LocalizationBuilder() {
   // ── Init ship order (from saved only) ─────────────────────────────
   useEffect(() => {
     if (orderLoading) return
-    if (shipOrder?.items?.length > 0) {
-      setOrderedShips(shipOrder.items.map(item => ({
-        vehicleId: item.vehicle_id,
-        vehicleName: item.vehicle_name,
-        customLabel: item.custom_label,
-        sortPosition: item.sort_position,
-      })))
-    }
+    if (!shipOrder?.items) return
+    setOrderedShips(shipOrder.items.map(item => ({
+      vehicleId: item.vehicle_id,
+      vehicleName: item.vehicle_name,
+      customLabel: item.custom_label,
+      sortPosition: item.sort_position,
+    })))
   }, [shipOrder, orderLoading])
 
   // ── Load active community overlay packs ───────────────────────────
@@ -181,13 +197,14 @@ export default function LocalizationBuilder() {
     setSaving(true)
     try {
       await saveLocalizationConfig(config)
-      if (config.asopEnabled && orderedShips.length > 0) {
+      if (config.asopEnabled && !orderReadOnly) {
         await saveLocalizationShipOrder(
           orderedShips.map(s => ({
             vehicleId: s.vehicleId,
             sortPosition: s.sortPosition,
             customLabel: s.customLabel || null,
-          }))
+          })),
+          orderAccountId,
         )
         refetchOrder()
       }
@@ -208,13 +225,14 @@ export default function LocalizationBuilder() {
     if (dirty) {
       try {
         await saveLocalizationConfig(config)
-        if (config.asopEnabled && orderedShips.length > 0) {
+        if (config.asopEnabled && !orderReadOnly) {
           await saveLocalizationShipOrder(
             orderedShips.map(s => ({
               vehicleId: s.vehicleId,
               sortPosition: s.sortPosition,
               customLabel: s.customLabel || null,
-            }))
+            })),
+            orderAccountId,
           )
         }
       } catch (e) {
@@ -225,7 +243,7 @@ export default function LocalizationBuilder() {
 
     setDownloading(true)
     try {
-      const res = await fetch('/api/localization/download', { credentials: 'same-origin' })
+      const res = await fetch(`/api/localization/download${accountsQuery}`, { credentials: 'same-origin' })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Download failed' }))
         throw new Error(err.error || 'Download failed')
@@ -304,6 +322,8 @@ export default function LocalizationBuilder() {
         <StatCard icon={Download} label="Ready" value={hasAnyEnabled ? 'Yes' : 'No features enabled'} color={hasAnyEnabled ? 'text-emerald-400' : 'text-gray-500'} />
       </div>
 
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
+
       {/* Section pills */}
       <div className="flex flex-wrap gap-2">
         {SECTIONS.map(s => (
@@ -339,6 +359,7 @@ export default function LocalizationBuilder() {
           onRemove={removeShip}
           onAdd={addShip}
           onAddFromFleet={addFromFleet}
+          readOnly={orderReadOnly}
         />
       )}
 
@@ -375,6 +396,7 @@ export default function LocalizationBuilder() {
           hasAnyEnabled={hasAnyEnabled}
           onDownload={handleDownload}
           downloading={downloading}
+          accountsQuery={accountsQuery}
         />
       )}
 

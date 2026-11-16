@@ -2,8 +2,8 @@ import React, { useState } from 'react'
 import { Download, Loader, Languages, ChevronDown, ChevronUp, Eye } from 'lucide-react'
 import { useLocalizationPreview } from '../../hooks/useAPI'
 
-export default function PreviewDownloadSection({ hasAnyEnabled, onDownload, downloading }) {
-  const { data: preview, loading: previewLoading } = useLocalizationPreview()
+export default function PreviewDownloadSection({ hasAnyEnabled, onDownload, downloading, accountsQuery = '' }) {
+  const { data: preview, loading: previewLoading } = useLocalizationPreview(accountsQuery)
   const [showInstall, setShowInstall] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
 

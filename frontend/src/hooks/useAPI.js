@@ -661,16 +661,19 @@ export async function saveLocalizationConfig(config) {
   return putJSON('/localization/config', config)
 }
 
-export function useLocalizationShipOrder() {
-  return useAPI('/localization/ship-order')
+// `query` picks the account(s): '?account=<id>' for one account's order,
+// '?accounts=<ids|all>' for the merged read-only order, none for the primary.
+export function useLocalizationShipOrder(query = '') {
+  return useAPI(`/localization/ship-order${query}`)
 }
 
-export async function saveLocalizationShipOrder(items) {
-  return putJSON('/localization/ship-order', { items })
+// A missing rsiAccountId lets the server save to the primary account.
+export async function saveLocalizationShipOrder(items, rsiAccountId) {
+  return putJSON('/localization/ship-order', rsiAccountId ? { items, rsi_account_id: rsiAccountId } : { items })
 }
 
-export function useLocalizationPreview() {
-  return useAPI('/localization/preview')
+export function useLocalizationPreview(query = '') {
+  return useAPI(`/localization/preview${query}`)
 }
 
 export function useLocalizationPacks() {
