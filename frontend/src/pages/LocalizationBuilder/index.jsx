@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle, Search, Package } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -68,8 +68,15 @@ export default function LocalizationBuilder() {
   const orderQuery = orderReadOnly
     ? `?accounts=${accountFilter.apiParam}`
     : orderAccountId ? `?account=${orderAccountId}` : ''
+  // The order query the current orderedShips list was loaded for. A save is only
+  // allowed when it matches the query now selected (useAPI keeps old data while a
+  // new path loads), and only after the user changed the list themselves.
+  const [loadedQuery, setLoadedQuery] = useState(null)
+  const [orderDirty, setOrderDirty] = useState(false)
   const accountsQuery = accountFilter.active ? `?accounts=${accountFilter.apiParam}` : ''
   const { data: shipOrder, loading: orderLoading, refetch: refetchOrder } = useLocalizationShipOrder(orderQuery)
+  const orderQueryRef = useRef(orderQuery)
+  orderQueryRef.current = orderQuery
   const { data: fleet } = useFleet()
   const { data: allShips } = useShips()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -104,6 +111,8 @@ export default function LocalizationBuilder() {
       customLabel: item.custom_label,
       sortPosition: item.sort_position,
     })))
+    setLoadedQuery(orderQueryRef.current)
+    setOrderDirty(false)
   }, [shipOrder, orderLoading])
 
   // ── Load active community overlay packs ───────────────────────────
@@ -161,11 +170,30 @@ export default function LocalizationBuilder() {
 
   const handleShipReorder = useCallback((newList) => {
     setOrderedShips(renumber(newList))
+    setOrderDirty(true)
     setDirty(true)
   }, [])
 
+  const canSaveOrder = !!config.asopEnabled && orderDirty && !orderReadOnly && loadedQuery === orderQuery
+
+  // Changing the account replaces the order list, so unsaved order edits are
+  // confirmed away first.
+  const guardAccountChange = (change) => {
+    if (orderDirty) {
+      if (!window.confirm('Discard unsaved ship order changes?')) return
+      setOrderDirty(false)
+    }
+    change()
+  }
+  const guardedFilter = {
+    ...accountFilter,
+    toggle: (id) => guardAccountChange(() => accountFilter.toggle(id)),
+    selectAll: () => guardAccountChange(() => accountFilter.selectAll()),
+  }
+
   const removeShip = (idx) => {
     setOrderedShips(renumber(orderedShips.filter((_, i) => i !== idx)))
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -178,6 +206,7 @@ export default function LocalizationBuilder() {
       sortPosition: 0,
     }]))
     setShipSearch('')
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -189,6 +218,7 @@ export default function LocalizationBuilder() {
       customLabel: fleetEntry.custom_name || null,
       sortPosition: 0,
     }]))
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -197,7 +227,7 @@ export default function LocalizationBuilder() {
     setSaving(true)
     try {
       await saveLocalizationConfig(config)
-      if (config.asopEnabled && !orderReadOnly) {
+      if (canSaveOrder) {
         await saveLocalizationShipOrder(
           orderedShips.map(s => ({
             vehicleId: s.vehicleId,
@@ -206,6 +236,7 @@ export default function LocalizationBuilder() {
           })),
           orderAccountId,
         )
+        setOrderDirty(false)
         refetchOrder()
       }
       refetchConfig()
@@ -225,7 +256,7 @@ export default function LocalizationBuilder() {
     if (dirty) {
       try {
         await saveLocalizationConfig(config)
-        if (config.asopEnabled && !orderReadOnly) {
+        if (canSaveOrder) {
           await saveLocalizationShipOrder(
             orderedShips.map(s => ({
               vehicleId: s.vehicleId,
@@ -322,7 +353,7 @@ export default function LocalizationBuilder() {
         <StatCard icon={Download} label="Ready" value={hasAnyEnabled ? 'Yes' : 'No features enabled'} color={hasAnyEnabled ? 'text-emerald-400' : 'text-gray-500'} />
       </div>
 
-      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
+      <AccountFilter accounts={rsiAccounts} filter={guardedFilter} />
 
       {/* Section pills */}
       <div className="flex flex-wrap gap-2">

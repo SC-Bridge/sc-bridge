@@ -12,8 +12,10 @@ const api = vi.hoisted(() => ({
   order: { items: [{ vehicle_id: 7, vehicle_name: 'Carrack', custom_label: null, sort_position: 1 }, { vehicle_id: 8, vehicle_name: 'Idris', custom_label: null, sort_position: 2 }] },
   fleet: [],
   ships: [],
+  initialOrder: null,
   refetch: () => {},
 }))
+api.initialOrder = structuredClone(api.order)
 
 vi.mock('../../hooks/useAPI', () => ({
   useLocalizationPreview: () => ({ data: null, loading: false }),
@@ -44,6 +46,7 @@ function renderAt(search) {
 describe('LocalizationBuilder ship order per account', () => {
   beforeEach(() => {
     localStorage.clear()
+    api.order = structuredClone(api.initialOrder)
     api.orderQueries = []
     api.saveShipOrder = vi.fn().mockResolvedValue({})
     api.accounts = [
@@ -82,5 +85,59 @@ describe('LocalizationBuilder ship order per account', () => {
     await waitFor(() =>
       expect(fetch.mock.calls.some(([u]) => String(u) === '/api/localization/download?accounts=all')).toBe(true),
     )
+  })
+
+  // Touch an unrelated setting so the page is dirty and Save is offered.
+  const makeConfigDirty = () => {
+    const sw = screen.getByRole('switch')
+    fireEvent.click(sw)
+    fireEvent.click(sw)
+  }
+  const clickSave = () => fireEvent.click(screen.getAllByRole('button', { name: /^Save/ })[0])
+
+  it('does not save an order that has not loaded', async () => {
+    api.order = null
+    renderAt('?accts=1')
+    makeConfigDirty()
+    clickSave()
+    await waitFor(() => expect(screen.queryByText('Settings saved')).toBeInTheDocument())
+    expect(api.saveShipOrder).not.toHaveBeenCalled()
+  })
+
+  it("does not save one account's order as another's", async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    renderAt('?accts=1')
+    fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
+    // switch to Alt only; the mock keeps serving Main's order, as useAPI does while a new path loads
+    fireEvent.click(screen.getByRole('checkbox', { name: /Alt/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Main/ }))
+    makeConfigDirty()
+    clickSave()
+    await waitFor(() => expect(screen.queryByText('Settings saved')).toBeInTheDocument())
+    expect(api.saveShipOrder).not.toHaveBeenCalled()
+  })
+
+  it('keeps the account when the discard prompt is cancelled', () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
+    renderAt('?accts=1')
+    fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
+    fireEvent.click(screen.getByRole('checkbox', { name: /Alt/ }))
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved ship order changes?')
+    expect(screen.getByRole('checkbox', { name: /Alt/ })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('saves an empty order only when the user emptied it', async () => {
+    renderAt('?accts=2')
+    makeConfigDirty()
+    clickSave()
+    await waitFor(() => expect(screen.queryByText('Settings saved')).toBeInTheDocument())
+    expect(api.saveShipOrder).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /remove/i })[0])
+    clickSave()
+    await waitFor(() => expect(api.saveShipOrder).toHaveBeenCalled())
+    expect(api.saveShipOrder.mock.calls[0][0]).toEqual([])
+    expect(api.saveShipOrder.mock.calls[0][1]).toBe(2)
   })
 })
