@@ -114,7 +114,8 @@ export function useShipPaints(slug) {
 
 /**
  * useOwnedPaints — fetches the current user's owned paint IDs from
- * /api/account/paints. Returns { ownedSet, loading, error, refetch }.
+ * /api/account/paints. Returns { ownedSet, ownedPaints, loading, error, refetch }.
+ * ownedPaints is [{ paint_id, rsi_account_id }]: which RSI account holds each paint.
  *
  * Frontend code does `ownedSet.has(paint.id)` for O(1) lookup when
  * rendering paint cards on Ship DB, /fleet, and /loadout. When
@@ -127,7 +128,8 @@ export function useOwnedPaints() {
     if (!data || !Array.isArray(data.owned)) return new Set()
     return new Set(data.owned)
   }, [data])
-  return { ownedSet, loading, error, refetch }
+  const ownedPaints = useMemo(() => (Array.isArray(data?.paints) ? data.paints : []), [data])
+  return { ownedSet, ownedPaints, loading, error, refetch }
 }
 
 export function useShipSalvage(slug) {

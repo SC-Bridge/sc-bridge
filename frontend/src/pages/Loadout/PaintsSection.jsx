@@ -13,6 +13,7 @@ import { useShipPaints, useOwnedPaints, equipFleetPaint } from '../../hooks/useA
  * Caller responsibilities:
  *   - Pass fleetId so we know which entry to equip on.
  *   - Pass shipSlug so we can fetch the compatible paint list.
+ *   - Pass rsiAccountId (the fleet entry's) so only paints on that account are offered.
  *   - Pass equippedPaintId so we can highlight the current selection.
  *   - Pass onEquipped() callback that re-fetches the fleet entry after a
  *     successful change (parent decides how — useFleet refetch, hard reload,
@@ -22,16 +23,20 @@ import { useShipPaints, useOwnedPaints, equipFleetPaint } from '../../hooks/useA
  *   - User has no compatible paints in their hangar (clean fall-through; the
  *     parent decides whether to show an empty state)
  */
-export default function PaintsSection({ shipSlug, fleetId, equippedPaintId, onEquipped }) {
+export default function PaintsSection({ shipSlug, fleetId, equippedPaintId, rsiAccountId, onEquipped }) {
   const { data: shipPaints, loading: paintsLoading } = useShipPaints(shipSlug)
-  const { ownedSet, loading: ownedLoading } = useOwnedPaints()
+  const { ownedSet, ownedPaints: ownedRows, loading: ownedLoading } = useOwnedPaints()
   const [busyPaintId, setBusyPaintId] = useState(null)
   const [error, setError] = useState(null)
 
   if (paintsLoading || ownedLoading) return null
   if (!shipPaints?.length) return null
 
-  const ownedPaints = shipPaints.filter(p => ownedSet.has(p.id))
+  // The server only lets a ship equip paints held on its own RSI account.
+  const accountPaintIds = rsiAccountId != null
+    ? new Set(ownedRows.filter(r => r.rsi_account_id === rsiAccountId).map(r => r.paint_id))
+    : ownedSet
+  const ownedPaints = shipPaints.filter(p => accountPaintIds.has(p.id))
   if (ownedPaints.length === 0) return null
 
   async function handleEquip(paintId) {

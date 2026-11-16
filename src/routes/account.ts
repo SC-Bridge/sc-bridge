@@ -693,7 +693,8 @@ export function accountRoutes() {
   /**
    * GET /api/account/paints
    *
-   * Returns the current user's paint ownership as a list of paint IDs.
+   * Returns the current user's paint ownership as a list of paint IDs
+   * (`owned`) plus, per paint, the RSI account that owns it (`paints`).
    * Frontend builds a Set<paint_id> for O(1) lookup when rendering paint
    * cards on Ship DB, /fleet, and /loadout pages.
    *
@@ -703,10 +704,13 @@ export function accountRoutes() {
   routes.get("/paints", async (c) => {
     const user = getAuthUser(c);
     const { results } = await c.env.DB
-      .prepare("SELECT paint_id FROM user_paints WHERE user_id = ?")
+      .prepare("SELECT paint_id, rsi_account_id FROM user_paints WHERE user_id = ?")
       .bind(user.id)
-      .all<{ paint_id: number }>();
-    return c.json({ owned: results.map((r) => r.paint_id) });
+      .all<{ paint_id: number; rsi_account_id: number | null }>();
+    return c.json({
+      owned: results.map((r) => r.paint_id),
+      paints: results.map((r) => ({ paint_id: r.paint_id, rsi_account_id: r.rsi_account_id })),
+    });
   });
 
   return routes;
