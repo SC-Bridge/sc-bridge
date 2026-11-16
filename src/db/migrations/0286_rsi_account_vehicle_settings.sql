@@ -15,12 +15,28 @@
 --       account is entitled the row goes to the user's primary account.
 --   user_localization_ship_order
 --       the user's primary account.
+-- A user with a ship order, loaner loadout or module selection but no account
+-- (0284 only created accounts for users with hangar data) first gets a
+-- placeholder primary account, so nothing here is dropped for lack of one.
 -- Rows with no resolvable account (a fleet selection whose ship is gone or
 -- unstamped, a user with no accounts) are left out of the copy.
 -- INSERT OR IGNORE lets duplicates collapse.
 --
 -- EXISTS ... OR rather than a UNION of cases: D1 rejects a compound SELECT
 -- with more than 5 terms.
+
+-- 0. Placeholder primary account for users with vehicle settings and no account.
+--    Same shape as 0284 section 2c; the first palette colour from 0285 (the
+--    user has no other account, so nextAccountColor would hand out the same).
+INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder, color)
+SELECT u.id, 'Imported hangar', 1, 1, '#22d3ee'
+FROM user u
+WHERE u.id NOT IN (SELECT user_id FROM user_rsi_accounts)
+  AND (
+       EXISTS (SELECT 1 FROM user_localization_ship_order t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_loaner_loadout          t WHERE t.user_id = u.id)
+    OR EXISTS (SELECT 1 FROM user_module_selection        t WHERE t.user_id = u.id)
+  );
 
 -- 1. user_loaner_loadout
 CREATE TABLE user_loaner_loadout_new (

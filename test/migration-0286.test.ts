@@ -77,6 +77,7 @@ describe("migration 0286 - per-account vehicle settings", () => {
   let u1 = "";
   let u2 = "";
   let u3 = "";
+  let u4 = ""; // ship order only, no account row
   let a1 = 0;
   let b1 = 0; // user 1: primary A, other B
   let a2 = 0; // user 2: single primary
@@ -89,6 +90,7 @@ describe("migration 0286 - per-account vehicle settings", () => {
     u1 = (await createTestUser(db())).userId;
     u2 = (await createTestUser(db())).userId;
     u3 = (await createTestUser(db())).userId;
+    u4 = (await createTestUser(db())).userId;
     a1 = await account(u1, "OneA", true);
     b1 = await account(u1, "OneB", false);
     a2 = await account(u2, "TwoA", true);
@@ -156,6 +158,7 @@ describe("migration 0286 - per-account vehicle settings", () => {
     await so(u1, concept, 1);
     await so(u1, loaner, 2);
     await so(u1, plain, 3);
+    await so(u4, plain, 1);
 
     const migration = env.TEST_MIGRATIONS.find((m) => m.name === "0286_rsi_account_vehicle_settings.sql");
     expect(migration).toBeDefined();
@@ -213,5 +216,19 @@ describe("migration 0286 - per-account vehicle settings", () => {
     await ins(a2);
     const other = await account(u2, "TwoB", false);
     await expect(ins(other)).resolves.toBeDefined();
+  });
+
+  it("gives a user with a ship order and no account a placeholder primary, keeping the order", async () => {
+    const acct = await rows<{ id: number; is_primary: number; is_placeholder: number; color: string }>(
+      "SELECT id, is_primary, is_placeholder, color FROM user_rsi_accounts WHERE user_id = ?",
+      u4,
+    );
+    expect(acct).toHaveLength(1);
+    expect(acct[0]).toMatchObject({ is_primary: 1, is_placeholder: 1, color: "#22d3ee" });
+    const r = await rows<{ rsi_account_id: number; custom_label: string }>(
+      "SELECT rsi_account_id, custom_label FROM user_localization_ship_order WHERE user_id = ?",
+      u4,
+    );
+    expect(r).toEqual([{ rsi_account_id: acct[0].id, custom_label: "L1" }]);
   });
 });
