@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HonoEnv } from "../lib/types";
 import { getAuthUser } from "../lib/types";
 import { validate } from "../lib/validation";
+import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/hangar-cleanup — backend for the Hangar Cleanup page (staging-only;
@@ -477,18 +478,22 @@ export function hangarCleanupRoutes() {
       const vehicle = await db.prepare("SELECT 1 FROM vehicles WHERE id = ?").bind(vehicleId).first();
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
+      // Per-account routes land with the multi-account cleanup page; until then
+      // writes go to the primary account so they match the per-account UNIQUE key.
+      const accountId = await getOrCreatePrimaryAccountId(db, userId);
       const priceProvided = body.price_cents !== undefined;
       const remeltProvided = body.remelt !== undefined;
       await db
         .prepare(
-          `INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id, price_cents, remelt)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(user_id, vehicle_id) DO UPDATE SET
+          `INSERT INTO user_hangar_cleanup_buys (user_id, rsi_account_id, vehicle_id, price_cents, remelt)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, rsi_account_id, vehicle_id) DO UPDATE SET
              price_cents = CASE WHEN ? THEN excluded.price_cents ELSE user_hangar_cleanup_buys.price_cents END,
              remelt = CASE WHEN ? THEN excluded.remelt ELSE user_hangar_cleanup_buys.remelt END`,
         )
         .bind(
           userId,
+          accountId,
           vehicleId,
           priceProvided ? body.price_cents : null,
           body.remelt ? 1 : 0,
@@ -504,9 +509,10 @@ export function hangarCleanupRoutes() {
     const db = c.env.DB;
     const userId = getAuthUser(c).id;
     const { vehicleId } = c.req.valid("param");
+    const accountId = await getOrCreatePrimaryAccountId(db, userId);
     await db
-      .prepare("DELETE FROM user_hangar_cleanup_buys WHERE user_id = ? AND vehicle_id = ?")
-      .bind(userId, vehicleId)
+      .prepare("DELETE FROM user_hangar_cleanup_buys WHERE user_id = ? AND rsi_account_id = ? AND vehicle_id = ?")
+      .bind(userId, accountId, vehicleId)
       .run();
     return c.json({ ok: true });
   });
@@ -519,11 +525,12 @@ export function hangarCleanupRoutes() {
     const creditProvided = body.credit_override_cents !== undefined;
     const stepsProvided = body.done_steps !== undefined;
 
+    const accountId = await getOrCreatePrimaryAccountId(db, userId);
     await db
       .prepare(
-        `INSERT INTO user_hangar_cleanup_state (user_id, credit_override_cents, done_steps_json)
-         VALUES (?, ?, ?)
-         ON CONFLICT(user_id) DO UPDATE SET
+        `INSERT INTO user_hangar_cleanup_state (user_id, rsi_account_id, credit_override_cents, done_steps_json)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, rsi_account_id) DO UPDATE SET
            credit_override_cents = CASE WHEN ? THEN excluded.credit_override_cents
                                         ELSE user_hangar_cleanup_state.credit_override_cents END,
            done_steps_json = CASE WHEN ? THEN excluded.done_steps_json
@@ -532,6 +539,7 @@ export function hangarCleanupRoutes() {
       )
       .bind(
         userId,
+        accountId,
         creditProvided ? body.credit_override_cents : null,
         stepsProvided ? JSON.stringify(body.done_steps) : null,
         creditProvided ? 1 : 0,

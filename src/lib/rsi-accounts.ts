@@ -303,6 +303,14 @@ export async function deleteRsiAccount(db: D1Database, userId: string, accountId
     db
       .prepare(`DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ? AND rsi_pledge_id IN (${pledgeIds})`)
       .bind(userId, userId, accountId),
+    del("user_hangar_cleanup_buys"),
+    del("user_hangar_cleanup_state"),
+    // A gift aimed at this account is no longer a valid decision: reset it.
+    db
+      .prepare(
+        "UPDATE user_hangar_cleanup_decisions SET decision = NULL, gift_to_account_id = NULL WHERE user_id = ? AND gift_to_account_id = ?",
+      )
+      .bind(userId, accountId),
     del("user_paints"),
     del("user_buyback_pledges"),
     del("user_pledge_upgrades"),

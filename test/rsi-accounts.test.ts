@@ -622,3 +622,56 @@ describe("deleteRsiAccount vehicle settings", () => {
     }
   });
 });
+
+describe("deleteRsiAccount cleanup buys, state and gifts", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("removes its buys and state and clears gifts aimed at it", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "CG1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "CG2", referralCode: null, placeholder: false });
+    const veh = await seedVehicle(env.DB);
+
+    for (const acct of [a, b]) {
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_buys (user_id, rsi_account_id, vehicle_id) VALUES (?, ?, ?)")
+        .bind(userId, acct, veh)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_state (user_id, rsi_account_id, credit_override_cents) VALUES (?, ?, 5)")
+        .bind(userId, acct)
+        .run();
+    }
+    const gift = (pledge: number, target: number) =>
+      env.DB
+        .prepare(
+          "INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision, gift_to_account_id) VALUES (?, ?, 'gift', ?)",
+        )
+        .bind(userId, pledge, target)
+        .run();
+    await gift(7001, a);
+    await gift(7002, b);
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    for (const t of ["user_hangar_cleanup_buys", "user_hangar_cleanup_state"]) {
+      const left = await env.DB
+        .prepare(`SELECT rsi_account_id FROM ${t} WHERE user_id = ?`)
+        .bind(userId)
+        .all<{ rsi_account_id: number }>();
+      expect(left.results.map((r) => r.rsi_account_id)).toEqual([b]);
+    }
+    const dec = await env.DB
+      .prepare(
+        "SELECT rsi_pledge_id, decision, gift_to_account_id FROM user_hangar_cleanup_decisions WHERE user_id = ? ORDER BY rsi_pledge_id",
+      )
+      .bind(userId)
+      .all<{ rsi_pledge_id: number; decision: string | null; gift_to_account_id: number | null }>();
+    expect(dec.results).toEqual([
+      { rsi_pledge_id: 7001, decision: null, gift_to_account_id: null },
+      { rsi_pledge_id: 7002, decision: "gift", gift_to_account_id: b },
+    ]);
+  });
+});
