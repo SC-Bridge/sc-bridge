@@ -57,7 +57,7 @@ function StatCard({ icon: Icon, label, value, suffix, delay = 0 }) {
 }
 
 export default function Import() {
-  const { data: appStatus } = useStatus()
+  const { data: appStatus, refetch: refetchStatus } = useStatus()
   const sync = useHangarSync()
   const { data: preferences, refetch: refetchPrefs } = usePreferences()
   const { data: syncStatus, refetch: refetchSyncStatus } = useUserSyncStatus()
@@ -70,6 +70,15 @@ export default function Import() {
   const notifTimer = useRef(null)
 
   useEffect(() => () => clearTimeout(notifTimer.current), [])
+
+  // A finished sync changes what the Sync Data table and the ship count show;
+  // without this they keep the numbers from when the page opened.
+  useEffect(() => {
+    if (sync.status === 'complete') {
+      refetchSyncStatus()
+      refetchStatus()
+    }
+  }, [sync.status, refetchSyncStatus, refetchStatus])
 
   const showNotification = (msg, variant = 'info') => {
     clearTimeout(notifTimer.current)
