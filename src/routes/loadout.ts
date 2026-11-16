@@ -170,6 +170,21 @@ async function resolveModuleOwnerVehicle(
   return v ? ownerId : null;
 }
 
+// A fleet selection belongs to the account that holds the ship; a loaner
+// selection keeps the primary account until loaner settings are scoped per account.
+async function moduleSelectionAccountId(
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+): Promise<number> {
+  if (ownerKind === "fleet") {
+    const row = await db
+      .prepare("SELECT rsi_account_id FROM user_fleet WHERE id = ? AND user_id = ?")
+      .bind(ownerId, userId)
+      .first<{ rsi_account_id: number | null }>();
+    if (row?.rsi_account_id) return row.rsi_account_id;
+  }
+  return getOrCreatePrimaryAccountId(db, userId);
+}
+
 async function getModuleSelections(
   db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
   kinds: string[] = ["bay"],
@@ -212,7 +227,7 @@ async function saveGadgetSelections(
     }
     if (!valid) return { ok: false, error: `Gadget ${s.module_uuid} is not a valid ${s.module_kind}` };
   }
-  const accountId = await getOrCreatePrimaryAccountId(db, userId);
+  const accountId = await moduleSelectionAccountId(db, ownerKind, ownerId, userId);
   const stmts = selections.map((s) =>
     db
       .prepare(
@@ -241,7 +256,7 @@ async function saveModuleSelections(
       .first();
     if (!valid) return { ok: false, error: `Module ${s.module_uuid} is not valid for port ${s.port_name}` };
   }
-  const accountId = await getOrCreatePrimaryAccountId(db, userId);
+  const accountId = await moduleSelectionAccountId(db, ownerKind, ownerId, userId);
   const stmts = selections.map((s) =>
     db
       .prepare(
