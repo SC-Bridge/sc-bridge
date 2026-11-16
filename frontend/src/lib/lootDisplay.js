@@ -113,3 +113,15 @@ export function humanizeRawDisplayName(raw) {
     })
     .join(' ')
 }
+
+/**
+ * A carrying capacity in µSCU (storage_capacity), in the game's own wording:
+ * 180000 → "180K µSCU", 127500 → "127.5K µSCU", 400 → "400 µSCU".
+ * Returns null when there is no capacity to show.
+ */
+export function formatMicroScu(value) {
+  const n = typeof value === 'string' ? parseFloat(value) : value
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null
+  if (n < 1000) return `${Math.round(n)} µSCU`
+  return `${Number((n / 1000).toFixed(1))}K µSCU`
+}
