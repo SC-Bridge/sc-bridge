@@ -3,17 +3,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import AddIngameShipModal from './AddIngameShipModal'
 
-const api = vi.hoisted(() => ({ accounts: [], filter: {}, addIngameShip: vi.fn() }))
+const api = vi.hoisted(() => ({ accounts: [], filter: {}, multiAccount: true, addIngameShip: vi.fn() }))
 
 vi.mock('../hooks/useAPI', () => ({
   useShips: () => ({ data: [{ id: 5, name: 'Carrack', manufacturer_name: 'Anvil' }] }),
-  useRsiAccounts: () => ({ data: { accounts: api.accounts } }),
+  useStatus: () => ({ data: { features: { multiAccount: api.multiAccount } } }),
+  useRsiAccounts: (opts) => ({ data: opts?.skip ? undefined : { accounts: api.accounts } }),
   addIngameShip: (...args) => api.addIngameShip(...args),
 }))
-vi.mock('../hooks/useAccountFilter', () => ({ default: () => api.filter }))
+vi.mock('../hooks/useAccountFilter', () => ({
+  default: (accounts) => (accounts ? api.filter : { active: false, selectedIds: new Set() }),
+}))
 
 describe('AddIngameShipModal account picker', () => {
   beforeEach(() => {
+    api.multiAccount = true
     api.addIngameShip.mockReset().mockResolvedValue({ ok: true })
     api.accounts = [
       { id: 1, label: 'Main', is_primary: 1 },
@@ -28,6 +32,12 @@ describe('AddIngameShipModal account picker', () => {
     unmount()
     api.accounts = [api.accounts[0]]
     api.filter = { active: false, selectedIds: new Set() }
+    render(<AddIngameShipModal onClose={() => {}} />)
+    expect(screen.queryByRole('combobox', { name: /account/i })).toBeNull()
+  })
+
+  it('shows no picker when the multiAccount flag is off, even with 2 accounts', () => {
+    api.multiAccount = false
     render(<AddIngameShipModal onClose={() => {}} />)
     expect(screen.queryByRole('combobox', { name: /account/i })).toBeNull()
   })

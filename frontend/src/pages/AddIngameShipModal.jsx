@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { X, Check, Plus, Search } from 'lucide-react'
-import { useShips, useRsiAccounts, addIngameShip } from '../hooks/useAPI'
+import { useShips, useRsiAccounts, useStatus, addIngameShip } from '../hooks/useAPI'
 import useAccountFilter from '../hooks/useAccountFilter'
 import { accountName } from '../lib/accounts'
 
@@ -11,7 +11,8 @@ import { accountName } from '../lib/accounts'
  */
 export default function AddIngameShipModal({ onClose, onAdded }) {
   const { data: ships } = useShips()
-  const { data: accountsData } = useRsiAccounts()
+  const { data: appStatus } = useStatus()
+  const { data: accountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
   const accounts = accountsData?.accounts
   const accountFilter = useAccountFilter(accounts)
   const defaultAccountId = useMemo(() => {
