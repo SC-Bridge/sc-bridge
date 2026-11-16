@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
-import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
+import { parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -316,16 +316,18 @@ export function fleetRoutes() {
     validate("json", z.object({
       vehicle_id: z.number().int().positive(),
       custom_name: z.string().trim().max(120).optional(),
+      rsi_account_id: z.number().int().positive().optional(),
     })),
     async (c) => {
       const db = c.env.DB;
       const userID = getAuthUser(c).id;
-      const { vehicle_id, custom_name } = c.req.valid("json");
+      const { vehicle_id, custom_name, rsi_account_id } = c.req.valid("json");
 
       const vehicle = await db.prepare("SELECT id FROM vehicles WHERE id = ?").bind(vehicle_id).first();
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
-      const accountId = await getOrCreatePrimaryAccountId(db, userID);
+      const accountId = await resolveAccountId(db, userID, rsi_account_id);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await db
         .prepare(
           `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at, rsi_account_id)
@@ -342,21 +344,34 @@ export function fleetRoutes() {
     },
   );
 
-  // DELETE /api/vehicles/ingame — clear ALL in-game ships (post-wipe reset)
-  routes.delete("/ingame", async (c) => {
-    const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    const res = await db
-      .prepare("DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
-      .bind(userID)
-      .run();
-    c.executionCtx.waitUntil(
-      resolveVerifiedHandle(db, userID)
-        .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
-        .catch(() => {}),
-    );
-    return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
-  });
+  // DELETE /api/vehicles/ingame — clear in-game ships (post-wipe reset).
+  // ?accounts=1,2 limits it to those RSI accounts; absent or "all" clears every account.
+  routes.delete("/ingame",
+    validate("query", z.object({ accounts: z.string().max(200).optional() })),
+    async (c) => {
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const accountIds = parseAccountsParam(c.req.valid("query").accounts);
+      const res = accountIds
+        ? await db
+            .prepare(
+              `DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'
+                 AND rsi_account_id IN (SELECT value FROM json_each(?))`,
+            )
+            .bind(userID, JSON.stringify(accountIds))
+            .run()
+        : await db
+            .prepare("DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
+            .bind(userID)
+            .run();
+      c.executionCtx.waitUntil(
+        resolveVerifiedHandle(db, userID)
+          .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
+          .catch(() => {}),
+      );
+      return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
+    },
+  );
 
   // DELETE /api/vehicles/ingame/:id — remove a single in-game ship.
   // Scoped to source='ingame' so pledge/imported ships can't be deleted here.

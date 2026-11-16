@@ -211,16 +211,21 @@ export function useFleetLoaners() {
 }
 
 // In-game-purchased ships — manually-added fleet entries (source='ingame').
-export async function addIngameShip(vehicleId, customName) {
-  return apiFetch('POST', '/vehicles/ingame', { vehicle_id: vehicleId, custom_name: customName || undefined })
+export async function addIngameShip(vehicleId, customName, rsiAccountId) {
+  return apiFetch('POST', '/vehicles/ingame', {
+    vehicle_id: vehicleId,
+    custom_name: customName || undefined,
+    rsi_account_id: rsiAccountId || undefined,
+  })
 }
 
 export async function deleteIngameShip(fleetId) {
   return apiFetch('DELETE', `/vehicles/ingame/${fleetId}`)
 }
 
-export async function clearIngameShips() {
-  return apiFetch('DELETE', '/vehicles/ingame')
+// `accounts` is useAccountFilter's apiParam; null clears every account.
+export async function clearIngameShips(accounts) {
+  return apiFetch('DELETE', accounts ? `/vehicles/ingame?accounts=${encodeURIComponent(accounts)}` : '/vehicles/ingame')
 }
 
 export function useFleetEntryUpgrades(fleetEntryId) {

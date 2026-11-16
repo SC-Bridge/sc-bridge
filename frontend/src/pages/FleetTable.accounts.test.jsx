@@ -112,7 +112,7 @@ describe('FleetTable account filter', () => {
     expect(totals('$300 pledged across 2 pledges')).toBeInTheDocument()
   })
 
-  it('clear in-game confirm counts every account, not just the filtered one', () => {
+  it('clear in-game confirm counts and names only the filtered accounts', () => {
     api.fleet = [
       { ...ship(1, 1, 10, 10000), source: 'ingame' },
       { ...ship(2, 2, 20, 20000), source: 'ingame' },
@@ -120,9 +120,9 @@ describe('FleetTable account filter', () => {
     ]
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderAt('?accts=1')
-    fireEvent.click(screen.getByRole('button', { name: /Clear In-Game \(3\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Clear In-Game \(1\)/ }))
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(confirm.mock.calls[0][0]).toMatch(/Remove all 3 in-game-purchased ships across all your RSI accounts/)
+    expect(confirm.mock.calls[0][0]).toMatch(/Remove all 1 in-game-purchased ship from Main/)
     confirm.mockRestore()
   })
 })

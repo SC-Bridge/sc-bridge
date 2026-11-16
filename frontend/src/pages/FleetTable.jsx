@@ -18,7 +18,7 @@ import ShareFleetBanner from '../components/ShareFleetBanner'
 import AccountMarker from '../components/AccountMarker'
 import AccountFilter from '../components/AccountFilter'
 import useAccountFilter from '../hooks/useAccountFilter'
-import { accountStripeStyle } from '../lib/accounts'
+import { accountStripeStyle, accountName } from '../lib/accounts'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
@@ -257,13 +257,17 @@ export default function FleetTable() {
   // In-game-purchased ships (manually added; cleared after a wipe).
   const [showAddIngame, setShowAddIngame] = useState(false)
   const [ingameBusy, setIngameBusy] = useState(false)
-  // The in-game clear and "Set all" act on every account, so their counts come
-  // from the unfiltered fleet, not the account-filtered view.
+  // The in-game clear follows the account filter: its count and confirm text
+  // cover only the selected accounts, and the API call is scoped the same way.
   const narrowedByAccount = accountFilter.active && !accountFilter.isAll
   const ingameCount = useMemo(
-    () => (fleet || []).filter((v) => rowCategory(v) === 'ingame').length,
-    [fleet],
+    () => (fleet || []).filter((v) => rowCategory(v) === 'ingame' && accountFilter.matches(v.rsi_account_id)).length,
+    [fleet, accountFilter.matches],
   )
+  const selectedAccountNames = (rsiAccounts || [])
+    .filter((a) => accountFilter.selectedIds.has(a.id))
+    .map(accountName)
+    .join(', ')
 
   async function handleDeleteIngame(id) {
     if (ingameBusy) return
@@ -273,9 +277,9 @@ export default function FleetTable() {
 
   async function handleClearIngame() {
     if (ingameBusy || ingameCount === 0) return
-    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} ${narrowedByAccount ? 'across all your RSI accounts' : 'from your fleet'}? (Pledged ships are unaffected.)`)) return
+    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} ${accountFilter.active ? `from ${selectedAccountNames}` : 'from your fleet'}? (Pledged ships are unaffected.)`)) return
     setIngameBusy(true)
-    try { await clearIngameShips(); refetch() } catch { /* no-op */ } finally { setIngameBusy(false) }
+    try { await clearIngameShips(accountFilter.apiParam); refetch() } catch { /* no-op */ } finally { setIngameBusy(false) }
   }
 
   // Bulk-visibility undo state. Holds the previous (id → org_visibility) snapshot
