@@ -6,6 +6,18 @@
 
 export const MAX_RSI_ACCOUNTS = 10;
 
+/** Marker colours for RSI accounts, in the order they are handed out. */
+export const ACCOUNT_COLORS: readonly string[] = [
+  "#22d3ee", "#f97316", "#a855f7", "#84cc16", "#f43f5e",
+  "#eab308", "#3b82f6", "#10b981", "#ec4899", "#94a3b8",
+];
+
+/** The first palette colour no account uses; once all are used, palette[count % size]. */
+export function nextAccountColor(used: (string | null)[]): string {
+  const taken = new Set(used);
+  return ACCOUNT_COLORS.find((c) => !taken.has(c)) ?? ACCOUNT_COLORS[used.length % ACCOUNT_COLORS.length];
+}
+
 export interface SyncIdentity {
   handle: string | null;
   referralCode: string | null;
@@ -174,15 +186,20 @@ export async function createRsiAccount(
   fields: { handle: string | null; referralCode: string | null; placeholder: boolean },
 ): Promise<number> {
   const label = fields.placeholder ? "Imported hangar" : null;
+  const { results: existing } = await db
+    .prepare("SELECT color FROM user_rsi_accounts WHERE user_id = ?")
+    .bind(userId)
+    .all<{ color: string | null }>();
+  const color = nextAccountColor(existing.map((r) => r.color));
   const row = await db
     .prepare(
-      `INSERT INTO user_rsi_accounts (user_id, rsi_handle, referral_code, label, is_primary, is_placeholder)
+      `INSERT INTO user_rsi_accounts (user_id, rsi_handle, referral_code, label, is_primary, is_placeholder, color)
        VALUES (?, ?, ?, ?,
          CASE WHEN EXISTS (SELECT 1 FROM user_rsi_accounts WHERE user_id = ?) THEN 0 ELSE 1 END,
-         ?)
+         ?, ?)
        RETURNING id`,
     )
-    .bind(userId, fields.handle, fields.referralCode, label, userId, fields.placeholder ? 1 : 0)
+    .bind(userId, fields.handle, fields.referralCode, label, userId, fields.placeholder ? 1 : 0, color)
     .first<{ id: number }>();
   if (!row) throw new Error("Failed to create RSI account");
   return row.id;
@@ -203,10 +220,10 @@ export async function getOrCreatePrimaryAccountId(db: D1Database, userId: string
   // concurrent second insert a no-op; the SELECT below then finds the winner.
   await db
     .prepare(
-      `INSERT OR IGNORE INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder)
-       VALUES (?, 'Imported hangar', 1, 1)`,
+      `INSERT OR IGNORE INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder, color)
+       VALUES (?, 'Imported hangar', 1, 1, ?)`,
     )
-    .bind(userId)
+    .bind(userId, ACCOUNT_COLORS[0])
     .run();
 
   const created = await db

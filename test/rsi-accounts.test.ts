@@ -13,6 +13,8 @@ import {
   createRsiAccount,
   deleteRsiAccount,
   claimSyncSlot,
+  ACCOUNT_COLORS,
+  nextAccountColor,
   releaseSyncSlot,
   type RsiAccountRow,
 } from "../src/lib/rsi-accounts";
@@ -466,5 +468,82 @@ describe("claimSyncSlot / releaseSyncSlot", () => {
     await releaseSyncSlot(env.DB, userId, accountId, claim.previous);
     expect(await syncedAt(accountId)).toBe("2026-01-01 00:00:00");
     expect((await claimSyncSlot(env.DB, userId, accountId)).claimed).toBe(true);
+  });
+});
+
+describe("account colours", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("nextAccountColor picks the first unused palette colour", () => {
+    expect(ACCOUNT_COLORS).toEqual([
+      "#22d3ee", "#f97316", "#a855f7", "#84cc16", "#f43f5e",
+      "#eab308", "#3b82f6", "#10b981", "#ec4899", "#94a3b8",
+    ]);
+    expect(nextAccountColor([])).toBe("#22d3ee");
+    expect(nextAccountColor(["#22d3ee", "#a855f7"])).toBe("#f97316");
+    expect(nextAccountColor([null, "#22d3ee"])).toBe("#f97316");
+    expect(nextAccountColor([...ACCOUNT_COLORS])).toBe(ACCOUNT_COLORS[0]);
+    expect(nextAccountColor([...ACCOUNT_COLORS, "#22d3ee"])).toBe(ACCOUNT_COLORS[1]);
+  });
+
+  it("createRsiAccount gives each new account a different colour", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const real = { referralCode: null, placeholder: false };
+    await createRsiAccount(env.DB, userId, { handle: "A", ...real });
+    await createRsiAccount(env.DB, userId, { handle: "B", ...real });
+    await createRsiAccount(env.DB, userId, { handle: "C", ...real });
+    const { results } = await env.DB
+      .prepare("SELECT color FROM user_rsi_accounts WHERE user_id = ? ORDER BY id")
+      .bind(userId)
+      .all<{ color: string | null }>();
+    expect(results.map((r) => r.color)).toEqual(ACCOUNT_COLORS.slice(0, 3));
+  });
+
+  it("createRsiAccount refills a colour freed by a deleted account", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const real = { referralCode: null, placeholder: false };
+    await createRsiAccount(env.DB, userId, { handle: "A", ...real });
+    const b = await createRsiAccount(env.DB, userId, { handle: "B", ...real });
+    await createRsiAccount(env.DB, userId, { handle: "C", ...real });
+    await deleteRsiAccount(env.DB, userId, b);
+    const d = await createRsiAccount(env.DB, userId, { handle: "D", ...real });
+    const row = await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(d).first<{ color: string }>();
+    expect(row!.color).toBe(ACCOUNT_COLORS[1]);
+  });
+
+  it("getOrCreatePrimaryAccountId gives the placeholder the first colour", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const id = await getOrCreatePrimaryAccountId(env.DB, userId);
+    const row = await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(id).first<{ color: string }>();
+    expect(row!.color).toBe("#22d3ee");
+  });
+
+  // readFileSync does not work in the worker runtime, so the 0285 backfill is
+  // inlined. Must match src/db/migrations/0285_rsi_account_color.sql.
+  const BACKFILL = `UPDATE user_rsi_accounts SET color = (
+    SELECT CASE (r.rn - 1) % 10
+      WHEN 0 THEN '#22d3ee' WHEN 1 THEN '#f97316' WHEN 2 THEN '#a855f7' WHEN 3 THEN '#84cc16'
+      WHEN 4 THEN '#f43f5e' WHEN 5 THEN '#eab308' WHEN 6 THEN '#3b82f6' WHEN 7 THEN '#10b981'
+      WHEN 8 THEN '#ec4899' WHEN 9 THEN '#94a3b8' END
+    FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY id) AS rn FROM user_rsi_accounts) r
+    WHERE r.id = user_rsi_accounts.id
+  ) WHERE color IS NULL`;
+
+  it("0285 backfill colours existing accounts per user by id order", async () => {
+    const u1 = (await createTestUser(env.DB)).userId;
+    const u2 = (await createTestUser(env.DB)).userId;
+    const ins = async (u: string) =>
+      (await env.DB.prepare("INSERT INTO user_rsi_accounts (user_id, color) VALUES (?, NULL) RETURNING id").bind(u).first<{ id: number }>())!.id;
+    const a1 = await ins(u1);
+    const a2 = await ins(u1);
+    const a3 = await ins(u1);
+    const b1 = await ins(u2);
+    await env.DB.prepare(BACKFILL).run();
+    const colour = async (id: number) =>
+      (await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(id).first<{ color: string }>())!.color;
+    expect([await colour(a1), await colour(a2), await colour(a3)]).toEqual(ACCOUNT_COLORS.slice(0, 3));
+    expect(await colour(b1)).toBe(ACCOUNT_COLORS[0]);
   });
 });

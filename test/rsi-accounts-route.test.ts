@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders, seedVehicle } from "./helpers";
-import { createRsiAccount } from "../src/lib/rsi-accounts";
+import { createRsiAccount, ACCOUNT_COLORS } from "../src/lib/rsi-accounts";
 
 interface AccountJson {
   id: number;
@@ -281,5 +281,42 @@ describe("RSI accounts API", () => {
     expect(data.rsi_accounts[0].rsi_handle).toBe("Exp");
     expect(data.rsi_accounts[0]).not.toHaveProperty("referral_code");
     expect(text).not.toContain("STAR-AAAA-BBBB");
+  });
+
+  it("GET returns colour and palette", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    await createRsiAccount(env.DB, userId, { handle: "Col1", ...real });
+    await createRsiAccount(env.DB, userId, { handle: "Col2", ...real });
+    const res = await api(sessionToken, "/api/rsi-accounts");
+    const body = (await res.json()) as { accounts: { color: string }[]; palette: string[] };
+    expect(body.accounts.map((a) => a.color)).toEqual(ACCOUNT_COLORS.slice(0, 2));
+    expect(body.palette).toEqual([...ACCOUNT_COLORS]);
+  });
+
+  it("PATCH sets a palette colour", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "Pc", ...real });
+    const res = await api(sessionToken, `/api/rsi-accounts/${a}`, { method: "PATCH", body: JSON.stringify({ color: "#10b981" }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    const list = (await (await api(sessionToken, "/api/rsi-accounts")).json()) as { accounts: { color: string }[] };
+    expect(list.accounts[0].color).toBe("#10b981");
+  });
+
+  it("PATCH rejects a colour outside the palette", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "Bad", ...real });
+    const res = await api(sessionToken, `/api/rsi-accounts/${a}`, { method: "PATCH", body: JSON.stringify({ color: "#123456" }) });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH cannot recolour another user's account", async () => {
+    const owner = await createTestUser(env.DB);
+    const other = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, owner.userId, { handle: "Own", ...real });
+    const res = await api(other.sessionToken, `/api/rsi-accounts/${a}`, { method: "PATCH", body: JSON.stringify({ color: "#10b981" }) });
+    expect(res.status).toBe(404);
+    const row = await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(a).first<{ color: string }>();
+    expect(row!.color).toBe(ACCOUNT_COLORS[0]);
   });
 });
