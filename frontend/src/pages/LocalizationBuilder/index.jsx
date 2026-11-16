@@ -382,6 +382,11 @@ export default function LocalizationBuilder() {
       </div>
 
       {/* Active section */}
+      {section === 'fleet' && orderError && (
+        <p role="alert" className="mb-3 px-3 py-2 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20">
+          Couldn't load your ship order. Reload the page before editing it.
+        </p>
+      )}
       {section === 'fleet' && (
         <FleetOrderSection
           config={config}

@@ -145,6 +145,19 @@ describe('LocalizationBuilder ship order per account', () => {
     expect(api.saveShipOrder).not.toHaveBeenCalled()
   })
 
+  it('tells the user when the ship order could not be loaded', () => {
+    api.orderState = { data: null, loading: false, error: 'Network error' }
+    renderAt('?accts=1')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Couldn't load your ship order. Reload the page before editing it.",
+    )
+  })
+
+  it('shows no order error when the order loaded', () => {
+    renderAt('?accts=1')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('keeps the account when the discard prompt is cancelled', () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
     renderAt('?accts=1')
