@@ -54,8 +54,7 @@ function HangarItemCard({ item, isMelt, melt, accounts }) {
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
-    <div className="group relative bg-white/[0.03] border border-white/[0.08] rounded-lg overflow-hidden hover:border-sc-accent/30 transition-all">
-      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="card" />
+    <div className="group relative flex flex-col bg-white/[0.03] border border-white/[0.08] rounded-lg overflow-hidden hover:border-sc-accent/30 transition-all">
       <div className="aspect-[16/9] bg-gradient-to-br from-sc-darker to-black/40 flex items-center justify-center overflow-hidden">
         {item.image_url ? (
           <img
@@ -69,7 +68,7 @@ function HangarItemCard({ item, isMelt, melt, accounts }) {
           <ImageOff className="w-6 h-6 text-gray-700" aria-hidden="true" />
         )}
       </div>
-      <div className="p-3 space-y-2">
+      <div className="flex-1 p-3 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-sm font-display text-gray-200 leading-tight line-clamp-2 flex-1">
             {item.title}
@@ -112,6 +111,7 @@ function HangarItemCard({ item, isMelt, melt, accounts }) {
           </div>
         )}
       </div>
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="card" />
     </div>
   )
 }
