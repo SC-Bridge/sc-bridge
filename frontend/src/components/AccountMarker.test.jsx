@@ -28,6 +28,12 @@ describe('AccountMarker', () => {
     expect(screen.getByTestId('account-stripe').style.backgroundColor).toBe('rgb(249, 115, 22)')
   })
 
+  it('card variant stays above the card image, which scales on hover and would otherwise paint over it', () => {
+    render(<AccountMarker rsiAccountId={2} accounts={accts} />)
+    expect(screen.getByRole('img', { name: 'RASKYL' }).className).toMatch(/\bz-10\b/)
+    expect(screen.getByTestId('account-stripe').className).toMatch(/\bz-10\b/)
+  })
+
   it('falls back when label and handle are empty', () => {
     render(<AccountMarker rsiAccountId={3} accounts={accts} />)
     const avatar = screen.getByRole('img', { name: 'Imported hangar' })

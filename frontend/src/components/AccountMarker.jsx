@@ -34,14 +34,16 @@ export default function AccountMarker({ rsiAccountId, accounts, variant = 'card'
   }
 
   // row: in-flow last flex child so it never overlaps right-aligned row content.
-  const avatarPos = variant === 'row' ? 'shrink-0' : 'absolute top-2 right-2'
+  // card: z-10 because card images scale on hover, and a transformed image
+  // paints over earlier positioned siblings — hiding the avatar and its name.
+  const avatarPos = variant === 'row' ? 'shrink-0' : 'absolute top-2 right-2 z-10'
   return (
     <>
       <span
         data-testid="account-stripe"
         aria-hidden="true"
         style={{ backgroundColor: color }}
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l"
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-l z-10"
       />
       <span
         role="img"
