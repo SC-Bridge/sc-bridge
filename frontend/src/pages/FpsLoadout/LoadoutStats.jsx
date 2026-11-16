@@ -1,5 +1,6 @@
 // frontend/src/pages/FpsLoadout/LoadoutStats.jsx
 import React from 'react'
+import { formatMicroScu } from '../../lib/lootDisplay'
 
 const ICON = (name) => `/inventory-assets/${name}`
 
@@ -232,7 +233,7 @@ function ArmourStatsBlock({ armourStats }) {
       </table>
       <div className="italic" style={{ padding: '8px 10px', fontSize: 11, color: ICE_DIM }}>
         {armourStats?.backpack
-          ? <>Backpack: {armourStats.backpack.name}{armourStats.backpack.volume != null ? <> &middot; {(armourStats.backpack.volume / 1000).toFixed(0)}K &micro;SCU carry</> : null}</>
+          ? <>Backpack: {armourStats.backpack.name}{formatMicroScu(armourStats.backpack.capacity) ? <> &middot; {formatMicroScu(armourStats.backpack.capacity)} carry</> : null}</>
           : hasAny ? <>No backpack equipped</> : <>No armour equipped</>}
       </div>
     </div>
