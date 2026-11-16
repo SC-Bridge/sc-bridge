@@ -12,6 +12,8 @@ import {
   listRsiAccounts,
   createRsiAccount,
   deleteRsiAccount,
+  claimSyncSlot,
+  releaseSyncSlot,
   type RsiAccountRow,
 } from "../src/lib/rsi-accounts";
 
@@ -392,5 +394,77 @@ describe("createRsiAccount / listRsiAccounts / deleteRsiAccount", () => {
 
     await expect(deleteRsiAccount(env.DB, userId, theirs)).rejects.toThrow("RSI account not found");
     expect((await listRsiAccounts(env.DB, other)).length).toBe(1);
+  });
+});
+
+describe("claimSyncSlot / releaseSyncSlot", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  async function syncedAt(accountId: number) {
+    const row = await env.DB
+      .prepare("SELECT synced_at FROM user_rsi_accounts WHERE id = ?")
+      .bind(accountId)
+      .first<{ synced_at: string | null }>();
+    return row!.synced_at;
+  }
+
+  it("lets exactly one of two simultaneous claims through", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, userId);
+    const claims = await Promise.all([
+      claimSyncSlot(env.DB, userId, accountId),
+      claimSyncSlot(env.DB, userId, accountId),
+    ]);
+    expect(claims.filter((c) => c.claimed)).toHaveLength(1);
+    expect(await syncedAt(accountId)).not.toBeNull();
+  });
+
+  it("refuses a claim within 5 minutes of the last sync and allows one after", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, userId);
+    await env.DB
+      .prepare("UPDATE user_rsi_accounts SET synced_at = datetime('now', '-4 minutes') WHERE id = ?")
+      .bind(accountId)
+      .run();
+    expect((await claimSyncSlot(env.DB, userId, accountId)).claimed).toBe(false);
+    await env.DB
+      .prepare("UPDATE user_rsi_accounts SET synced_at = datetime('now', '-6 minutes') WHERE id = ?")
+      .bind(accountId)
+      .run();
+    expect((await claimSyncSlot(env.DB, userId, accountId)).claimed).toBe(true);
+  });
+
+  it("reads an ISO-format last sync time correctly", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, userId);
+    await env.DB
+      .prepare("UPDATE user_rsi_accounts SET synced_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 minutes') WHERE id = ?")
+      .bind(accountId)
+      .run();
+    expect((await claimSyncSlot(env.DB, userId, accountId)).claimed).toBe(false);
+  });
+
+  it("does not claim another user's account", async () => {
+    const owner = await createTestUser(env.DB);
+    const other = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, owner.userId);
+    expect((await claimSyncSlot(env.DB, other.userId, accountId)).claimed).toBe(false);
+    expect(await syncedAt(accountId)).toBeNull();
+  });
+
+  it("release puts the previous sync time back so a failed sync can be retried", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, userId);
+    await env.DB
+      .prepare("UPDATE user_rsi_accounts SET synced_at = '2026-01-01 00:00:00' WHERE id = ?")
+      .bind(accountId)
+      .run();
+    const claim = await claimSyncSlot(env.DB, userId, accountId);
+    expect(claim).toEqual({ claimed: true, previous: "2026-01-01 00:00:00" });
+    await releaseSyncSlot(env.DB, userId, accountId, claim.previous);
+    expect(await syncedAt(accountId)).toBe("2026-01-01 00:00:00");
+    expect((await claimSyncSlot(env.DB, userId, accountId)).claimed).toBe(true);
   });
 });

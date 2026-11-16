@@ -18,6 +18,8 @@ import {
   canMapOnto,
   multiAccountEnabled,
   createRsiAccount,
+  claimSyncSlot,
+  releaseSyncSlot,
 } from "../lib/rsi-accounts";
 import {
   preloadVehicleMap,
@@ -232,6 +234,8 @@ export function importRoutes() {
     }
     return next();
   }, validate("json", HangarSyncPayloadSchema), async (c) => {
+   // Set once this request holds the account's sync slot; undone if the sync fails.
+   let releaseClaim: (() => Promise<void>) | null = null;
    try {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
@@ -337,18 +341,18 @@ export function importRoutes() {
         placeholder: !hasIdentity,
       });
       writeIdentity = hasIdentity;
-    } else {
-      // Rate limit: reject if this account synced within the last 5 minutes.
-      // synced_at is written by datetime('now') — "YYYY-MM-DD HH:MM:SS", UTC.
-      const existing = accounts.find((a) => a.id === accountId);
-      if (existing?.synced_at) {
-        const lastSync = new Date(existing.synced_at.replace(" ", "T") + "Z").getTime();
-        if (Date.now() - lastSync < 5 * 60 * 1000) {
-          return c.json({ error: "Sync rate limited — please wait 5 minutes between syncs" }, 429);
-        }
-      }
     }
     if (accountId === null) throw new Error("RSI account not resolved");
+
+    // Rate limit, claimed atomically before any write: a second sync of this
+    // account sent at the same moment gets 429 instead of racing this one.
+    // A brand-new account has never synced, so its claim always succeeds.
+    const claim = await claimSyncSlot(db, userID, accountId);
+    if (!claim.claimed) {
+      return c.json({ error: "Sync rate limited — please wait 5 minutes between syncs" }, 429);
+    }
+    const claimedAccountId = accountId;
+    releaseClaim = () => releaseSyncSlot(db, userID, claimedAccountId, claim.previous);
 
     const accountRow = await db
       .prepare("SELECT is_primary FROM user_rsi_accounts WHERE id = ? AND user_id = ?")
@@ -1154,6 +1158,11 @@ export function importRoutes() {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack?.slice(0, 500) : "";
     console.error("[hangar-sync] Unhandled error:", errMsg, errStack);
+    if (releaseClaim) {
+      await releaseClaim().catch((releaseErr) =>
+        console.error("[hangar-sync] Could not release sync slot:", releaseErr instanceof Error ? releaseErr.message : String(releaseErr)),
+      );
+    }
     return c.json({ error: "Sync failed — please try again" }, 500);
    }
   });
