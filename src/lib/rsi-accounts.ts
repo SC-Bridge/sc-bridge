@@ -107,6 +107,52 @@ export function multiAccountEnabled(env: { ENVIRONMENT?: string }): boolean {
   return env.ENVIRONMENT !== "production";
 }
 
+/** Minimum gap between two syncs of the same RSI account. */
+export const SYNC_INTERVAL_MINUTES = 5;
+
+/**
+ * Claim the right to sync this account: in one transaction, read the last
+ * sync time and stamp it with now, but only if the last sync is at least
+ * SYNC_INTERVAL_MINUTES old. Two requests arriving together cannot both pass —
+ * a check-then-write here let two imports of one account run at once and
+ * delete each other's pledges. julianday() reads both "YYYY-MM-DD HH:MM:SS"
+ * and ISO timestamps.
+ */
+export async function claimSyncSlot(
+  db: D1Database,
+  userId: string,
+  accountId: number,
+): Promise<{ claimed: boolean; previous: string | null }> {
+  const [before, update] = await db.batch([
+    db
+      .prepare("SELECT synced_at FROM user_rsi_accounts WHERE id = ? AND user_id = ?")
+      .bind(accountId, userId),
+    db
+      .prepare(
+        `UPDATE user_rsi_accounts SET synced_at = datetime('now')
+         WHERE id = ? AND user_id = ?
+           AND (synced_at IS NULL OR julianday(synced_at) <= julianday('now', ?))
+         RETURNING id`,
+      )
+      .bind(accountId, userId, `-${SYNC_INTERVAL_MINUTES} minutes`),
+  ]);
+  const previous = (before.results[0] as { synced_at: string | null } | undefined)?.synced_at ?? null;
+  return { claimed: update.results.length === 1, previous };
+}
+
+/** Undo a claim after a failed sync, so the user can retry straight away. */
+export async function releaseSyncSlot(
+  db: D1Database,
+  userId: string,
+  accountId: number,
+  previous: string | null,
+): Promise<void> {
+  await db
+    .prepare("UPDATE user_rsi_accounts SET synced_at = ? WHERE id = ? AND user_id = ?")
+    .bind(previous, accountId, userId)
+    .run();
+}
+
 export async function listRsiAccounts(db: D1Database, userId: string): Promise<RsiAccountRow[]> {
   const { results } = await db
     .prepare(

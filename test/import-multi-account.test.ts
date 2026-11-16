@@ -442,6 +442,30 @@ describe("POST /api/import/hangar-sync — multi-account", () => {
     expect((await sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds: [2001] }))).status).toBe(429);
   });
 
+  it("a second sync of the same account sent at the same moment is refused, not raced", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    expect((await sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds: [2051] }))).status).toBe(200);
+    await pastRateLimit(userId);
+
+    const pledgeIds = Array.from({ length: 40 }, (_, i) => 2060 + i);
+    const responses = await Promise.all([
+      sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds })),
+      sync(sessionToken, makePayload({ handle: "Alpha", pledgeIds })),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 429]);
+
+    const stored = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM user_pledges WHERE user_id = ?")
+      .bind(userId)
+      .first<{ n: number }>();
+    expect(stored!.n).toBe(pledgeIds.length);
+    const syncs = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM user_hangar_syncs WHERE user_id = ?")
+      .bind(userId)
+      .first<{ n: number }>();
+    expect(syncs!.n).toBe(2);
+  });
+
   it("legacy profile follows the primary only", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     expect((await sync(sessionToken, makePayload({ handle: "Alpha", storeCredit: 1111, pledgeIds: [2101] }))).status).toBe(200);
