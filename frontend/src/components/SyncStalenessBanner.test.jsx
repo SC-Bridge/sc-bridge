@@ -15,8 +15,8 @@ function mockSyncStatus(body) {
   })
 }
 
-function renderBanner() {
-  return render(<MemoryRouter><SyncStalenessBanner /></MemoryRouter>)
+function renderBanner(props = {}) {
+  return render(<MemoryRouter><SyncStalenessBanner {...props} /></MemoryRouter>)
 }
 
 describe('SyncStalenessBanner', () => {
@@ -50,6 +50,49 @@ describe('SyncStalenessBanner', () => {
     const { container } = renderBanner()
     await waitFor(() => expect(global.fetch).toHaveBeenCalled())
     expect(container).toBeEmptyDOMElement()
+  })
+
+  describe('with several accounts', () => {
+    const accounts = [
+      { id: 1, name: 'Stale Main', synced_at: '2026-05-15 11:40:02' },
+      { id: 2, name: 'Fresh Alt', synced_at: new Date(NOW - 2 * DAY).toISOString() },
+    ]
+    const status = { has_data: true, has_profile: true, last_synced: accounts[1].synced_at, accounts }
+
+    it('names only the stale account when both are selected', async () => {
+      mockSyncStatus(status)
+      renderBanner({ accountIds: new Set([1, 2]) })
+      await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+      expect(screen.getByText('Stale Main')).toBeInTheDocument()
+      expect(screen.queryByText('Fresh Alt')).not.toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent(/5 months ago/)
+    })
+
+    it('judges every account when no selection is passed', async () => {
+      mockSyncStatus(status)
+      renderBanner()
+      await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+      expect(screen.getByText('Stale Main')).toBeInTheDocument()
+    })
+
+    it('stays silent when only the fresh account is selected', async () => {
+      mockSyncStatus(status)
+      const { container } = renderBanner({ accountIds: new Set([2]) })
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+      expect(container).toBeEmptyDOMElement()
+    })
+  })
+
+  it('keeps the single-account wording when the one account is stale', async () => {
+    mockSyncStatus({
+      has_data: true,
+      has_profile: true,
+      last_synced: '2026-05-15 11:40:02',
+      accounts: [{ id: 1, name: 'Only', synced_at: '2026-05-15 11:40:02' }],
+    })
+    renderBanner({ accountIds: null })
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent(/Your RSI hangar was last synced/)
   })
 
   it('stays silent when the status request fails', async () => {

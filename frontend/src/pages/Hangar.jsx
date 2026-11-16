@@ -272,7 +272,7 @@ export default function Hangar() {
 
       <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
-      {!isEmpty && <SyncStalenessBanner />}
+      {!isEmpty && <SyncStalenessBanner accountIds={accountFilter.active ? accountFilter.selectedIds : null} />}
 
       {isEmpty ? (
         <EmptyState

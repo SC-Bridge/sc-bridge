@@ -481,7 +481,7 @@ export default function FleetTable() {
 
       <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
-      <SyncStalenessBanner />
+      <SyncStalenessBanner accountIds={accountFilter.active ? accountFilter.selectedIds : null} />
 
       <ShareFleetBanner />
 

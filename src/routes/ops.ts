@@ -793,7 +793,7 @@ export function opsRoutes() {
           .bind(user.id)
           .first<{ verified_at: string | null }>(),
         db
-          .prepare("SELECT user_id FROM user_rsi_profiles WHERE user_id = ?")
+          .prepare("SELECT id FROM user_rsi_accounts WHERE user_id = ? AND is_placeholder = 0 LIMIT 1")
           .bind(user.id)
           .first(),
       ]);
