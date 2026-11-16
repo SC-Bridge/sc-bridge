@@ -57,7 +57,7 @@ const LOOT_SUMMARY_COLS = `
         _vcp.power_output, _vcc.cooling_rate, _vcs.shield_hp, _vcs.shield_regen,
         _vcq.quantum_speed, _vcq.quantum_range,
         _sm.tracking_signal, _sm.damage as missile_damage, _sm.lock_time, _sm.speed as missile_speed,
-        _fcl.storage_capacity, _fcl.temperature_range_min, _fcl.temperature_range_max,
+        COALESCE(_fa.storage_capacity, _fcl.storage_capacity) as storage_capacity, _fcl.temperature_range_min, _fcl.temperature_range_max,
         _fat.zoom_scale, _fat.damage_multiplier, _fat.sound_radius_multiplier,
         _fu.heal_amount, _fu.blast_radius as utility_blast_radius, _fu.device_type,
         _fw.rounds_per_minute, _fw.effective_range, _fw.ammo_capacity,
@@ -1495,7 +1495,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_armour_id) {
     details = await db
-      .prepare(`SELECT name, sub_type as type, size, grade, description, resist_physical, resist_energy, resist_distortion, resist_thermal, resist_biochemical, resist_stun, ir_emission, em_emission, item_port_count FROM ${t("fps_armour")} WHERE id = ?`)
+      .prepare(`SELECT name, sub_type as type, size, grade, description, resist_physical, resist_energy, resist_distortion, resist_thermal, resist_biochemical, resist_stun, ir_emission, em_emission, item_port_count, storage_capacity FROM ${t("fps_armour")} WHERE id = ?`)
       .bind(item.fps_armour_id)
       .first() as Record<string, unknown> | null;
   } else if (item.fps_attachment_id) {

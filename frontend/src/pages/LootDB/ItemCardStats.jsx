@@ -1,5 +1,6 @@
 import ResistanceBar from './ResistanceBar'
 import { getStatConfig } from './CategoryStatConfig'
+import { formatMicroScu } from '../../lib/lootDisplay'
 
 function formatStatValue(value, format, suffix = '') {
   if (value == null) return null
@@ -19,6 +20,7 @@ function formatStatValue(value, format, suffix = '') {
     return (n < 1 ? '-' : '+') + Math.round(Math.abs(1 - n) * 100) + '%'
   }
   if (format === 'badge') return value
+  if (format === 'microscu') return formatMicroScu(value)
   return String(value) + suffix
 }
 
