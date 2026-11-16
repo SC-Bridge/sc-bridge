@@ -6,8 +6,10 @@ import { resolveAccountMarker } from '../lib/accounts'
  * `accounts` is the page's one /api/rsi-accounts list (fetched only when
  * features.multiAccount is on). Renders nothing unless the user has 2+ accounts.
  *
- * card / row: left-edge stripe + top-right initial avatar, absolutely positioned
- *   inside a `relative` parent.
+ * card: left-edge stripe + top-right initial avatar, absolutely positioned inside
+ *   a `relative` parent.
+ * row: same stripe; the avatar is an in-flow flex child, so render it as the
+ *   row's LAST child.
  * cell: inline initial dot (table rows pair it with accountStripeStyle on the
  *   first cell).
  */
@@ -31,21 +33,22 @@ export default function AccountMarker({ rsiAccountId, accounts, variant = 'card'
     )
   }
 
-  const avatarPos = variant === 'row' ? 'top-1/2 -translate-y-1/2 right-2' : 'top-2 right-2'
+  // row: in-flow last flex child so it never overlaps right-aligned row content.
+  const avatarPos = variant === 'row' ? 'shrink-0' : 'absolute top-2 right-2'
   return (
     <>
       <span
         data-testid="account-stripe"
         aria-hidden="true"
         style={{ backgroundColor: color }}
-        className="absolute left-0 top-0 bottom-0 w-1"
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-l"
       />
       <span
         role="img"
         aria-label={name}
         title={name}
         style={avatarStyle}
-        className={`absolute ${avatarPos} w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow`}
+        className={`${avatarPos} w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow`}
       >
         {initial}
       </span>

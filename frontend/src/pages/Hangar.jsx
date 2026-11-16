@@ -138,7 +138,6 @@ function HangarItemRow({ item, isMelt, melt, accounts }) {
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
     <div className="relative flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.05] rounded hover:border-sc-accent/20 transition-all">
-      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="row" />
       <div className="w-12 h-7 flex-shrink-0 bg-sc-darker rounded overflow-hidden flex items-center justify-center">
         {item.image_url ? (
           <img src={normaliseMediaUrl(item.image_url)} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
@@ -168,6 +167,7 @@ function HangarItemRow({ item, isMelt, melt, accounts }) {
         : pledgeValue && (
             <span className="text-[10px] font-mono text-gray-500 w-16 text-right shrink-0">{pledgeValue}</span>
           )}
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="row" />
     </div>
   )
 }

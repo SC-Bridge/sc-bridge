@@ -39,4 +39,11 @@ describe('AccountMarker', () => {
     expect(screen.getByRole('img', { name: 'Main' })).toBeTruthy()
     expect(screen.queryByTestId('account-stripe')).toBeNull()
   })
+
+  it('row variant avatar is in-flow (not absolute) so it cannot overlap row content; stripe is rounded', () => {
+    render(<AccountMarker rsiAccountId={1} accounts={accts} variant="row" />)
+    const avatar = screen.getByRole('img', { name: 'Main' })
+    expect(avatar.className).not.toContain('absolute')
+    expect(screen.getByTestId('account-stripe').className).toContain('rounded-l')
+  })
 })
