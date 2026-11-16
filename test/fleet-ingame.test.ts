@@ -180,6 +180,21 @@ describe("In-game-purchased ships", () => {
       expect((await rowsFor(u.userId)).results.map((r) => r.rsi_account_id)).toEqual([b]);
     });
 
+    it("ingame clear rejects a malformed accounts param instead of clearing everything", async () => {
+      const { u, a, headers } = await twoAccounts();
+      await SELF.fetch("http://localhost/api/vehicles/ingame", {
+        method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: a }),
+      });
+      for (const bad of ["abc", "1,x", "0", "-3", "1,,2", ","]) {
+        const del = await SELF.fetch(`http://localhost/api/vehicles/ingame?accounts=${encodeURIComponent(bad)}`, {
+          method: "DELETE", headers: { ...(await authHeaders(u.sessionToken)), "Content-Length": "0" },
+        });
+        expect(del.status, bad).toBe(400);
+        expect(await del.json()).toEqual({ error: "Invalid accounts" });
+      }
+      expect((await rowsFor(u.userId)).results).toHaveLength(1);
+    });
+
     it("ingame clear ignores account ids the user does not own", async () => {
       const { u, a, headers } = await twoAccounts();
       const other = await createTestUser(env.DB);

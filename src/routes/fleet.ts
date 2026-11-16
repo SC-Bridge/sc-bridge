@@ -5,6 +5,9 @@ import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
 import { parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
 
+/** `all`, or a comma list of positive integers: the strict form of the accounts query param. */
+const ACCOUNTS_QUERY = z.string().regex(/^(all|[1-9]\d*(,[1-9]\d*)*)$/);
+
 /**
  * /api/vehicles/* — User's fleet
  */
@@ -351,7 +354,12 @@ export function fleetRoutes() {
     async (c) => {
       const db = c.env.DB;
       const userID = getAuthUser(c).id;
-      const accountIds = parseAccountsParam(c.req.valid("query").accounts);
+      const rawAccounts = c.req.valid("query").accounts;
+      // A malformed list must not fall through to "clear every account".
+      if (rawAccounts !== undefined && !ACCOUNTS_QUERY.safeParse(rawAccounts).success) {
+        return c.json({ error: "Invalid accounts" }, 400);
+      }
+      const accountIds = parseAccountsParam(rawAccounts);
       const res = accountIds
         ? await db
             .prepare(
@@ -529,7 +537,7 @@ async function getFleetLoaners(
           WHERE x.user_id = ?1 AND x.vehicle_id = l.id AND x.rsi_account_id IS uf.rsi_account_id
         )
       GROUP BY l.id, uf.rsi_account_id
-      ORDER BY l.name`,
+      ORDER BY l.name, uf.rsi_account_id`,
     )
     .bind(userID)
     .all();
