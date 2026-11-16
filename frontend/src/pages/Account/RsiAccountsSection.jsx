@@ -4,8 +4,7 @@ import PanelSection from '../../components/PanelSection'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useRsiAccounts, updateRsiAccount, deleteRsiAccount } from '../../hooks/useAPI'
 import { Pill } from '../HangarCleanup/ui'
-
-const accountName = (a) => a.label || a.rsi_handle || 'Imported hangar'
+import { accountName, accountColor, ACCOUNT_COLORS } from '../../lib/accounts'
 
 export default function RsiAccountsSection() {
   const { data, loading, error: loadError, refetch } = useRsiAccounts()
@@ -16,6 +15,7 @@ export default function RsiAccountsSection() {
   const [error, setError] = useState(null)
 
   const accounts = data?.accounts || []
+  const palette = data?.palette || ACCOUNT_COLORS
 
   const run = async (fn) => {
     setBusy(true)
@@ -55,7 +55,7 @@ export default function RsiAccountsSection() {
             <p className="text-sm text-gray-400">No RSI accounts yet. Sync your hangar with the extension to add one.</p>
           )}
           <ul className="space-y-2">
-            {accounts.map((a) => (
+            {accounts.map((a, index) => (
               <li key={a.id} className="p-3 bg-sc-darker border border-sc-border rounded-lg space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   {editingId === a.id ? (
@@ -74,6 +74,7 @@ export default function RsiAccountsSection() {
                     </>
                   ) : (
                     <>
+                      <span aria-hidden="true" className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: accountColor(a, index) }} />
                       <span className="font-display text-sm text-white">{accountName(a)}</span>
                       {a.is_primary && <Pill tone="good"><Star className="w-3 h-3 mr-1" aria-hidden="true" />Primary</Pill>}
                       {a.is_placeholder && <Pill tone="warn" title="Synced without Account Info">Imported</Pill>}
@@ -84,6 +85,20 @@ export default function RsiAccountsSection() {
                 <p className="text-xs text-gray-500">
                   {a.rsi_handle ? `@${a.rsi_handle} · ` : ''}{a.ship_count} ships · {a.pledge_count} pledges
                 </p>
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Account colour">
+                  {palette.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={c}
+                      aria-pressed={accountColor(a, index) === c}
+                      disabled={busy}
+                      onClick={() => run(() => updateRsiAccount(a.id, { color: c }))}
+                      style={{ backgroundColor: c }}
+                      className={`w-5 h-5 rounded-full cursor-pointer disabled:opacity-50 ${accountColor(a, index) === c ? 'ring-2 ring-white ring-offset-1 ring-offset-sc-darker' : 'opacity-70 hover:opacity-100'}`}
+                    />
+                  ))}
+                </div>
                 {editingId !== a.id && (
                   <div className="flex flex-wrap gap-3 text-xs">
                     {!a.is_primary && (
