@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import FleetTable from './FleetTable'
 
@@ -78,5 +78,19 @@ describe('FleetTable account filter', () => {
     const alt = screen.getByRole('img', { name: 'Alt' })
     expect(main.style.backgroundColor).not.toBe(alt.style.backgroundColor)
     expect(totals('$300 pledged across 2 pledges')).toBeInTheDocument()
+  })
+
+  it('clear in-game confirm counts every account, not just the filtered one', () => {
+    api.fleet = [
+      { ...ship(1, 1, 10, 10000), source: 'ingame' },
+      { ...ship(2, 2, 20, 20000), source: 'ingame' },
+      { ...ship(3, 2, 21, 30000), source: 'ingame' },
+    ]
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderAt('?accts=1')
+    fireEvent.click(screen.getByRole('button', { name: /Clear In-Game \(3\)/ }))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(confirm.mock.calls[0][0]).toMatch(/Remove all 3 in-game-purchased ships across all your RSI accounts/)
+    confirm.mockRestore()
   })
 })

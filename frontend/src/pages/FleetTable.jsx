@@ -122,7 +122,7 @@ const VISIBILITY_OPTIONS = [
 // "Set all" header dropdown — same options as the per-row select but the
 // onPick fires a bulk update instead of changing a single row. Rendered in
 // the Visibility column header.
-function BulkVisibilityHeader({ onPick, disabled }) {
+function BulkVisibilityHeader({ onPick, disabled, allAccounts }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -140,7 +140,7 @@ function BulkVisibilityHeader({ onPick, disabled }) {
         disabled={disabled}
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
         className="text-[10px] tracking-wide text-gray-500 hover:text-sc-accent flex items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-        title="Set visibility on every ship in your fleet"
+        title={allAccounts ? 'Set visibility on every ship across all your RSI accounts' : 'Set visibility on every ship in your fleet'}
       >
         Set all
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -257,7 +257,13 @@ export default function FleetTable() {
   // In-game-purchased ships (manually added; cleared after a wipe).
   const [showAddIngame, setShowAddIngame] = useState(false)
   const [ingameBusy, setIngameBusy] = useState(false)
-  const ingameCount = categoryCounts.ingame || 0
+  // The in-game clear and "Set all" act on every account, so their counts come
+  // from the unfiltered fleet, not the account-filtered view.
+  const narrowedByAccount = accountFilter.active && !accountFilter.isAll
+  const ingameCount = useMemo(
+    () => (fleet || []).filter((v) => rowCategory(v) === 'ingame').length,
+    [fleet],
+  )
 
   async function handleDeleteIngame(id) {
     if (ingameBusy) return
@@ -267,7 +273,7 @@ export default function FleetTable() {
 
   async function handleClearIngame() {
     if (ingameBusy || ingameCount === 0) return
-    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} from your fleet? (Pledged ships are unaffected.)`)) return
+    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} ${narrowedByAccount ? 'across all your RSI accounts' : 'from your fleet'}? (Pledged ships are unaffected.)`)) return
     setIngameBusy(true)
     try { await clearIngameShips(); refetch() } catch { /* no-op */ } finally { setIngameBusy(false) }
   }
@@ -638,7 +644,7 @@ export default function FleetTable() {
                 ))}
                 <th scope="col" className="table-header">
                   Visibility
-                  <BulkVisibilityHeader onPick={handleBulkVisibility} disabled={bulkBusy || !fleet?.length} />
+                  <BulkVisibilityHeader onPick={handleBulkVisibility} disabled={bulkBusy || !fleet?.length} allAccounts={narrowedByAccount} />
                 </th>
                 {inOrgs && <th scope="col" className="table-header">Ops</th>}
               </tr>
