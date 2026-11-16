@@ -1138,11 +1138,17 @@ export async function loadInsuranceTypes(db: D1Database): Promise<Map<string, nu
  * Fleet query for analysis: vehicle characteristics + insurance, no paint or visibility fields.
  * Used by gap analysis and LLM analysis endpoints.
  */
-export async function getFleetForAnalysis(db: D1Database, userId: string): Promise<UserFleetEntry[]> {
+export async function getFleetForAnalysis(
+  db: D1Database,
+  userId: string,
+  accountIds: number[] | null = null,
+): Promise<UserFleetEntry[]> {
+  const accountJson = accountIds ? JSON.stringify(accountIds) : null;
   const result = await db
     .prepare(
       `SELECT uf.id, uf.vehicle_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
+        uf.rsi_account_id,
         COALESCE(rv.name, v.name) as vehicle_name,
         COALESCE(rv.slug, v.slug) as vehicle_slug,
         COALESCE(rv.focus, v.focus) as focus,
@@ -1166,9 +1172,10 @@ export async function getFleetForAnalysis(db: D1Database, userId: string): Promi
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
       LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
       WHERE uf.user_id = ?
+        AND (? IS NULL OR uf.rsi_account_id IN (SELECT value FROM json_each(?)))
       ORDER BY COALESCE(rv.name, v.name)`,
     )
-    .bind(userId)
+    .bind(userId, accountJson, accountJson)
     .all();
   return result.results as unknown as UserFleetEntry[];
 }

@@ -221,8 +221,11 @@ export function useFleetEntryUpgrades(fleetEntryId) {
   return useAPI(fleetEntryId ? `/vehicles/${fleetEntryId}/upgrades` : null, { skip: !fleetEntryId })
 }
 
-export function useAnalysis(opts) {
-  return useAPI('/analysis', opts)
+// `accounts` is useAccountFilter's apiParam: null leaves the request as plain
+// /analysis, otherwise 'all' or a comma list of RSI account ids.
+export function useAnalysis({ accounts = null, ...opts } = {}) {
+  const query = accounts ? `?accounts=${encodeURIComponent(accounts)}` : ''
+  return useAPI(`/analysis${query}`, opts)
 }
 
 export function useSyncStatus() {

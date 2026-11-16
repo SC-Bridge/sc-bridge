@@ -6,6 +6,22 @@
 
 export const MAX_RSI_ACCOUNTS = 10;
 
+/**
+ * Parse the `?accounts=` query param. Missing, empty or 'all' means every
+ * account (null); otherwise the distinct positive integers, at most
+ * MAX_RSI_ACCOUNTS, in the order given. No valid id also means null — the
+ * ids only ever narrow a query that is already scoped to the user.
+ */
+export function parseAccountsParam(raw: string | undefined): number[] | null {
+  if (!raw || raw === "all") return null;
+  const ids: number[] = [];
+  for (const part of raw.split(",")) {
+    const n = Number(part.trim());
+    if (Number.isInteger(n) && n > 0 && !ids.includes(n)) ids.push(n);
+  }
+  return ids.length > 0 ? ids.slice(0, MAX_RSI_ACCOUNTS) : null;
+}
+
 /** Marker colours for RSI accounts, in the order they are handed out. */
 export const ACCOUNT_COLORS: readonly string[] = [
   "#22d3ee", "#f97316", "#a855f7", "#84cc16", "#f43f5e",

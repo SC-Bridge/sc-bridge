@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { useAnalysis } from '../hooks/useAPI'
+import { useAnalysis, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import { AlertCircle, AlertTriangle, Info, Copy, ChevronRight, Rocket, Crosshair, Shield } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from 'recharts'
 import { CHART_COLORS, TOOLTIP_STYLE } from '../lib/theme'
@@ -12,6 +12,8 @@ import StatCard from '../components/StatCard'
 import PanelSection from '../components/PanelSection'
 import FleetOverviewGrid from '../components/FleetOverviewGrid'
 import SectionBoundary from '../components/SectionBoundary'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 
 const PRIORITY_CONFIG = {
   high: { icon: AlertCircle, color: 'text-sc-danger', bg: 'bg-sc-danger/10', border: 'border-sc-danger/20', label: 'HIGH' },
@@ -20,7 +22,11 @@ const PRIORITY_CONFIG = {
 }
 
 export default function Insights() {
-  const { data: analysis, loading, error, refetch } = useAnalysis()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  const { data: analysis, loading, error, refetch } = useAnalysis({ accounts: accountFilter.apiParam })
 
   if (loading) return <LoadingState message="Analysing fleet..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -37,6 +43,7 @@ export default function Insights() {
     return (
       <div className="space-y-6 animate-fade-in-up">
         <PageHeader title="FLEET INSIGHTS" subtitle="Fleet composition, coverage, and insurance" />
+        <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
         <div className="panel p-12 text-center">
           <Rocket className="w-16 h-16 mx-auto mb-4 text-sc-accent/60" />
           <h2 className="font-display font-bold text-2xl text-white mb-2">No Ships Detected</h2>
@@ -78,6 +85,7 @@ export default function Insights() {
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader title="FLEET INSIGHTS" subtitle="Fleet composition, coverage, and insurance" />
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
       <FleetOverviewGrid overview={overview} totalVehicles={totalVehicles} ltiPercent={ltiPercent} readyPercent={readyPercent} />
 

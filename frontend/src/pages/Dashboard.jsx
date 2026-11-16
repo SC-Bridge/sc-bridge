@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../lib/auth-client'
-import { useStatus, useAnalysis } from '../hooks/useAPI'
+import { useStatus, useAnalysis, useRsiAccounts } from '../hooks/useAPI'
 import { Rocket, Shield, Crosshair, Database, LogIn } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, LabelList } from 'recharts'
 import { CHART_COLORS, TOOLTIP_STYLE } from '../lib/theme'
@@ -11,12 +11,17 @@ import ErrorState from '../components/ErrorState'
 import PanelSection from '../components/PanelSection'
 import FleetOverviewGrid from '../components/FleetOverviewGrid'
 import SectionBoundary from '../components/SectionBoundary'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 
 export default function Dashboard() {
   const { data: session, isPending: sessionPending } = useSession()
   const isLoggedIn = !!session?.user
   const { data: status, loading: statusLoading, error: statusError } = useStatus()
-  const { data: analysis, loading: analysisLoading, error: analysisError } = useAnalysis({ skip: !isLoggedIn })
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !isLoggedIn || !status?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  const { data: analysis, loading: analysisLoading, error: analysisError } = useAnalysis({ accounts: accountFilter.apiParam, skip: !isLoggedIn })
 
   if (sessionPending || statusLoading || (isLoggedIn && analysisLoading)) {
     return <LoadingState variant="skeleton" />
@@ -84,6 +89,7 @@ export default function Dashboard() {
           title="FLEET OVERVIEW"
           subtitle={`${status?.ships || 0} ships in reference database`}
         />
+        <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
         <div className="panel p-12 text-center">
           <Rocket className="w-16 h-16 mx-auto mb-4 text-sc-accent/60" />
           <h2 className="font-display font-bold text-2xl text-white mb-2">Welcome, Commander</h2>
@@ -132,6 +138,8 @@ export default function Dashboard() {
         title="FLEET OVERVIEW"
         subtitle={`${status?.vehicles || 0} ships in fleet · ${status?.ships || 0} in reference database`}
       />
+
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
 
       <FleetOverviewGrid overview={overview} totalVehicles={totalVehicles} ltiPercent={ltiPercent} readyPercent={readyPercent} />
 
