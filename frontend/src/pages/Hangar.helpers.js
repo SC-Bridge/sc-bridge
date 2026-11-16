@@ -71,6 +71,16 @@ export function orderedKinds(counts) {
   return result
 }
 
+/** Count items per kind (null kind counts as 'uncategorised'). */
+export function countKinds(items) {
+  const counts = {}
+  for (const item of items) {
+    const kind = item.kind ?? 'uncategorised'
+    counts[kind] = (counts[kind] ?? 0) + 1
+  }
+  return counts
+}
+
 /**
  * Normalise an RSI media URL to an absolute form. The hangar-sync extension
  * sometimes captures the URL as a path-relative `/media/...` (RSI's <img src>

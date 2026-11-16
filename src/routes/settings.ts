@@ -5,6 +5,7 @@ import { encrypt, decrypt, maskAPIKey } from "../lib/crypto";
 import { logUserChange } from "../lib/change-history";
 import { validate, LLMProvider } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
+import { deleteRsiAccount, listRsiAccounts } from "../lib/rsi-accounts";
 
 /**
  * /api/settings/* — User settings and LLM configuration
@@ -267,10 +268,18 @@ export function settingsRoutes() {
     const [fleetCount, buybackCount, profileExists] = await Promise.all([
       db.prepare("SELECT COUNT(*) as cnt FROM user_fleet WHERE user_id = ?").bind(userID).first<{ cnt: number }>(),
       db.prepare("SELECT COUNT(*) as cnt FROM user_buyback_pledges WHERE user_id = ?").bind(userID).first<{ cnt: number }>(),
-      db.prepare("SELECT 1 FROM user_rsi_profiles WHERE user_id = ?").bind(userID).first(),
+      db.prepare("SELECT 1 FROM user_rsi_accounts WHERE user_id = ? AND is_placeholder = 0 LIMIT 1").bind(userID).first(),
     ]);
 
-    // Delete all synced data in a batch
+    // Every RSI account goes, with every hangar row stamped with it (fleet,
+    // pledges + items + upgrades, buy-backs, paints, syncs, cleanup decisions).
+    // deleteRsiAccount removes each account's hangar rows before the account row
+    // itself — D1 enforces the foreign key.
+    for (const account of await listRsiAccounts(db, userID)) {
+      await deleteRsiAccount(db, userID, account.id);
+    }
+
+    // Then any rows that never carried an account id, the legacy profile, and consent.
     await db.batch([
       db.prepare("DELETE FROM user_fleet WHERE user_id = ?").bind(userID),
       db.prepare("DELETE FROM user_buyback_pledges WHERE user_id = ?").bind(userID),
@@ -300,20 +309,49 @@ export function settingsRoutes() {
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
 
-    const [fleetCount, buybackCount, profile, consentSetting] = await Promise.all([
+    const [fleetCount, buybackCount, lastSynced, hasAccount, accountRows, consentSetting] = await Promise.all([
       db.prepare("SELECT COUNT(*) as cnt FROM user_fleet WHERE user_id = ?").bind(userID).first<{ cnt: number }>(),
       db.prepare("SELECT COUNT(*) as cnt FROM user_buyback_pledges WHERE user_id = ?").bind(userID).first<{ cnt: number }>(),
-      db.prepare("SELECT synced_at FROM user_rsi_profiles WHERE user_id = ?").bind(userID).first<{ synced_at: string }>(),
+      db.prepare("SELECT MAX(synced_at) as synced_at FROM user_rsi_accounts WHERE user_id = ?").bind(userID).first<{ synced_at: string | null }>(),
+      db.prepare("SELECT 1 FROM user_rsi_accounts WHERE user_id = ? AND is_placeholder = 0 LIMIT 1").bind(userID).first(),
+      // Per-account counts as scalar subqueries — D1 rejects compound SELECTs over 5 terms.
+      db.prepare(
+        `SELECT a.id, a.label, a.rsi_handle, a.color, a.is_primary, a.synced_at,
+                (SELECT COUNT(*) FROM user_fleet f WHERE f.rsi_account_id = a.id) AS ship_count,
+                (SELECT COUNT(*) FROM user_pledges p WHERE p.rsi_account_id = a.id) AS pledge_count,
+                (SELECT COUNT(*) FROM user_buyback_pledges b WHERE b.rsi_account_id = a.id) AS buyback_count
+         FROM user_rsi_accounts a WHERE a.user_id = ? ORDER BY a.id`,
+      ).bind(userID).all<{
+        id: number;
+        label: string | null;
+        rsi_handle: string | null;
+        color: string | null;
+        is_primary: number;
+        synced_at: string | null;
+        ship_count: number;
+        pledge_count: number;
+        buyback_count: number;
+      }>(),
       db.prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'sync_consent'").bind(userID).first<{ value: string }>(),
     ]);
 
     return c.json({
-      has_data: (fleetCount?.cnt ?? 0) > 0 || (buybackCount?.cnt ?? 0) > 0 || !!profile,
+      has_data: (fleetCount?.cnt ?? 0) > 0 || (buybackCount?.cnt ?? 0) > 0 || !!hasAccount,
       fleet_count: fleetCount?.cnt ?? 0,
       buyback_count: buybackCount?.cnt ?? 0,
-      has_profile: !!profile,
-      last_synced: profile?.synced_at ?? null,
+      has_profile: !!hasAccount,
+      last_synced: lastSynced?.synced_at ?? null,
       consent_given: consentSetting?.value ?? null,
+      accounts: accountRows.results.map((a) => ({
+        id: a.id,
+        name: a.label || a.rsi_handle || "Imported hangar",
+        color: a.color,
+        is_primary: a.is_primary === 1,
+        synced_at: a.synced_at,
+        ship_count: a.ship_count,
+        pledge_count: a.pledge_count,
+        buyback_count: a.buyback_count,
+      })),
     });
   });
 

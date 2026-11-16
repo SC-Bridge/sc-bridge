@@ -333,6 +333,7 @@ export interface UserFleetEntry {
   pledge_cost?: string;
   pledge_date?: string;
   custom_name?: string;
+  rsi_account_id?: number | null;
   equipped_paint_id?: number;
   imported_at: string;
   // Joined fields from reference tables
@@ -528,6 +529,7 @@ export interface InsuranceEntry {
   duration_months?: number;
   is_lifetime: boolean;
   warbond: boolean;
+  rsi_account_id?: number | null;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
+import { getOrCreatePrimaryAccountId } from "../src/lib/rsi-accounts";
 import { createTestUser, authHeaders, seedVehicle, seedFleetEntry } from "./helpers";
 
 describe("Fleet API — /api/vehicles", () => {
@@ -102,10 +103,10 @@ describe("Fleet API — /api/vehicles", () => {
         .first<{ id: number }>();
       await env.DB
         .prepare(
-          `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value, value_cents, currency, is_upgraded, is_reclaimable)
-           VALUES (?, ?, 19126683, 'Standalone Ship - Anvil C8X Pisces Expedition - Warband - IAE 2949', '$745.00 USD', 74500, 'Store Credit', 1, 1)`,
+          `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value, value_cents, currency, is_upgraded, is_reclaimable, rsi_account_id)
+           VALUES (?, ?, 19126683, 'Standalone Ship - Anvil C8X Pisces Expedition - Warband - IAE 2949', '$745.00 USD', 74500, 'Store Credit', 1, 1, ?)`,
         )
-        .bind(userId, sync!.id)
+        .bind(userId, sync!.id, await getOrCreatePrimaryAccountId(env.DB, userId))
         .run();
       const pledge = await env.DB
         .prepare("SELECT id FROM user_pledges WHERE user_id = ? AND rsi_pledge_id = 19126683")

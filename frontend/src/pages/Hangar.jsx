@@ -4,16 +4,20 @@ import ValueModeToggle from '../components/ValueModeToggle'
 import { meltStatesFor, hangarMeltSummary } from '../lib/hangarMelt'
 import { useSearchParams } from 'react-router-dom'
 import { Package, LayoutGrid, List, ImageOff, Tag, Building2 } from 'lucide-react'
-import { useHangar } from '../hooks/useAPI'
+import { useHangar, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
+import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import {
   buildItemFilter, cleanPledgeName, formatPledgeValue,
   kindLabel, orderedKinds, normaliseMediaUrl,
+  countKinds,
 } from './Hangar.helpers'
 
 /** Per-kind colour palette — stays subdued so the page reads as a list, not a circus. */
@@ -45,12 +49,12 @@ function FilterChip({ active, onClick, accent, children }) {
   )
 }
 
-function HangarItemCard({ item, isMelt, melt }) {
+function HangarItemCard({ item, isMelt, melt, accounts }) {
   const kind = item.kind ?? 'uncategorised'
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
-    <div className="group relative bg-white/[0.03] border border-white/[0.08] rounded-lg overflow-hidden hover:border-sc-accent/30 transition-all">
+    <div className="group relative flex flex-col bg-white/[0.03] border border-white/[0.08] rounded-lg overflow-hidden hover:border-sc-accent/30 transition-all">
       <div className="aspect-[16/9] bg-gradient-to-br from-sc-darker to-black/40 flex items-center justify-center overflow-hidden">
         {item.image_url ? (
           <img
@@ -64,7 +68,7 @@ function HangarItemCard({ item, isMelt, melt }) {
           <ImageOff className="w-6 h-6 text-gray-700" aria-hidden="true" />
         )}
       </div>
-      <div className="p-3 space-y-2">
+      <div className="flex-1 p-3 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-sm font-display text-gray-200 leading-tight line-clamp-2 flex-1">
             {item.title}
@@ -107,6 +111,7 @@ function HangarItemCard({ item, isMelt, melt }) {
           </div>
         )}
       </div>
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="card" />
     </div>
   )
 }
@@ -130,12 +135,12 @@ function MeltCell({ melt, value }) {
   )
 }
 
-function HangarItemRow({ item, isMelt, melt }) {
+function HangarItemRow({ item, isMelt, melt, accounts }) {
   const kind = item.kind ?? 'uncategorised'
   const pledgeShort = cleanPledgeName(item.pledge_name)
   const pledgeValue = formatPledgeValue(item.pledge_value_cents)
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.05] rounded hover:border-sc-accent/20 transition-all">
+    <div className="relative flex items-center gap-3 px-3 py-2 bg-white/[0.02] border border-white/[0.05] rounded hover:border-sc-accent/20 transition-all">
       <div className="w-12 h-7 flex-shrink-0 bg-sc-darker rounded overflow-hidden flex items-center justify-center">
         {item.image_url ? (
           <img src={normaliseMediaUrl(item.image_url)} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none' }} />
@@ -165,12 +170,16 @@ function HangarItemRow({ item, isMelt, melt }) {
         : pledgeValue && (
             <span className="text-[10px] font-mono text-gray-500 w-16 text-right shrink-0">{pledgeValue}</span>
           )}
+      <AccountMarker rsiAccountId={item.rsi_account_id} accounts={accounts} variant="row" />
     </div>
   )
 }
 
 export default function Hangar() {
   const { data, loading, error, refetch } = useHangar()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
   const [searchParams, setSearchParams] = useSearchParams()
 
   const search = searchParams.get('q') ?? ''
@@ -187,9 +196,15 @@ export default function Hangar() {
     }, { replace: true })
   }
 
-  const items = data?.items ?? []
-  const counts = data?.counts ?? {}
-  const total = data?.total ?? 0
+  const accountFilter = useAccountFilter(rsiAccounts)
+  const allItems = data?.items ?? []
+  // The account filter narrows everything below: counts, melt totals, search.
+  const items = useMemo(
+    () => allItems.filter((i) => accountFilter.matches(i.rsi_account_id)),
+    [allItems, accountFilter.matches],
+  )
+  const counts = useMemo(() => countKinds(items), [items])
+  const total = items.length
 
   const kinds = useMemo(() => orderedKinds(counts), [counts])
 
@@ -222,7 +237,7 @@ export default function Hangar() {
   if (loading) return <LoadingState fullScreen message="Loading hangar..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
 
-  const isEmpty = total === 0
+  const isEmpty = (data?.total ?? 0) === 0
   const isFilteredEmpty = !isEmpty && filtered.length === 0
   const hasActiveFilters = search || kindFilter !== 'all' || mfrFilter !== 'all'
 
@@ -255,7 +270,9 @@ export default function Hangar() {
         )}
       />
 
-      {!isEmpty && <SyncStalenessBanner />}
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
+
+      {!isEmpty && <SyncStalenessBanner accountIds={accountFilter.active ? accountFilter.selectedIds : null} />}
 
       {isEmpty ? (
         <EmptyState
@@ -352,13 +369,13 @@ export default function Hangar() {
           ) : view === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filtered.map((item) => (
-                <HangarItemCard key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} />
+                <HangarItemCard key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} accounts={rsiAccounts} />
               ))}
             </div>
           ) : (
             <div className="space-y-1.5">
               {filtered.map((item) => (
-                <HangarItemRow key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} />
+                <HangarItemRow key={item.id} item={item} isMelt={isMelt && meltKnown} melt={meltStates.get(item.id)} accounts={rsiAccounts} />
               ))}
             </div>
           )}

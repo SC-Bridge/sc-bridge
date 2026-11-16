@@ -5,7 +5,8 @@ import {
   Rocket, Zap, Box, Palette, LayoutGrid, List,
   Tag, DollarSign, Calendar, PenLine, ArrowUpRight, CircleDot,
 } from 'lucide-react'
-import { useShip, useShipLoadout, useShipPaints, useShipSalvage, useWeaponRacks, useSuitLockers, useFleet, useFleetEntryUpgrades, useShipModules, useOwnedModules, useOwnedPaints } from '../hooks/useAPI'
+import { useShip, useShipLoadout, useShipPaints, useShipSalvage, useWeaponRacks, useSuitLockers, useFleet, useFleetEntryUpgrades, useShipModules, useOwnedModules, useOwnedPaints, useStatus, useRsiAccounts } from '../hooks/useAPI'
+import AccountMarker from '../components/AccountMarker'
 import ModulesSection from './Loadout/ModulesSection'
 import { CargoTile } from '../components/ModularCargo'
 import PersonalInventoryTile from '../components/PersonalInventoryTile'
@@ -500,8 +501,11 @@ function CCUHistory({ fleetEntryId }) {
   )
 }
 
-function PledgeSection({ ship }) {
+export function PledgeSection({ ship }) {
   const { data: fleet } = useFleet()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
 
   // Find fleet entries for this ship
   const entries = (fleet || []).filter(v => v.vehicle_slug === ship.slug)
@@ -513,7 +517,10 @@ function PledgeSection({ ship }) {
       {entries.map((entry) => (
         <div key={entry.id} className="space-y-3">
           <div className="panel border-l-4 border-l-sc-accent">
-            <div className="panel-header">Your Pledge</div>
+            <div className="panel-header flex items-center justify-between">
+              Your Pledge
+              <AccountMarker rsiAccountId={entry.rsi_account_id} accounts={rsiAccounts} variant="cell" />
+            </div>
             <div className="p-4 space-y-3">
               {entry.pledge_name && (
                 <div>

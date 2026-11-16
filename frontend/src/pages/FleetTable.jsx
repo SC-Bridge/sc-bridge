@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useFleet, useFleetLoaners, useUserOrgs, updateShipVisibility, bulkSetVisibility, deleteIngameShip, clearIngameShips } from '../hooks/useAPI'
+import { useFleet, useFleetLoaners, useUserOrgs, useStatus, useRsiAccounts, updateShipVisibility, bulkSetVisibility, deleteIngameShip, clearIngameShips } from '../hooks/useAPI'
 import { ArrowUpDown, SearchX, Rocket, Upload, Wrench, ChevronDown, Filter, Check, KeyRound, Plus, Trash2, Coins } from 'lucide-react'
 import AddIngameShipModal from './AddIngameShipModal'
 import AlertBanner from '../components/AlertBanner'
@@ -15,6 +15,10 @@ import StatusBadge from '../components/StatusBadge'
 import ShipImage from '../components/ShipImage'
 import CommunityTools from '../components/CommunityTools'
 import ShareFleetBanner from '../components/ShareFleetBanner'
+import AccountMarker from '../components/AccountMarker'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
+import { accountStripeStyle } from '../lib/accounts'
 import SyncStalenessBanner from '../components/SyncStalenessBanner'
 import FleetTagCell from './FleetTagCell'
 import { getRoleGroup } from '../lib/roleGroups'
@@ -118,7 +122,7 @@ const VISIBILITY_OPTIONS = [
 // "Set all" header dropdown — same options as the per-row select but the
 // onPick fires a bulk update instead of changing a single row. Rendered in
 // the Visibility column header.
-function BulkVisibilityHeader({ onPick, disabled }) {
+function BulkVisibilityHeader({ onPick, disabled, allAccounts }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -136,7 +140,7 @@ function BulkVisibilityHeader({ onPick, disabled }) {
         disabled={disabled}
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
         className="text-[10px] tracking-wide text-gray-500 hover:text-sc-accent flex items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-        title="Set visibility on every ship in your fleet"
+        title={allAccounts ? 'Set visibility on every ship across all your RSI accounts' : 'Set visibility on every ship in your fleet'}
       >
         Set all
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -211,6 +215,9 @@ export default function FleetTable() {
   const { data: fleet, loading, error, refetch } = useFleet()
   const { data: loaners } = useFleetLoaners()
   const { data: orgsData } = useUserOrgs()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
   const [searchParams, setSearchParams] = useSearchParams()
   const { isMelt } = useValueMode()
   const navigate = useNavigate()
@@ -222,9 +229,12 @@ export default function FleetTable() {
   const tagFilter = searchParams.get('tag') || 'all'
 
   // Owned ships + derived loaner ships, in one list for the unified view.
+  // The account filter narrows owned ships before search, sorting and totals;
+  // loaners are derived rows with no account, so they always match.
+  const accountFilter = useAccountFilter(rsiAccounts)
   const combined = useMemo(
-    () => [...(fleet || []), ...(loaners || [])],
-    [fleet, loaners],
+    () => [...(fleet || []), ...(loaners || [])].filter((v) => accountFilter.matches(v.rsi_account_id)),
+    [fleet, loaners, accountFilter.matches],
   )
 
   const categoryCounts = useMemo(() => {
@@ -247,7 +257,13 @@ export default function FleetTable() {
   // In-game-purchased ships (manually added; cleared after a wipe).
   const [showAddIngame, setShowAddIngame] = useState(false)
   const [ingameBusy, setIngameBusy] = useState(false)
-  const ingameCount = categoryCounts.ingame || 0
+  // The in-game clear and "Set all" act on every account, so their counts come
+  // from the unfiltered fleet, not the account-filtered view.
+  const narrowedByAccount = accountFilter.active && !accountFilter.isAll
+  const ingameCount = useMemo(
+    () => (fleet || []).filter((v) => rowCategory(v) === 'ingame').length,
+    [fleet],
+  )
 
   async function handleDeleteIngame(id) {
     if (ingameBusy) return
@@ -257,7 +273,7 @@ export default function FleetTable() {
 
   async function handleClearIngame() {
     if (ingameBusy || ingameCount === 0) return
-    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} from your fleet? (Pledged ships are unaffected.)`)) return
+    if (!window.confirm(`Remove all ${ingameCount} in-game-purchased ship${ingameCount === 1 ? '' : 's'} ${narrowedByAccount ? 'across all your RSI accounts' : 'from your fleet'}? (Pledged ships are unaffected.)`)) return
     setIngameBusy(true)
     try { await clearIngameShips(); refetch() } catch { /* no-op */ } finally { setIngameBusy(false) }
   }
@@ -379,8 +395,8 @@ export default function FleetTable() {
     return items
   }, [fleet, combined, categoryFilter, filter, sizeFilter, packFilter, tagFilter, sortKey, sortDir])
 
-  // Fleet-wide money facts. Deliberately computed over the WHOLE fleet, not the
-  // filtered view — "what is my fleet worth" shouldn't change because someone
+  // Money facts for the selected accounts. Deliberately NOT narrowed by the
+  // search box — "what is my fleet worth" shouldn't change because someone
   // typed in the search box. Grouping first is what stops a multi-ship pack
   // being counted once per ship.
   const meltTotals = useMemo(() => {
@@ -463,7 +479,9 @@ export default function FleetTable() {
         <AddIngameShipModal onClose={() => setShowAddIngame(false)} onAdded={refetch} />
       )}
 
-      <SyncStalenessBanner />
+      <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
+
+      <SyncStalenessBanner accountIds={accountFilter.active ? accountFilter.selectedIds : null} />
 
       <ShareFleetBanner />
 
@@ -626,7 +644,7 @@ export default function FleetTable() {
                 ))}
                 <th scope="col" className="table-header">
                   Visibility
-                  <BulkVisibilityHeader onPick={handleBulkVisibility} disabled={bulkBusy || !fleet?.length} />
+                  <BulkVisibilityHeader onPick={handleBulkVisibility} disabled={bulkBusy || !fleet?.length} allAccounts={narrowedByAccount} />
                 </th>
                 {inOrgs && <th scope="col" className="table-header">Ops</th>}
               </tr>
@@ -670,7 +688,7 @@ export default function FleetTable() {
                     role="row"
                     aria-label={`View details for ${v.vehicle_name}${v.custom_name ? ` "${v.custom_name}"` : ''}`}
                   >
-                    <td className="table-cell">
+                    <td className="table-cell" style={accountStripeStyle(v.rsi_account_id, rsiAccounts)}>
                       <div className="flex items-center gap-3">
                         <ShipImage
                           src={v.paint_image_url_medium || v.paint_image_url || v.image_url}
@@ -681,6 +699,7 @@ export default function FleetTable() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-white">{v.vehicle_name}</span>
+                            <AccountMarker rsiAccountId={v.rsi_account_id} accounts={rsiAccounts} variant="cell" />
                             {isLoaner && (
                               <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded">
                                 <KeyRound className="w-3 h-3" aria-hidden="true" /> Loaner

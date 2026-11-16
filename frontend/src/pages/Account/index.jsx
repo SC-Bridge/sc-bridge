@@ -3,11 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Shield } from 'lucide-react'
 import { useSession, authClient, signIn, signOut } from '../../lib/auth-client'
 import useTimezone from '../../hooks/useTimezone'
+import { useStatus } from '../../hooks/useAPI'
 import PageHeader from '../../components/PageHeader'
 import LoadingState from '../../components/LoadingState'
 
 import ProfileSection from './ProfileSection'
 import RsiProfileSection from './RsiProfileSection'
+import RsiAccountsSection from './RsiAccountsSection'
 import LinkedAccountsSection from './LinkedAccountsSection'
 import PasswordSection from './PasswordSection'
 import TwoFactorSection from './TwoFactorSection'
@@ -20,6 +22,7 @@ export default function Account() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: session, isPending } = useSession()
   const { timezone } = useTimezone()
+  const { data: appStatus } = useStatus()
   const user = session?.user
 
   const [name, setName] = useState('')
@@ -763,6 +766,8 @@ export default function Account() {
         onRsiSync={handleRsiSync}
         onRefresh={fetchRsiProfile}
       />
+
+      {appStatus?.features?.multiAccount && <RsiAccountsSection />}
 
       <LinkedAccountsSection
         providers={providers}

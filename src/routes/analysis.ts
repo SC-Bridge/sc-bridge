@@ -7,6 +7,7 @@ import { logEvent } from "../lib/logger";
 import { ANALYSIS_PROMPT } from "../lib/analysis-prompt";
 import { validate, IntIdParam, LLMProvider } from "../lib/validation";
 import { getFleetForAnalysis } from "../db/queries";
+import { parseAccountsParam } from "../lib/rsi-accounts";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buildFleetPayload } from "../lib/fleet-payload";
 import {
@@ -30,8 +31,11 @@ export function analysisRoutes() {
     const t = (n: string) => resolveTable(n, isPTU);
     const db = c.env.DB;
     const userID = getAuthUser(c).id;
+    // null = every account; ids only narrow rows already scoped to this user.
+    const accountIds = parseAccountsParam(c.req.query("accounts"));
+    const accountJson = accountIds ? JSON.stringify(accountIds) : null;
 
-    const fleet = await getFleetForAnalysis(db, userID);
+    const fleet = await getFleetForAnalysis(db, userID, accountIds);
 
     const allVehiclesResult = await db
       .prepare(`SELECT v.id, v.slug, v.name, v.focus, v.size_label, v.classification,
@@ -59,9 +63,11 @@ export function analysisRoutes() {
            COALESCE(SUM(CASE WHEN value_cents > 0 AND currency NOT LIKE '%UEC%' THEN value_cents ELSE 0 END), 0) / 100.0 as total,
            COALESCE(SUM(CASE WHEN value_cents > 0 AND currency NOT LIKE '%UEC%' AND is_reclaimable = 1 THEN value_cents ELSE 0 END), 0) / 100.0 as melt,
            COUNT(*) as pledge_count
-         FROM user_pledges WHERE user_id = ?`,
+         FROM user_pledges
+         WHERE user_id = ?
+           AND (? IS NULL OR rsi_account_id IN (SELECT value FROM json_each(?)))`,
       )
-      .bind(userID)
+      .bind(userID, accountJson, accountJson)
       .first<{ total: number; melt: number; pledge_count: number }>();
 
     let totalPledgeValue = pledgeTotal?.total ?? 0;
@@ -83,9 +89,11 @@ export function analysisRoutes() {
                ELSE CAST(REPLACE(REPLACE(REPLACE(pledge_cost, '$', ''), ',', ''), ' USD', '') AS REAL)
              END
            ), 0) as total
-           FROM user_fleet WHERE user_id = ?`,
+           FROM user_fleet
+           WHERE user_id = ?
+             AND (? IS NULL OR rsi_account_id IN (SELECT value FROM json_each(?)))`,
         )
-        .bind(userID)
+        .bind(userID, accountJson, accountJson)
         .first<{ total: number }>();
       totalPledgeValue = fleetCostSum?.total ?? 0;
     }
@@ -428,6 +436,7 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], t
     duration_months?: number;
     is_lifetime: boolean;
     warbond: boolean;
+    rsi_account_id?: number | null;
   }> = [];
   const nonLtiShips: typeof ltiShips = [];
   const unknownShips: typeof ltiShips = [];
@@ -483,6 +492,7 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], t
       duration_months: entry.duration_months,
       is_lifetime: entry.is_lifetime ?? false,
       warbond: entry.warbond,
+      rsi_account_id: entry.rsi_account_id,
     };
 
     if (entry.is_lifetime) {

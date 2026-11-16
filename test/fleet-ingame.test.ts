@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase } from "./apply-migrations";
 import { seedVehicle, createTestUser, authHeaders } from "./helpers";
 import { executeFleetSwap } from "../src/lib/fleet-import";
+import { getOrCreatePrimaryAccountId } from "../src/lib/rsi-accounts";
 
 /**
  * In-game-purchased ships (migration 0261). Stored as user_fleet rows tagged
@@ -38,6 +39,22 @@ describe("In-game-purchased ships", () => {
     expect(added).toBeTruthy();
     expect(added!.source).toBe("ingame");
     expect(added!.custom_name).toBe("My aUEC Ship");
+  });
+
+  it("in-game ship is stamped with the primary account", async () => {
+    const user = await createTestUser(env.DB);
+    const primary = await getOrCreatePrimaryAccountId(env.DB, user.userId);
+    const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
+      method: "POST",
+      headers: { ...(await authHeaders(user.sessionToken)), "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle_id: vid2 }),
+    });
+    expect(res.status).toBe(200);
+    const row = await env.DB
+      .prepare("SELECT rsi_account_id FROM user_fleet WHERE user_id = ? AND vehicle_id = ? AND source = 'ingame'")
+      .bind(user.userId, vid2)
+      .first<{ rsi_account_id: number }>();
+    expect(row!.rsi_account_id).toBe(primary);
   });
 
   it("POST /ingame 404s for a non-existent vehicle", async () => {
@@ -92,15 +109,16 @@ describe("In-game-purchased ships", () => {
 
   it("re-import (executeFleetSwap) preserves in-game ships, sweeps stale pledge rows", async () => {
     const u = await createTestUser(env.DB);
+    const accountId = await getOrCreatePrimaryAccountId(env.DB, u.userId);
     // Seed an OLD in-game ship + an OLD pledge ship.
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, imported_at) VALUES (?, ?, 'ingame', '2020-01-01 00:00:00')").bind(u.userId, vid),
-      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, pledge_id, imported_at) VALUES (?, ?, 'pledge', '111', '2020-01-01 00:00:00')").bind(u.userId, vid2),
+      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, imported_at, rsi_account_id) VALUES (?, ?, 'ingame', '2020-01-01 00:00:00', ?)").bind(u.userId, vid, accountId),
+      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, pledge_id, imported_at, rsi_account_id) VALUES (?, ?, 'pledge', '111', '2020-01-01 00:00:00', ?)").bind(u.userId, vid2, accountId),
     ]);
     // Run a new import: insert one fresh pledge row tagged with the new importTag, then sweep.
     const tag = "2030-01-01 00:00:00";
-    await executeFleetSwap(env.DB, u.userId, [
-      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, pledge_id, imported_at) VALUES (?, ?, 'pledge', '222', ?)").bind(u.userId, vid2, tag),
+    await executeFleetSwap(env.DB, u.userId, accountId, [
+      env.DB.prepare("INSERT INTO user_fleet (user_id, vehicle_id, source, pledge_id, imported_at, rsi_account_id) VALUES (?, ?, 'pledge', '222', ?, ?)").bind(u.userId, vid2, tag, accountId),
     ], tag);
 
     const rows = await env.DB.prepare("SELECT source, pledge_id, imported_at FROM user_fleet WHERE user_id = ?").bind(u.userId).all<{ source: string; pledge_id: string | null; imported_at: string }>();

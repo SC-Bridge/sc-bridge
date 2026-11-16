@@ -3,6 +3,7 @@ import { RefreshCw, Users, HardDrive } from 'lucide-react'
 import { useStatus, usePreferences, setPreferences, useUserSyncStatus, deleteSyncData, useCharacters } from '../../hooks/useAPI'
 import useHangarSync, { SYNC_CATEGORIES } from '../../hooks/useHangarSync'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import SyncMappingDialog from './SyncMappingDialog'
 import SyncSection from './SyncSection'
 import SyncDataSection from './SyncDataSection'
 import CharacterBackup from './CharacterBackup'
@@ -56,7 +57,7 @@ function StatCard({ icon: Icon, label, value, suffix, delay = 0 }) {
 }
 
 export default function Import() {
-  const { data: appStatus } = useStatus()
+  const { data: appStatus, refetch: refetchStatus } = useStatus()
   const sync = useHangarSync()
   const { data: preferences, refetch: refetchPrefs } = usePreferences()
   const { data: syncStatus, refetch: refetchSyncStatus } = useUserSyncStatus()
@@ -69,6 +70,15 @@ export default function Import() {
   const notifTimer = useRef(null)
 
   useEffect(() => () => clearTimeout(notifTimer.current), [])
+
+  // A finished sync changes what the Sync Data table and the ship count show;
+  // without this they keep the numbers from when the page opened.
+  useEffect(() => {
+    if (sync.status === 'complete') {
+      refetchSyncStatus()
+      refetchStatus()
+    }
+  }, [sync.status, refetchSyncStatus, refetchStatus])
 
   const showNotification = (msg, variant = 'info') => {
     clearTimeout(notifTimer.current)
@@ -169,6 +179,7 @@ export default function Import() {
       {/* Sync Data */}
       <SyncDataSection
         syncStatus={syncStatus}
+        multiAccount={!!appStatus?.features?.multiAccount}
         onDelete={handleDeleteSyncData}
         notification={notification}
       />
@@ -190,6 +201,8 @@ export default function Import() {
 
       {/* Extension */}
       <ExtensionSection />
+
+      <SyncMappingDialog mapping={sync.status === 'needs_mapping' ? sync.mapping : null} onResolve={sync.resolveMapping} onCancel={sync.cancelMapping} />
 
       {/* Sync Categories Dialog */}
       <ConfirmDialog
