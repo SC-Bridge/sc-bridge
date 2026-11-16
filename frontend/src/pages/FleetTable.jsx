@@ -229,8 +229,8 @@ export default function FleetTable() {
   const tagFilter = searchParams.get('tag') || 'all'
 
   // Owned ships + derived loaner ships, in one list for the unified view.
-  // The account filter narrows owned ships before search, sorting and totals;
-  // loaners are derived rows with no account, so they always match.
+  // The account filter narrows owned ships and loaners (one row per account)
+  // before search, sorting and totals.
   const accountFilter = useAccountFilter(rsiAccounts)
   const combined = useMemo(
     () => [...(fleet || []), ...(loaners || [])].filter((v) => accountFilter.matches(v.rsi_account_id)),
@@ -677,7 +677,7 @@ export default function FleetTable() {
                 sorted.map((v, i) => {
                   const isLoaner = !!v.is_derived_loaner
                   const isIngame = v.source === 'ingame'
-                  const rowKey = isLoaner ? `loaner-${v.vehicle_id}` : (v.id || `row-${i}`)
+                  const rowKey = isLoaner ? `loaner-${v.vehicle_id}-${v.rsi_account_id}` : (v.id || `row-${i}`)
                   return (
                   <tr
                     key={rowKey}
@@ -740,7 +740,7 @@ export default function FleetTable() {
                               onClick={(e) => {
                                 e.stopPropagation()
                                 navigate(isLoaner
-                                  ? `/loadout/${v.vehicle_slug}?loaner_vehicle_id=${v.vehicle_id}`
+                                  ? `/loadout/${v.vehicle_slug}?loaner_vehicle_id=${v.vehicle_id}&account=${v.rsi_account_id}`
                                   : `/loadout/${v.vehicle_slug}?fleet_id=${v.id}`)
                               }}
                               className="p-1 text-zinc-600 hover:text-sky-400 transition-colors"

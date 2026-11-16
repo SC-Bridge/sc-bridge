@@ -107,7 +107,7 @@ export function chatRoutes() {
       const fleet = await getFleetForAnalysis(db, userID);
       const [customIds, loaners] = await Promise.all([
         getCustomLoadoutFleetIds(db, userID),
-        getEntitledLoaners(db, userID),
+        getEntitledLoaners(db, userID, null),
       ]);
       const fleetPayload = buildChatFleetPayload(fleet, customIds, loaners);
       const { system, messages } = buildChatRequest({

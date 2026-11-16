@@ -4,11 +4,17 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import FleetTable from './FleetTable'
 
-const api = vi.hoisted(() => ({ fleet: [], accounts: [] }))
+const api = vi.hoisted(() => ({ fleet: [], accounts: [], loaners: [] }))
+const navigate = vi.hoisted(() => vi.fn())
+
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNavigate: () => navigate,
+}))
 
 vi.mock('../hooks/useAPI', () => ({
   useFleet: () => ({ data: api.fleet, loading: false, error: null, refetch: vi.fn() }),
-  useFleetLoaners: () => ({ data: [] }),
+  useFleetLoaners: () => ({ data: api.loaners }),
   useUserOrgs: () => ({ data: { orgs: [] } }),
   useStatus: () => ({ data: { features: { multiAccount: true } } }),
   useRsiAccounts: () => ({ data: { accounts: api.accounts } }),
@@ -54,6 +60,32 @@ describe('FleetTable account filter', () => {
       { id: 2, label: 'Alt', color: '#f97316', is_primary: 0 },
     ]
     api.fleet = [ship(1, 1, 10, 10000), ship(2, 2, 20, 20000), ship(3, 2, 21, 30000)]
+    api.loaners = []
+    navigate.mockClear()
+  })
+
+  it("gives each account's loaner row its own key and account link", () => {
+    api.fleet = []
+    api.loaners = [1, 2].map((acct) => ({
+      vehicle_id: 7,
+      vehicle_name: 'Mustang',
+      vehicle_slug: 'mustang',
+      production_status: 'flight_ready',
+      is_derived_loaner: 1,
+      loaner_for: 'Odin',
+      rsi_account_id: acct,
+    }))
+    renderAt('?accts=all')
+    expect(screen.getAllByText('Mustang')).toHaveLength(2)
+    const buttons = screen.getAllByTitle('Customize loadout')
+    expect(buttons).toHaveLength(2)
+    fireEvent.click(buttons[0])
+    fireEvent.click(buttons[1])
+    const targets = navigate.mock.calls.map((c) => c[0])
+    expect(targets.sort()).toEqual([
+      '/loadout/mustang?loaner_vehicle_id=7&account=1',
+      '/loadout/mustang?loaner_vehicle_id=7&account=2',
+    ])
   })
 
   it('shows only the selected account and its totals', () => {

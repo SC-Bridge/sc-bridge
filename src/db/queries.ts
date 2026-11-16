@@ -3676,25 +3676,35 @@ export async function getEffectiveShipLoadout(
   return { ship: entry.ship_name, ports };
 }
 
-/** Entitled loaner ships derived from owned concept/in-production ships (compact, for chat). */
+/**
+ * Entitled loaner ships derived from owned concept/in-production ships (compact, for chat).
+ * One row per (loaner, account). `accountIds` null means every account.
+ */
 export async function getEntitledLoaners(
   db: D1Database,
   userId: string,
-): Promise<Array<{ loaner: string; granted_by: string }>> {
+  accountIds: number[] | null,
+): Promise<Array<{ loaner: string; granted_by: string; rsi_account_id: number }>> {
+  const scoped = accountIds !== null;
   const result = await db
     .prepare(
-      `SELECT l.name AS loaner, group_concat(DISTINCT owned.name) AS granted_by
+      `SELECT l.name AS loaner, group_concat(DISTINCT owned.name) AS granted_by,
+              uf.rsi_account_id AS rsi_account_id
          FROM user_fleet uf
          JOIN vehicles owned ON owned.id = uf.vehicle_id
          JOIN production_statuses ops ON ops.id = owned.production_status_id
          JOIN vehicle_loaners vl ON vl.vehicle_id = owned.id
          JOIN vehicles l ON l.id = vl.loaner_id
         WHERE uf.user_id = ?1 AND uf.is_loaner = 0 AND ops.key != 'flight_ready'
-          AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
-        GROUP BY l.id ORDER BY l.name`,
+          AND NOT EXISTS (
+            SELECT 1 FROM user_fleet x
+             WHERE x.user_id = ?1 AND x.vehicle_id = l.id AND x.rsi_account_id IS uf.rsi_account_id
+          )
+          ${scoped ? "AND uf.rsi_account_id IN (SELECT value FROM json_each(?2))" : ""}
+        GROUP BY l.id, uf.rsi_account_id ORDER BY l.name, uf.rsi_account_id`,
     )
-    .bind(userId)
-    .all<{ loaner: string; granted_by: string }>();
+    .bind(...(scoped ? [userId, JSON.stringify(accountIds)] : [userId]))
+    .all<{ loaner: string; granted_by: string; rsi_account_id: number }>();
   return result.results;
 }
 

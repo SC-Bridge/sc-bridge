@@ -477,8 +477,8 @@ async function getFleetLoaners(
 ) {
   // For each owned unreleased ship (concept / in-production, not an imported
   // loaner itself), expose the loaner ships it grants. Deduped by loaner ship,
-  // with loaner_for listing the owned ship(s) that grant it. Loaner ships the
-  // user already owns are excluded so nothing shows up twice.
+  // per RSI account, with loaner_for listing the owned ship(s) on that account that
+  // grant it. A loaner is hidden only when the same account already owns it.
   const result = await db
     .prepare(
       `SELECT l.id AS vehicle_id,
@@ -497,6 +497,7 @@ async function getFleetLoaners(
         m.code AS manufacturer_code,
         ps.key AS production_status,
         1 AS is_derived_loaner,
+        uf.rsi_account_id,
         group_concat(DISTINCT owned.name) AS loaner_for
       FROM user_fleet uf
       JOIN vehicles owned ON owned.id = uf.vehicle_id
@@ -508,8 +509,11 @@ async function getFleetLoaners(
       WHERE uf.user_id = ?1
         AND uf.is_loaner = 0
         AND ops.key != 'flight_ready'
-        AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
-      GROUP BY l.id
+        AND NOT EXISTS (
+          SELECT 1 FROM user_fleet x
+          WHERE x.user_id = ?1 AND x.vehicle_id = l.id AND x.rsi_account_id IS uf.rsi_account_id
+        )
+      GROUP BY l.id, uf.rsi_account_id
       ORDER BY l.name`,
     )
     .bind(userID)
