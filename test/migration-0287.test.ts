@@ -3,9 +3,9 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, seedVehicle } from "./helpers";
 
-// Migration 0286 — per-account loaner loadouts, module selections and ship
-// order. The baseline schema already has the post-0286 shape, so the three
-// tables are put back to their pre-0286 shape, seeded, and the real migration
+// Migration 0287 — per-account loaner loadouts, module selections and ship
+// order. The baseline schema already has the post-0287 shape, so the three
+// tables are put back to their pre-0287 shape, seeded, and the real migration
 // statements (env.TEST_MIGRATIONS) are run over them.
 
 const db = () => env.DB as D1Database;
@@ -73,7 +73,7 @@ async function rows<T>(sql: string, ...binds: unknown[]): Promise<T[]> {
   return (await db().prepare(sql).bind(...binds).all<T>()).results;
 }
 
-describe("migration 0286 - per-account vehicle settings", () => {
+describe("migration 0287 - per-account vehicle settings", () => {
   let u1 = "";
   let u2 = "";
   let u3 = "";
@@ -129,7 +129,7 @@ describe("migration 0286 - per-account vehicle settings", () => {
       .run();
     const componentId = (await db().prepare("SELECT id FROM vehicle_components WHERE uuid = 'm286-c'").first<{ id: number }>())!.id;
 
-    // Pre-0286 shape, then seed.
+    // Pre-0287 shape, then seed.
     for (const sql of OLD_SHAPE) await db().prepare(sql).run();
     const ll = (user: string, vehicle: number, port: number) =>
       db()
@@ -160,7 +160,7 @@ describe("migration 0286 - per-account vehicle settings", () => {
     await so(u1, plain, 3);
     await so(u4, plain, 1);
 
-    const migration = env.TEST_MIGRATIONS.find((m) => m.name === "0286_rsi_account_vehicle_settings.sql");
+    const migration = env.TEST_MIGRATIONS.find((m) => m.name === "0287_rsi_account_vehicle_settings.sql");
     expect(migration).toBeDefined();
     for (const q of migration!.queries) await db().prepare(q).run();
   });

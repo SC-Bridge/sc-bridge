@@ -663,7 +663,8 @@ export default function LoadoutContainer() {
   }, [currentLoadout, weapons, attachments])
 
   // Per-armour-slot stats for the loadout summary footer, plus the backpack's
-  // display info (no combat stats — it only carries inventory volume).
+  // display info: name and carrying capacity (storage_capacity, µSCU). Not
+  // inventory_volume, which is the backpack's own size.
   const armourStats = useMemo(() => {
     const pieces = {}
     for (const slotKey of ARMOUR_STAT_SLOT_KEYS) {
@@ -680,7 +681,7 @@ export default function LoadoutContainer() {
     }
     const backpackSlot = currentLoadout.slots?.find((s) => s.slot_key === 'backpack')
     const backpackBp = backpackSlot?.item_uuid ? armours.find((a) => a.uuid === backpackSlot.item_uuid) : null
-    return { pieces, backpack: backpackBp ? { name: backpackBp.base_stats?.item_name || backpackBp.name, volume: backpackBp.base_stats?.inventory_volume ?? null } : null }
+    return { pieces, backpack: backpackBp ? { name: backpackBp.base_stats?.item_name || backpackBp.name, capacity: backpackBp.base_stats?.storage_capacity ?? null } : null }
   }, [currentLoadout, armours])
 
   const slotLabel = WEAPON_SLOT_LABEL[selectedSlot] || labelForSlotKey(selectedSlot)

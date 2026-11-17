@@ -1,7 +1,7 @@
 import { X, ShoppingCart, Package, FileText, Plus, Bookmark, BookmarkPlus, ExternalLink, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useLootItem } from '../../hooks/useAPI'
-import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, RESISTANCE_KEYS, effectiveCategory, humanizeRawDisplayName } from '../../lib/lootDisplay'
+import { rarityStyle, CATEGORY_BADGE_STYLES, CATEGORY_LABELS, RESISTANCE_KEYS, effectiveCategory, humanizeRawDisplayName, formatMicroScu } from '../../lib/lootDisplay'
 import LoadingState from '../../components/LoadingState'
 import LocationSection from './LocationSection'
 import ResistanceBar from './ResistanceBar'
@@ -466,6 +466,7 @@ export default function DetailPanel({ uuid, build = null, manufacturerName, coll
                 if ((k === 'zoom_scale' || k === 'second_zoom_scale' || k === 'zoom_factor') && typeof v === 'number') return `${v}x`
                 if (k === 'atmosphere_capacity' && typeof v === 'number') return v > 0 ? 'Yes' : 'No'
                 if (k === 'blast_radius' && typeof v === 'number') return `${v}m`
+                if (k === 'storage_capacity') return formatMicroScu(v) ?? 'N/A'
                 if (k === 'can_block' || k === 'can_takedown') return v ? 'Yes' : 'No'
                 return String(v)
               }
