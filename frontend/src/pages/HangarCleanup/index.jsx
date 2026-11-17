@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListChecks, Table2, Upload, RotateCcw } from 'lucide-react'
 import {
-  useHangarCleanup, useShips, saveCleanupDecision, saveCleanupDecisions, saveCleanupBuy, saveCleanupBuyRemelt, removeCleanupBuy,
+  useHangarCleanup, useShips, useStatus, useRsiAccounts, saveCleanupDecision, saveCleanupDecisions, saveCleanupBuy, saveCleanupBuyRemelt, removeCleanupBuy,
   saveCleanupState, resetCleanup,
 } from '../../hooks/useAPI'
 import PageHeader from '../../components/PageHeader'
@@ -10,19 +10,28 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import SyncStalenessBanner from '../../components/SyncStalenessBanner'
-import { makeCatalog, normaliseExport, analyse, rebuyPrice, buildSteps, MELT_DECISIONS, REBUY_DECISIONS } from '../../lib/hangarCleanup'
+import AccountFilter from '../../components/AccountFilter'
+import useAccountFilter from '../../hooks/useAccountFilter'
+import { makeCatalog, normaliseExport, analyse, planAccounts, rebuyPrice, buildSteps, MELT_DECISIONS, REBUY_DECISIONS } from '../../lib/hangarCleanup'
 import { Totals, Insights } from './Overview'
 import Ledger from './Ledger'
 import BuyList from './BuyList'
 import ProcessView from './ProcessView'
+import AccountsOverview from './AccountsOverview'
 
 const EMPTY_PLAN = { decisions: {}, buys: {}, remelts: {}, creditOverride: null, done: [] }
+
+/** A decision with no gift target carries no gift key, so ungifted requests keep their old shape. */
+function withoutNullGift(d) {
+  const { gift_to_account_id: target, ...rest } = d
+  return target == null ? rest : d
+}
 
 /** Server payload → the plan shape the page edits. */
 function planFromServer(data) {
   if (!data) return EMPTY_PLAN
   return {
-    decisions: data.decisions ?? {},
+    decisions: Object.fromEntries(Object.entries(data.decisions ?? {}).map(([id, d]) => [id, withoutNullGift(d)])),
     buys: Object.fromEntries((data.buys ?? []).map((b) => [b.vehicle_id, b.price_cents ?? null])),
     // Buy-list ships to melt straight after purchase (buy-back token plan).
     remelts: Object.fromEntries((data.buys ?? []).filter((b) => b.remelt).map((b) => [b.vehicle_id, true])),
@@ -31,13 +40,30 @@ function planFromServer(data) {
   }
 }
 
+/** Each selected account's own ticked steps, keyed by account id. */
+function doneFromServer(data) {
+  return Object.fromEntries((data?.accounts ?? []).map((a) => [a.id, a.done_steps ?? []]))
+}
+
+/** A buy-list row as the plan builder wants it: named, priced (own price, else the store price). */
+function resolveBuy(b, catalog) {
+  const s = catalog.byId.get(Number(b.vehicle_id))
+  return { vehicle_id: Number(b.vehicle_id), name: s?.name ?? `Ship #${b.vehicle_id}`, price_cents: b.price_cents ?? s?.pledge_price_cents ?? null, remelt: !!b.remelt }
+}
+
 /** Drop a decision row once it says nothing, matching the server's delete-when-empty rule. */
 function cleanDecision(d) {
   return d && (d.decision || d.buy_ingame || d.iae_price_cents != null) ? d : null
 }
 
 export default function HangarCleanup() {
-  const { data, loading, error, refetch } = useHangarCleanup()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  // Which accounts the page loads. Inactive (flag off or one account): no query, as before.
+  const query = accountFilter.active ? `?accounts=${accountFilter.apiParam}` : ''
+  const { data, loading, error, refetch } = useHangarCleanup(query)
   const { data: shipsData } = useShips()
   const [searchParams, setSearchParams] = useSearchParams()
   const view = searchParams.get('view') === 'steps' ? 'steps' : 'plan'
@@ -50,12 +76,33 @@ export default function HangarCleanup() {
   const [saveError, setSaveError] = useState('')
   const [open, setOpen] = useState(new Set())
   const [confirmReset, setConfirmReset] = useState(false)
+  const [doneByAccount, setDoneByAccount] = useState({})
   const fileInput = useRef(null)
 
-  useEffect(() => { if (data) setSyncedPlan(planFromServer(data)) }, [data])
+  // The query the plan on screen was loaded for. useAPI keeps the previous data
+  // while a new path loads (and after an error), so a write is only allowed once
+  // the data shown belongs to the query now selected.
+  const [loadedQuery, setLoadedQuery] = useState(null)
+  const appliedRef = useRef(null)
+  const queryRef = useRef(query)
+  queryRef.current = query
+  useEffect(() => {
+    if (loading || error || !data || appliedRef.current === data) return
+    appliedRef.current = data
+    setSyncedPlan(planFromServer(data))
+    setDoneByAccount(doneFromServer(data))
+    setLoadedQuery(queryRef.current)
+  }, [data, loading, error])
 
   const catalog = useMemo(() => makeCatalog(Array.isArray(shipsData) ? shipsData : shipsData?.ships ?? []), [shipsData])
   const isFile = fileModel != null
+  const canWrite = isFile || loadedQuery === query
+  // Account UI only shows for a synced hangar with the filter active.
+  const accountsActive = accountFilter.active && !isFile
+  const multi = accountsActive && accountFilter.selectedIds.size > 1
+  const writeAccountId = accountsActive && accountFilter.selectedIds.size === 1 ? [...accountFilter.selectedIds][0] : null
+  const acctArgs = writeAccountId != null ? [writeAccountId] : []
+  const acctBody = writeAccountId != null ? { rsi_account_id: writeAccountId } : {}
   const plan = isFile ? filePlan : syncedPlan
   const setPlan = isFile ? setFilePlan : setSyncedPlan
   // Handlers compute the next value from this, so what we save is what we show
@@ -68,8 +115,6 @@ export default function HangarCleanup() {
     if (!data) return null
     return { source: 'synced', synced_at: data.synced_at, store_credit_cents: data.store_credit_cents, pledges: data.pledges ?? [], buybacks: data.buybacks ?? [] }
   }, [fileModel, data])
-  const analysis = useMemo(() => (model ? analyse(model) : { rows: [], tokens: [] }), [model])
-  const { rows, tokens } = analysis
 
   // Saves go to the account in synced mode only; the local state is the source of truth for the page.
   const persist = useCallback(async (fn) => {
@@ -78,8 +123,11 @@ export default function HangarCleanup() {
   }, [isFile])
 
   const onDecide = useCallback((id, patch) => {
+    if (!canWrite) return
     const blank = { decision: null, buy_ingame: false, iae_price_cents: null }
-    const merged = cleanDecision({ ...blank, ...planRef.current.decisions[id], ...patch })
+    const next = { ...blank, ...planRef.current.decisions[id], ...patch }
+    if (next.decision !== 'gift') delete next.gift_to_account_id
+    const merged = cleanDecision(next)
     setPlan((p) => {
       const decisions = { ...p.decisions }
       if (merged) decisions[id] = merged
@@ -87,12 +135,12 @@ export default function HangarCleanup() {
       return { ...p, decisions }
     })
     persist(() => saveCleanupDecision(id, merged ?? blank))
-  }, [setPlan, persist])
+  }, [setPlan, persist, canWrite])
 
   // One decision for many pledges (the ledger's "apply to all shown"). Each
   // pledge keeps its own in-game flag and IAE price, as the bulk route does.
   const onDecideMany = useCallback((ids, decision) => {
-    if (!ids.length) return
+    if (!ids.length || !canWrite) return
     const blank = { decision: null, buy_ingame: false, iae_price_cents: null }
     setPlan((p) => {
       const decisions = { ...p.decisions }
@@ -104,9 +152,10 @@ export default function HangarCleanup() {
       return { ...p, decisions }
     })
     persist(() => saveCleanupDecisions(ids, decision))
-  }, [setPlan, persist])
+  }, [setPlan, persist, canWrite])
 
   const onToggleBuy = useCallback((vehicleId, on) => {
+    if (!canWrite) return
     setPlan((p) => {
       const buys = { ...p.buys }
       const remelts = { ...p.remelts }
@@ -114,42 +163,59 @@ export default function HangarCleanup() {
       else { delete buys[vehicleId]; delete remelts[vehicleId] }
       return { ...p, buys, remelts }
     })
-    persist(() => (on ? saveCleanupBuy(vehicleId, null) : removeCleanupBuy(vehicleId)))
-  }, [setPlan, persist])
+    persist(() => (on ? saveCleanupBuy(vehicleId, null, ...acctArgs) : removeCleanupBuy(vehicleId, ...acctArgs)))
+  }, [setPlan, persist, canWrite, writeAccountId])
 
   const onBuyPrice = useCallback((vehicleId, cents) => {
+    if (!canWrite) return
     setPlan((p) => ({ ...p, buys: { ...p.buys, [vehicleId]: cents } }))
-    persist(() => saveCleanupBuy(vehicleId, cents))
-  }, [setPlan, persist])
+    persist(() => saveCleanupBuy(vehicleId, cents, ...acctArgs))
+  }, [setPlan, persist, canWrite, writeAccountId])
 
   const onBuyRemelt = useCallback((vehicleId, on) => {
+    if (!canWrite) return
     setPlan((p) => {
       const remelts = { ...p.remelts }
       if (on) remelts[vehicleId] = true
       else delete remelts[vehicleId]
       return { ...p, remelts }
     })
-    persist(() => saveCleanupBuyRemelt(vehicleId, on))
-  }, [setPlan, persist])
+    persist(() => saveCleanupBuyRemelt(vehicleId, on, ...acctArgs))
+  }, [setPlan, persist, canWrite, writeAccountId])
 
   const onCredit = useCallback((cents) => {
+    if (!canWrite) return
     setPlan((p) => ({ ...p, creditOverride: cents }))
-    persist(() => saveCleanupState({ credit_override_cents: cents }))
-  }, [setPlan, persist])
+    persist(() => saveCleanupState({ credit_override_cents: cents, ...acctBody }))
+  }, [setPlan, persist, canWrite, writeAccountId])
 
   const onToggleDone = useCallback((key) => {
+    if (!canWrite) return
     const cur = planRef.current.done
     const done = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]
     setPlan((p) => ({ ...p, done }))
-    persist(() => saveCleanupState({ done_steps: done }))
-  }, [setPlan, persist])
+    persist(() => saveCleanupState({ done_steps: done, ...acctBody }))
+  }, [setPlan, persist, canWrite, writeAccountId])
+
+  // Several accounts selected: each plan ticks its own list and saves it for that account only.
+  const doneRef = useRef(doneByAccount)
+  doneRef.current = doneByAccount
+  const onToggleAccountDone = useCallback((accountId, key) => {
+    if (!canWrite) return
+    const cur = doneRef.current[accountId] ?? []
+    const done = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]
+    setDoneByAccount((d) => ({ ...d, [accountId]: done }))
+    persist(() => saveCleanupState({ done_steps: done, rsi_account_id: accountId }))
+  }, [persist, canWrite])
 
   const onReset = useCallback(async () => {
+    if (!canWrite) return
     if (!confirmReset) { setConfirmReset(true); setTimeout(() => setConfirmReset(false), 4000); return }
     setConfirmReset(false)
     setPlan(EMPTY_PLAN)
-    persist(() => resetCleanup())
-  }, [confirmReset, setPlan, persist])
+    setDoneByAccount({})
+    persist(() => resetCleanup(...(accountsActive ? [accountFilter.apiParam] : [])))
+  }, [confirmReset, setPlan, persist, canWrite, accountsActive, accountFilter.apiParam])
 
   const loadFile = useCallback((file) => {
     if (!file) return
@@ -176,10 +242,27 @@ export default function HangarCleanup() {
   }
 
   const credit = plan.creditOverride ?? model?.store_credit_cents ?? 0
-  const buyList = useMemo(() => Object.entries(plan.buys).map(([id, price]) => {
-    const s = catalog.byId.get(Number(id))
-    return { vehicle_id: Number(id), name: s?.name ?? `Ship #${id}`, price_cents: price ?? s?.pledge_price_cents ?? null, remelt: !!plan.remelts[id] }
-  }), [plan.buys, plan.remelts, catalog])
+  const buyList = useMemo(
+    () => Object.entries(plan.buys).map(([id, price]) => resolveBuy({ vehicle_id: id, price_cents: price, remelt: plan.remelts[id] }, catalog)),
+    [plan.buys, plan.remelts, catalog],
+  )
+
+  // With the account filter on, plans are built per account (the one selected
+  // account uses the page's own buy list and credit, since those are editable).
+  const planned = useMemo(() => {
+    const list = data?.accounts
+    if (!accountsActive || !model || !list?.length) return null
+    return planAccounts({
+      model,
+      accounts: list.map((a) => ({ ...a, buys: multi ? (a.buys ?? []).map((b) => resolveBuy(b, catalog)) : buyList })),
+      allAccounts: data.all_accounts,
+      decisions: plan.decisions,
+      catalog,
+      creditOverrides: multi ? undefined : { [list[0].id]: credit },
+    })
+  }, [accountsActive, multi, model, data, plan.decisions, catalog, buyList, credit])
+  const analysis = useMemo(() => planned?.analysis ?? (model ? analyse(model) : { rows: [], tokens: [] }), [planned, model])
+  const { rows, tokens } = analysis
   const owned = useMemo(() => new Set(rows.flatMap((r) => r.ships.map((s) => s.vehicle_id))), [rows])
 
   const totals = useMemo(() => {
@@ -204,12 +287,17 @@ export default function HangarCleanup() {
     }
   }, [rows, plan.decisions, buyList, credit])
 
-  const steps = useMemo(() => buildSteps({ rows, decisions: plan.decisions, buys: buyList, credit, catalog }), [rows, plan.decisions, buyList, credit, catalog])
+  const steps = useMemo(
+    () => (planned && !multi && planned.plans[0] ? planned.plans[0].steps : buildSteps({ rows, decisions: plan.decisions, buys: buyList, credit, catalog })),
+    [planned, multi, rows, plan.decisions, buyList, credit, catalog],
+  )
   const undecidedMelts = rows.filter((r) => !plan.decisions[r.id]?.decision && r.suggestion.action === 'melt').length
   const actionCount = Object.values(plan.decisions).filter((x) => x.decision && x.decision !== 'keep').length + buyList.length
 
-  if (loading && !fileModel) return <LoadingState message="Loading your hangar…" />
-  if (error && !fileModel) return <ErrorState message={error} onRetry={refetch} />
+  // The filter stays on screen while a selection loads or fails, so it can be changed again.
+  const filterBar = accountsActive ? <AccountFilter accounts={rsiAccounts} filter={accountFilter} /> : null
+  if (loading && !fileModel) return <div className="space-y-5">{filterBar}<LoadingState message="Loading your hangar…" /></div>
+  if (error && !fileModel) return <div className="space-y-5">{filterBar}<ErrorState message={error} onRetry={refetch} /></div>
 
   const noSync = !isFile && !(data?.pledges?.length)
 
@@ -245,11 +333,12 @@ export default function HangarCleanup() {
           <button type="button" className="btn-ghost inline-flex items-center gap-1.5 !px-2 !py-1" onClick={() => fileInput.current?.click()}><Upload className="w-4 h-4" />Load export file</button>
           {!noSync && (
             <button type="button" className={`${confirmReset ? 'btn-danger' : 'btn-ghost'} inline-flex items-center gap-1.5 !px-2 !py-1`} onClick={onReset}>
-              <RotateCcw className="w-4 h-4" />{confirmReset ? 'Click again to clear all decisions' : 'Reset decisions'}
+              <RotateCcw className="w-4 h-4" />{confirmReset ? (multi ? `Reset Hangar Cleanup for ${accountFilter.selectedIds.size} accounts?` : 'Click again to clear all decisions') : 'Reset decisions'}
             </button>
           )}
         </span>
       </div>
+      {filterBar}
       {fileError && <p className="text-sm text-red-300" role="alert">{fileError}</p>}
       {saveError && <p className="text-sm text-red-300" role="alert">{saveError}</p>}
       {!isFile && !noSync && <SyncStalenessBanner />}
@@ -262,18 +351,41 @@ export default function HangarCleanup() {
           actionLink={{ to: '/sync-import', label: 'Go to Sync & Import' }}
         />
       ) : (
-        <>
-          <Totals totals={totals} credit={credit} creditIsOverride={plan.creditOverride != null} onCredit={onCredit} />
+        // A disabled fieldset disables every control inside it until the data shown matches the selection.
+        <fieldset disabled={!canWrite} className="min-w-0 border-0 p-0 m-0 space-y-5">
+          {multi && planned ? (
+            <AccountsOverview
+              plans={planned.plans}
+              totals={planned.totals}
+              markerAccounts={rsiAccounts}
+              doneByAccount={doneByAccount}
+              onToggleDone={onToggleAccountDone}
+              showPlans={view === 'steps'}
+            />
+          ) : (
+            <Totals totals={totals} credit={credit} creditIsOverride={plan.creditOverride != null} onCredit={onCredit} />
+          )}
           {view === 'steps' ? (
-            <ProcessView plan={steps} done={plan.done} onToggleDone={onToggleDone} undecidedMelts={undecidedMelts} />
+            !multi && <ProcessView plan={steps} done={plan.done} onToggleDone={onToggleDone} undecidedMelts={undecidedMelts} />
           ) : (
             <>
               <Insights rows={rows} tokens={tokens} onJump={onJump} />
-              <Ledger rows={rows} decisions={plan.decisions} onDecide={onDecide} onDecideMany={onDecideMany} open={open} onToggle={onToggleRow} />
-              <BuyList catalog={catalog} owned={owned} buys={plan.buys} remelts={plan.remelts} onToggle={onToggleBuy} onPrice={onBuyPrice} onRemelt={onBuyRemelt} />
+              <Ledger
+                rows={rows}
+                decisions={plan.decisions}
+                onDecide={onDecide}
+                onDecideMany={onDecideMany}
+                open={open}
+                onToggle={onToggleRow}
+                giftTargets={accountsActive ? data?.all_accounts ?? null : null}
+                markerAccounts={multi ? rsiAccounts : null}
+              />
+              {multi
+                ? <p className="text-sm text-gray-500">Choose a single account to edit its IAE buy list and store credit.</p>
+                : <BuyList catalog={catalog} owned={owned} buys={plan.buys} remelts={plan.remelts} onToggle={onToggleBuy} onPrice={onBuyPrice} onRemelt={onBuyRemelt} />}
             </>
           )}
-        </>
+        </fieldset>
       )}
     </div>
   )

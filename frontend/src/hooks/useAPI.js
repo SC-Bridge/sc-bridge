@@ -566,8 +566,8 @@ export function useHangar() {
  * ships), store credit, and the user's saved decisions, buy list and ticked
  * steps, in one payload. Staging-only while the page is in preview.
  */
-export function useHangarCleanup() {
-  return useAPI('/hangar-cleanup')
+export function useHangarCleanup(query = '') {
+  return useAPI(`/hangar-cleanup${query}`)
 }
 
 // --- RSI accounts (multi-account) ---
@@ -595,27 +595,34 @@ export async function saveCleanupDecisions(rsiPledgeIds, decision) {
   return putJSON('/hangar-cleanup/decisions', { rsi_pledge_ids: rsiPledgeIds, decision })
 }
 
-export async function saveCleanupBuy(vehicleId, priceCents = null) {
-  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { price_cents: priceCents })
+// The buy, remelt, remove and reset calls take an RSI account only when the
+// account filter is on; without one the request is exactly as before.
+const withAccount = (body, rsiAccountId) => (rsiAccountId != null ? { ...body, rsi_account_id: rsiAccountId } : body)
+
+export async function saveCleanupBuy(vehicleId, priceCents = null, rsiAccountId) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, withAccount({ price_cents: priceCents }, rsiAccountId))
 }
 
 /** Mark a buy-list ship to be melted straight after purchase (it lands in Buy Back Pledges). */
-export async function saveCleanupBuyRemelt(vehicleId, remelt) {
-  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { remelt })
+export async function saveCleanupBuyRemelt(vehicleId, remelt, rsiAccountId) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, withAccount({ remelt }, rsiAccountId))
 }
 
 // DELETEs send an empty JSON body: browsers only add Content-Length: 0 on their
 // own for POST/PUT, and the /api/* guard returns 411 for a mutation without it.
-export async function removeCleanupBuy(vehicleId) {
-  return apiFetch('DELETE', `/hangar-cleanup/buys/${vehicleId}`, {})
+export async function removeCleanupBuy(vehicleId, rsiAccountId) {
+  const query = rsiAccountId != null ? `?account=${rsiAccountId}` : ''
+  return apiFetch('DELETE', `/hangar-cleanup/buys/${vehicleId}${query}`, {})
 }
 
 export async function saveCleanupState(patch) {
   return putJSON('/hangar-cleanup/state', patch)
 }
 
-export async function resetCleanup() {
-  return apiFetch('DELETE', '/hangar-cleanup', {})
+/** `accounts` is the account filter's apiParam ('all' or '1,3'); omit it to reset the primary account. */
+export async function resetCleanup(accounts) {
+  const query = accounts ? `?accounts=${accounts}` : ''
+  return apiFetch('DELETE', `/hangar-cleanup${query}`, {})
 }
 
 export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {

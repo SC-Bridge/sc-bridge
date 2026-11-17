@@ -669,13 +669,15 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
  * step to the pledge's account and an accept step to the target's; once the
  * pledge already sits on the target account there are no steps and the row
  * gets gift_done. A gift pledge is never melted (buildSteps ignores 'gift').
+ * allAccounts (every account the user has) is used only to look up names, so a
+ * gift to an account outside the selection still reads correctly.
  */
-export function planAccounts({ model, accounts, decisions, catalog, creditOverrides }) {
+export function planAccounts({ model, accounts, allAccounts, decisions, catalog, creditOverrides }) {
   const analysis = analyse(model)
   const list = accounts ?? []
   const fallbackId = (list.find((a) => a.is_primary) ?? list[0])?.id ?? null
   const ownerOf = (r) => r.rsiAccountId ?? fallbackId
-  const nameOf = (id) => list.find((a) => a.id === id)?.name ?? ''
+  const nameOf = (id) => (list.find((a) => a.id === id) ?? (allAccounts ?? []).find((a) => a.id === id))?.name ?? ''
   const gifts = analysis.rows.filter((r) => decisions?.[r.id]?.decision === 'gift' && decisions[r.id].gift_to_account_id != null)
   for (const r of gifts) r.gift_done = ownerOf(r) === decisions[r.id].gift_to_account_id
 

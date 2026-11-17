@@ -368,6 +368,16 @@ describe('planAccounts', () => {
     expect(r.plans[0].steps.phases.at(-1).steps[0]).toMatchObject({ id: 'gift-send-30', kind: 'gift-send', text: 'Gift Standalone Ship - Pulse to Acct B' })
     expect(r.plans[1].steps.phases.at(-1).steps[0]).toMatchObject({ kind: 'gift-accept', text: 'Accept the gift of Standalone Ship - Pulse from Acct A' })
   })
+  it('names a gift target that is not among the selected accounts', () => {
+    const p = onA(pledge(32, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({
+      model: m([p]),
+      accounts: [acct('A')],
+      allAccounts: [{ id: 'A', name: 'Acct A' }, { id: 'B', name: 'Acct B' }],
+      decisions: { 32: { decision: 'gift', gift_to_account_id: 'B' } },
+    })
+    expect(r.plans[0].steps.phases.at(-1).steps[0].text).toBe('Gift Standalone Ship - Pulse to Acct B')
+  })
   it('gift is done once the pledge is on the target account', () => {
     const p = onB(pledge(31, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
     const r = planAccounts({ model: m([p]), accounts: [acct('A'), acct('B')], decisions: { 31: { decision: 'gift', gift_to_account_id: 'B' } } })
