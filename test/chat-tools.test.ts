@@ -110,9 +110,12 @@ describe("chat tools — account-aware ship lookup", () => {
   });
 
   it("resolves a same-named ship by account label", async () => {
-    const { userId } = await twoAccountsWithSameShip();
+    const { userId, fleetA } = await twoAccountsWithSameShip();
+    // Rename account A's row so returning it would show a different `ship`.
+    await env.DB.prepare("UPDATE user_fleet SET custom_name = 'Main Hauler' WHERE id = ?").bind(fleetA).run();
     const out = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", { account: "alt" })));
     expect(out.ship).toBe("Cutlass Black");
+    expect(out.ship).not.toBe("Main Hauler");
     expect(out.error).toBeUndefined();
   });
 
