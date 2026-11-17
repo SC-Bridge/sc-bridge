@@ -130,6 +130,86 @@ describe("In-game-purchased ships", () => {
     expect(rows.results.some((r) => r.pledge_id === "222")).toBe(true);
   });
 
+  describe("per-account", () => {
+    async function twoAccounts() {
+      const u = await createTestUser(env.DB);
+      const a = await getOrCreatePrimaryAccountId(env.DB, u.userId);
+      const ins = await env.DB
+        .prepare("INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder) VALUES (?, 'Alt', 0, 1)")
+        .bind(u.userId)
+        .run();
+      const b = Number(ins.meta.last_row_id);
+      const headers = { ...(await authHeaders(u.sessionToken)), "Content-Type": "application/json" };
+      return { u, a, b, headers };
+    }
+    const rowsFor = (userId: string) =>
+      env.DB.prepare("SELECT rsi_account_id FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
+        .bind(userId).all<{ rsi_account_id: number }>();
+
+    it("ingame add stamps the chosen account", async () => {
+      const { u, b, headers } = await twoAccounts();
+      const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
+        method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: b }),
+      });
+      expect(res.status).toBe(200);
+      expect((await rowsFor(u.userId)).results.map((r) => r.rsi_account_id)).toEqual([b]);
+    });
+
+    it("ingame add rejects a foreign account", async () => {
+      const { u, headers } = await twoAccounts();
+      const other = await createTestUser(env.DB);
+      const foreign = await getOrCreatePrimaryAccountId(env.DB, other.userId);
+      const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
+        method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: foreign }),
+      });
+      expect(res.status).toBe(404);
+      expect((await rowsFor(u.userId)).results).toHaveLength(0);
+    });
+
+    it("ingame clear only clears the given accounts", async () => {
+      const { u, a, b, headers } = await twoAccounts();
+      for (const acct of [a, b]) {
+        await SELF.fetch("http://localhost/api/vehicles/ingame", {
+          method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: acct }),
+        });
+      }
+      const del = await SELF.fetch(`http://localhost/api/vehicles/ingame?accounts=${a}`, {
+        method: "DELETE", headers: { ...(await authHeaders(u.sessionToken)), "Content-Length": "0" },
+      });
+      expect(del.status).toBe(200);
+      expect((await rowsFor(u.userId)).results.map((r) => r.rsi_account_id)).toEqual([b]);
+    });
+
+    it("ingame clear rejects a malformed accounts param instead of clearing everything", async () => {
+      const { u, a, headers } = await twoAccounts();
+      await SELF.fetch("http://localhost/api/vehicles/ingame", {
+        method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: a }),
+      });
+      for (const bad of ["abc", "1,x", "0", "-3", "1,,2", ","]) {
+        const del = await SELF.fetch(`http://localhost/api/vehicles/ingame?accounts=${encodeURIComponent(bad)}`, {
+          method: "DELETE", headers: { ...(await authHeaders(u.sessionToken)), "Content-Length": "0" },
+        });
+        expect(del.status, bad).toBe(400);
+        expect(await del.json()).toEqual({ error: "Invalid accounts" });
+      }
+      expect((await rowsFor(u.userId)).results).toHaveLength(1);
+    });
+
+    it("ingame clear ignores account ids the user does not own", async () => {
+      const { u, a, headers } = await twoAccounts();
+      const other = await createTestUser(env.DB);
+      const foreign = await getOrCreatePrimaryAccountId(env.DB, other.userId);
+      await SELF.fetch("http://localhost/api/vehicles/ingame", {
+        method: "POST", headers, body: JSON.stringify({ vehicle_id: vid, rsi_account_id: a }),
+      });
+      const del = await SELF.fetch(`http://localhost/api/vehicles/ingame?accounts=${foreign}`, {
+        method: "DELETE", headers: { ...(await authHeaders(u.sessionToken)), "Content-Length": "0" },
+      });
+      expect(del.status).toBe(200);
+      expect((await rowsFor(u.userId)).results).toHaveLength(1);
+    });
+  });
+
   it("requires auth", async () => {
     const res = await SELF.fetch("http://localhost/api/vehicles/ingame", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicle_id: vid }),

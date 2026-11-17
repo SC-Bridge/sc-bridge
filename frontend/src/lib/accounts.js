@@ -27,3 +27,15 @@ export function accountStripeStyle(rsiAccountId, accounts) {
   const marker = resolveAccountMarker(rsiAccountId, accounts)
   return marker ? { boxShadow: `inset 4px 0 0 ${marker.color}` } : undefined
 }
+
+// "Analysing: Main, Alt" for an AI analysis row's account names; null means it
+// covered every account.
+export const analysingLabel = (names) =>
+  `Analysing: ${names && names.length > 0 ? names.join(', ') : 'all accounts'}`
+
+// The `accounts` value the AI analysis endpoint takes for a filter: 'all', a list
+// of ids, or undefined (single-account users send nothing).
+export function analysisAccountsValue(filter) {
+  if (!filter?.active) return undefined
+  return filter.isAll ? 'all' : [...filter.selectedIds].sort((a, b) => a - b)
+}

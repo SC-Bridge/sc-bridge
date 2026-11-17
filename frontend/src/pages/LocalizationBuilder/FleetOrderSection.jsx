@@ -19,6 +19,7 @@ function Toggle({ checked, onChange }) {
 export default function FleetOrderSection({
   config, orderedShips, allShips, fleet, shipSearch, setShipSearch,
   onToggle, onReorder, onRemove, onAdd, onAddFromFleet, onUpdateCustomLabel,
+  readOnly = false,
 }) {
   const shipDrag = useDragReorder(orderedShips, onReorder)
 
@@ -65,10 +66,16 @@ export default function FleetOrderSection({
 
       {config.asopEnabled && (
         <div className="p-4 space-y-4">
+          {readOnly && (
+            <p className="text-xs text-gray-400">
+              Choose one account to rearrange its order. The download uses this combined order.
+            </p>
+          )}
+
           {/* Ordered ship list — drag to reorder */}
           {orderedShips.length > 0 ? (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">Your ship order (drag to reorder)</p>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">{readOnly ? 'Combined ship order' : 'Your ship order (drag to reorder)'}</p>
               <div ref={shipDrag.containerRef} className="space-y-1 max-h-[28rem] overflow-y-auto">
                 {orderedShips.map((ship, idx) => (
                   <div
@@ -80,19 +87,24 @@ export default function FleetOrderSection({
                     }`}
                   >
                     <span className="text-sc-accent font-mono text-xs w-6 text-right shrink-0">{padPos(ship.sortPosition)}.</span>
-                    <GripVertical
-                      className="w-3.5 h-3.5 text-gray-500 shrink-0 cursor-grab active:cursor-grabbing touch-none"
-                      onPointerDown={(e) => shipDrag.startDrag(e, idx)}
-                    />
+                    {!readOnly && (
+                      <GripVertical
+                        aria-label="Drag to reorder"
+                        className="w-3.5 h-3.5 text-gray-500 shrink-0 cursor-grab active:cursor-grabbing touch-none"
+                        onPointerDown={(e) => shipDrag.startDrag(e, idx)}
+                      />
+                    )}
                     <span className="text-xs text-gray-200 flex-1 truncate">
                       {ship.vehicleName}
                       {ship.customLabel && (
                         <span className="text-sc-accent/70 ml-1">&ldquo;{ship.customLabel}&rdquo;</span>
                       )}
                     </span>
-                    <button onClick={() => onRemove(idx)} className="p-0.5 rounded hover:bg-red-500/20 opacity-0 group-hover:opacity-100 hover:!opacity-100 cursor-pointer">
+                    {!readOnly && (
+                    <button aria-label={`Remove ${ship.vehicleName}`} onClick={() => onRemove(idx)} className="p-0.5 rounded hover:bg-red-500/20 opacity-0 group-hover:opacity-100 hover:!opacity-100 cursor-pointer">
                       <X className="w-3.5 h-3.5 text-gray-500 hover:text-red-400" />
                     </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -106,7 +118,7 @@ export default function FleetOrderSection({
           )}
 
           {/* Fleet ships not yet added */}
-          {unorderedFleet.length > 0 && (
+          {!readOnly && unorderedFleet.length > 0 && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
                 Your fleet ({unorderedFleet.length} ships not yet added)
@@ -132,6 +144,7 @@ export default function FleetOrderSection({
           )}
 
           {/* Search for ships not in fleet (in-game aUEC purchases) */}
+          {!readOnly && (
           <div className="space-y-2">
             <p className="text-[10px] uppercase tracking-wider text-gray-500">
               Add other ships (in-game purchases, not in your hangar)
@@ -159,6 +172,7 @@ export default function FleetOrderSection({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

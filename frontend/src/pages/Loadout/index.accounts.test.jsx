@@ -5,12 +5,18 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Loadout from './index'
 
 const empty = { data: null, loading: false, error: null, refetch: vi.fn() }
+const hooks = vi.hoisted(() => ({
+  useOwnedModules: vi.fn(),
+  useLoanerLoadout: vi.fn(),
+  useModuleSelections: vi.fn(),
+  useGadgetSelections: vi.fn(),
+}))
 
 vi.mock('../../hooks/useAPI', () => ({
   useShip: () => ({ ...empty, data: { id: 1, slug: 'carrack', name: 'Carrack' } }),
   useLoadoutComponents: () => empty,
   useShipModules: () => empty,
-  useOwnedModules: () => empty,
+  useOwnedModules: (...args) => { hooks.useOwnedModules(...args); return empty },
   useFleetLoadout: () => empty,
   useLoadoutCart: () => empty,
   useFleet: () => ({
@@ -20,9 +26,9 @@ vi.mock('../../hooks/useAPI', () => ({
       { id: 6, vehicle_slug: 'carrack', rsi_account_id: 2 },
     ],
   }),
-  useLoanerLoadout: () => empty,
-  useModuleSelections: () => empty,
-  useGadgetSelections: () => empty,
+  useLoanerLoadout: (...args) => { hooks.useLoanerLoadout(...args); return empty },
+  useModuleSelections: (...args) => { hooks.useModuleSelections(...args); return empty },
+  useGadgetSelections: (...args) => { hooks.useGadgetSelections(...args); return empty },
   useStatus: () => ({ data: { features: { multiAccount: true } } }),
   useRsiAccounts: () => ({
     data: {
@@ -43,9 +49,9 @@ vi.mock('../../hooks/useAPI', () => ({
   resetGadgetSelection: vi.fn(),
 }))
 
-const renderAt = (fleetId) =>
+const renderAt = (fleetId, search = `fleet_id=${fleetId}`) =>
   render(
-    <MemoryRouter initialEntries={[`/loadout/carrack?fleet_id=${fleetId}`]}>
+    <MemoryRouter initialEntries={[`/loadout/carrack?${search}`]}>
       <Routes>
         <Route path="/loadout/:slug" element={<Loadout />} />
       </Routes>
@@ -57,5 +63,22 @@ describe('Loadout fleet entry marker', () => {
     renderAt(id)
     expect(screen.getByRole('img', { name })).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: /filter by rsi account/i })).toBeNull()
+  })
+})
+
+describe('Loadout account scoping', () => {
+  it('loaner mode sends the account param from the URL', () => {
+    vi.clearAllMocks()
+    renderAt(null, 'loaner_vehicle_id=7&account=3')
+    expect(hooks.useLoanerLoadout).toHaveBeenCalledWith(7, 3)
+    expect(hooks.useModuleSelections).toHaveBeenCalledWith('loaner', 7, 3)
+    expect(hooks.useGadgetSelections).toHaveBeenCalledWith('loaner', 7, 3)
+    expect(hooks.useOwnedModules).toHaveBeenCalledWith('carrack', 3)
+  })
+
+  it('fleet mode asks for the owned modules of its own account', () => {
+    vi.clearAllMocks()
+    renderAt(6)
+    expect(hooks.useOwnedModules).toHaveBeenCalledWith('carrack', 2)
   })
 })

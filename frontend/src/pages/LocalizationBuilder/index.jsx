@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Rocket, Tags, Sparkles, Eye, Download, Loader, Save, AlertCircle, CheckCircle, Search, Package } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -10,7 +10,11 @@ import {
   saveLocalizationShipOrder,
   useFleet,
   useShips,
+  useStatus,
+  useRsiAccounts,
 } from '../../hooks/useAPI'
+import AccountFilter from '../../components/AccountFilter'
+import useAccountFilter from '../../hooks/useAccountFilter'
 import { LABEL_CATEGORIES, CATEGORY_FIELDS } from './constants'
 import FleetOrderSection from './FleetOrderSection'
 import ItemLabelsSection from './ItemLabelsSection'
@@ -52,7 +56,28 @@ const SECTIONS = [
 
 export default function LocalizationBuilder() {
   const { data: serverConfig, loading: configLoading, refetch: refetchConfig } = useLocalizationConfig()
-  const { data: shipOrder, loading: orderLoading, refetch: refetchOrder } = useLocalizationShipOrder()
+  const { data: appStatus } = useStatus()
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(rsiAccounts)
+  // One account selected: edit its order. Several: show the merged order read-only.
+  const orderReadOnly = accountFilter.active && accountFilter.selectedIds.size > 1
+  const orderAccountId = accountFilter.active && accountFilter.selectedIds.size === 1
+    ? [...accountFilter.selectedIds][0]
+    : undefined
+  const orderQuery = orderReadOnly
+    ? `?accounts=${accountFilter.apiParam}`
+    : orderAccountId ? `?account=${orderAccountId}` : ''
+  // The order query the current orderedShips list was loaded for. A save is only
+  // allowed when it matches the query now selected (useAPI keeps old data while a
+  // new path loads), and only after the user changed the list themselves.
+  const [loadedQuery, setLoadedQuery] = useState(null)
+  const [orderDirty, setOrderDirty] = useState(false)
+  const accountsQuery = accountFilter.active ? `?accounts=${accountFilter.apiParam}` : ''
+  const { data: shipOrder, loading: orderLoading, error: orderError, refetch: refetchOrder } = useLocalizationShipOrder(orderQuery)
+  const appliedOrderRef = useRef(null)
+  const orderQueryRef = useRef(orderQuery)
+  orderQueryRef.current = orderQuery
   const { data: fleet } = useFleet()
   const { data: allShips } = useShips()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -80,15 +105,19 @@ export default function LocalizationBuilder() {
   // ── Init ship order (from saved only) ─────────────────────────────
   useEffect(() => {
     if (orderLoading) return
-    if (shipOrder?.items?.length > 0) {
-      setOrderedShips(shipOrder.items.map(item => ({
-        vehicleId: item.vehicle_id,
-        vehicleName: item.vehicle_name,
-        customLabel: item.custom_label,
-        sortPosition: item.sort_position,
-      })))
-    }
-  }, [shipOrder, orderLoading])
+    // Apply each response once. A failed fetch leaves the previous path's data in
+    // place and re-runs this effect; that data does not belong to the new query.
+    if (!shipOrder?.items || orderError || appliedOrderRef.current === shipOrder) return
+    appliedOrderRef.current = shipOrder
+    setOrderedShips(shipOrder.items.map(item => ({
+      vehicleId: item.vehicle_id,
+      vehicleName: item.vehicle_name,
+      customLabel: item.custom_label,
+      sortPosition: item.sort_position,
+    })))
+    setLoadedQuery(orderQueryRef.current)
+    setOrderDirty(false)
+  }, [shipOrder, orderLoading, orderError])
 
   // ── Load active community overlay packs ───────────────────────────
   useEffect(() => {
@@ -145,11 +174,30 @@ export default function LocalizationBuilder() {
 
   const handleShipReorder = useCallback((newList) => {
     setOrderedShips(renumber(newList))
+    setOrderDirty(true)
     setDirty(true)
   }, [])
 
+  const canSaveOrder = !!config.asopEnabled && orderDirty && !orderReadOnly && loadedQuery === orderQuery
+
+  // Changing the account replaces the order list, so unsaved order edits are
+  // confirmed away first.
+  const guardAccountChange = (change) => {
+    if (orderDirty) {
+      if (!window.confirm('Discard unsaved ship order changes?')) return
+      setOrderDirty(false)
+    }
+    change()
+  }
+  const guardedFilter = {
+    ...accountFilter,
+    toggle: (id) => guardAccountChange(() => accountFilter.toggle(id)),
+    selectAll: () => guardAccountChange(() => accountFilter.selectAll()),
+  }
+
   const removeShip = (idx) => {
     setOrderedShips(renumber(orderedShips.filter((_, i) => i !== idx)))
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -162,6 +210,7 @@ export default function LocalizationBuilder() {
       sortPosition: 0,
     }]))
     setShipSearch('')
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -173,6 +222,7 @@ export default function LocalizationBuilder() {
       customLabel: fleetEntry.custom_name || null,
       sortPosition: 0,
     }]))
+    setOrderDirty(true)
     setDirty(true)
   }
 
@@ -181,14 +231,16 @@ export default function LocalizationBuilder() {
     setSaving(true)
     try {
       await saveLocalizationConfig(config)
-      if (config.asopEnabled && orderedShips.length > 0) {
+      if (canSaveOrder) {
         await saveLocalizationShipOrder(
           orderedShips.map(s => ({
             vehicleId: s.vehicleId,
             sortPosition: s.sortPosition,
             customLabel: s.customLabel || null,
-          }))
+          })),
+          orderAccountId,
         )
+        setOrderDirty(false)
         refetchOrder()
       }
       refetchConfig()
@@ -208,14 +260,16 @@ export default function LocalizationBuilder() {
     if (dirty) {
       try {
         await saveLocalizationConfig(config)
-        if (config.asopEnabled && orderedShips.length > 0) {
+        if (canSaveOrder) {
           await saveLocalizationShipOrder(
             orderedShips.map(s => ({
               vehicleId: s.vehicleId,
               sortPosition: s.sortPosition,
               customLabel: s.customLabel || null,
-            }))
+            })),
+            orderAccountId,
           )
+          setOrderDirty(false)
         }
       } catch (e) {
         showNotification('Save failed: ' + e.message, 'error')
@@ -225,7 +279,7 @@ export default function LocalizationBuilder() {
 
     setDownloading(true)
     try {
-      const res = await fetch('/api/localization/download', { credentials: 'same-origin' })
+      const res = await fetch(`/api/localization/download${accountsQuery}`, { credentials: 'same-origin' })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Download failed' }))
         throw new Error(err.error || 'Download failed')
@@ -304,6 +358,8 @@ export default function LocalizationBuilder() {
         <StatCard icon={Download} label="Ready" value={hasAnyEnabled ? 'Yes' : 'No features enabled'} color={hasAnyEnabled ? 'text-emerald-400' : 'text-gray-500'} />
       </div>
 
+      <AccountFilter accounts={rsiAccounts} filter={guardedFilter} />
+
       {/* Section pills */}
       <div className="flex flex-wrap gap-2">
         {SECTIONS.map(s => (
@@ -326,6 +382,11 @@ export default function LocalizationBuilder() {
       </div>
 
       {/* Active section */}
+      {section === 'fleet' && orderError && (
+        <p role="alert" className="mb-3 px-3 py-2 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20">
+          Couldn't load your ship order. Reload the page before editing it.
+        </p>
+      )}
       {section === 'fleet' && (
         <FleetOrderSection
           config={config}
@@ -339,6 +400,7 @@ export default function LocalizationBuilder() {
           onRemove={removeShip}
           onAdd={addShip}
           onAddFromFleet={addFromFleet}
+          readOnly={orderReadOnly}
         />
       )}
 
@@ -375,6 +437,7 @@ export default function LocalizationBuilder() {
           hasAnyEnabled={hasAnyEnabled}
           onDownload={handleDownload}
           downloading={downloading}
+          accountsQuery={accountsQuery}
         />
       )}
 

@@ -4,7 +4,21 @@
  * belongs to.
  */
 
+import { z } from "zod";
+
 export const MAX_RSI_ACCOUNTS = 10;
+
+/**
+ * Shape of a `?accounts=` value: 'all' or comma-separated positive ids.
+ * Destructive routes reject anything else (400) rather than let
+ * parseAccountsParam turn garbage into "every account".
+ */
+export const ACCOUNTS_QUERY = z.string().regex(/^(all|[1-9]\d*(,[1-9]\d*)*)$/);
+
+/** Display name of an RSI account: its label, else its handle, else the placeholder name. */
+export function accountName(account: { label: string | null; rsi_handle: string | null }): string {
+  return account.label || account.rsi_handle || "Imported hangar";
+}
 
 /**
  * Parse the `?accounts=` query param. Missing, empty or 'all' means every
@@ -20,6 +34,46 @@ export function parseAccountsParam(raw: string | undefined): number[] | null {
     if (Number.isInteger(n) && n > 0 && !ids.includes(n)) ids.push(n);
   }
   return ids.length > 0 ? ids.slice(0, MAX_RSI_ACCOUNTS) : null;
+}
+
+/**
+ * The `accounts` field an AI endpoint takes in its JSON body: 'all' or a
+ * non-empty id list. Absent means all, too.
+ */
+export const AI_ACCOUNTS_BODY = z.union([
+  z.literal("all"),
+  z.array(z.number().int().positive()).min(1).max(MAX_RSI_ACCOUNTS),
+]);
+
+/**
+ * The account ids an AI request covers. Absent or 'all' is every account (null);
+ * a list keeps only the user's own ids, falling back to the primary account when
+ * none are theirs, sorted and de-duplicated.
+ */
+export function resolveAiScope(
+  accounts: Array<{ id: number; is_primary: number }>,
+  requested: number[] | "all" | null | undefined,
+): number[] | null {
+  if (!Array.isArray(requested)) return null;
+  const owned = new Set(accounts.map((a) => a.id));
+  const kept = requested.filter((id) => owned.has(id));
+  const primary = accounts.filter((a) => a.is_primary).map((a) => a.id);
+  return [...new Set(kept.length > 0 ? kept : primary)].sort((x, y) => x - y);
+}
+
+/** The scope as stored in an `account_ids_json` column: NULL for all accounts. */
+export function scopeToJson(ids: number[] | null): string | null {
+  return ids ? JSON.stringify(ids) : null;
+}
+
+/** Read an `account_ids_json` column back into the ids it holds (null = all). */
+export function scopeFromJson(json: string | null): number[] | null {
+  return json ? (JSON.parse(json) as number[]) : null;
+}
+
+/** Display names for a scope; ids of accounts deleted since are left out. Null stays null (all). */
+export function scopeNames(ids: number[] | null, names: Map<number, string>): string[] | null {
+  return ids ? ids.map((id) => names.get(id)).filter((n): n is string => !!n) : null;
 }
 
 /** Marker colours for RSI accounts, in the order they are handed out. */
@@ -251,6 +305,51 @@ export async function getOrCreatePrimaryAccountId(db: D1Database, userId: string
 }
 
 /**
+ * Resolve the `?account=` value of a per-account vehicle-settings request.
+ * No value means the primary account. An owned id returns itself. A foreign,
+ * unknown or non-integer id returns null, which the route turns into a 404.
+ */
+export async function resolveAccountId(
+  db: D1Database,
+  userId: string,
+  raw: number | string | undefined | null,
+): Promise<number | null> {
+  if (raw === undefined || raw === null || raw === "") return getOrCreatePrimaryAccountId(db, userId);
+  const id = typeof raw === "number" ? raw : /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const owned = await db
+    .prepare("SELECT id FROM user_rsi_accounts WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
+    .first<{ id: number }>();
+  return owned ? owned.id : null;
+}
+
+/**
+ * The account ids a read or reset covers, without creating anything. No param
+ * means the primary account; 'all' every account; a list the owned ids in it,
+ * falling back to the primary when none are owned (`strict` returns none
+ * instead, for destructive callers). Empty when the user has no account.
+ */
+export async function selectAccountIds(
+  db: D1Database,
+  userId: string,
+  raw: string | undefined,
+  { strict = false }: { strict?: boolean } = {},
+): Promise<number[]> {
+  const { results } = await db
+    .prepare("SELECT id, is_primary FROM user_rsi_accounts WHERE user_id = ? ORDER BY is_primary DESC, id")
+    .bind(userId)
+    .all<{ id: number; is_primary: number }>();
+  const primary = results.filter((r) => r.is_primary).map((r) => r.id);
+  if (raw === undefined || raw === "") return primary;
+  const requested = parseAccountsParam(raw);
+  if (requested === null) return results.map((r) => r.id);
+  const owned = new Set(results.map((r) => r.id));
+  const kept = requested.filter((id) => owned.has(id));
+  return kept.length > 0 || strict ? kept : primary;
+}
+
+/**
  * Delete an RSI account and every hangar row stamped with it. Order matters —
  * D1 enforces foreign keys. Throws when the account is not the user's.
  */
@@ -270,14 +369,34 @@ export async function deleteRsiAccount(db: D1Database, userId: string, accountId
     db
       .prepare(`DELETE FROM org_op_ships WHERE owner_user_id = ? AND user_fleet_id IN (${fleetIds})`)
       .bind(userId, userId, accountId),
+    // Fleet selections stamped before 0287 reached them (the deploy window) have
+    // no rsi_account_id, so they are also found through the ship they belong to.
     db
       .prepare(
         `DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = 'fleet' AND owner_id IN (${fleetIds})`,
       )
       .bind(userId, userId, accountId),
+    del("user_module_selection"),
+    del("user_loaner_loadout"),
+    del("user_localization_ship_order"),
     db
       .prepare(`DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ? AND rsi_pledge_id IN (${pledgeIds})`)
       .bind(userId, userId, accountId),
+    del("user_hangar_cleanup_buys"),
+    del("user_hangar_cleanup_state"),
+    // A gift aimed at this account is no longer a valid decision: reset it.
+    db
+      .prepare(
+        "UPDATE user_hangar_cleanup_decisions SET decision = NULL, gift_to_account_id = NULL WHERE user_id = ? AND gift_to_account_id = ?",
+      )
+      .bind(userId, accountId),
+    // Same rule as the cleanup route: a decision row that now says nothing is deleted.
+    db
+      .prepare(
+        `DELETE FROM user_hangar_cleanup_decisions
+         WHERE user_id = ? AND decision IS NULL AND buy_ingame = 0 AND iae_price_cents IS NULL`,
+      )
+      .bind(userId),
     del("user_paints"),
     del("user_buyback_pledges"),
     del("user_pledge_upgrades"),

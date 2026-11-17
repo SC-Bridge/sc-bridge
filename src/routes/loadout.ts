@@ -7,6 +7,7 @@ import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
 import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets } from "../db/queries";
+import { getOrCreatePrimaryAccountId, resolveAccountId } from "../lib/rsi-accounts";
 
 // D1 has a 100-parameter limit per prepared statement.
 // Batch an IN-clause query into chunks, merging all results.
@@ -43,6 +44,7 @@ async function fetchLoadoutOverrides(
   keyCol: "user_fleet_id" | "loaner_vehicle_id",
   userId: string,
   keyVal: number,
+  accountId: number | null,
   t: (n: string) => string,
 ): Promise<Record<string, unknown>[]> {
   const overrides = await db
@@ -66,9 +68,9 @@ async function fetchLoadoutOverrides(
        LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
        LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
        LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
-       WHERE l.user_id = ? AND l.${keyCol} = ?`,
+       WHERE l.user_id = ? AND l.${keyCol} = ?${accountId === null ? "" : " AND l.rsi_account_id = ?"}`,
     )
-    .bind(userId, keyVal)
+    .bind(...(accountId === null ? [userId, keyVal] : [userId, keyVal, accountId]))
     .all<Record<string, unknown>>();
 
   const rows = overrides.results;
@@ -131,6 +133,11 @@ const CartUpdateBody = z.object({
   quantity: z.number().int().min(1).optional(),
 });
 
+// ?account=<id> selects the RSI account a loaner's settings belong to. The
+// value is checked against the user's accounts by resolveAccountId (404 when
+// foreign), so the schema only bounds its shape.
+const AccountQuery = z.object({ account: z.string().max(20).optional() });
+
 const ModuleSelectionBody = z.object({
   selections: z.array(z.object({
     port_name: z.string().min(1).max(120),
@@ -169,15 +176,32 @@ async function resolveModuleOwnerVehicle(
   return v ? ownerId : null;
 }
 
+// A fleet selection belongs to the account that holds the ship; a loaner
+// selection belongs to the ?account= the caller passed. Returns null when that
+// loaner account is not the user's.
+async function moduleSelectionAccountId(
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string, rawAccount?: string,
+): Promise<number | null> {
+  if (ownerKind === "fleet") {
+    const row = await db
+      .prepare("SELECT rsi_account_id FROM user_fleet WHERE id = ? AND user_id = ?")
+      .bind(ownerId, userId)
+      .first<{ rsi_account_id: number | null }>();
+    if (row?.rsi_account_id) return row.rsi_account_id;
+    return getOrCreatePrimaryAccountId(db, userId);
+  }
+  return resolveAccountId(db, userId, rawAccount);
+}
+
 async function getModuleSelections(
-  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string, accountId: number,
   kinds: string[] = ["bay"],
 ): Promise<Array<{ port_name: string; module_uuid: string; module_kind: string }>> {
   const placeholders = kinds.map(() => "?").join(",");
   const r = await db
     .prepare(`SELECT port_name, module_uuid, module_kind FROM user_module_selection
-               WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN (${placeholders})`)
-    .bind(userId, ownerKind, ownerId, ...kinds)
+               WHERE user_id = ? AND rsi_account_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN (${placeholders})`)
+    .bind(userId, accountId, ownerKind, ownerId, ...kinds)
     .all<{ port_name: string; module_uuid: string; module_kind: string }>();
   return r.results;
 }
@@ -186,7 +210,7 @@ async function getModuleSelections(
 // modifier) for the active channel, then upsert keyed by the composite slot key.
 // The slot key (port_name) is opaque; we validate the module, not the slot.
 async function saveGadgetSelections(
-  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string, accountId: number,
   selections: Array<{ port_name: string; module_uuid: string; module_kind: "mining_gadget" | "salvage_gadget" }>,
   t: (n: string) => string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -214,12 +238,12 @@ async function saveGadgetSelections(
   const stmts = selections.map((s) =>
     db
       .prepare(
-        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, module_kind, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+        `INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid, module_kind, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, rsi_account_id, owner_kind, owner_id, port_name)
          DO UPDATE SET module_uuid = excluded.module_uuid, module_kind = excluded.module_kind, updated_at = datetime('now')`,
       )
-      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid, s.module_kind),
+      .bind(userId, accountId, ownerKind, ownerId, s.port_name, s.module_uuid, s.module_kind),
   );
   if (stmts.length > 0) await db.batch(stmts);
   return { ok: true };
@@ -228,7 +252,7 @@ async function saveGadgetSelections(
 // Validate each chosen module actually fits this vehicle's named port, then
 // upsert. Rejects (returns an error) if any selection is bogus.
 async function saveModuleSelections(
-  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string,
+  db: D1Database, ownerKind: "fleet" | "loaner", ownerId: number, userId: string, accountId: number,
   vehicleId: number, selections: Array<{ port_name: string; module_uuid: string }>,
   t: (n: string) => string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -242,12 +266,12 @@ async function saveModuleSelections(
   const stmts = selections.map((s) =>
     db
       .prepare(
-        `INSERT INTO user_module_selection (user_id, owner_kind, owner_id, port_name, module_uuid, updated_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))
-         ON CONFLICT (user_id, owner_kind, owner_id, port_name)
+        `INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, rsi_account_id, owner_kind, owner_id, port_name)
          DO UPDATE SET module_uuid = excluded.module_uuid, updated_at = datetime('now')`,
       )
-      .bind(userId, ownerKind, ownerId, s.port_name, s.module_uuid),
+      .bind(userId, accountId, ownerKind, ownerId, s.port_name, s.module_uuid),
   );
   if (stmts.length > 0) await db.batch(stmts);
   return { ok: true };
@@ -281,10 +305,14 @@ export function loadoutRoutes() {
   });
 
   // GET /api/loadout/:slug/modules/owned — user's owned module titles from pledges
-  app.get("/:slug/modules/owned", async (c) => {
+  app.get("/:slug/modules/owned", validate("query", AccountQuery), async (c) => {
     try {
       const user = getAuthUser(c);
-      const titles = await getUserOwnedModuleTitles(c.env.DB, user.id);
+      const raw = c.req.valid("query").account;
+      // No ?account= means every account of the user; an id must be theirs.
+      const accountId = raw === undefined ? null : await resolveAccountId(c.env.DB, user.id, raw);
+      if (raw !== undefined && accountId === null) return c.json({ error: "RSI account not found" }, 404);
+      const titles = await getUserOwnedModuleTitles(c.env.DB, user.id, accountId);
       return c.json(titles);
     } catch {
       return c.json([]);
@@ -617,7 +645,7 @@ export function loadoutRoutes() {
     const fleetId = parseInt(c.req.param("id"), 10);
     if (isNaN(fleetId)) return c.json({ error: "Invalid fleet ID" }, 400);
 
-    const rows = await fetchLoadoutOverrides(c.env.DB, "user_fleet_loadout", "user_fleet_id", user.id, fleetId, t);
+    const rows = await fetchLoadoutOverrides(c.env.DB, "user_fleet_loadout", "user_fleet_id", user.id, fleetId, null, t);
     return c.json({ overrides: rows });
   });
 
@@ -696,19 +724,22 @@ export function loadoutRoutes() {
   // the fleet endpoints; the key is the loaner's vehicle id, not a fleet id.
 
   // GET /api/loadout/loaner/:vehicleId — get custom loadout for a loaner
-  app.get("/loaner/:vehicleId", async (c) => {
+  app.get("/loaner/:vehicleId", validate("query", AccountQuery), async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
     const t = (n: string) => resolveTable(n, isPTU);
     const user = getAuthUser(c);
     const vehicleId = parseInt(c.req.param("vehicleId"), 10);
     if (isNaN(vehicleId)) return c.json({ error: "Invalid vehicle ID" }, 400);
+    const accountId = await resolveAccountId(c.env.DB, user.id, c.req.valid("query").account);
+    if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
 
-    const rows = await fetchLoadoutOverrides(c.env.DB, "user_loaner_loadout", "loaner_vehicle_id", user.id, vehicleId, t);
+    const rows = await fetchLoadoutOverrides(c.env.DB, "user_loaner_loadout", "loaner_vehicle_id", user.id, vehicleId, accountId, t);
     return c.json({ overrides: rows });
   });
 
   // PUT /api/loadout/loaner/:vehicleId — save loaner loadout overrides (bulk)
   app.put("/loaner/:vehicleId",
+    validate("query", AccountQuery),
     validate("json", LoadoutBody),
     async (c) => {
       const user = getAuthUser(c);
@@ -724,15 +755,17 @@ export function loadoutRoutes() {
 
       const { overrides } = c.req.valid("json");
       const db = c.env.DB;
+      const accountId = await resolveAccountId(db, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       const stmts = overrides.map((o) =>
         db
           .prepare(
-            `INSERT INTO user_loaner_loadout (user_id, loaner_vehicle_id, port_id, component_id, updated_at)
-             VALUES (?, ?, ?, ?, datetime('now'))
-             ON CONFLICT (user_id, loaner_vehicle_id, port_id)
+            `INSERT INTO user_loaner_loadout (user_id, rsi_account_id, loaner_vehicle_id, port_id, component_id, updated_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT (user_id, rsi_account_id, loaner_vehicle_id, port_id)
              DO UPDATE SET component_id = excluded.component_id, updated_at = datetime('now')`,
           )
-          .bind(user.id, vehicleId, o.port_id, o.component_id),
+          .bind(user.id, accountId, vehicleId, o.port_id, o.component_id),
       );
       if (stmts.length > 0) await db.batch(stmts);
       return c.json({ ok: true });
@@ -740,29 +773,33 @@ export function loadoutRoutes() {
   );
 
   // DELETE /api/loadout/loaner/:vehicleId — reset loaner to stock
-  app.delete("/loaner/:vehicleId", async (c) => {
+  app.delete("/loaner/:vehicleId", validate("query", AccountQuery), async (c) => {
     const user = getAuthUser(c);
     const vehicleId = parseInt(c.req.param("vehicleId"), 10);
     if (isNaN(vehicleId)) return c.json({ error: "Invalid vehicle ID" }, 400);
+    const accountId = await resolveAccountId(c.env.DB, user.id, c.req.valid("query").account);
+    if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
 
     await c.env.DB
-      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND loaner_vehicle_id = ?")
-      .bind(user.id, vehicleId)
+      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND rsi_account_id = ? AND loaner_vehicle_id = ?")
+      .bind(user.id, accountId, vehicleId)
       .run();
 
     return c.json({ ok: true });
   });
 
   // DELETE /api/loadout/loaner/:vehicleId/port/:portId — reset single port
-  app.delete("/loaner/:vehicleId/port/:portId", async (c) => {
+  app.delete("/loaner/:vehicleId/port/:portId", validate("query", AccountQuery), async (c) => {
     const user = getAuthUser(c);
     const vehicleId = parseInt(c.req.param("vehicleId"), 10);
     const portId = parseInt(c.req.param("portId"), 10);
     if (isNaN(vehicleId) || isNaN(portId)) return c.json({ error: "Invalid IDs" }, 400);
+    const accountId = await resolveAccountId(c.env.DB, user.id, c.req.valid("query").account);
+    if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
 
     await c.env.DB
-      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND loaner_vehicle_id = ? AND port_id = ?")
-      .bind(user.id, vehicleId, portId)
+      .prepare("DELETE FROM user_loaner_loadout WHERE user_id = ? AND rsi_account_id = ? AND loaner_vehicle_id = ? AND port_id = ?")
+      .bind(user.id, accountId, vehicleId, portId)
       .run();
 
     return c.json({ ok: true });
@@ -779,50 +816,58 @@ export function loadoutRoutes() {
     { kind: "loaner" as const, prefix: "/loaner", param: "vehicleId" },
   ]) {
     // GET — the user's saved module choices for this ship
-    app.get(`${prefix}/:${param}/modules`, async (c) => {
+    app.get(`${prefix}/:${param}/modules`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
-      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
+      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id, accountId);
       return c.json({ selections });
     });
 
     // PUT — save module choices (validated against vehicle_modules)
-    app.put(`${prefix}/:${param}/modules`, validate("json", ModuleSelectionBody), async (c) => {
+    app.put(`${prefix}/:${param}/modules`, validate("query", AccountQuery), validate("json", ModuleSelectionBody), async (c) => {
       const isPTU = isPTUChannel(getActiveChannel(c));
       const t = (n: string) => resolveTable(n, isPTU);
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       const vehicleId = await resolveModuleOwnerVehicle(c.env.DB, kind, ownerId, user.id, t);
       if (!vehicleId) return c.json({ error: kind === "fleet" ? "Fleet entry not found" : "Vehicle not found" }, 404);
       const { selections } = c.req.valid("json");
-      const res = await saveModuleSelections(c.env.DB, kind, ownerId, user.id, vehicleId, selections, t);
+      const res = await saveModuleSelections(c.env.DB, kind, ownerId, user.id, accountId, vehicleId, selections, t);
       if (!res.ok) return c.json({ error: res.error }, 400);
       return c.json({ ok: true });
     });
 
     // DELETE one slot — reset that module to stock
-    app.delete(`${prefix}/:${param}/modules/:portName`, async (c) => {
+    app.delete(`${prefix}/:${param}/modules/:portName`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       const portName = c.req.param("portName");
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await c.env.DB
-        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ?")
-        .bind(user.id, kind, ownerId, portName)
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND rsi_account_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ?")
+        .bind(user.id, accountId, kind, ownerId, portName)
         .run();
       return c.json({ ok: true });
     });
 
     // DELETE all — reset every module to stock
-    app.delete(`${prefix}/:${param}/modules`, async (c) => {
+    app.delete(`${prefix}/:${param}/modules`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await c.env.DB
-        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind = 'bay'")
-        .bind(user.id, kind, ownerId)
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND rsi_account_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind = 'bay'")
+        .bind(user.id, accountId, kind, ownerId)
         .run();
       return c.json({ ok: true });
     });
@@ -830,49 +875,57 @@ export function loadoutRoutes() {
     // ── Gadget selections (mining/salvage consumables in tool-head slots) ──
     // Same owner model; module_kind discriminates from bay modules. port_name is
     // the composite slot key '<headPortName>#<slotIndex>'.
-    app.get(`${prefix}/:${param}/gadgets`, async (c) => {
+    app.get(`${prefix}/:${param}/gadgets`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
-      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id, ["mining_gadget", "salvage_gadget"]);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
+      const selections = await getModuleSelections(c.env.DB, kind, ownerId, user.id, accountId, ["mining_gadget", "salvage_gadget"]);
       return c.json({ selections });
     });
 
-    app.put(`${prefix}/:${param}/gadgets`, validate("json", GadgetSelectionBody), async (c) => {
+    app.put(`${prefix}/:${param}/gadgets`, validate("query", AccountQuery), validate("json", GadgetSelectionBody), async (c) => {
       const isPTU = isPTUChannel(getActiveChannel(c));
       const t = (n: string) => resolveTable(n, isPTU);
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       const vehicleId = await resolveModuleOwnerVehicle(c.env.DB, kind, ownerId, user.id, t);
       if (!vehicleId) return c.json({ error: kind === "fleet" ? "Fleet entry not found" : "Vehicle not found" }, 404);
       const { selections } = c.req.valid("json");
-      const res = await saveGadgetSelections(c.env.DB, kind, ownerId, user.id, selections, t);
+      const res = await saveGadgetSelections(c.env.DB, kind, ownerId, user.id, accountId, selections, t);
       if (!res.ok) return c.json({ error: res.error }, 400);
       return c.json({ ok: true });
     });
 
     // DELETE one gadget slot — reset to empty. Slot key is URL-encoded.
-    app.delete(`${prefix}/:${param}/gadgets/:slotKey`, async (c) => {
+    app.delete(`${prefix}/:${param}/gadgets/:slotKey`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       const slotKey = decodeURIComponent(c.req.param("slotKey"));
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await c.env.DB
-        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
-        .bind(user.id, kind, ownerId, slotKey)
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND rsi_account_id = ? AND owner_kind = ? AND owner_id = ? AND port_name = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
+        .bind(user.id, accountId, kind, ownerId, slotKey)
         .run();
       return c.json({ ok: true });
     });
 
     // DELETE all gadgets — reset every gadget slot to empty
-    app.delete(`${prefix}/:${param}/gadgets`, async (c) => {
+    app.delete(`${prefix}/:${param}/gadgets`, validate("query", AccountQuery), async (c) => {
       const user = getAuthUser(c);
       const ownerId = parseInt(c.req.param(param), 10);
       if (isNaN(ownerId)) return c.json({ error: "Invalid ID" }, 400);
+      const accountId = await moduleSelectionAccountId(c.env.DB, kind, ownerId, user.id, c.req.valid("query").account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await c.env.DB
-        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
-        .bind(user.id, kind, ownerId)
+        .prepare("DELETE FROM user_module_selection WHERE user_id = ? AND rsi_account_id = ? AND owner_kind = ? AND owner_id = ? AND module_kind IN ('mining_gadget','salvage_gadget')")
+        .bind(user.id, accountId, kind, ownerId)
         .run();
       return c.json({ ok: true });
     });

@@ -4,11 +4,24 @@ import SearchInput from '../../components/SearchInput'
 import {
   usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS, REBUY_DECISIONS,
 } from '../../lib/hangarCleanup'
+import AccountMarker from '../../components/AccountMarker'
 import { Pill, Chip, MoneyInput, DECISIONS, SUGGESTION_TONE } from './ui'
 
 const INS_TONE = { LTI: 'text-sc-lti', long: 'text-sc-warn', short: 'text-red-300', none: 'text-red-300' }
 // Left edge colour on a decided row, so a scan down the table shows what's planned.
-const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', 'iae-remelt': 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500' }
+const DECIDED_EDGE = { melt: 'border-l-2 border-l-sc-melt', 'melt-ig': 'border-l-2 border-l-sc-melt', iae: 'border-l-2 border-l-sc-accent2', 'iae-remelt': 'border-l-2 border-l-sc-accent2', ins: 'border-l-2 border-l-sc-accent2', keep: 'border-l-2 border-l-sc-success', review: 'border-l-2 border-l-gray-500', gift: 'border-l-2 border-l-sc-accent2' }
+
+/**
+ * Accounts a pledge can be gifted to: every other account when the pledge is
+ * giftable, plus the account it is already gifted to so the saved choice shows.
+ */
+function giftTargetsFor(r, d, giftTargets) {
+  if (!giftTargets) return []
+  const current = d?.decision === 'gift' ? d.gift_to_account_id : null
+  return giftTargets.filter((t) => (r.giftable && t.id !== r.rsiAccountId) || t.id === current)
+}
+
+const decisionValue = (d) => (d?.decision === 'gift' ? `gift:${d.gift_to_account_id}` : d?.decision ?? '')
 
 /** Only ship pledges with melt value can be rebought at IAE. */
 const canRebuy = (r) => r.cat === 'Ship' && r.meltable && r.value > 0
@@ -151,8 +164,12 @@ const SORTS = {
   base: (r) => r.base || '~',
 }
 
-/** The full pledge ledger: filters, decision per pledge, and an expandable detail row. */
-export default function Ledger({ rows, decisions, onDecide, onDecideMany, open, onToggle }) {
+/**
+ * The full pledge ledger: filters, decision per pledge, and an expandable detail row.
+ * `giftTargets` (the user's accounts) adds "Gift to…" options on giftable pledges;
+ * `markerAccounts` marks each row with the account that owns it.
+ */
+export default function Ledger({ rows, decisions, onDecide, onDecideMany, open, onToggle, giftTargets = null, markerAccounts = null }) {
   const [q, setQ] = useState('')
   const [meltOnly, setMeltOnly] = useState(true)
   const [cats, setCats] = useState(new Set())
@@ -231,19 +248,26 @@ export default function Ledger({ rows, decisions, onDecide, onDecideMany, open, 
                     </td>
                     <td className="table-cell">
                       <select
-                        value={d?.decision ?? ''}
-                        onChange={(e) => onDecide(r.id, { decision: e.target.value || null })}
+                        value={decisionValue(d)}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          onDecide(r.id, v.startsWith('gift:') ? { decision: 'gift', gift_to_account_id: Number(v.slice(5)) } : { decision: v || null })
+                        }}
                         aria-label={`Decision for ${displayName(r)}`}
                         className="bg-sc-darker border border-sc-border/60 rounded px-1.5 py-1 text-xs text-gray-200 max-w-[11rem]"
                       >
                         {DECISIONS.filter(([v]) => !REBUY_DECISIONS.has(v) || canIae || d?.decision === v).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {giftTargetsFor(r, d, giftTargets).map((t) => <option key={`gift-${t.id}`} value={`gift:${t.id}`}>{`Gift to ${t.name}${r.gift_done && d?.gift_to_account_id === t.id ? ' (done)' : ''}`}</option>)}
                       </select>
                     </td>
-                    <td className="table-cell min-w-[14rem]">
-                      <button type="button" onClick={() => onToggle(r.id)} className="text-left">
-                        <div className="font-display font-semibold text-white">{displayName(r)}</div>
-                        <div className="text-[11px] font-mono text-gray-500">{sub}</div>
-                      </button>
+                    <td className="table-cell min-w-[14rem] relative">
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => onToggle(r.id)} className="text-left min-w-0 mr-auto">
+                          <div className="font-display font-semibold text-white">{displayName(r)}</div>
+                          <div className="text-[11px] font-mono text-gray-500">{sub}</div>
+                        </button>
+                        {markerAccounts && <AccountMarker rsiAccountId={r.rsiAccountId} accounts={markerAccounts} variant="row" />}
+                      </div>
                     </td>
                     <td className="table-cell text-xs text-gray-300 whitespace-nowrap">{roleOf(r) || <span className="text-gray-600">—</span>}</td>
                     <td className="table-cell text-xs text-gray-300">{r.cat}</td>

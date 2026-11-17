@@ -112,20 +112,27 @@ describe("migration 0279 — schema", () => {
     }
   });
 
-  it("enforces one decision per pledge, one buy per vehicle, one state row per user", async () => {
+  it("enforces one decision per pledge, one buy per vehicle and one state row per account", async () => {
     const { userId } = await createTestUser(db());
     const vehicleId = await seedVehicle(db());
     await db().prepare("INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, 5, 'keep')").bind(userId).run();
     await expect(
       db().prepare("INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, 5, 'melt')").bind(userId).run(),
     ).rejects.toThrow();
-    await db().prepare("INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id) VALUES (?, ?)").bind(userId, vehicleId).run();
+    // Since 0288 buys and state are unique per RSI account, not per user.
+    const acct = (
+      await db()
+        .prepare("INSERT INTO user_rsi_accounts (user_id, is_primary, is_placeholder) VALUES (?, 1, 1) RETURNING id")
+        .bind(userId)
+        .first<{ id: number }>()
+    )!.id;
+    await db().prepare("INSERT INTO user_hangar_cleanup_buys (user_id, rsi_account_id, vehicle_id) VALUES (?, ?, ?)").bind(userId, acct, vehicleId).run();
     await expect(
-      db().prepare("INSERT INTO user_hangar_cleanup_buys (user_id, vehicle_id) VALUES (?, ?)").bind(userId, vehicleId).run(),
+      db().prepare("INSERT INTO user_hangar_cleanup_buys (user_id, rsi_account_id, vehicle_id) VALUES (?, ?, ?)").bind(userId, acct, vehicleId).run(),
     ).rejects.toThrow();
-    await db().prepare("INSERT INTO user_hangar_cleanup_state (user_id) VALUES (?)").bind(userId).run();
+    await db().prepare("INSERT INTO user_hangar_cleanup_state (user_id, rsi_account_id) VALUES (?, ?)").bind(userId, acct).run();
     await expect(
-      db().prepare("INSERT INTO user_hangar_cleanup_state (user_id) VALUES (?)").bind(userId).run(),
+      db().prepare("INSERT INTO user_hangar_cleanup_state (user_id, rsi_account_id) VALUES (?, ?)").bind(userId, acct).run(),
     ).rejects.toThrow();
   });
 });

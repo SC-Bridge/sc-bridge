@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { env } from "cloudflare:test";
 import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
 import { createTestUser, seedVehicle, seedFleetEntry } from "./helpers";
+import { createRsiAccount } from "../src/lib/rsi-accounts";
 import { GET_SHIP_LOADOUT_TOOL, executeChatTool } from "../src/lib/chat-tools";
 
 async function seedShipWithLoadout(userId: string, slug: string, name: string): Promise<number> {
@@ -67,5 +68,76 @@ describe("chat tools — get_ship_loadout", () => {
       arguments: { ship_fleet_id: fleetId },
     });
     expect(JSON.parse(out).error).toBeTruthy();
+  });
+});
+
+describe("chat tools — account-aware ship lookup", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  async function twoAccountsWithSameShip() {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: `tool-a-${userId}`, referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: `tool-b-${userId}`, referralCode: null, placeholder: false });
+    await env.DB.prepare("UPDATE user_rsi_accounts SET label = 'Main' WHERE id = ?").bind(a).run();
+    await env.DB.prepare("UPDATE user_rsi_accounts SET label = 'Alt', is_primary = 0 WHERE id = ?").bind(b).run();
+    const vehicleId = await seedVehicle(env.DB, { slug: `dup-cutlass-${userId}`, name: "Cutlass Black" });
+    const insert = async (accountId: number) =>
+      (
+        await env.DB
+          .prepare(
+            `INSERT INTO user_fleet (user_id, vehicle_id, is_loaner, warbond, imported_at, rsi_account_id)
+             VALUES (?, ?, 0, 0, datetime('now'), ?)`,
+          )
+          .bind(userId, vehicleId, accountId)
+          .run()
+      ).meta.last_row_id as number;
+    return { userId, a, b, fleetA: await insert(a), fleetB: await insert(b) };
+  }
+
+  const call = (name: string, args: Record<string, unknown>) => ({
+    id: "x",
+    name: "get_ship_loadout",
+    arguments: { ship_name: name, ...args },
+  });
+
+  it("declares an optional account parameter", () => {
+    const props = (GET_SHIP_LOADOUT_TOOL.parameters as { properties: Record<string, unknown> }).properties;
+    expect(props).toHaveProperty("account");
+    expect(props).toHaveProperty("ship_fleet_id");
+    expect(props).toHaveProperty("ship_name");
+  });
+
+  it("resolves a same-named ship by account label", async () => {
+    const { userId, fleetA } = await twoAccountsWithSameShip();
+    // Rename account A's row so returning it would show a different `ship`.
+    await env.DB.prepare("UPDATE user_fleet SET custom_name = 'Main Hauler' WHERE id = ?").bind(fleetA).run();
+    const out = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", { account: "alt" })));
+    expect(out.ship).toBe("Cutlass Black");
+    expect(out.ship).not.toBe("Main Hauler");
+    expect(out.error).toBeUndefined();
+  });
+
+  it("asks which account when a name is ambiguous", async () => {
+    const { userId } = await twoAccountsWithSameShip();
+    const out = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", {})));
+    expect(out.error).toBe('Several ships match "Cutlass Black": on Main, Alt. Ask which account.');
+  });
+
+  it("lists valid account names when the account matches none", async () => {
+    const { userId } = await twoAccountsWithSameShip();
+    const out = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", { account: "Nope" })));
+    expect(out.error).toContain("Main");
+    expect(out.error).toContain("Alt");
+  });
+
+  it("only matches within the chat's scope", async () => {
+    const { userId, a } = await twoAccountsWithSameShip();
+    const inScope = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", {}), [a]));
+    expect(inScope.ship).toBe("Cutlass Black");
+    const outOfScope = JSON.parse(await executeChatTool(env.DB, userId, call("Cutlass Black", { account: "Alt" }), [a]));
+    expect(outOfScope.error).toContain("Main");
+    expect(outOfScope.error).toContain("Valid accounts: Main.");
   });
 });

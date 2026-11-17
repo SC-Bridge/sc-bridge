@@ -91,4 +91,32 @@ describe("Module selection — persist chosen module per slot", () => {
     const res = await SELF.fetch(`http://localhost/api/loadout/fleet/${fleetId}/modules`);
     expect(res.status).toBe(401);
   });
+
+  it("stores a fleet selection on the ship's account, and a second PUT updates that row", async () => {
+    const user = await createTestUser(env.DB);
+    const primary = await env.DB
+      .prepare("INSERT INTO user_rsi_accounts (user_id, rsi_handle, is_primary, is_placeholder) VALUES (?, 'ModP', 1, 0) RETURNING id")
+      .bind(user.userId).first<{ id: number }>();
+    const other = await env.DB
+      .prepare("INSERT INTO user_rsi_accounts (user_id, rsi_handle, is_primary, is_placeholder) VALUES (?, 'ModB', 0, 0) RETURNING id")
+      .bind(user.userId).first<{ id: number }>();
+    const ship = await env.DB
+      .prepare("INSERT INTO user_fleet (user_id, vehicle_id, is_loaner, rsi_account_id, imported_at) VALUES (?, ?, 0, ?, datetime('now')) RETURNING id")
+      .bind(user.userId, vid, other!.id).first<{ id: number }>();
+    const headers = { ...(await authHeaders(user.sessionToken)), "Content-Type": "application/json" };
+
+    for (const uuid of ["modsel-cargo", "modsel-base"]) {
+      const put = await SELF.fetch(`http://localhost/api/loadout/fleet/${ship!.id}/modules`, {
+        method: "PUT", headers,
+        body: JSON.stringify({ selections: [{ port_name: PORT, module_uuid: uuid }] }),
+      });
+      expect(put.status).toBe(200);
+    }
+
+    const rows = await env.DB
+      .prepare("SELECT rsi_account_id, module_uuid FROM user_module_selection WHERE user_id = ? AND owner_kind = 'fleet' AND owner_id = ? AND port_name = ?")
+      .bind(user.userId, ship!.id, PORT).all<{ rsi_account_id: number; module_uuid: string }>();
+    expect(rows.results).toEqual([{ rsi_account_id: other!.id, module_uuid: "modsel-base" }]);
+    expect(other!.id).not.toBe(primary!.id);
+  });
 });

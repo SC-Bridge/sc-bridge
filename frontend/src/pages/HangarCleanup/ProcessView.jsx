@@ -1,8 +1,12 @@
 import React, { useState } from 'react'
 import { stepsAsText } from '../../lib/hangarCleanup'
 
-/** The plan as a numbered checklist: melts, credit check, purchases, follow-ups. */
-export default function ProcessView({ plan, done, onToggleDone, undecidedMelts }) {
+/**
+ * The plan as a numbered checklist: melts, credit check, purchases, follow-ups.
+ * `owner` names the account when several plans are on screen, so each checkbox
+ * and list has a distinct accessible name.
+ */
+export default function ProcessView({ plan, done, onToggleDone, undecidedMelts, owner }) {
   const [copied, setCopied] = useState('')
   const [text, setText] = useState(null)
   const doneSet = new Set(done)
@@ -29,7 +33,7 @@ export default function ProcessView({ plan, done, onToggleDone, undecidedMelts }
 
   let n = 0
   return (
-    <section className="space-y-5" aria-label="Step-by-step plan">
+    <section className="space-y-5" aria-label={owner ? `Step-by-step plan for ${owner}` : 'Step-by-step plan'}>
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-gray-400 mr-auto">
           {undecidedMelts > 0 && `${undecidedMelts} suggested melt${undecidedMelts > 1 ? 's have' : ' has'} no decision yet, so ${undecidedMelts > 1 ? 'they are' : 'it is'} not in this plan.`}
@@ -46,7 +50,7 @@ export default function ProcessView({ plan, done, onToggleDone, undecidedMelts }
               const isDone = doneSet.has(s.key)
               return (
                 <li key={s.key} className={`panel p-3 grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 items-start ${isDone ? 'opacity-55' : ''}`}>
-                  <input type="checkbox" className="mt-1" checked={isDone} onChange={() => onToggleDone(s.key)} aria-label={`Mark step ${n} done`} />
+                  <input type="checkbox" className="mt-1" checked={isDone} onChange={() => onToggleDone(s.key)} aria-label={`Mark step ${n} done${owner ? ` for ${owner}` : ''}`} />
                   <span className="font-mono font-semibold text-sc-melt w-6 text-right">{n}</span>
                   <div className="min-w-0 space-y-0.5">
                     <div className={`font-display font-semibold text-white ${isDone ? 'line-through' : ''}`}>{s.title}</div>

@@ -5,13 +5,18 @@ import rehypeSanitize from 'rehype-sanitize'
 import { useChats, useChat, sendChatMessage, deleteChat, renameChat } from '../hooks/useAPI'
 import { useLootDetailPane } from '../hooks/useLootDetailPane'
 import { parseLootUuid } from '../lib/lootLinks'
+import AccountFilter from '../components/AccountFilter'
+import { accountName, analysisAccountsValue } from '../lib/accounts'
 import { Loader, Send, Plus, Trash2, MessageSquare, AlertCircle, Pencil } from 'lucide-react'
 
 /**
  * Conversational "Chat about my fleet". Multi-turn, saved per conversation.
  * The provider/model come from the shared selector on the Analysis page.
+ * With 2+ RSI accounts (`accountFilter.active`) each chat has an account scope:
+ * a new chat starts from the page's account filter, and changing it applies
+ * from the next message.
  */
-export default function FleetChat({ provider, model }) {
+export default function FleetChat({ provider, model, accounts, accountFilter }) {
   const { data: chatsData, refetch: refetchChats } = useChats()
   const chats = chatsData?.chats || []
   const { openDetail, detailNode } = useLootDetailPane()
@@ -46,12 +51,56 @@ export default function FleetChat({ provider, model }) {
   const [editingTitle, setEditingTitle] = useState('')
   const threadRef = useRef(null)
 
+  // The chat's account scope (a set of ids). `scopeDirty` marks a change the
+  // server has not seen yet; it is sent with the next message.
+  const showScope = !!accountFilter?.active && Array.isArray(accounts)
+  const [scopeIds, setScopeIds] = useState(() => new Set(accountFilter?.selectedIds ?? []))
+  const [scopeDirty, setScopeDirty] = useState(false)
+  const pageSelection = accountFilter?.selectedIds
+
+  // A new chat follows the page's account filter until the scope is changed here.
+  useEffect(() => {
+    if (!activeChatId && !scopeDirty && pageSelection) setScopeIds(new Set(pageSelection))
+  }, [activeChatId, scopeDirty, pageSelection])
+
   // Load a saved conversation when one is selected.
   useEffect(() => {
     if (activeChatId && chatData?.messages) {
       setMessages(chatData.messages.map((m) => ({ role: m.role, content: m.content })))
+      if (showScope && chatData.chat) {
+        const names = chatData.chat.accounts
+        const ids = names ? accounts.filter((a) => names.includes(accountName(a))).map((a) => a.id) : accounts.map((a) => a.id)
+        setScopeIds(new Set(ids))
+        setScopeDirty(false)
+      }
     }
-  }, [activeChatId, chatData])
+  }, [activeChatId, chatData, showScope, accounts])
+
+  const scopeFilter = {
+    active: showScope,
+    selectedIds: scopeIds,
+    isAll: showScope && scopeIds.size === accounts.length,
+    selectAll: () => {
+      setScopeIds(new Set(accounts.map((a) => a.id)))
+      setScopeDirty(true)
+    },
+    toggle: (id) => {
+      const next = new Set(scopeIds)
+      if (next.has(id)) {
+        if (next.size === 1) return
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      setScopeIds(next)
+      setScopeDirty(true)
+    },
+  }
+  const scopeLabel = showScope
+    ? scopeFilter.isAll
+      ? 'All accounts'
+      : accounts.filter((a) => scopeIds.has(a.id)).map(accountName).join(', ')
+    : ''
 
   // Keep the thread scrolled to the latest message.
   useEffect(() => {
@@ -62,6 +111,7 @@ export default function FleetChat({ provider, model }) {
     setActiveChatId(null)
     setMessages([])
     setError(null)
+    setScopeDirty(false)
   }
 
   const handleSend = async () => {
@@ -72,12 +122,16 @@ export default function FleetChat({ provider, model }) {
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setSending(true)
     try {
+      // A new chat sends its starting scope; a saved chat only a changed one.
+      const accountsValue = showScope && (!activeChatId || scopeDirty) ? analysisAccountsValue(scopeFilter) : undefined
       const res = await sendChatMessage({
         chat_id: activeChatId || undefined,
         provider,
         model,
         message: text,
+        accounts: accountsValue,
       })
+      setScopeDirty(false)
       setMessages((prev) => [...prev, { role: 'assistant', content: res.reply, toolsUsed: res.tools_used }])
       if (!activeChatId && res.chat_id) setActiveChatId(res.chat_id)
       refetchChats()
@@ -174,6 +228,15 @@ export default function FleetChat({ provider, model }) {
 
       {/* Thread + input */}
       <div className="panel flex flex-col h-[60vh]">
+        {showScope && (
+          <div className="px-4 py-2 border-b border-sc-border space-y-2">
+            <div className="text-xs text-gray-400 font-mono">Scope: {scopeLabel}</div>
+            <AccountFilter accounts={accounts} filter={scopeFilter} />
+            {scopeDirty && activeChatId && (
+              <div className="text-[11px] text-gray-500">Scope changes from your next message.</div>
+            )}
+          </div>
+        )}
         <div ref={threadRef} className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && !sending && (
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-500">

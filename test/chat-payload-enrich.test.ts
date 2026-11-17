@@ -41,7 +41,7 @@ describe("loaner + custom-loadout queries", () => {
     await env.DB.prepare("INSERT INTO vehicle_loaners (vehicle_id, loaner_id) VALUES (?, ?)").bind(ownedConcept, loanerShip).run();
     await seedFleetEntry(env.DB, userId, ownedConcept);
 
-    const loaners = await getEntitledLoaners(env.DB, userId);
+    const loaners = await getEntitledLoaners(env.DB, userId, null);
     expect(loaners.some((l) => l.loaner === "Granted Loaner")).toBe(true);
   });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseUpgradeName, insuranceOf, normaliseExport, makeCatalog, analyse,
-  rebuyPrice, buildSteps, stepsAsText, displayName, limitedReason,
+  rebuyPrice, buildSteps, stepsAsText, displayName, limitedReason, planAccounts,
 } from './hangarCleanup'
 
 // ── Fixtures in the GET /api/hangar-cleanup shape ──────────────────────────
@@ -329,5 +329,99 @@ describe('buildSteps', () => {
     const text = stepsAsText(plan, ['melt-3'])
     expect(text).toMatch(/\[x\] 2\. Exchange/)
     expect(text).toMatch(/\[ \] 3\. Exchange/)
+  })
+})
+
+// ── Per-account plans ───────────────────────────────────────────────────────
+
+describe('planAccounts', () => {
+  const acct = (id, extra = {}) => ({ id, name: `Acct ${id}`, color: '#fff', is_primary: id === 'A', store_credit_cents: 0, credit_override_cents: null, buys: [], ...extra })
+  const onA = (p) => ({ ...p, rsi_account_id: 'A' })
+  const onB = (p) => ({ ...p, rsi_account_id: 'B' })
+  const m = (pledges) => model(pledges, { store_credit_cents: null })
+  const keys = (plan) => plan.steps.phases.flatMap((ph) => ph.steps.map((s) => s.key))
+
+  it("each account's plan uses only its own credit", () => {
+    const buy = [{ vehicle_id: 9, name: 'Ship', price_cents: 10000 }]
+    const accounts = [acct('A', { buys: buy }), acct('B', { store_credit_cents: 50000, buys: buy })]
+    const r = planAccounts({ model: m([]), accounts, decisions: {}, catalog: null, creditOverrides: {} })
+    expect(r.plans[0].shortfall).toBe(10000)
+    expect(r.plans[1].shortfall).toBe(0)
+  })
+  it('credit override beats the account override, which beats synced credit', () => {
+    const accounts = [acct('A', { store_credit_cents: 100, credit_override_cents: 200 }), acct('B', { store_credit_cents: null })]
+    expect(planAccounts({ model: m([]), accounts, decisions: {}, creditOverrides: { A: 300 } }).plans.map((p) => p.credit)).toEqual([300, 0])
+    expect(planAccounts({ model: m([]), accounts, decisions: {}, creditOverrides: {} }).plans[0].credit).toBe(200)
+  })
+  it('cross-account hull check sees other accounts', () => {
+    const hull = onA(pledge(20, 'Standalone Ship - Pulse', 3000, { items: [shipItem('Pulse')] }))
+    const ccu = onB(pledge(21, 'Upgrade - Pulse to Cutlass', 500, { ccu_from: 'Pulse', ccu_to: 'Cutlass' }))
+    const r = planAccounts({ model: m([hull, ccu]), accounts: [acct('A'), acct('B')], decisions: {} })
+    expect(r.analysis.rows.find((x) => x.id === 21).flags).not.toContain('ccu-orphan')
+  })
+  it('gift adds a step to both accounts and does not melt the pledge', () => {
+    const p = onA(pledge(30, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({ model: m([p]), accounts: [acct('A'), acct('B')], decisions: { 30: { decision: 'gift', gift_to_account_id: 'B' } } })
+    expect(keys(r.plans[0])).toContain('gift-send-30')
+    expect(keys(r.plans[1])).toContain('gift-accept-30')
+    expect(keys(r.plans[0]).some((k) => k.startsWith('melt-'))).toBe(false)
+    expect(r.plans[0].steps.phases.at(-1).steps[0]).toMatchObject({ id: 'gift-send-30', kind: 'gift-send', text: 'Gift Standalone Ship - Pulse to Acct B' })
+    expect(r.plans[1].steps.phases.at(-1).steps[0]).toMatchObject({ kind: 'gift-accept', text: 'Accept the gift of Standalone Ship - Pulse from Acct A' })
+  })
+  it('names a gift target that is not among the selected accounts', () => {
+    const p = onA(pledge(32, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({
+      model: m([p]),
+      accounts: [acct('A')],
+      allAccounts: [{ id: 'A', name: 'Acct A' }, { id: 'B', name: 'Acct B' }],
+      decisions: { 32: { decision: 'gift', gift_to_account_id: 'B' } },
+    })
+    expect(r.plans[0].steps.phases.at(-1).steps[0].text).toBe('Gift Standalone Ship - Pulse to Acct B')
+  })
+  it('a plan for the target account alone still gets the accept step for an incoming gift', () => {
+    const r = planAccounts({
+      model: m([]),
+      accounts: [acct('B')],
+      allAccounts: [{ id: 'A', name: 'Acct A' }, { id: 'B', name: 'Acct B' }],
+      decisions: {},
+      incomingGifts: [{ rsi_pledge_id: 50, name: 'Standalone Ship - Pulse', from_account_id: 'A', gift_to_account_id: 'B' }],
+    })
+    expect(keys(r.plans[0]).filter((k) => k.startsWith('gift-'))).toEqual(['gift-accept-50'])
+    expect(r.plans[0].steps.phases.at(-1).steps[0]).toMatchObject({ id: 'gift-accept-50', kind: 'gift-accept', text: 'Accept the gift of Standalone Ship - Pulse from Acct A' })
+    expect(r.plans[0].steps.counts.gifts).toBe(1)
+  })
+  it('an incoming gift whose source is also selected yields exactly one accept step', () => {
+    const p = onA(pledge(51, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({
+      model: m([p]),
+      accounts: [acct('A'), acct('B')],
+      decisions: { 51: { decision: 'gift', gift_to_account_id: 'B' } },
+      incomingGifts: [{ rsi_pledge_id: 51, name: 'Standalone Ship - Pulse', from_account_id: 'A', gift_to_account_id: 'B' }],
+    })
+    expect(keys(r.plans[1]).filter((k) => k === 'gift-accept-51')).toHaveLength(1)
+    expect(keys(r.plans[0]).filter((k) => k === 'gift-send-51')).toHaveLength(1)
+  })
+  it('gift is done once the pledge is on the target account', () => {
+    const p = onB(pledge(31, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({ model: m([p]), accounts: [acct('A'), acct('B')], decisions: { 31: { decision: 'gift', gift_to_account_id: 'B' } } })
+    expect(r.analysis.rows[0].gift_done).toBe(true)
+    expect(r.plans.every((pl) => pl.steps.phases.every((ph) => ph.key !== 'gift'))).toBe(true)
+  })
+  it('totals sum the per-account figures', () => {
+    const a = onA(pledge(40, 'Paints - Fury - X', 1000, { items: [{ title: 'Fury - X Paint', kind: 'Skin' }] }))
+    const b = onB(pledge(41, 'Paints - Fury - Y', 2000, { items: [{ title: 'Fury - Y Paint', kind: 'Skin' }] }))
+    const r = planAccounts({
+      model: m([a, b]),
+      accounts: [acct('A', { store_credit_cents: 100, buys: [{ vehicle_id: 1, name: 'S', price_cents: 500 }] }), acct('B', { store_credit_cents: 200 })],
+      decisions: { 40: { decision: 'melt' }, 41: { decision: 'melt' } },
+    })
+    expect(r.totals).toEqual({ credit: 300, meltTotal: 3000, buyTotal: 500 })
+  })
+  it('one account gives the same steps as buildSteps', () => {
+    const rows = analyse(model(ALL)).rows
+    const decisions = { 3: { decision: 'iae' }, 5: { decision: 'melt' } }
+    const buys = [{ vehicle_id: 77, name: 'Carrack', price_cents: 60000 }]
+    const r = planAccounts({ model: model(ALL), accounts: [acct('A', { store_credit_cents: 7795, buys })], decisions })
+    expect(r.plans[0].steps).toEqual(buildSteps({ rows, decisions, buys, credit: 7795 }))
   })
 })

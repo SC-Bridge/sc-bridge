@@ -114,7 +114,8 @@ export function useShipPaints(slug) {
 
 /**
  * useOwnedPaints — fetches the current user's owned paint IDs from
- * /api/account/paints. Returns { ownedSet, loading, error, refetch }.
+ * /api/account/paints. Returns { ownedSet, ownedPaints, loading, error, refetch }.
+ * ownedPaints is [{ paint_id, rsi_account_id }]: which RSI account holds each paint.
  *
  * Frontend code does `ownedSet.has(paint.id)` for O(1) lookup when
  * rendering paint cards on Ship DB, /fleet, and /loadout. When
@@ -127,7 +128,8 @@ export function useOwnedPaints() {
     if (!data || !Array.isArray(data.owned)) return new Set()
     return new Set(data.owned)
   }, [data])
-  return { ownedSet, loading, error, refetch }
+  const ownedPaints = useMemo(() => (Array.isArray(data?.paints) ? data.paints : []), [data])
+  return { ownedSet, ownedPaints, loading, error, refetch }
 }
 
 export function useShipSalvage(slug) {
@@ -211,16 +213,21 @@ export function useFleetLoaners() {
 }
 
 // In-game-purchased ships — manually-added fleet entries (source='ingame').
-export async function addIngameShip(vehicleId, customName) {
-  return apiFetch('POST', '/vehicles/ingame', { vehicle_id: vehicleId, custom_name: customName || undefined })
+export async function addIngameShip(vehicleId, customName, rsiAccountId) {
+  return apiFetch('POST', '/vehicles/ingame', {
+    vehicle_id: vehicleId,
+    custom_name: customName || undefined,
+    rsi_account_id: rsiAccountId || undefined,
+  })
 }
 
 export async function deleteIngameShip(fleetId) {
   return apiFetch('DELETE', `/vehicles/ingame/${fleetId}`)
 }
 
-export async function clearIngameShips() {
-  return apiFetch('DELETE', '/vehicles/ingame')
+// `accounts` is useAccountFilter's apiParam; null clears every account.
+export async function clearIngameShips(accounts) {
+  return apiFetch('DELETE', accounts ? `/vehicles/ingame?accounts=${encodeURIComponent(accounts)}` : '/vehicles/ingame')
 }
 
 export function useFleetEntryUpgrades(fleetEntryId) {
@@ -328,8 +335,8 @@ export async function testLLMConnection(provider, apiKey) {
   return postJSON('/llm/test-connection', { provider, api_key: apiKey })
 }
 
-export async function generateAIAnalysis({ provider, model, context } = {}) {
-  return postJSON('/llm/generate-analysis', { provider, model, context })
+export async function generateAIAnalysis({ provider, model, context, accounts } = {}) {
+  return postJSON('/llm/generate-analysis', { provider, model, context, accounts })
 }
 
 /**
@@ -376,8 +383,8 @@ export function useChat(id) {
   return useAPI(id ? `/llm/chats/${id}` : '/llm/chats', { skip: !id })
 }
 
-export async function sendChatMessage({ chat_id, provider, model, message }) {
-  return postJSON('/llm/chat', { chat_id, provider, model, message })
+export async function sendChatMessage({ chat_id, provider, model, message, accounts }) {
+  return postJSON('/llm/chat', { chat_id, provider, model, message, accounts })
 }
 
 export async function deleteChat(id) {
@@ -559,8 +566,8 @@ export function useHangar() {
  * ships), store credit, and the user's saved decisions, buy list and ticked
  * steps, in one payload. Staging-only while the page is in preview.
  */
-export function useHangarCleanup() {
-  return useAPI('/hangar-cleanup')
+export function useHangarCleanup(query = '') {
+  return useAPI(`/hangar-cleanup${query}`)
 }
 
 // --- RSI accounts (multi-account) ---
@@ -588,27 +595,34 @@ export async function saveCleanupDecisions(rsiPledgeIds, decision) {
   return putJSON('/hangar-cleanup/decisions', { rsi_pledge_ids: rsiPledgeIds, decision })
 }
 
-export async function saveCleanupBuy(vehicleId, priceCents = null) {
-  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { price_cents: priceCents })
+// The buy, remelt, remove and reset calls take an RSI account only when the
+// account filter is on; without one the request is exactly as before.
+const withAccount = (body, rsiAccountId) => (rsiAccountId != null ? { ...body, rsi_account_id: rsiAccountId } : body)
+
+export async function saveCleanupBuy(vehicleId, priceCents = null, rsiAccountId) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, withAccount({ price_cents: priceCents }, rsiAccountId))
 }
 
 /** Mark a buy-list ship to be melted straight after purchase (it lands in Buy Back Pledges). */
-export async function saveCleanupBuyRemelt(vehicleId, remelt) {
-  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, { remelt })
+export async function saveCleanupBuyRemelt(vehicleId, remelt, rsiAccountId) {
+  return putJSON(`/hangar-cleanup/buys/${vehicleId}`, withAccount({ remelt }, rsiAccountId))
 }
 
 // DELETEs send an empty JSON body: browsers only add Content-Length: 0 on their
 // own for POST/PUT, and the /api/* guard returns 411 for a mutation without it.
-export async function removeCleanupBuy(vehicleId) {
-  return apiFetch('DELETE', `/hangar-cleanup/buys/${vehicleId}`, {})
+export async function removeCleanupBuy(vehicleId, rsiAccountId) {
+  const query = rsiAccountId != null ? `?account=${rsiAccountId}` : ''
+  return apiFetch('DELETE', `/hangar-cleanup/buys/${vehicleId}${query}`, {})
 }
 
 export async function saveCleanupState(patch) {
   return putJSON('/hangar-cleanup/state', patch)
 }
 
-export async function resetCleanup() {
-  return apiFetch('DELETE', '/hangar-cleanup', {})
+/** `accounts` is the account filter's apiParam ('all' or '1,3'); omit it to reset the primary account. */
+export async function resetCleanup(accounts) {
+  const query = accounts ? `?accounts=${accounts}` : ''
+  return apiFetch('DELETE', `/hangar-cleanup${query}`, {})
 }
 
 export async function toggleLootWishlist(uuid, isCurrentlyWishlisted) {
@@ -656,16 +670,19 @@ export async function saveLocalizationConfig(config) {
   return putJSON('/localization/config', config)
 }
 
-export function useLocalizationShipOrder() {
-  return useAPI('/localization/ship-order')
+// `query` picks the account(s): '?account=<id>' for one account's order,
+// '?accounts=<ids|all>' for the merged read-only order, none for the primary.
+export function useLocalizationShipOrder(query = '') {
+  return useAPI(`/localization/ship-order${query}`)
 }
 
-export async function saveLocalizationShipOrder(items) {
-  return putJSON('/localization/ship-order', { items })
+// A missing rsiAccountId lets the server save to the primary account.
+export async function saveLocalizationShipOrder(items, rsiAccountId) {
+  return putJSON('/localization/ship-order', rsiAccountId ? { items, rsi_account_id: rsiAccountId } : { items })
 }
 
-export function useLocalizationPreview() {
-  return useAPI('/localization/preview')
+export function useLocalizationPreview(query = '') {
+  return useAPI(`/localization/preview${query}`)
 }
 
 export function useLocalizationPacks() {
@@ -681,8 +698,12 @@ export function useShipModules(slug) {
   return useAPI(slug ? `/loadout/${slug}/modules` : null, { skip: !slug })
 }
 
-export function useOwnedModules(slug) {
-  return useAPI(slug ? `/loadout/${slug}/modules/owned` : null, { skip: !slug })
+// Loaner and owned-module settings are per RSI account; a missing id lets the
+// server choose (primary account for loaners, every account for owned modules).
+const accountQuery = (accountId) => (accountId ? `?account=${accountId}` : '')
+
+export function useOwnedModules(slug, accountId) {
+  return useAPI(slug ? `/loadout/${slug}/modules/owned${accountQuery(accountId)}` : null, { skip: !slug })
 }
 
 export function useCompatibleComponents(slug, portId) {
@@ -707,30 +728,30 @@ export async function resetFleetLoadoutPort(fleetId, portId) {
 
 // Loaner equivalents — derived loaners have no fleet id, so their loadout is
 // keyed by the loaner's vehicle id (user_loaner_loadout).
-export function useLoanerLoadout(loanerVehicleId) {
-  return useAPI(loanerVehicleId ? `/loadout/loaner/${loanerVehicleId}` : null, { skip: !loanerVehicleId })
+export function useLoanerLoadout(loanerVehicleId, accountId) {
+  return useAPI(loanerVehicleId ? `/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}` : null, { skip: !loanerVehicleId })
 }
 
-export async function saveLoanerLoadout(loanerVehicleId, overrides) {
-  return putJSON(`/loadout/loaner/${loanerVehicleId}`, { overrides })
+export async function saveLoanerLoadout(loanerVehicleId, overrides, accountId) {
+  return putJSON(`/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}`, { overrides })
 }
 
-export async function resetLoanerLoadout(loanerVehicleId) {
-  return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}`)
+export async function resetLoanerLoadout(loanerVehicleId, accountId) {
+  return apiFetch('DELETE', `/loadout/loaner/${loanerVehicleId}${accountQuery(accountId)}`)
 }
 
 // Module selections — bay/room module choices per slot. ownerKind is 'fleet'
 // (ownerId = fleet entry id) or 'loaner' (ownerId = loaner vehicle id).
-export function useModuleSelections(ownerKind, ownerId) {
-  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/modules` : null, { skip: !ownerId })
+export function useModuleSelections(ownerKind, ownerId, accountId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/modules${accountQuery(accountId)}` : null, { skip: !ownerId })
 }
 
-export async function saveModuleSelections(ownerKind, ownerId, selections) {
-  return putJSON(`/loadout/${ownerKind}/${ownerId}/modules`, { selections })
+export async function saveModuleSelections(ownerKind, ownerId, selections, accountId) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/modules${accountQuery(accountId)}`, { selections })
 }
 
-export async function resetModuleSelection(ownerKind, ownerId, portName) {
-  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}`)
+export async function resetModuleSelection(ownerKind, ownerId, portName, accountId) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/modules/${encodeURIComponent(portName)}${accountQuery(accountId)}`)
 }
 
 // Gadget consumable slots inside a tool head (mining laser / salvage head).
@@ -738,16 +759,16 @@ export function useHeadGadgets(headUuid) {
   return useAPI(headUuid ? `/loadout/head/${headUuid}/gadgets` : null, { skip: !headUuid })
 }
 
-export function useGadgetSelections(ownerKind, ownerId) {
-  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/gadgets` : null, { skip: !ownerId })
+export function useGadgetSelections(ownerKind, ownerId, accountId) {
+  return useAPI(ownerId ? `/loadout/${ownerKind}/${ownerId}/gadgets${accountQuery(accountId)}` : null, { skip: !ownerId })
 }
 
-export async function saveGadgetSelections(ownerKind, ownerId, selections) {
-  return putJSON(`/loadout/${ownerKind}/${ownerId}/gadgets`, { selections })
+export async function saveGadgetSelections(ownerKind, ownerId, selections, accountId) {
+  return putJSON(`/loadout/${ownerKind}/${ownerId}/gadgets${accountQuery(accountId)}`, { selections })
 }
 
-export async function resetGadgetSelection(ownerKind, ownerId, slotKey) {
-  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/gadgets/${encodeURIComponent(slotKey)}`)
+export async function resetGadgetSelection(ownerKind, ownerId, slotKey, accountId) {
+  return apiFetch('DELETE', `/loadout/${ownerKind}/${ownerId}/gadgets/${encodeURIComponent(slotKey)}${accountQuery(accountId)}`)
 }
 
 export function useLoadoutCart() {

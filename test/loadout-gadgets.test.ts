@@ -124,6 +124,33 @@ describe("Loadout gadgets — head slots, compatibility, persistence", () => {
     expect(((await bay.json()) as { selections: unknown[] }).selections).toHaveLength(0);
   });
 
+  it("stores a fleet gadget selection on the ship's account, and a second PUT updates that row", async () => {
+    const user = await createTestUser(env.DB);
+    await env.DB
+      .prepare("INSERT INTO user_rsi_accounts (user_id, rsi_handle, is_primary, is_placeholder) VALUES (?, 'GadP', 1, 0)")
+      .bind(user.userId).run();
+    const other = await env.DB
+      .prepare("INSERT INTO user_rsi_accounts (user_id, rsi_handle, is_primary, is_placeholder) VALUES (?, 'GadB', 0, 0) RETURNING id")
+      .bind(user.userId).first<{ id: number }>();
+    const ship = await env.DB
+      .prepare("INSERT INTO user_fleet (user_id, vehicle_id, is_loaner, rsi_account_id, imported_at) VALUES (?, ?, 0, ?, datetime('now')) RETURNING id")
+      .bind(user.userId, vid, other!.id).first<{ id: number }>();
+    const headers = { ...(await authHeaders(user.sessionToken)), "Content-Type": "application/json" };
+
+    for (const uuid of ["lm-brandt", "lm-atls"]) {
+      const put = await SELF.fetch(`http://localhost/api/loadout/fleet/${ship!.id}/gadgets`, {
+        method: "PUT", headers,
+        body: JSON.stringify({ selections: [{ port_name: "acct_slot#0", module_uuid: uuid, module_kind: "mining_gadget" }] }),
+      });
+      expect(put.status).toBe(200);
+    }
+
+    const rows = await env.DB
+      .prepare("SELECT rsi_account_id, module_uuid FROM user_module_selection WHERE user_id = ? AND owner_kind = 'fleet' AND owner_id = ? AND port_name = 'acct_slot#0'")
+      .bind(user.userId, ship!.id).all<{ rsi_account_id: number; module_uuid: string }>();
+    expect(rows.results).toEqual([{ rsi_account_id: other!.id, module_uuid: "lm-atls" }]);
+  });
+
   it("rejects an invalid gadget uuid", async () => {
     const res = await SELF.fetch(`http://localhost/api/loadout/fleet/${fleetId}/gadgets`, {
       method: "PUT", headers: await auth(),

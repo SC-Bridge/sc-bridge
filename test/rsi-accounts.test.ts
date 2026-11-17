@@ -12,6 +12,7 @@ import {
   listRsiAccounts,
   createRsiAccount,
   deleteRsiAccount,
+  resolveAccountId,
   claimSyncSlot,
   ACCOUNT_COLORS,
   nextAccountColor,
@@ -545,5 +546,167 @@ describe("account colours", () => {
       (await env.DB.prepare("SELECT color FROM user_rsi_accounts WHERE id = ?").bind(id).first<{ color: string }>())!.color;
     expect([await colour(a1), await colour(a2), await colour(a3)]).toEqual(ACCOUNT_COLORS.slice(0, 3));
     expect(await colour(b1)).toBe(ACCOUNT_COLORS[0]);
+  });
+});
+
+describe("resolveAccountId", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("returns primary for no value, the id for an owned one, null for a foreign or bad id", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const other = await createTestUser(env.DB);
+    const primaryId = await createRsiAccount(env.DB, userId, { handle: "RA1", referralCode: null, placeholder: false });
+    const second = await createRsiAccount(env.DB, userId, { handle: "RA2", referralCode: null, placeholder: false });
+    const foreign = await createRsiAccount(env.DB, other.userId, { handle: "RA3", referralCode: null, placeholder: false });
+
+    expect(await resolveAccountId(env.DB, userId, undefined)).toBe(primaryId);
+    expect(await resolveAccountId(env.DB, userId, null)).toBe(primaryId);
+    expect(await resolveAccountId(env.DB, userId, second)).toBe(second);
+    expect(await resolveAccountId(env.DB, userId, String(second))).toBe(second);
+    expect(await resolveAccountId(env.DB, userId, foreign)).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, "abc")).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, "1.5")).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, 0)).toBeNull();
+    expect(await resolveAccountId(env.DB, userId, 987654321)).toBeNull();
+  });
+});
+
+describe("deleteRsiAccount vehicle settings", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("removes the account's loaner loadouts, module selections and ship order", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "DV1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "DV2", referralCode: null, placeholder: false });
+    const veh = await seedVehicle(env.DB, { slug: "zzdv-ship", name: "Zzdv Ship" });
+    await env.DB
+      .prepare("INSERT INTO vehicle_ports (uuid, vehicle_id, name, port_type, game_version_id) VALUES ('zzdv-p', ?, 'p', 'shield', 1)")
+      .bind(veh)
+      .run();
+    const port = (await env.DB.prepare("SELECT id FROM vehicle_ports WHERE uuid = 'zzdv-p'").first<{ id: number }>())!.id;
+    await env.DB
+      .prepare(
+        `INSERT INTO vehicle_components (uuid, name, slug, type, size, grade, game_version_id, created_at, updated_at)
+         VALUES ('zzdv-c', 'C', 'zzdv-c', 'shield', 1, 1, 1, datetime('now'), datetime('now'))`,
+      )
+      .run();
+    const comp = (await env.DB.prepare("SELECT id FROM vehicle_components WHERE uuid = 'zzdv-c'").first<{ id: number }>())!.id;
+
+    for (const acct of [a, b]) {
+      await env.DB
+        .prepare("INSERT INTO user_loaner_loadout (user_id, rsi_account_id, loaner_vehicle_id, port_id, component_id) VALUES (?, ?, ?, ?, ?)")
+        .bind(userId, acct, veh, port, comp)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_module_selection (user_id, rsi_account_id, owner_kind, owner_id, port_name, module_uuid) VALUES (?, ?, 'loaner', ?, 'bay', 'm')")
+        .bind(userId, acct, veh)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_localization_ship_order (user_id, rsi_account_id, vehicle_id, sort_position) VALUES (?, ?, ?, 1)")
+        .bind(userId, acct, veh)
+        .run();
+    }
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    for (const t of ["user_loaner_loadout", "user_module_selection", "user_localization_ship_order"]) {
+      const left = await env.DB
+        .prepare(`SELECT rsi_account_id FROM ${t} WHERE user_id = ?`)
+        .bind(userId)
+        .all<{ rsi_account_id: number }>();
+      expect(left.results.map((r) => r.rsi_account_id)).toEqual([b]);
+    }
+  });
+});
+
+describe("deleteRsiAccount cleanup buys, state and gifts", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("removes its buys and state and clears gifts aimed at it", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "CG1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "CG2", referralCode: null, placeholder: false });
+    const veh = await seedVehicle(env.DB);
+
+    for (const acct of [a, b]) {
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_buys (user_id, rsi_account_id, vehicle_id) VALUES (?, ?, ?)")
+        .bind(userId, acct, veh)
+        .run();
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_state (user_id, rsi_account_id, credit_override_cents) VALUES (?, ?, 5)")
+        .bind(userId, acct)
+        .run();
+    }
+    const gift = (pledge: number, target: number) =>
+      env.DB
+        .prepare(
+          "INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision, gift_to_account_id) VALUES (?, ?, 'gift', ?)",
+        )
+        .bind(userId, pledge, target)
+        .run();
+    await gift(7001, a);
+    await gift(7002, b);
+    // 7001 also carries an in-game buy flag, so it survives the reset (an empty row would not).
+    await env.DB
+      .prepare("UPDATE user_hangar_cleanup_decisions SET buy_ingame = 1 WHERE user_id = ? AND rsi_pledge_id = 7001")
+      .bind(userId)
+      .run();
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    for (const t of ["user_hangar_cleanup_buys", "user_hangar_cleanup_state"]) {
+      const left = await env.DB
+        .prepare(`SELECT rsi_account_id FROM ${t} WHERE user_id = ?`)
+        .bind(userId)
+        .all<{ rsi_account_id: number }>();
+      expect(left.results.map((r) => r.rsi_account_id)).toEqual([b]);
+    }
+    const dec = await env.DB
+      .prepare(
+        "SELECT rsi_pledge_id, decision, gift_to_account_id FROM user_hangar_cleanup_decisions WHERE user_id = ? ORDER BY rsi_pledge_id",
+      )
+      .bind(userId)
+      .all<{ rsi_pledge_id: number; decision: string | null; gift_to_account_id: number | null }>();
+    expect(dec.results).toEqual([
+      { rsi_pledge_id: 7001, decision: null, gift_to_account_id: null },
+      { rsi_pledge_id: 7002, decision: "gift", gift_to_account_id: b },
+    ]);
+  });
+
+  it("deletes a gift-target row that carries nothing else once the target is gone", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "CE1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "CE2", referralCode: null, placeholder: false });
+    const insert = (pledge: number, target: number, price: number | null) =>
+      env.DB
+        .prepare(
+          `INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision, gift_to_account_id, iae_price_cents)
+           VALUES (?, ?, 'gift', ?, ?)`,
+        )
+        .bind(userId, pledge, target, price)
+        .run();
+    await insert(7101, a, null); // nothing but the gift: row goes
+    await insert(7102, a, 5000); // an IAE price too: row stays
+    await insert(7103, b, null); // aimed elsewhere: untouched
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    const rows = await env.DB
+      .prepare(
+        "SELECT rsi_pledge_id, decision, iae_price_cents FROM user_hangar_cleanup_decisions WHERE user_id = ? ORDER BY rsi_pledge_id",
+      )
+      .bind(userId)
+      .all();
+    expect(rows.results).toEqual([
+      { rsi_pledge_id: 7102, decision: null, iae_price_cents: 5000 },
+      { rsi_pledge_id: 7103, decision: "gift", iae_price_cents: null },
+    ]);
   });
 });
