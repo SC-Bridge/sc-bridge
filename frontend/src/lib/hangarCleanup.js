@@ -671,8 +671,12 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
  * gets gift_done. A gift pledge is never melted (buildSteps ignores 'gift').
  * allAccounts (every account the user has) is used only to look up names, so a
  * gift to an account outside the selection still reads correctly.
+ * incomingGifts ({ rsi_pledge_id, name, from_account_id, gift_to_account_id })
+ * are gifts to a selected account from a pledge outside the selection: that
+ * pledge is not in the model, so its accept step comes from here. One already
+ * in the model is covered by the path above and skipped.
  */
-export function planAccounts({ model, accounts, allAccounts, decisions, catalog, creditOverrides }) {
+export function planAccounts({ model, accounts, allAccounts, decisions, incomingGifts, catalog, creditOverrides }) {
   const analysis = analyse(model)
   const list = accounts ?? []
   const fallbackId = (list.find((a) => a.is_primary) ?? list[0])?.id ?? null
@@ -680,6 +684,8 @@ export function planAccounts({ model, accounts, allAccounts, decisions, catalog,
   const nameOf = (id) => (list.find((a) => a.id === id) ?? (allAccounts ?? []).find((a) => a.id === id))?.name ?? ''
   const gifts = analysis.rows.filter((r) => decisions?.[r.id]?.decision === 'gift' && decisions[r.id].gift_to_account_id != null)
   for (const r of gifts) r.gift_done = ownerOf(r) === decisions[r.id].gift_to_account_id
+  const inModel = new Set(analysis.rows.map((r) => r.id))
+  const incoming = (incomingGifts ?? []).filter((g) => !inModel.has(g.rsi_pledge_id))
 
   const plans = list.map((a) => {
     const rows = analysis.rows.filter((r) => ownerOf(r) === a.id)
@@ -690,7 +696,9 @@ export function planAccounts({ model, accounts, allAccounts, decisions, catalog,
       if (ownerOf(r) === a.id) return [{ id: `gift-send-${r.id}`, kind: 'gift-send', text: `Gift ${r.name} to ${nameOf(to)}` }]
       if (to === a.id) return [{ id: `gift-accept-${r.id}`, kind: 'gift-accept', text: `Accept the gift of ${r.name} from ${nameOf(ownerOf(r))}` }]
       return []
-    })
+    }).concat(incoming.filter((g) => g.gift_to_account_id === a.id).map((g) => (
+      { id: `gift-accept-${g.rsi_pledge_id}`, kind: 'gift-accept', text: `Accept the gift of ${g.name} from ${nameOf(g.from_account_id)}` }
+    )))
     const steps = giftSteps.length ? {
       ...built,
       phases: [...built.phases, { key: 'gift', title: 'Gift between accounts', steps: giftSteps.map((g) => ({ ...g, key: g.id, title: g.text, meta: [], money: [], warn: [] })) }],

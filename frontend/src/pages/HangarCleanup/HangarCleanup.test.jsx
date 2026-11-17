@@ -317,6 +317,15 @@ describe('HangarCleanup accounts', () => {
     expect(api.queries.every((q) => q === '')).toBe(true)
   })
 
+  it('disables the reset button while the data is stale', () => {
+    const data = singlePayload(1)
+    api.respond = () => ({ data, loading: false, error: null, refetch: vi.fn() })
+    renderPage('/hangar-cleanup?accts=1')
+    expect(screen.getByRole('button', { name: 'Reset decisions' }).matches(':disabled')).toBe(false)
+    fireEvent.click(screen.getByRole('checkbox', { name: /Beta/ }))
+    expect(screen.getByRole('button', { name: 'Reset decisions' }).matches(':disabled')).toBe(true)
+  })
+
   it('blocks a write right after the selection changes, until the new data arrives', async () => {
     const stale = singlePayload(1)
     api.respond = () => ({ data: stale, loading: false, error: null, refetch: vi.fn() })

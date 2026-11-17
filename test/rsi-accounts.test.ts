@@ -653,6 +653,11 @@ describe("deleteRsiAccount cleanup buys, state and gifts", () => {
         .run();
     await gift(7001, a);
     await gift(7002, b);
+    // 7001 also carries an in-game buy flag, so it survives the reset (an empty row would not).
+    await env.DB
+      .prepare("UPDATE user_hangar_cleanup_decisions SET buy_ingame = 1 WHERE user_id = ? AND rsi_pledge_id = 7001")
+      .bind(userId)
+      .run();
 
     await deleteRsiAccount(env.DB, userId, a);
 
@@ -672,6 +677,36 @@ describe("deleteRsiAccount cleanup buys, state and gifts", () => {
     expect(dec.results).toEqual([
       { rsi_pledge_id: 7001, decision: null, gift_to_account_id: null },
       { rsi_pledge_id: 7002, decision: "gift", gift_to_account_id: b },
+    ]);
+  });
+
+  it("deletes a gift-target row that carries nothing else once the target is gone", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const a = await createRsiAccount(env.DB, userId, { handle: "CE1", referralCode: null, placeholder: false });
+    const b = await createRsiAccount(env.DB, userId, { handle: "CE2", referralCode: null, placeholder: false });
+    const insert = (pledge: number, target: number, price: number | null) =>
+      env.DB
+        .prepare(
+          `INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision, gift_to_account_id, iae_price_cents)
+           VALUES (?, ?, 'gift', ?, ?)`,
+        )
+        .bind(userId, pledge, target, price)
+        .run();
+    await insert(7101, a, null); // nothing but the gift: row goes
+    await insert(7102, a, 5000); // an IAE price too: row stays
+    await insert(7103, b, null); // aimed elsewhere: untouched
+
+    await deleteRsiAccount(env.DB, userId, a);
+
+    const rows = await env.DB
+      .prepare(
+        "SELECT rsi_pledge_id, decision, iae_price_cents FROM user_hangar_cleanup_decisions WHERE user_id = ? ORDER BY rsi_pledge_id",
+      )
+      .bind(userId)
+      .all();
+    expect(rows.results).toEqual([
+      { rsi_pledge_id: 7102, decision: null, iae_price_cents: 5000 },
+      { rsi_pledge_id: 7103, decision: "gift", iae_price_cents: null },
     ]);
   });
 });

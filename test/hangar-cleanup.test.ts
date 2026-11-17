@@ -75,6 +75,7 @@ interface CleanupPayload {
     string,
     { decision: string | null; buy_ingame: boolean; iae_price_cents: number | null; gift_to_account_id: number | null }
   >;
+  incoming_gifts: Array<{ rsi_pledge_id: number; name: string; from_account_id: number; gift_to_account_id: number }>;
   buys: Array<{ vehicle_id: number; price_cents: number | null; remelt?: boolean }>;
   state: { credit_override_cents: number | null; done_steps: string[] };
 }
@@ -264,6 +265,7 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       pledges: [],
       buybacks: [],
       decisions: {},
+      incoming_gifts: [],
       buys: [],
       state: { credit_override_cents: null, done_steps: [] },
     });
@@ -829,6 +831,115 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
       expect(data.hangar_cleanup.decisions).toEqual([expect.objectContaining({ rsi_pledge_id: B_RSI, rsi_account_id: bId })]);
       expect(data.hangar_cleanup.buys).toEqual([expect.objectContaining({ rsi_account_id: bId, vehicle_id: carrackId })]);
       expect(data.hangar_cleanup.state).toEqual([expect.objectContaining({ rsi_account_id: bId, done_steps_json: '["x"]' })]);
+    });
+  });
+
+  describe("final review fixes", () => {
+    let base = 700000;
+    const decisionCount = async (userId: string) =>
+      (await env.DB.prepare("SELECT COUNT(*) AS n FROM user_hangar_cleanup_decisions WHERE user_id = ?").bind(userId).first<{ n: number }>())!.n;
+
+    async function twoAccounts() {
+      const u = await createTestUser(env.DB);
+      const rsiBase = (base += 1000);
+      const aId = await seedHangar(u.userId, { rsiBase, vehicleId: carrackId, fromVehicleId: cutlassId });
+      const bId = await seedHangar(u.userId, {
+        rsiBase: rsiBase + 500,
+        vehicleId: carrackId,
+        fromVehicleId: cutlassId,
+        label: "Alt",
+        primary: false,
+      });
+      return { u, aId, bId, A: rsiBase, B: rsiBase + 500 };
+    }
+
+    it("reset with no param also clears decisions whose pledge left the hangar", async () => {
+      const { u, A } = await twoAccounts();
+      await send(u.sessionToken, "PUT", `/decisions/${A}`, { decision: "melt" });
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, ?, 'melt')")
+        .bind(u.userId, A + 900)
+        .run();
+      expect((await send(u.sessionToken, "DELETE", "")).status).toBe(200);
+      expect(await decisionCount(u.userId)).toBe(0);
+    });
+
+    it("reset of a subset of accounts keeps orphan decisions and other accounts' rows", async () => {
+      const { u, aId, B } = await twoAccounts();
+      await send(u.sessionToken, "PUT", `/decisions/${B}`, { decision: "keep" });
+      await env.DB
+        .prepare("INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, ?, 'melt')")
+        .bind(u.userId, B + 900)
+        .run();
+      expect((await send(u.sessionToken, "DELETE", `?accounts=${aId}`)).status).toBe(200);
+      expect(await decisionCount(u.userId)).toBe(2);
+    });
+
+    it("reset naming only foreign or deleted accounts is a 404 that clears nothing", async () => {
+      const { u, aId, bId, A, B } = await twoAccounts();
+      await send(u.sessionToken, "PUT", `/decisions/${A}`, { decision: "melt" });
+      await send(u.sessionToken, "PUT", `/buys/${carrackId}`, { rsi_account_id: aId, price_cents: 1 });
+      await send(u.sessionToken, "PUT", "/state", { rsi_account_id: aId, done_steps: ["s"] });
+      for (const bad of [await foreignId(), 987654321]) {
+        const res = await send(u.sessionToken, "DELETE", `?accounts=${bad}`);
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({ error: "RSI account not found" });
+      }
+      const kept = await get(u.sessionToken);
+      expect(kept.decisions[String(A)].decision).toBe("melt");
+      expect(kept.accounts[0].buys).toHaveLength(1);
+      expect(kept.accounts[0].done_steps).toEqual(["s"]);
+
+      // A mixed list keeps its owned ids.
+      await send(u.sessionToken, "PUT", `/decisions/${B}`, { decision: "keep" });
+      expect((await send(u.sessionToken, "DELETE", `?accounts=${await foreignId()},${bId}`)).status).toBe(200);
+      const after = await get(u.sessionToken, "?accounts=all");
+      expect(Object.keys(after.decisions)).toEqual([String(A)]);
+    });
+
+    async function foreignId(): Promise<number> {
+      return (await env.DB.prepare("SELECT id FROM user_rsi_accounts WHERE user_id = ?").bind(otherUserId).first<{ id: number }>())!.id;
+    }
+
+    it("a pledge with no account cannot be gifted", async () => {
+      const { u, bId, A } = await twoAccounts();
+      const sync = await env.DB.prepare("SELECT sync_id FROM user_pledges WHERE user_id = ? LIMIT 1").bind(u.userId).first<{ sync_id: number }>();
+      await env.DB
+        .prepare(
+          `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value_cents, currency, is_reclaimable, is_giftable, rsi_account_id)
+           VALUES (?, ?, ?, 'Orphan gift', 100, 'New Money', 1, 1, NULL)`,
+        )
+        .bind(u.userId, sync!.sync_id, A + 800)
+        .run();
+      const res = await send(u.sessionToken, "PUT", `/decisions/${A + 800}`, { decision: "gift", gift_to_account_id: bId });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Pledge cannot be gifted to that account" });
+    });
+
+    it("the target account alone sees the incoming gift, until the gift is done", async () => {
+      const { u, aId, bId, A } = await twoAccounts();
+      expect((await send(u.sessionToken, "PUT", `/decisions/${A + 1}`, { decision: "gift", gift_to_account_id: bId })).status).toBe(200);
+      const incoming = { rsi_pledge_id: A + 1, name: "Upgrade - Cutlass Black to Carrack", from_account_id: aId, gift_to_account_id: bId };
+      expect((await get(u.sessionToken, `?accounts=${bId}`)).incoming_gifts).toEqual([incoming]);
+      // Both selected: the existing path covers it. The source alone: nothing incoming.
+      expect((await get(u.sessionToken, "?accounts=all")).incoming_gifts).toEqual([]);
+      expect((await get(u.sessionToken)).incoming_gifts).toEqual([]);
+
+      await env.DB.prepare("UPDATE user_pledges SET rsi_account_id = ? WHERE user_id = ? AND rsi_pledge_id = ?").bind(bId, u.userId, A + 1).run();
+      expect((await get(u.sessionToken, `?accounts=${bId}`)).incoming_gifts).toEqual([]);
+    });
+
+    it("editing a completed gift's buy flag is allowed", async () => {
+      const { u, bId, A } = await twoAccounts();
+      await send(u.sessionToken, "PUT", `/decisions/${A + 1}`, { decision: "gift", gift_to_account_id: bId });
+      await env.DB.prepare("UPDATE user_pledges SET rsi_account_id = ? WHERE user_id = ? AND rsi_pledge_id = ?").bind(bId, u.userId, A + 1).run();
+      const res = await send(u.sessionToken, "PUT", `/decisions/${A + 1}`, { buy_ingame: true });
+      expect(res.status).toBe(200);
+      expect((await get(u.sessionToken, "?accounts=all")).decisions[String(A + 1)]).toMatchObject({
+        decision: "gift",
+        buy_ingame: true,
+        gift_to_account_id: bId,
+      });
     });
   });
 

@@ -197,8 +197,9 @@ function parseDoneSteps(json: string | null | undefined): string[] {
 const GIFT_ERROR = "Pledge cannot be gifted to that account";
 
 /**
- * Whether a pledge may be gifted to `targetId`: it is giftable, the target is
- * one of the user's accounts, and the target is not the pledge's own account.
+ * Whether a pledge may be gifted to `targetId`: it is giftable, it sits on an
+ * account, the target is one of the user's accounts, and the target is not the
+ * pledge's own account.
  */
 async function canGift(
   db: D1Database,
@@ -212,7 +213,7 @@ async function canGift(
     .bind(targetId, userId)
     .first();
   if (!target) return false;
-  return pledges.every((p) => p.is_giftable === 1 && p.rsi_account_id !== targetId);
+  return pledges.every((p) => p.is_giftable === 1 && p.rsi_account_id != null && p.rsi_account_id !== targetId);
 }
 
 export function hangarCleanupRoutes() {
@@ -238,7 +239,7 @@ export function hangarCleanupRoutes() {
       "SELECT id FROM user_pledges WHERE user_id = ? AND rsi_account_id IN (SELECT value FROM json_each(?))";
 
     // One round trip, one statement per table, every one scoped by user_id and the selected accounts.
-    const [syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes, paintRes] =
+    const [syncRes, pledgeRes, itemRes, upgradeRes, shipRes, buybackRes, decisionRes, buyRes, stateRes, paintRes, giftRes] =
       await db.batch([
         db
           .prepare(
@@ -339,6 +340,20 @@ export function hangarCleanupRoutes() {
            THEN 1 ELSE 0 END AS hinted
            FROM paints WHERE COALESCE(is_deleted, 0) = 0`,
         ),
+        // Gifts aimed at a selected account from a pledge that sits outside the
+        // selection: the target's plan still owes the "accept" step.
+        db
+          .prepare(
+            `SELECT d.rsi_pledge_id, p.name, p.rsi_account_id AS from_account_id, d.gift_to_account_id
+             FROM user_hangar_cleanup_decisions d
+             JOIN user_pledges p ON p.user_id = d.user_id AND p.rsi_pledge_id = d.rsi_pledge_id
+             WHERE d.user_id = ? AND d.decision = 'gift'
+               AND d.gift_to_account_id IN (SELECT value FROM json_each(?))
+               AND p.rsi_account_id IS NOT NULL
+               AND p.rsi_account_id NOT IN (SELECT value FROM json_each(?))
+             ORDER BY d.rsi_pledge_id`,
+          )
+          .bind(userId, selectedJson, selectedJson),
       ]);
 
     const gamePaints: GamePaint[] = (
@@ -488,6 +503,12 @@ export function hangarCleanupRoutes() {
         to_vehicle_name: b.to_vehicle_name,
       })),
       decisions,
+      incoming_gifts: giftRes.results as unknown as Array<{
+        rsi_pledge_id: number;
+        name: string;
+        from_account_id: number;
+        gift_to_account_id: number;
+      }>,
       buys: first?.buys ?? [],
       state: {
         credit_override_cents: first?.credit_override_cents ?? null,
@@ -585,7 +606,10 @@ export function hangarCleanupRoutes() {
       if (decision === "gift") {
         giftTarget =
           body.gift_to_account_id !== undefined ? body.gift_to_account_id : (existing?.gift_to_account_id ?? null);
-        if (!(await canGift(db, userId, [owned], giftTarget))) return c.json({ error: GIFT_ERROR }, 400);
+        // A gift already stored was validated when it was set; once it completes the
+        // pledge sits on the target, so only a changed gift is checked again.
+        const unchanged = existing?.decision === "gift" && existing.gift_to_account_id === giftTarget;
+        if (!unchanged && !(await canGift(db, userId, [owned], giftTarget))) return c.json({ error: GIFT_ERROR }, 400);
       }
 
       if (decision === null && !buyIngame && iaePrice === null) {
@@ -717,7 +741,8 @@ export function hangarCleanupRoutes() {
 
   // DELETE /?accounts= — reset the selected accounts' decisions, buys and state
   // (synced data untouched). No param means the primary account; a malformed
-  // one is rejected rather than widened to every account.
+  // one is rejected rather than widened to every account, and a list naming no
+  // account of the user's is a 404 rather than a reset of the primary.
   routes.delete("/", validate("query", z.object({ accounts: z.string().max(200).optional() })), async (c) => {
     const db = c.env.DB;
     const userId = getAuthUser(c).id;
@@ -725,18 +750,31 @@ export function hangarCleanupRoutes() {
     if (rawAccounts !== undefined && !ACCOUNTS_QUERY.safeParse(rawAccounts).success) {
       return c.json({ error: "Invalid accounts" }, 400);
     }
-    const idsJson = JSON.stringify(await selectAccountIds(db, userId, rawAccounts));
-    // 'all' also sweeps decisions whose pledge has left the hangar.
+    const ids = await selectAccountIds(db, userId, rawAccounts, { strict: true });
+    const isList = rawAccounts !== undefined && rawAccounts !== "all";
+    if (isList && ids.length === 0) return c.json({ error: ACCOUNT_NOT_FOUND }, 404);
+    const idsJson = JSON.stringify(ids);
+    const accountCount = (
+      await db
+        .prepare("SELECT COUNT(*) AS n FROM user_rsi_accounts WHERE user_id = ?")
+        .bind(userId)
+        .first<{ n: number }>()
+    )?.n;
+    // Every account selected clears every decision. With no param the primary's
+    // pledges are cleared and so are decisions whose pledge has left the hangar:
+    // nothing else would ever clear those.
     const decisionScope =
-      rawAccounts === "all"
+      rawAccounts === "all" || ids.length === accountCount
         ? db.prepare("DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ?").bind(userId)
         : db
             .prepare(
-              `DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ? AND rsi_pledge_id IN (
-                 SELECT rsi_pledge_id FROM user_pledges
-                 WHERE user_id = ? AND rsi_account_id IN (SELECT value FROM json_each(?)))`,
+              `DELETE FROM user_hangar_cleanup_decisions WHERE user_id = ? AND (
+                 rsi_pledge_id IN (
+                   SELECT rsi_pledge_id FROM user_pledges
+                   WHERE user_id = ? AND rsi_account_id IN (SELECT value FROM json_each(?)))
+                 OR (? = 1 AND rsi_pledge_id NOT IN (SELECT rsi_pledge_id FROM user_pledges WHERE user_id = ?)))`,
             )
-            .bind(userId, userId, idsJson);
+            .bind(userId, userId, idsJson, rawAccounts === undefined ? 1 : 0, userId);
     await db.batch([
       decisionScope,
       db

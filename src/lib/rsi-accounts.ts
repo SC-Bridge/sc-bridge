@@ -327,13 +327,14 @@ export async function resolveAccountId(
 /**
  * The account ids a read or reset covers, without creating anything. No param
  * means the primary account; 'all' every account; a list the owned ids in it,
- * falling back to the primary when none are owned. Empty when the user has no
- * account.
+ * falling back to the primary when none are owned (`strict` returns none
+ * instead, for destructive callers). Empty when the user has no account.
  */
 export async function selectAccountIds(
   db: D1Database,
   userId: string,
   raw: string | undefined,
+  { strict = false }: { strict?: boolean } = {},
 ): Promise<number[]> {
   const { results } = await db
     .prepare("SELECT id, is_primary FROM user_rsi_accounts WHERE user_id = ? ORDER BY is_primary DESC, id")
@@ -345,7 +346,7 @@ export async function selectAccountIds(
   if (requested === null) return results.map((r) => r.id);
   const owned = new Set(results.map((r) => r.id));
   const kept = requested.filter((id) => owned.has(id));
-  return kept.length > 0 ? kept : primary;
+  return kept.length > 0 || strict ? kept : primary;
 }
 
 /**
@@ -389,6 +390,13 @@ export async function deleteRsiAccount(db: D1Database, userId: string, accountId
         "UPDATE user_hangar_cleanup_decisions SET decision = NULL, gift_to_account_id = NULL WHERE user_id = ? AND gift_to_account_id = ?",
       )
       .bind(userId, accountId),
+    // Same rule as the cleanup route: a decision row that now says nothing is deleted.
+    db
+      .prepare(
+        `DELETE FROM user_hangar_cleanup_decisions
+         WHERE user_id = ? AND decision IS NULL AND buy_ingame = 0 AND iae_price_cents IS NULL`,
+      )
+      .bind(userId),
     del("user_paints"),
     del("user_buyback_pledges"),
     del("user_pledge_upgrades"),

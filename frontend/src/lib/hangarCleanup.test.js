@@ -378,6 +378,29 @@ describe('planAccounts', () => {
     })
     expect(r.plans[0].steps.phases.at(-1).steps[0].text).toBe('Gift Standalone Ship - Pulse to Acct B')
   })
+  it('a plan for the target account alone still gets the accept step for an incoming gift', () => {
+    const r = planAccounts({
+      model: m([]),
+      accounts: [acct('B')],
+      allAccounts: [{ id: 'A', name: 'Acct A' }, { id: 'B', name: 'Acct B' }],
+      decisions: {},
+      incomingGifts: [{ rsi_pledge_id: 50, name: 'Standalone Ship - Pulse', from_account_id: 'A', gift_to_account_id: 'B' }],
+    })
+    expect(keys(r.plans[0]).filter((k) => k.startsWith('gift-'))).toEqual(['gift-accept-50'])
+    expect(r.plans[0].steps.phases.at(-1).steps[0]).toMatchObject({ id: 'gift-accept-50', kind: 'gift-accept', text: 'Accept the gift of Standalone Ship - Pulse from Acct A' })
+    expect(r.plans[0].steps.counts.gifts).toBe(1)
+  })
+  it('an incoming gift whose source is also selected yields exactly one accept step', () => {
+    const p = onA(pledge(51, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
+    const r = planAccounts({
+      model: m([p]),
+      accounts: [acct('A'), acct('B')],
+      decisions: { 51: { decision: 'gift', gift_to_account_id: 'B' } },
+      incomingGifts: [{ rsi_pledge_id: 51, name: 'Standalone Ship - Pulse', from_account_id: 'A', gift_to_account_id: 'B' }],
+    })
+    expect(keys(r.plans[1]).filter((k) => k === 'gift-accept-51')).toHaveLength(1)
+    expect(keys(r.plans[0]).filter((k) => k === 'gift-send-51')).toHaveLength(1)
+  })
   it('gift is done once the pledge is on the target account', () => {
     const p = onB(pledge(31, 'Standalone Ship - Pulse', 3000, { is_giftable: true, items: [shipItem('Pulse')] }))
     const r = planAccounts({ model: m([p]), accounts: [acct('A'), acct('B')], decisions: { 31: { decision: 'gift', gift_to_account_id: 'B' } } })

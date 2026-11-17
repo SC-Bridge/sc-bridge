@@ -256,6 +256,7 @@ export default function HangarCleanup() {
       model,
       accounts: list.map((a) => ({ ...a, buys: multi ? (a.buys ?? []).map((b) => resolveBuy(b, catalog)) : buyList })),
       allAccounts: data.all_accounts,
+      incomingGifts: data.incoming_gifts,
       decisions: plan.decisions,
       catalog,
       creditOverrides: multi ? undefined : { [list[0].id]: credit },
@@ -332,7 +333,7 @@ export default function HangarCleanup() {
           <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { loadFile(e.target.files?.[0]); e.target.value = '' }} />
           <button type="button" className="btn-ghost inline-flex items-center gap-1.5 !px-2 !py-1" onClick={() => fileInput.current?.click()}><Upload className="w-4 h-4" />Load export file</button>
           {!noSync && (
-            <button type="button" className={`${confirmReset ? 'btn-danger' : 'btn-ghost'} inline-flex items-center gap-1.5 !px-2 !py-1`} onClick={onReset}>
+            <button type="button" className={`${confirmReset ? 'btn-danger' : 'btn-ghost'} inline-flex items-center gap-1.5 !px-2 !py-1`} onClick={onReset} disabled={!canWrite}>
               <RotateCcw className="w-4 h-4" />{confirmReset ? (multi ? `Reset Hangar Cleanup for ${accountFilter.selectedIds.size} accounts?` : 'Click again to clear all decisions') : 'Reset decisions'}
             </button>
           )}
