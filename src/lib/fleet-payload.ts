@@ -3,6 +3,11 @@ import type { UserFleetEntry } from "./types";
 export interface FleetPayloadOptions {
   /** Include personal fields (custom name, pledge cost/date). Chat mode = true. */
   includePersonal: boolean;
+  /**
+   * RSI account id -> display name. Pass it only when the user has 2+ accounts;
+   * each ship then carries `account`, so the model can tell hangars apart.
+   */
+  accountNames?: Map<number, string>;
 }
 
 /**
@@ -35,6 +40,10 @@ export function buildFleetPayload(
       production_status: e.production_status,
       warbond: e.warbond,
     };
+    if (opts.accountNames) {
+      const name = e.rsi_account_id == null ? undefined : opts.accountNames.get(e.rsi_account_id);
+      if (name) row.account = name;
+    }
     if (opts.includePersonal) {
       row.custom_name = e.custom_name;
       row.pledge_cost = e.pledge_cost;

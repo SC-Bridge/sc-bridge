@@ -48,4 +48,17 @@ describe("buildFleetPayload", () => {
     // specs still present
     expect(row.cargo).toBe(288);
   });
+
+  it("adds no account key when no account names are given (one account)", () => {
+    const [row] = buildFleetPayload([ENTRY], { includePersonal: false });
+    expect(row).not.toHaveProperty("account");
+  });
+
+  it("labels each ship with its account when names are given (2+ accounts)", () => {
+    const a = { ...ENTRY, rsi_account_id: 1 } as unknown as UserFleetEntry;
+    const b = { ...ENTRY, rsi_account_id: 2 } as unknown as UserFleetEntry;
+    const names = new Map([[1, "Main"], [2, "Alt"]]);
+    const rows = buildFleetPayload([a, b], { includePersonal: false, accountNames: names });
+    expect(rows.map((r) => r.account)).toEqual(["Main", "Alt"]);
+  });
 });

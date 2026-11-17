@@ -335,8 +335,8 @@ export async function testLLMConnection(provider, apiKey) {
   return postJSON('/llm/test-connection', { provider, api_key: apiKey })
 }
 
-export async function generateAIAnalysis({ provider, model, context } = {}) {
-  return postJSON('/llm/generate-analysis', { provider, model, context })
+export async function generateAIAnalysis({ provider, model, context, accounts } = {}) {
+  return postJSON('/llm/generate-analysis', { provider, model, context, accounts })
 }
 
 /**
