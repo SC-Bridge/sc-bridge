@@ -312,6 +312,7 @@ function toRow(p) {
   }
   return {
     id: p.rsi_pledge_id,
+    rsiAccountId: p.rsi_account_id ?? null,
     name: p.name,
     cat,
     value: p.value_cents ?? 0,
@@ -652,7 +653,52 @@ export function buildSteps({ rows, decisions, buys, credit, catalog }) {
   }
 
   const counts = { melts: melts.length, buys: rebuys.length + buyList.length, remelts: remelts.length, inGame: inGame.length, ins: insWork.length, review: review.length }
-  return { phases, counts, actionable: Object.values(counts).reduce((a, n) => a + n, 0), shortfall }
+  return { phases, counts, actionable: Object.values(counts).reduce((a, n) => a + n, 0), shortfall, meltTotal, spend }
+}
+
+// ── Per-account plans ───────────────────────────────────────────────────────
+
+/**
+ * One plan per RSI account. The analysis runs once over every pledge, so
+ * "you own this hull" checks see all accounts; steps are then built per
+ * account from that account's rows, buys and credit only. Store credit never
+ * moves between accounts, so a melt only funds buys on its own account.
+ *
+ * A row belongs to the account in its pledge's rsi_account_id; one with none
+ * goes to the primary account (or the first). A 'gift' decision adds a send
+ * step to the pledge's account and an accept step to the target's; once the
+ * pledge already sits on the target account there are no steps and the row
+ * gets gift_done. A gift pledge is never melted (buildSteps ignores 'gift').
+ */
+export function planAccounts({ model, accounts, decisions, catalog, creditOverrides }) {
+  const analysis = analyse(model)
+  const list = accounts ?? []
+  const fallbackId = (list.find((a) => a.is_primary) ?? list[0])?.id ?? null
+  const ownerOf = (r) => r.rsiAccountId ?? fallbackId
+  const nameOf = (id) => list.find((a) => a.id === id)?.name ?? ''
+  const gifts = analysis.rows.filter((r) => decisions?.[r.id]?.decision === 'gift' && decisions[r.id].gift_to_account_id != null)
+  for (const r of gifts) r.gift_done = ownerOf(r) === decisions[r.id].gift_to_account_id
+
+  const plans = list.map((a) => {
+    const rows = analysis.rows.filter((r) => ownerOf(r) === a.id)
+    const credit = creditOverrides?.[a.id] ?? a.credit_override_cents ?? a.store_credit_cents ?? 0
+    const built = buildSteps({ rows, decisions, buys: a.buys ?? [], credit, catalog })
+    const giftSteps = gifts.filter((r) => !r.gift_done).flatMap((r) => {
+      const to = decisions[r.id].gift_to_account_id
+      if (ownerOf(r) === a.id) return [{ id: `gift-send-${r.id}`, kind: 'gift-send', text: `Gift ${r.name} to ${nameOf(to)}` }]
+      if (to === a.id) return [{ id: `gift-accept-${r.id}`, kind: 'gift-accept', text: `Accept the gift of ${r.name} from ${nameOf(ownerOf(r))}` }]
+      return []
+    })
+    const steps = giftSteps.length ? {
+      ...built,
+      phases: [...built.phases, { key: 'gift', title: 'Gift between accounts', steps: giftSteps.map((g) => ({ ...g, key: g.id, title: g.text, meta: [], money: [], warn: [] })) }],
+      counts: { ...built.counts, gifts: giftSteps.length },
+      actionable: built.actionable + giftSteps.length,
+    } : built
+    return { accountId: a.id, name: a.name, color: a.color, credit, steps, meltTotal: built.meltTotal, buyTotal: built.spend, shortfall: built.shortfall }
+  })
+  const sum = (k) => plans.reduce((n, p) => n + p[k], 0)
+  return { analysis, plans, totals: { credit: sum('credit'), meltTotal: sum('meltTotal'), buyTotal: sum('buyTotal') } }
 }
 
 /** Plain-text checklist for pasting into Discord or notes. */
