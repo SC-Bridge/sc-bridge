@@ -27,6 +27,8 @@ export async function runChatTurn(opts: {
   messages: LLMMessage[];
   db: D1Database;
   userId: string;
+  /** The chat's account scope for ship lookups; null = all accounts. */
+  scopeIds?: number[] | null;
   maxTokens?: number;
   fetchImpl?: FetchFn;
 }): Promise<ChatTurnResult> {
@@ -59,7 +61,7 @@ export async function runChatTurn(opts: {
       rounds++;
       messages.push({ role: "assistant", content: comp.text || "", toolCalls: comp.toolCalls });
       for (const call of comp.toolCalls) {
-        const resultStr = await executeChatTool(db, userId, call);
+        const resultStr = await executeChatTool(db, userId, call, opts.scopeIds ?? null);
         let label = call.name;
         try {
           const parsed = JSON.parse(resultStr) as { ship?: string };

@@ -383,8 +383,8 @@ export function useChat(id) {
   return useAPI(id ? `/llm/chats/${id}` : '/llm/chats', { skip: !id })
 }
 
-export async function sendChatMessage({ chat_id, provider, model, message }) {
-  return postJSON('/llm/chat', { chat_id, provider, model, message })
+export async function sendChatMessage({ chat_id, provider, model, message, accounts }) {
+  return postJSON('/llm/chat', { chat_id, provider, model, message, accounts })
 }
 
 export async function deleteChat(id) {

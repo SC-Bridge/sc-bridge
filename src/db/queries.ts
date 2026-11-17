@@ -3537,6 +3537,11 @@ export interface ChatRow {
   updated_at: string;
 }
 
+/** A chat with the accounts it covers (migration 0287); NULL = all accounts. */
+export interface ChatDetailRow extends ChatRow {
+  account_ids_json: string | null;
+}
+
 export interface ChatMessageRow {
   id: number;
   role: string;
@@ -3546,13 +3551,26 @@ export interface ChatMessageRow {
 
 export async function createChat(
   db: D1Database,
-  opts: { userId: string; provider: string; model: string; title: string },
+  opts: { userId: string; provider: string; model: string; title: string; accountIdsJson?: string | null },
 ): Promise<number> {
   const r = await db
-    .prepare("INSERT INTO ai_chats (user_id, provider, model, title) VALUES (?, ?, ?, ?)")
-    .bind(opts.userId, opts.provider, opts.model, opts.title)
+    .prepare("INSERT INTO ai_chats (user_id, provider, model, title, account_ids_json) VALUES (?, ?, ?, ?, ?)")
+    .bind(opts.userId, opts.provider, opts.model, opts.title, opts.accountIdsJson ?? null)
     .run();
   return r.meta.last_row_id as number;
+}
+
+/** Replace the accounts a chat covers (owner-scoped). NULL means all accounts. */
+export async function setChatAccounts(
+  db: D1Database,
+  userId: string,
+  chatId: number,
+  accountIdsJson: string | null,
+): Promise<void> {
+  await db
+    .prepare("UPDATE ai_chats SET account_ids_json = ? WHERE id = ? AND user_id = ?")
+    .bind(accountIdsJson, chatId, userId)
+    .run();
 }
 
 export async function addChatMessage(
@@ -3582,13 +3600,13 @@ export async function getChat(
   db: D1Database,
   userId: string,
   chatId: number,
-): Promise<{ chat: ChatRow; messages: ChatMessageRow[] } | null> {
+): Promise<{ chat: ChatDetailRow; messages: ChatMessageRow[] } | null> {
   const chat = await db
     .prepare(
-      "SELECT id, provider, model, title, created_at, updated_at FROM ai_chats WHERE id = ? AND user_id = ?",
+      "SELECT id, provider, model, title, created_at, updated_at, account_ids_json FROM ai_chats WHERE id = ? AND user_id = ?",
     )
     .bind(chatId, userId)
-    .first<ChatRow>();
+    .first<ChatDetailRow>();
   if (!chat) return null;
   const msgs = await db
     .prepare("SELECT id, role, content, created_at FROM ai_chat_messages WHERE chat_id = ? ORDER BY id")
@@ -3680,6 +3698,12 @@ export async function getEffectiveShipLoadout(
   return { ship: entry.ship_name, ports };
 }
 
+export interface EntitledLoaner {
+  loaner: string;
+  granted_by: string;
+  rsi_account_id: number;
+}
+
 /**
  * Entitled loaner ships derived from owned concept/in-production ships (compact, for chat).
  * One row per (loaner, account). `accountIds` null means every account.
@@ -3688,7 +3712,7 @@ export async function getEntitledLoaners(
   db: D1Database,
   userId: string,
   accountIds: number[] | null,
-): Promise<Array<{ loaner: string; granted_by: string; rsi_account_id: number }>> {
+): Promise<EntitledLoaner[]> {
   const scoped = accountIds !== null;
   const result = await db
     .prepare(
@@ -3708,7 +3732,7 @@ export async function getEntitledLoaners(
         GROUP BY l.id, uf.rsi_account_id ORDER BY l.name, uf.rsi_account_id`,
     )
     .bind(...(scoped ? [userId, JSON.stringify(accountIds)] : [userId]))
-    .all<{ loaner: string; granted_by: string; rsi_account_id: number }>();
+    .all<EntitledLoaner>();
   return result.results;
 }
 

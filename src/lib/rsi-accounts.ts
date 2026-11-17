@@ -36,6 +36,46 @@ export function parseAccountsParam(raw: string | undefined): number[] | null {
   return ids.length > 0 ? ids.slice(0, MAX_RSI_ACCOUNTS) : null;
 }
 
+/**
+ * The `accounts` field an AI endpoint takes in its JSON body: 'all' or a
+ * non-empty id list. Absent means all, too.
+ */
+export const AI_ACCOUNTS_BODY = z.union([
+  z.literal("all"),
+  z.array(z.number().int().positive()).min(1).max(MAX_RSI_ACCOUNTS),
+]);
+
+/**
+ * The account ids an AI request covers. Absent or 'all' is every account (null);
+ * a list keeps only the user's own ids, falling back to the primary account when
+ * none are theirs, sorted and de-duplicated.
+ */
+export function resolveAiScope(
+  accounts: Array<{ id: number; is_primary: number }>,
+  requested: number[] | "all" | null | undefined,
+): number[] | null {
+  if (!Array.isArray(requested)) return null;
+  const owned = new Set(accounts.map((a) => a.id));
+  const kept = requested.filter((id) => owned.has(id));
+  const primary = accounts.filter((a) => a.is_primary).map((a) => a.id);
+  return [...new Set(kept.length > 0 ? kept : primary)].sort((x, y) => x - y);
+}
+
+/** The scope as stored in an `account_ids_json` column: NULL for all accounts. */
+export function scopeToJson(ids: number[] | null): string | null {
+  return ids ? JSON.stringify(ids) : null;
+}
+
+/** Read an `account_ids_json` column back into the ids it holds (null = all). */
+export function scopeFromJson(json: string | null): number[] | null {
+  return json ? (JSON.parse(json) as number[]) : null;
+}
+
+/** Display names for a scope; ids of accounts deleted since are left out. Null stays null (all). */
+export function scopeNames(ids: number[] | null, names: Map<number, string>): string[] | null {
+  return ids ? ids.map((id) => names.get(id)).filter((n): n is string => !!n) : null;
+}
+
 /** Marker colours for RSI accounts, in the order they are handed out. */
 export const ACCOUNT_COLORS: readonly string[] = [
   "#22d3ee", "#f97316", "#a855f7", "#84cc16", "#f43f5e",

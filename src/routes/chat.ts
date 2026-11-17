@@ -8,6 +8,7 @@ import {
   addChatMessage,
   listChats,
   getChat,
+  setChatAccounts,
   deleteChat,
   renameChat,
   getEntitledLoaners,
@@ -17,7 +18,16 @@ import { getDecryptedAPIKey } from "../lib/llm-keys";
 import { buildChatFleetPayload } from "../lib/fleet-payload";
 import { buildChatRequest } from "../lib/chat";
 import { runChatTurn } from "../lib/chat-agent";
-import { DEFAULT_MODELS, type LLMProviderId } from "../lib/llm";
+import { DEFAULT_MODELS, type FetchFn, type LLMProviderId } from "../lib/llm";
+import {
+  accountName,
+  listRsiAccounts,
+  AI_ACCOUNTS_BODY,
+  resolveAiScope,
+  scopeToJson,
+  scopeFromJson,
+  scopeNames,
+} from "../lib/rsi-accounts";
 import { logEvent } from "../lib/logger";
 
 /**
@@ -25,7 +35,7 @@ import { logEvent } from "../lib/logger";
  * Provider calls reuse lib/llm.ts; conversation persistence reuses the chat
  * DB queries. All routes are user-scoped (getChat/deleteChat verify ownership).
  */
-export function chatRoutes() {
+export function chatRoutes(deps: { fetchFn?: FetchFn } = {}) {
   const routes = new Hono<HonoEnv>();
 
   // GET /api/llm/chats — list the user's chats (most recently active first)
@@ -41,7 +51,11 @@ export function chatRoutes() {
     const userID = getAuthUser(c).id;
     const result = await getChat(c.env.DB, userID, id);
     if (!result) return c.json({ error: "Chat not found" }, 404);
-    return c.json(result);
+    const accounts = await listRsiAccounts(c.env.DB, userID);
+    const names = new Map(accounts.map((a) => [a.id, accountName(a)] as const));
+    const { account_ids_json, ...chat } = result.chat;
+    const scope = chatScope(accounts, scopeFromJson(account_ids_json));
+    return c.json({ chat: { ...chat, accounts: scopeNames(scope, names) }, messages: result.messages });
   });
 
   // DELETE /api/llm/chats/:id
@@ -76,6 +90,8 @@ export function chatRoutes() {
         provider: LLMProvider.default("anthropic"),
         model: z.string().max(100).optional(),
         message: z.string().min(1).max(2000),
+        // 'all' or a non-empty id list. Absent keeps the chat's stored scope (a new chat: all).
+        accounts: AI_ACCOUNTS_BODY.optional(),
       }),
     ),
     async (c) => {
@@ -89,27 +105,42 @@ export function chatRoutes() {
         return c.json({ error: "No API key configured for this provider" }, 400);
       }
 
+      const accounts = await listRsiAccounts(db, userID);
+      const allNames = new Map(accounts.map((a) => [a.id, accountName(a)] as const));
+      // Account labels only help the model when there is more than one hangar.
+      const accountNames = accounts.length >= 2 ? allNames : undefined;
+
       // Resolve an existing chat (must exist + be owned) or prepare a new one.
+      // The scope is the chat's accounts: a provided value replaces the stored
+      // one before this message is answered; absent keeps it (a new chat: all).
       let model: string;
       let history: { role: string; content: string }[] = [];
+      let scope: number[] | null;
       if (body.chat_id) {
         const existing = await getChat(db, userID, body.chat_id);
         if (!existing) return c.json({ error: "Chat not found" }, 404);
         model = body.model || existing.chat.model;
         history = existing.messages.map((m) => ({ role: m.role, content: m.content }));
+        if (body.accounts !== undefined) {
+          scope = resolveAiScope(accounts, body.accounts);
+          await setChatAccounts(db, userID, body.chat_id, scopeToJson(scope));
+        } else {
+          scope = chatScope(accounts, scopeFromJson(existing.chat.account_ids_json));
+        }
       } else {
         model = body.model || DEFAULT_MODELS[provider] || "";
+        scope = resolveAiScope(accounts, body.accounts);
       }
 
       // Full fleet payload (incl. custom names) + entitled loaners + a per-ship
       // has_custom_loadout flag live in the system message. Loadout details are
       // fetched on demand via the get_ship_loadout tool (added in the agent loop).
-      const fleet = await getFleetForAnalysis(db, userID);
+      const fleet = await getFleetForAnalysis(db, userID, scope);
       const [customIds, loaners] = await Promise.all([
         getCustomLoadoutFleetIds(db, userID),
-        getEntitledLoaners(db, userID, null),
+        getEntitledLoaners(db, userID, scope),
       ]);
-      const fleetPayload = buildChatFleetPayload(fleet, customIds, loaners);
+      const fleetPayload = buildChatFleetPayload(fleet, customIds, loaners, { accountNames });
       const { system, messages } = buildChatRequest({
         fleetPayload,
         history,
@@ -118,7 +149,17 @@ export function chatRoutes() {
 
       // Agent loop: the model may call get_ship_loadout on demand (up to 4 rounds)
       // to fetch a ship's full components, then produces a final answer.
-      const turn = await runChatTurn({ provider, apiKey, model, system, messages, db, userId: userID });
+      const turn = await runChatTurn({
+        provider,
+        apiKey,
+        model,
+        system,
+        messages,
+        db,
+        userId: userID,
+        scopeIds: scope,
+        fetchImpl: deps.fetchFn,
+      });
       if (!turn.ok) {
         console.error(`[chat] provider error (${provider}, ${turn.status})`);
         return c.json({ error: turn.error }, 502);
@@ -132,14 +173,35 @@ export function chatRoutes() {
       // first turn leaves no orphan empty chat in the user's history.
       const chatId =
         body.chat_id ??
-        (await createChat(db, { userId: userID, provider, model, title: body.message.slice(0, 80) }));
+        (await createChat(db, {
+          userId: userID,
+          provider,
+          model,
+          title: body.message.slice(0, 80),
+          accountIdsJson: scopeToJson(scope),
+        }));
       await addChatMessage(db, { chatId, role: "user", content: body.message });
       await addChatMessage(db, { chatId, role: "assistant", content: reply });
 
       logEvent("llm_chat", { provider, model, chat_id: chatId, tool_rounds: turn.rounds });
-      return c.json({ chat_id: chatId, reply, model, tools_used: turn.toolsUsed });
+      return c.json({
+        chat_id: chatId,
+        reply,
+        model,
+        tools_used: turn.toolsUsed,
+        accounts: scopeNames(scope, allNames),
+      });
     },
   );
 
   return routes;
+}
+
+/**
+ * The accounts a stored chat scope covers now: NULL stays all; stored ids are
+ * re-checked against the user's accounts (some may be deleted since), falling
+ * back to the primary account when none remain.
+ */
+function chatScope(accounts: Array<{ id: number; is_primary: number }>, stored: number[] | null): number[] | null {
+  return stored ? resolveAiScope(accounts, stored) : null;
 }

@@ -7,7 +7,16 @@ import { logEvent } from "../lib/logger";
 import { ANALYSIS_PROMPT } from "../lib/analysis-prompt";
 import { validate, IntIdParam, LLMProvider } from "../lib/validation";
 import { getFleetForAnalysis } from "../db/queries";
-import { parseAccountsParam, accountName, listRsiAccounts, MAX_RSI_ACCOUNTS } from "../lib/rsi-accounts";
+import {
+  parseAccountsParam,
+  accountName,
+  listRsiAccounts,
+  AI_ACCOUNTS_BODY,
+  resolveAiScope,
+  scopeToJson,
+  scopeFromJson,
+  scopeNames,
+} from "../lib/rsi-accounts";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buildFleetPayload } from "../lib/fleet-payload";
 import {
@@ -174,10 +183,7 @@ export function analysisRoutes(deps: { fetchFn?: FetchFn } = {}) {
       model: z.string().max(100).optional(),
       context: z.string().max(1000).optional(),
       // 'all' or a non-empty id list; absent means all.
-      accounts: z.union([
-        z.literal("all"),
-        z.array(z.number().int().positive()).min(1).max(MAX_RSI_ACCOUNTS),
-      ]).optional(),
+      accounts: AI_ACCOUNTS_BODY.optional(),
     })),
     async (c) => {
     const db = c.env.DB;
@@ -214,13 +220,7 @@ export function analysisRoutes(deps: { fetchFn?: FetchFn } = {}) {
     // Which accounts to analyse: absent/'all' = everything (stored as NULL);
     // a list keeps only the user's own ids, else falls back to the primary.
     const accounts = await listRsiAccounts(db, userID);
-    let accountIds: number[] | null = null;
-    if (Array.isArray(body.accounts)) {
-      const owned = new Set(accounts.map((a) => a.id));
-      const kept = body.accounts.filter((id) => owned.has(id));
-      const primary = accounts.filter((a) => a.is_primary).map((a) => a.id);
-      accountIds = [...new Set(kept.length > 0 ? kept : primary)].sort((x, y) => x - y);
-    }
+    const accountIds = resolveAiScope(accounts, body.accounts);
     const allNames = new Map(accounts.map((a) => [a.id, accountName(a)] as const));
     const accountNames = accounts.length >= 2 ? allNames : undefined;
 
@@ -262,7 +262,7 @@ export function analysisRoutes(deps: { fetchFn?: FetchFn } = {}) {
           model,
           fleet.length,
           analysisText,
-          accountIds ? JSON.stringify(accountIds) : null,
+          scopeToJson(accountIds),
         )
         .run();
 
@@ -276,7 +276,7 @@ export function analysisRoutes(deps: { fetchFn?: FetchFn } = {}) {
         analysis: analysisText,
         model,
         vehicle_count: fleet.length,
-        accounts: accountIds ? accountIds.map((id) => allNames.get(id)).filter((n): n is string => !!n) : null,
+        accounts: scopeNames(accountIds, allNames),
       });
     } catch (err) {
       return c.json(
@@ -660,8 +660,8 @@ type AnalysisRow = { account_ids_json: string | null } & Record<string, unknown>
  */
 async function withAccountNames(db: D1Database, userId: string, rows: AnalysisRow[]) {
   const names = new Map((await listRsiAccounts(db, userId)).map((a) => [a.id, accountName(a)] as const));
-  return rows.map(({ account_ids_json, ...rest }) => {
-    const ids = account_ids_json ? (JSON.parse(account_ids_json) as number[]) : null;
-    return { ...rest, accounts: ids ? ids.map((id) => names.get(id)).filter((n): n is string => !!n) : null };
-  });
+  return rows.map(({ account_ids_json, ...rest }) => ({
+    ...rest,
+    accounts: scopeNames(scopeFromJson(account_ids_json), names),
+  }));
 }

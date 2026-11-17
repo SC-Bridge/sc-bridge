@@ -280,7 +280,7 @@ export default function Analysis() {
 
       {/* Chat mode */}
       {mode === 'chat' && hasAnyKey && (
-        <FleetChat provider={selectedProvider} model={activeModel} />
+        <FleetChat provider={selectedProvider} model={activeModel} accounts={rsiAccounts} accountFilter={accountFilter} />
       )}
 
       {/* Analysis output — analysis mode only */}
