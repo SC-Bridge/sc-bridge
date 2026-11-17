@@ -1272,6 +1272,8 @@ return cachedJson(c, `gd:crafting`, async () => {
           ir_emission: row.ir_emission,
           em_emission: row.em_emission,
           inventory_volume: row.inventory_volume,
+          // What the item holds (µSCU), from fps_armour only; helmets have none.
+          storage_capacity: row.storage_capacity ?? null,
         });
         // Query fps_armour (body pieces + undersuits + backpacks) and
         // fps_helmets in parallel.
@@ -1280,7 +1282,7 @@ return cachedJson(c, `gd:crafting`, async () => {
                     fa.resist_physical, fa.resist_energy, fa.resist_distortion,
                     fa.resist_thermal, fa.resist_biochemical, fa.resist_stun,
                     fa.temperature_min, fa.temperature_max, CAST(fa.armor_weight AS REAL) AS armor_weight,
-                    fa.ir_emission, fa.em_emission, fa.inventory_volume,
+                    fa.ir_emission, fa.em_emission, fa.inventory_volume, fa.storage_capacity,
                     fa.protected_body_parts
              FROM ${t("fps_armour")} fa
             `

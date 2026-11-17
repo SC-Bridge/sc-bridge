@@ -119,7 +119,7 @@ describe("migration 0279 — schema", () => {
     await expect(
       db().prepare("INSERT INTO user_hangar_cleanup_decisions (user_id, rsi_pledge_id, decision) VALUES (?, 5, 'melt')").bind(userId).run(),
     ).rejects.toThrow();
-    // Since 0287 buys and state are unique per RSI account, not per user.
+    // Since 0288 buys and state are unique per RSI account, not per user.
     const acct = (
       await db()
         .prepare("INSERT INTO user_rsi_accounts (user_id, is_primary, is_placeholder) VALUES (?, 1, 1) RETURNING id")

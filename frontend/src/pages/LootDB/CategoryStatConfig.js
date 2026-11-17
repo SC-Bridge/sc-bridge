@@ -90,7 +90,7 @@ export const CATEGORY_STAT_CONFIGS = {
 
   clothing: {
     cardStats: [
-      { key: 'storage_capacity', label: 'Storage', color: 'text-blue-400', format: 'number', showWhenNonNull: true },
+      { key: 'storage_capacity', label: 'Storage', color: 'text-blue-400', format: 'microscu', showWhenNonNull: true },
     ],
     sortOptions: ['name', 'rarity'],
   },

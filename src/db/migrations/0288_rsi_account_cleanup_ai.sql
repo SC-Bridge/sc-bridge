@@ -9,7 +9,7 @@
 --
 -- Existing buys and state rows are stamped with the user's primary account. A
 -- user with cleanup data but no account first gets a placeholder primary (same
--- shape as 0286 section 0), so nothing is dropped for lack of one.
+-- shape as 0287 section 0), so nothing is dropped for lack of one.
 -- No table references these three, so the DROPs cascade nowhere.
 -- EXISTS ... OR rather than a UNION: D1 rejects a compound SELECT with more
 -- than 5 terms.

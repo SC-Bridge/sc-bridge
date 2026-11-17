@@ -75,3 +75,16 @@ describe('LoadoutStats', () => {
     expect(screen.getByText(/No armour equipped/)).toBeInTheDocument()
   })
 })
+
+describe('LoadoutStats backpack carry', () => {
+  it("shows the backpack's carrying capacity in the game's wording", () => {
+    render(<LoadoutStats weaponStats={[]} armourStats={{ pieces: {}, backpack: { name: 'Pembroke Backpack', capacity: 180000 } }} />)
+    expect(screen.getByText(/Pembroke Backpack/)).toHaveTextContent('180K µSCU carry')
+  })
+
+  it('names the backpack without a carry figure when its capacity is unknown', () => {
+    render(<LoadoutStats weaponStats={[]} armourStats={{ pieces: {}, backpack: { name: 'Mystery Pack', capacity: null } }} />)
+    const line = screen.getByText(/Mystery Pack/)
+    expect(line).not.toHaveTextContent('carry')
+  })
+})

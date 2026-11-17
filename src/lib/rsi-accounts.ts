@@ -369,7 +369,7 @@ export async function deleteRsiAccount(db: D1Database, userId: string, accountId
     db
       .prepare(`DELETE FROM org_op_ships WHERE owner_user_id = ? AND user_fleet_id IN (${fleetIds})`)
       .bind(userId, userId, accountId),
-    // Fleet selections stamped before 0286 reached them (the deploy window) have
+    // Fleet selections stamped before 0287 reached them (the deploy window) have
     // no rsi_account_id, so they are also found through the ship they belong to.
     db
       .prepare(
