@@ -720,7 +720,7 @@ async function collectUserData(
   db: D1Database,
   user: { id: string; name: string; email: string; role?: string | null },
 ) {
-  const [fleet, paints, llmConfigs, settings, analyses, lootCollection, lootWishlist, authUser, rsiAccounts] = await Promise.all([
+  const [fleet, paints, llmConfigs, settings, analyses, lootCollection, lootWishlist, authUser, rsiAccounts, cleanupDecisions, cleanupBuys, cleanupState] = await Promise.all([
     db.prepare(
       `SELECT uf.id, uf.vehicle_id, uf.insurance_type_id, uf.warbond, uf.is_loaner,
         uf.pledge_id, uf.pledge_name, uf.pledge_cost, uf.pledge_date, uf.custom_name,
@@ -769,12 +769,33 @@ async function collectUserData(
       `SELECT id, label, rsi_handle, display_name, is_primary, is_placeholder, verified_at, synced_at, created_at
       FROM user_rsi_accounts WHERE user_id = ? ORDER BY id`,
     ).bind(user.id).all(),
+    // Hangar Cleanup: decisions carry their pledge's account.
+    db.prepare(
+      `SELECT d.rsi_pledge_id, p.rsi_account_id, d.decision, d.buy_ingame, d.iae_price_cents,
+        d.gift_to_account_id, d.updated_at
+      FROM user_hangar_cleanup_decisions d
+      LEFT JOIN user_pledges p ON p.user_id = d.user_id AND p.rsi_pledge_id = d.rsi_pledge_id
+      WHERE d.user_id = ? ORDER BY d.id`,
+    ).bind(user.id).all(),
+    db.prepare(
+      `SELECT rsi_account_id, vehicle_id, price_cents, remelt, created_at
+      FROM user_hangar_cleanup_buys WHERE user_id = ? ORDER BY id`,
+    ).bind(user.id).all(),
+    db.prepare(
+      `SELECT rsi_account_id, credit_override_cents, done_steps_json, updated_at
+      FROM user_hangar_cleanup_state WHERE user_id = ? ORDER BY id`,
+    ).bind(user.id).all(),
   ]);
 
   return {
     exported_at: new Date().toISOString(),
     account: authUser || { id: user.id, email: user.email, name: user.name, role: user.role },
     rsi_accounts: rsiAccounts.results,
+    hangar_cleanup: {
+      decisions: cleanupDecisions.results,
+      buys: cleanupBuys.results,
+      state: cleanupState.results,
+    },
     fleet: fleet.results,
     paints: paints.results,
     llm_configs: llmConfigs.results.map((cfg: Record<string, unknown>) => ({

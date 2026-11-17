@@ -3,10 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
-import { parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
-
-/** `all`, or a comma list of positive integers: the strict form of the accounts query param. */
-const ACCOUNTS_QUERY = z.string().regex(/^(all|[1-9]\d*(,[1-9]\d*)*)$/);
+import { ACCOUNTS_QUERY, parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/vehicles/* — User's fleet

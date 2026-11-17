@@ -4,7 +4,21 @@
  * belongs to.
  */
 
+import { z } from "zod";
+
 export const MAX_RSI_ACCOUNTS = 10;
+
+/**
+ * Shape of a `?accounts=` value: 'all' or comma-separated positive ids.
+ * Destructive routes reject anything else (400) rather than let
+ * parseAccountsParam turn garbage into "every account".
+ */
+export const ACCOUNTS_QUERY = z.string().regex(/^(all|[1-9]\d*(,[1-9]\d*)*)$/);
+
+/** Display name of an RSI account: its label, else its handle, else the placeholder name. */
+export function accountName(account: { label: string | null; rsi_handle: string | null }): string {
+  return account.label || account.rsi_handle || "Imported hangar";
+}
 
 /**
  * Parse the `?accounts=` query param. Missing, empty or 'all' means every
@@ -268,6 +282,30 @@ export async function resolveAccountId(
     .bind(id, userId)
     .first<{ id: number }>();
   return owned ? owned.id : null;
+}
+
+/**
+ * The account ids a read or reset covers, without creating anything. No param
+ * means the primary account; 'all' every account; a list the owned ids in it,
+ * falling back to the primary when none are owned. Empty when the user has no
+ * account.
+ */
+export async function selectAccountIds(
+  db: D1Database,
+  userId: string,
+  raw: string | undefined,
+): Promise<number[]> {
+  const { results } = await db
+    .prepare("SELECT id, is_primary FROM user_rsi_accounts WHERE user_id = ? ORDER BY is_primary DESC, id")
+    .bind(userId)
+    .all<{ id: number; is_primary: number }>();
+  const primary = results.filter((r) => r.is_primary).map((r) => r.id);
+  if (raw === undefined || raw === "") return primary;
+  const requested = parseAccountsParam(raw);
+  if (requested === null) return results.map((r) => r.id);
+  const owned = new Set(results.map((r) => r.id));
+  const kept = requested.filter((id) => owned.has(id));
+  return kept.length > 0 ? kept : primary;
 }
 
 /**
