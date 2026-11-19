@@ -434,6 +434,10 @@ async function getFleetList(
         p.image_url_medium as paint_image_url_medium,
         p.image_url_small as paint_image_url_small,
         p.image_url_large as paint_image_url_large,
+        -- The hull's default paint: what it wears with nothing equipped (0289).
+        (SELECT dp.name FROM paint_vehicles dpv JOIN paints dp ON dp.id = dpv.paint_id
+          WHERE dpv.vehicle_id = uf.vehicle_id AND dpv.is_default_for_vehicle = 1
+          ORDER BY COALESCE(dp.is_standard, 0), dp.id LIMIT 1) as default_paint_name,
         COALESCE(rps.key, ps.key) as production_status,
         -- The pledge row's value is RSI's post-upgrade figure (js-pledge-value),
         -- the same number the hangar page and the overview total use. It is NOT

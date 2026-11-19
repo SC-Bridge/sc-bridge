@@ -302,6 +302,10 @@ export interface Paint {
   image_url_large?: string;
   created_at: string;
   updated_at: string;
+  /** 1 for a synthetic "Standard" livery (0289): the hull's stock look, not an item. */
+  is_standard?: number;
+  /** getPaintsForVehicle only: 1 when this is the hull's default paint. */
+  is_default?: number;
   vehicles: PaintVehicle[];
 }
 
