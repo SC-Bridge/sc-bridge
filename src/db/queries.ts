@@ -850,6 +850,8 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
         p.created_at, p.updated_at
       FROM paints p
       WHERE p.is_base_variant = 0
+        -- Synthetic "Standard" liveries (0289) are not items; the ship page lists them.
+        AND COALESCE(p.is_standard, 0) = 0
         -- F408: hide paints with no image from the default grid. CIG hasn't
         -- published store images for these yet (mostly ship base liveries
         -- and unreleased concept paints). Showing them as "NO IMAGE" tiles
@@ -911,7 +913,7 @@ export async function getPaintBySlug(
         p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
         p.created_at, p.updated_at
       FROM paints p
-      WHERE p.slug = ? AND p.is_base_variant = 0
+      WHERE p.slug = ? AND p.is_base_variant = 0 AND COALESCE(p.is_standard, 0) = 0
       LIMIT 1`,
     )
     .bind(slug)
@@ -951,14 +953,16 @@ export async function getPaintsForVehicle(db: D1Database, vehicleSlug: string): 
     .prepare(
       `SELECT p.id, p.uuid, p.name, p.slug, p.class_name,
         p.description, p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
-        p.created_at, p.updated_at
+        p.created_at, p.updated_at,
+        COALESCE(p.is_standard, 0) AS is_standard,
+        MAX(COALESCE(pv.is_default_for_vehicle, 0)) AS is_default
       FROM paints p
-      WHERE p.is_base_variant = 0 AND p.id IN (
-        SELECT pv.paint_id FROM paint_vehicles pv
-        JOIN vehicles v ON v.id = pv.vehicle_id
-        WHERE v.slug = ?
-      )
-      ORDER BY p.name`,
+      JOIN paint_vehicles pv ON pv.paint_id = p.id
+      JOIN vehicles v ON v.id = pv.vehicle_id
+      WHERE p.is_base_variant = 0 AND v.slug = ?
+      GROUP BY p.id
+      -- The hull's default (its Standard, or a special edition's own livery) leads.
+      ORDER BY is_default DESC, p.name`,
     )
     .bind(vehicleSlug)
     .all();
@@ -998,7 +1002,7 @@ export async function getPaintsForVehicle(db: D1Database, vehicleSlug: string): 
 }
 
 export async function getPaintCount(db: D1Database): Promise<number> {
-  const row = await db.prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0").first<{ count: number }>();
+  const row = await db.prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0 AND COALESCE(is_standard, 0) = 0").first<{ count: number }>();
   return row?.count ?? 0;
 }
 
