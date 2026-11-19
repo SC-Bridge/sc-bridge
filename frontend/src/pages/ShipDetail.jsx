@@ -20,6 +20,7 @@ import ShipImage from '../components/ShipImage'
 import StatusBadge from '../components/StatusBadge'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
+import { paintThumb } from '../lib/paints'
 import {
   PowerPlantIcon, CoolerIcon, ShieldGeneratorIcon, QuantumDriveIcon,
   RadarIcon, JumpDriveIcon, WeaponIcon, TurretIcon, MissileRackIcon,
@@ -856,7 +857,7 @@ function WeaponsTab({ slug }) {
 
 // ─── Paints tab ───────────────────────────────────────────────────────────────
 
-function PaintsTab({ slug, isAuthed }) {
+function PaintsTab({ slug, isAuthed, shipImage }) {
   const { data: paints, loading, error, refetch } = useShipPaints(slug)
   const { ownedSet } = useOwnedPaints()
   const [view, setView] = useState('list')
@@ -907,7 +908,7 @@ function PaintsTab({ slug, isAuthed }) {
       {view === 'list' ? (
         <div className="divide-y divide-sc-border/30">
           {paints.map((paint) => {
-            const thumb = paint.image_url_small || paint.image_url_medium || paint.image_url
+            const thumb = paintThumb(paint, shipImage)
             const owned = isAuthed && ownedSet.has(paint.id)
             return (
               <div key={paint.id} className="flex items-center gap-4 px-4 py-3">
@@ -920,6 +921,11 @@ function PaintsTab({ slug, isAuthed }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-mono text-gray-200">{paint.name}</p>
+                    {!!paint.is_default && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-display uppercase tracking-wide bg-sc-accent/15 text-sc-accent border border-sc-accent/40">
+                        Default
+                      </span>
+                    )}
                     {isAuthed && (
                       owned ? (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-display uppercase tracking-wide bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">
@@ -943,7 +949,7 @@ function PaintsTab({ slug, isAuthed }) {
       ) : (
         <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {paints.map((paint) => {
-            const thumb = paint.image_url_small || paint.image_url_medium || paint.image_url
+            const thumb = paintThumb(paint, shipImage)
             const owned = isAuthed && ownedSet.has(paint.id)
             return (
               <div
@@ -963,6 +969,9 @@ function PaintsTab({ slug, isAuthed }) {
                 </div>
                 <div className="p-2">
                   <p className="text-xs font-mono text-gray-300 truncate" title={paint.name}>{paint.name}</p>
+                  {!!paint.is_default && (
+                    <p className="text-[10px] font-display uppercase tracking-wide text-sc-accent">Default</p>
+                  )}
                 </div>
               </div>
             )
@@ -1316,7 +1325,7 @@ export default function ShipDetail() {
       {activeTab === 'weapons' && <WeaponsTab slug={slug} />}
       {activeTab === 'interior' && <InteriorTab ship={ship} />}
       {activeTab === 'performance' && <PerformanceTab ship={ship} />}
-      {activeTab === 'paints' && <PaintsTab slug={slug} isAuthed={isAuthed} />}
+      {activeTab === 'paints' && <PaintsTab slug={slug} isAuthed={isAuthed} shipImage={ship.image_url_medium || ship.image_url} />}
       {activeTab === 'salvage' && <SalvageTab slug={slug} />}
     </div>
   )

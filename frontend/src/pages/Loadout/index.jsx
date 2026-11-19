@@ -577,6 +577,7 @@ export default function Loadout() {
               fleetId={fleetId}
               equippedPaintId={equippedPaintId}
               rsiAccountId={fleetEntry?.rsi_account_id ?? null}
+              shipImage={fleetEntry?.image_url}
               onEquipped={refetchFleet}
             />
           </div>

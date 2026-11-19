@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import ShipImage from './ShipImage'
 import InsuranceBadge from './InsuranceBadge'
 import StatusBadge from './StatusBadge'
+import { wornPaintName } from '../lib/paints'
 
 export default function ShipDetailPanel({ ship, onClose }) {
   if (!ship) return null
@@ -87,10 +88,10 @@ export default function ShipDetailPanel({ ship, onClose }) {
           <span className="text-xs font-mono uppercase tracking-wider text-gray-500">Insurance</span>
           <InsuranceBadge isLifetime={ship.is_lifetime} label={ship.insurance_label} />
         </div>
-        {ship.paint_name && (
+        {wornPaintName(ship) && (
           <div className="flex justify-between items-center">
             <span className="text-xs font-mono uppercase tracking-wider text-gray-500">Paint</span>
-            <span className="text-sm font-mono text-gray-400">{ship.paint_name}</span>
+            <span className="text-sm font-mono text-gray-400">{wornPaintName(ship)}</span>
           </div>
         )}
         {ship.production_status && (

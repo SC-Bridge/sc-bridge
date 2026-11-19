@@ -376,7 +376,7 @@ app.get("/api/status", async (c) => {
     .prepare(`SELECT COUNT(*) as count FROM vehicles v`)
     .first<{ count: number }>();
   const paintCount = await db
-    .prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0")
+    .prepare("SELECT COUNT(*) as count FROM paints WHERE is_base_variant = 0 AND COALESCE(is_standard, 0) = 0")
     .first<{ count: number }>();
 
   // Fleet count is user-scoped if logged in, otherwise 0
