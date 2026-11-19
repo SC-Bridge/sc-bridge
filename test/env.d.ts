@@ -8,6 +8,7 @@ declare global {
   namespace Cloudflare {
     interface Env {
       DB: D1Database;
+      SC_BRIDGE_CACHE: KVNamespace;
       TEST_SCHEMA: string;
       TEST_MIGRATIONS: D1Migration[];
       ENVIRONMENT: string;

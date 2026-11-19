@@ -98,33 +98,65 @@ export async function cachedJson<T>(
 }
 
 /**
- * Purge cached keys by prefix. Uses KV list() to find matching keys.
+ * KV operations one purgeByPrefix call may spend. A Worker invocation is capped
+ * at 1,000 operations to external services, every KV list() and delete() costs
+ * one (the binding has no bulk delete), and the cap is shared with anything
+ * else the request does, so stay well under it.
+ * https://developers.cloudflare.com/kv/platform/limits/
+ */
+export const KV_OPS_PER_PURGE_CALL = 900;
+
+export interface PurgeResult {
+  deleted: number;
+  /** True once every matching key has been deleted. */
+  complete: boolean;
+  /** Pass back as `cursor` to continue an incomplete purge; null when complete. */
+  cursor: string | null;
+}
+
+/**
+ * Purge cached keys by prefix, spending at most `opBudget` KV operations.
+ *
+ * Each page is listed with a limit that leaves room to delete every key on it,
+ * so the returned list cursor always points just past fully-deleted keys and a
+ * later call (in a new request, with a fresh op budget) resumes from there.
+ * A prefix with more keys than one budget covers returns complete: false.
  */
 export async function purgeByPrefix(
   kv: KVNamespace,
   prefix?: string,
-): Promise<{ deleted: number }> {
+  opts: { cursor?: string; opBudget?: number } = {},
+): Promise<PurgeResult> {
+  const budget = opts.opBudget ?? KV_OPS_PER_PURGE_CALL;
   let deleted = 0;
-  let cursor: string | undefined;
+  let opsUsed = 0;
+  let cursor: string | undefined = opts.cursor || undefined;
 
-  do {
-    const opts: KVNamespaceListOptions = { limit: 1000 };
-    if (prefix) opts.prefix = prefix;
-    if (cursor) opts.cursor = cursor;
+  // A page costs 1 list + up to `limit` deletes, so it needs at least 2 ops.
+  while (budget - opsUsed >= 2) {
+    const listOpts: KVNamespaceListOptions = { limit: Math.min(1000, budget - opsUsed - 1) };
+    if (prefix) listOpts.prefix = prefix;
+    if (cursor) listOpts.cursor = cursor;
 
-    const list = await kv.list(opts);
+    const list = await kv.list(listOpts);
+    opsUsed += 1;
     console.log(`[cache] purge list: ${list.keys.length} keys found (prefix=${prefix ?? "all"}, cursor=${!!cursor})`);
 
     // Filter out non-cache keys (localization data is persistent, not cache)
     const cacheKeys = list.keys.filter((key) => !key.name.startsWith("localization:"));
     if (cacheKeys.length > 0) {
       await Promise.all(cacheKeys.map((key) => kv.delete(key.name)));
+      opsUsed += cacheKeys.length;
       deleted += cacheKeys.length;
     }
 
-    cursor = list.list_complete ? undefined : list.cursor;
-  } while (cursor);
+    if (list.list_complete) {
+      console.log(`[cache] purge complete: ${deleted} keys deleted`);
+      return { deleted, complete: true, cursor: null };
+    }
+    cursor = list.cursor;
+  }
 
-  console.log(`[cache] purge complete: ${deleted} keys deleted`);
-  return { deleted };
+  console.warn(`[cache] purge paused at KV op budget: ${deleted} keys deleted, more remain (prefix=${prefix ?? "all"})`);
+  return { deleted, complete: false, cursor: cursor ?? null };
 }

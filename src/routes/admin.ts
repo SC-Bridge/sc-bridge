@@ -452,22 +452,31 @@ export function adminRoutes() {
   /**
    * POST /api/admin/cache/purge
    *
-   * Purge KV cache. Optional body: { prefix: string } to purge by prefix.
+   * Purge KV cache. Optional body: { prefix: string } to purge by prefix,
+   * { cursor: string } to continue an earlier incomplete purge of that prefix.
    * Without prefix, purges all cached keys.
-   * Returns { deleted: number }
+   *
+   * One request can only spend ~1,000 KV operations, so a large prefix is
+   * purged across several requests: the caller repeats the POST with the
+   * returned cursor until complete is true.
+   * Returns { deleted: number, complete: boolean, cursor: string | null }
    */
   routes.post("/cache/purge", async (c) => {
     let prefix: string | undefined;
+    let cursor: string | undefined;
     try {
       const body = await c.req.json();
       if (body?.prefix && typeof body.prefix === "string") {
         prefix = body.prefix.slice(0, 200);
       }
+      if (body?.cursor && typeof body.cursor === "string") {
+        cursor = body.cursor.slice(0, 1024);
+      }
     } catch {
       // Empty body is fine — purge all
     }
     const kv = c.env.SC_BRIDGE_CACHE;
-    const result = await purgeByPrefix(kv, prefix);
+    const result = await purgeByPrefix(kv, prefix, { cursor });
     return c.json(result);
   });
 
