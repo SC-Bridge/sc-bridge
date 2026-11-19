@@ -239,7 +239,7 @@ function normalizeDbPaintName(dbName: string): string {
 
 export async function preloadPaintMap(db: D1Database): Promise<PaintMap> {
   const result = await db
-    .prepare("SELECT id, name FROM paints WHERE is_base_variant = 0")
+    .prepare("SELECT id, name FROM paints WHERE is_base_variant = 0 AND COALESCE(is_standard, 0) = 0")
     .all();
 
   const normalizedToID = new Map<string, number>();
