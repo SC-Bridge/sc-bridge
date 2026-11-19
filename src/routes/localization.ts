@@ -3,8 +3,12 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { validate } from "../lib/validation";
+import { listRsiAccounts, parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
 import {
+  type AccountShipOrder,
   type AsopEntry,
+  type AsopRow,
+  mergeShipOrders,
   type ItemRow,
   type LabelOverride,
   type LocalizationConfig,
@@ -228,24 +232,34 @@ export function localizationRoutes() {
 
   // ── GET /ship-order — user's ASOP ordering ────────────────────────
 
-  routes.get("/ship-order", async (c) => {
-    const isPTU = isPTUChannel(getActiveChannel(c));
-    const t = (n: string) => resolveTable(n, isPTU);
-    const db = c.env.DB;
-    const userId = getAuthUser(c).id;
+  routes.get(
+    "/ship-order",
+    validate(
+      "query",
+      z.object({
+        account: z.string().optional(),
+        accounts: z.string().optional(),
+      }),
+    ),
+    async (c) => {
+      const isPTU = isPTUChannel(getActiveChannel(c));
+      const db = c.env.DB;
+      const userId = getAuthUser(c).id;
+      const { account, accounts } = c.req.valid("query");
 
-    const rows = await db
-      .prepare(`SELECT o.vehicle_id, o.sort_position, o.custom_label, v.name as vehicle_name, v.class_name
-         FROM user_localization_ship_order o
-         JOIN ${t("vehicles")} v ON v.id = o.vehicle_id
-         WHERE o.user_id = ?
-         ORDER BY o.sort_position`,
-      )
-      .bind(userId)
-      .all();
+      // ?accounts= returns the merged (read-only) order the download would use.
+      if (accounts !== undefined) {
+        const ids = await resolveAccountIds(db, userId, accounts);
+        const orders = await loadShipOrders(db, userId, ids, isPTU);
+        return c.json({ items: mergeShipOrders(orders) });
+      }
 
-    return c.json({ items: rows.results });
-  });
+      const accountId = await resolveAccountId(db, userId, account);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
+      const [order] = await loadShipOrders(db, userId, [accountId], isPTU);
+      return c.json({ items: order.items });
+    },
+  );
 
   // ── PUT /ship-order — save ASOP ordering ──────────────────────────
 
@@ -263,28 +277,32 @@ export function localizationRoutes() {
             }),
           )
           .max(500),
+        rsi_account_id: z.number().int().positive().optional(),
       }),
     ),
     async (c) => {
       const db = c.env.DB;
       const userId = getAuthUser(c).id;
-      const { items } = c.req.valid("json");
+      const { items, rsi_account_id } = c.req.valid("json");
 
-      // Full replace: delete then insert
+      const accountId = await resolveAccountId(db, userId, rsi_account_id);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
+
+      // Full replace of this account's order: delete then insert
       const stmts: D1PreparedStatement[] = [
         db
-          .prepare("DELETE FROM user_localization_ship_order WHERE user_id = ?")
-          .bind(userId),
+          .prepare("DELETE FROM user_localization_ship_order WHERE user_id = ? AND rsi_account_id = ?")
+          .bind(userId, accountId),
       ];
 
       for (const item of items) {
         stmts.push(
           db
             .prepare(
-              `INSERT INTO user_localization_ship_order (user_id, vehicle_id, sort_position, custom_label)
-               VALUES (?, ?, ?, ?)`,
+              `INSERT INTO user_localization_ship_order (user_id, rsi_account_id, vehicle_id, sort_position, custom_label)
+               VALUES (?, ?, ?, ?, ?)`,
             )
-            .bind(userId, item.vehicleId, item.sortPosition, item.customLabel ?? null),
+            .bind(userId, accountId, item.vehicleId, item.sortPosition, item.customLabel ?? null),
         );
       }
 
@@ -586,11 +604,12 @@ export function localizationRoutes() {
 
   // ── GET /preview — preview override key/value pairs ───────────────
 
-  routes.get("/preview", async (c) => {
+  routes.get("/preview", validate("query", accountsQuery), async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
     const db = c.env.DB;
     const kv = c.env.LOCALIZATION_KV;
     const userId = getAuthUser(c).id;
+    const accountIds = await resolveAccountIds(db, userId, c.req.valid("query").accounts);
 
     const configRow = await db
       .prepare("SELECT * FROM user_localization_configs WHERE user_id = ?")
@@ -629,7 +648,7 @@ export function localizationRoutes() {
       packOverrideCount = packOverrides.size;
     }
 
-    const personalOverrides = await buildOverrides(db, userId, config, undefined, isPTU);
+    const personalOverrides = await buildOverrides(db, userId, config, undefined, isPTU, accountIds);
 
     return c.json({
       config,
@@ -647,11 +666,12 @@ export function localizationRoutes() {
 
   // ── GET /download — generate and download merged global.ini ───────
 
-  routes.get("/download", async (c) => {
+  routes.get("/download", validate("query", accountsQuery), async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
     const db = c.env.DB;
     const kv = c.env.LOCALIZATION_KV;
     const userId = getAuthUser(c).id;
+    const accountIds = await resolveAccountIds(db, userId, c.req.valid("query").accounts);
 
     // Get default game version code
     const ver = await db
@@ -748,7 +768,7 @@ export function localizationRoutes() {
 
     // 2. Generate personal overrides (highest priority — overwrites packs)
     // All overrideMap keys are lowercased for case-insensitive merge.
-    const overrideList = await buildOverrides(db, userId, config, validKeys, isPTU);
+    const overrideList = await buildOverrides(db, userId, config, validKeys, isPTU, accountIds);
     for (const o of overrideList) {
       overrideMap.set(o.key.toLowerCase(), o.value);
     }
@@ -771,36 +791,79 @@ export function localizationRoutes() {
 // Shared: build all overrides from config + DB data
 // ---------------------------------------------------------------------------
 
+const accountsQuery = z.object({ accounts: z.string().optional() });
+
+/**
+ * The accounts a request covers: the ids in `?accounts=` the user owns (foreign
+ * ids are dropped), every account for none/'all', or the primary account when
+ * no listed id is theirs.
+ */
+async function resolveAccountIds(
+  db: D1Database,
+  userId: string,
+  raw: string | undefined,
+): Promise<number[]> {
+  const owned = await listRsiAccounts(db, userId);
+  const requested = parseAccountsParam(raw);
+  if (requested === null) {
+    if (owned.length > 0) return owned.map((a) => a.id);
+  } else {
+    const kept = owned.filter((a) => requested.includes(a.id)).map((a) => a.id);
+    if (kept.length > 0) return kept;
+  }
+  const primary = await resolveAccountId(db, userId, undefined);
+  return primary === null ? [] : [primary];
+}
+
+/** Each account's saved ship order, in ascending account id. */
+async function loadShipOrders(
+  db: D1Database,
+  userId: string,
+  accountIds: number[],
+  isPTU: boolean,
+): Promise<AccountShipOrder[]> {
+  if (accountIds.length === 0) return [];
+  const t = (n: string) => resolveTable(n, isPTU);
+  const marks = accountIds.map(() => "?").join(",");
+  const [accounts, rows] = await Promise.all([
+    listRsiAccounts(db, userId),
+    db
+      .prepare(
+        `SELECT o.rsi_account_id, o.vehicle_id, o.sort_position, o.custom_label, v.name as vehicle_name, v.class_name
+         FROM user_localization_ship_order o
+         JOIN ${t("vehicles")} v ON v.id = o.vehicle_id
+         WHERE o.user_id = ? AND o.rsi_account_id IN (${marks})
+         ORDER BY o.sort_position`,
+      )
+      .bind(userId, ...accountIds)
+      .all<AsopRow & { rsi_account_id: number }>(),
+  ]);
+  const primaryIds = new Set(accounts.filter((a) => a.is_primary === 1).map((a) => a.id));
+  return [...accountIds]
+    .sort((a, b) => a - b)
+    .map((accountId) => ({
+      accountId,
+      isPrimary: primaryIds.has(accountId),
+      items: rows.results.filter((r) => r.rsi_account_id === accountId),
+    }));
+}
+
 async function buildOverrides(
   db: D1Database,
   userId: string,
   config: LocalizationConfig,
-  validKeys?: Map<string, string>,
-  isPTU = false,
+  validKeys: Map<string, string> | undefined,
+  isPTU: boolean,
+  accountIds: number[],
 ): Promise<LabelOverride[]> {
   const overrides: LabelOverride[] = [];
   const t = (n: string) => resolveTable(n, isPTU);
 
   // ASOP ordering
   if (config.asopEnabled) {
-    const rows = await db
-      .prepare(
-        `SELECT o.vehicle_id, o.sort_position, o.custom_label, v.name as vehicle_name, v.class_name
-         FROM user_localization_ship_order o
-         JOIN ${t("vehicles")} v ON v.id = o.vehicle_id
-         WHERE o.user_id = ?
-         ORDER BY o.sort_position`,
-      )
-      .bind(userId)
-      .all<{
-        vehicle_id: number;
-        sort_position: number;
-        custom_label: string | null;
-        vehicle_name: string;
-        class_name: string;
-      }>();
+    const rows = mergeShipOrders(await loadShipOrders(db, userId, accountIds, isPTU));
 
-    const entries: AsopEntry[] = rows.results.map((r) => ({
+    const entries: AsopEntry[] = rows.map((r) => ({
       vehicleId: r.vehicle_id,
       className: r.class_name,
       vehicleName: r.vehicle_name,

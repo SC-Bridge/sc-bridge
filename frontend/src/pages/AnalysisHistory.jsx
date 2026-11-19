@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import { useSearchParams } from 'react-router-dom'
-import { useAIAnalysisHistory, deleteAIAnalysis } from '../hooks/useAPI'
+import { useAIAnalysisHistory, deleteAIAnalysis, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import useTimezone from '../hooks/useTimezone'
 import { formatDate } from '../lib/dates'
 import { Clock, Sparkles, ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
@@ -12,10 +12,15 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { analysingLabel } from '../lib/accounts'
 
 export default function AnalysisHistory() {
   const { timezone } = useTimezone()
   const { data, loading, error, refetch } = useAIAnalysisHistory()
+  const { data: status } = useStatus()
+  const multiAccount = !!status?.features?.multiAccount
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !multiAccount })
+  const showAccounts = multiAccount && (rsiAccountsData?.accounts?.length ?? 0) >= 2
   const [searchParams, setSearchParams] = useSearchParams()
   const expandedId = searchParams.get('id') ? Number(searchParams.get('id')) : null
   const [deleting, setDeleting] = useState(null)
@@ -122,6 +127,10 @@ export default function AnalysisHistory() {
                   <span className="text-xs text-gray-400">
                     {item.vehicle_count} ships
                   </span>
+
+                  {showAccounts && (
+                    <span className="text-xs text-gray-500">{analysingLabel(item.accounts)}</span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">

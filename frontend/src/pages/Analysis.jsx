@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig, useLLMModels } from '../hooks/useAPI'
+import { useLLMConfig, generateAIAnalysis, useLatestAIAnalysis, setLLMConfig, useLLMModels, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import usePrivacyMode from '../hooks/usePrivacyMode'
 import useTimezone from '../hooks/useTimezone'
 import { formatDateOnly } from '../lib/dates'
@@ -14,10 +14,18 @@ import LoadingState from '../components/LoadingState'
 import SectionBoundary from '../components/SectionBoundary'
 import ProviderLogo, { PROVIDER_INFO } from '../components/ProviderLogo'
 import FleetChat from './FleetChat'
+import AccountFilter from '../components/AccountFilter'
+import useAccountFilter from '../hooks/useAccountFilter'
+import { analysingLabel, analysisAccountsValue } from '../lib/accounts'
 
 export default function Analysis() {
   const { timezone } = useTimezone()
   const { data: llmConfig, loading: configLoading, refetch: refetchConfig } = useLLMConfig()
+  const { data: status } = useStatus()
+  const multiAccount = !!status?.features?.multiAccount
+  const { data: rsiAccountsData } = useRsiAccounts({ skip: !multiAccount })
+  const rsiAccounts = rsiAccountsData?.accounts
+  const accountFilter = useAccountFilter(multiAccount ? rsiAccounts : undefined)
   const { data: latestAnalysis, loading: analysisLoading } = useLatestAIAnalysis()
   const [aiInsights, setAIInsights] = useState(null)
   const [aiMeta, setAIMeta] = useState(null)
@@ -41,6 +49,7 @@ export default function Analysis() {
         provider: latestAnalysis.provider,
         model: latestAnalysis.model,
         vehicle_count: latestAnalysis.vehicle_count,
+        accounts: latestAnalysis.accounts,
       })
     }
   }, [latestAnalysis])
@@ -91,6 +100,7 @@ export default function Analysis() {
         provider: selectedProvider,
         model: selectedModel,
         context: context.trim() || undefined,
+        accounts: analysisAccountsValue(accountFilter),
       })
       setAIInsights(result.analysis)
       setAIMeta({
@@ -98,6 +108,7 @@ export default function Analysis() {
         provider: selectedProvider,
         model: result.model || selectedModel,
         vehicle_count: result.vehicle_count,
+        accounts: result.accounts,
       })
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -223,6 +234,7 @@ export default function Analysis() {
           {/* Analysis-only: context + generate */}
           {mode === 'analysis' && (
             <>
+              <AccountFilter accounts={rsiAccounts} filter={accountFilter} />
               <div>
                 <label className="text-xs text-gray-500 font-mono uppercase tracking-wider block mb-1.5">Additional context <span className="normal-case tracking-normal text-gray-600">(optional)</span></label>
                 <textarea
@@ -268,7 +280,7 @@ export default function Analysis() {
 
       {/* Chat mode */}
       {mode === 'chat' && hasAnyKey && (
-        <FleetChat provider={selectedProvider} model={activeModel} />
+        <FleetChat provider={selectedProvider} model={activeModel} accounts={rsiAccounts} accountFilter={accountFilter} />
       )}
 
       {/* Analysis output — analysis mode only */}
@@ -302,6 +314,9 @@ export default function Analysis() {
               )}
             </div>
             <div className="p-5">
+              {accountFilter.active && aiMeta && (
+                <p className="text-xs text-gray-500 font-mono mb-3">{analysingLabel(aiMeta.accounts)}</p>
+              )}
               {privacyMode ? (
                 <div className="text-center py-8 text-gray-500">
                   <EyeOff className="w-8 h-8 mx-auto mb-2 opacity-40" />

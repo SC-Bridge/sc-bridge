@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders, seedVehicle, seedFleetEntry } from "./helpers";
+import { getOrCreatePrimaryAccountId } from "../src/lib/rsi-accounts";
+import { getEntitledLoaners } from "../src/db/queries";
 
 async function seedLoaner(vehicleId: number, loanerId: number) {
   await env.DB.prepare(
@@ -112,5 +114,96 @@ describe("Fleet Loaners API — /api/vehicles/loaners", () => {
       headers: await authHeaders(u1.sessionToken),
     });
     expect(await res.json()).toEqual([]);
+  });
+
+  describe("per RSI account", () => {
+    async function secondAccount(userId: string): Promise<number> {
+      await env.DB.prepare(
+        "INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder) VALUES (?, 'Alt', 0, 1)",
+      )
+        .bind(userId)
+        .run();
+      const row = await env.DB.prepare(
+        "SELECT id FROM user_rsi_accounts WHERE user_id = ? AND is_primary = 0 ORDER BY id DESC LIMIT 1",
+      )
+        .bind(userId)
+        .first<{ id: number }>();
+      return row!.id;
+    }
+    async function seedOn(userId: string, vehicleId: number, accountId: number) {
+      await env.DB.prepare(
+        `INSERT INTO user_fleet (user_id, vehicle_id, is_loaner, imported_at, rsi_account_id)
+         VALUES (?, ?, 0, datetime('now'), ?)`,
+      )
+        .bind(userId, vehicleId, accountId)
+        .run();
+    }
+    async function list(sessionToken: string) {
+      const res = await SELF.fetch("http://localhost/api/vehicles/loaners", {
+        headers: await authHeaders(sessionToken),
+      });
+      return (await res.json()) as Array<Record<string, unknown>>;
+    }
+
+    it("one loaner row per entitled account", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const a = await getOrCreatePrimaryAccountId(env.DB, userId);
+      const b = await secondAccount(userId);
+      const concept = await seedVehicle(env.DB, { slug: "pa-c1", name: "PA Concept", production_status_id: 3 });
+      const loaner = await seedVehicle(env.DB, { slug: "pa-l1", name: "PA Loaner" });
+      await seedLoaner(concept, loaner);
+      await seedOn(userId, concept, a);
+      await seedOn(userId, concept, b);
+
+      const rows = await list(sessionToken);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.rsi_account_id).sort()).toEqual([a, b].sort());
+    });
+
+    it("owning the ship on another account keeps the loaner", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const a = await getOrCreatePrimaryAccountId(env.DB, userId);
+      const b = await secondAccount(userId);
+      const concept = await seedVehicle(env.DB, { slug: "pa-c2", name: "PA Concept 2", production_status_id: 3 });
+      const loaner = await seedVehicle(env.DB, { slug: "pa-l2", name: "PA Loaner 2" });
+      await seedLoaner(concept, loaner);
+      await seedOn(userId, concept, a);
+      await seedOn(userId, loaner, b);
+
+      const rows = await list(sessionToken);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].rsi_account_id).toBe(a);
+    });
+
+    it("owning the ship on the same account hides the loaner", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const a = await getOrCreatePrimaryAccountId(env.DB, userId);
+      const concept = await seedVehicle(env.DB, { slug: "pa-c3", name: "PA Concept 3", production_status_id: 3 });
+      const loaner = await seedVehicle(env.DB, { slug: "pa-l3", name: "PA Loaner 3" });
+      await seedLoaner(concept, loaner);
+      await seedOn(userId, concept, a);
+      await seedOn(userId, loaner, a);
+
+      expect(await list(sessionToken)).toEqual([]);
+    });
+
+    it("getEntitledLoaners scopes to the given accounts", async () => {
+      const { userId } = await createTestUser(env.DB);
+      const a = await getOrCreatePrimaryAccountId(env.DB, userId);
+      const b = await secondAccount(userId);
+      const ca = await seedVehicle(env.DB, { slug: `pa-ca-${crypto.randomUUID().slice(0, 6)}`, name: "PA CA", production_status_id: 3 });
+      const cb = await seedVehicle(env.DB, { slug: `pa-cb-${crypto.randomUUID().slice(0, 6)}`, name: "PA CB", production_status_id: 3 });
+      const la = await seedVehicle(env.DB, { slug: `pa-la-${crypto.randomUUID().slice(0, 6)}`, name: "PA LA" });
+      const lb = await seedVehicle(env.DB, { slug: `pa-lb-${crypto.randomUUID().slice(0, 6)}`, name: "PA LB" });
+      await seedLoaner(ca, la);
+      await seedLoaner(cb, lb);
+      await seedOn(userId, ca, a);
+      await seedOn(userId, cb, b);
+
+      const onlyA = await getEntitledLoaners(env.DB, userId, [a]);
+      expect(onlyA).toEqual([{ loaner: "PA LA", granted_by: "PA CA", rsi_account_id: a }]);
+      const all = await getEntitledLoaners(env.DB, userId, null);
+      expect(all.map((r) => r.loaner).sort()).toEqual(["PA LA", "PA LB"]);
+    });
   });
 });

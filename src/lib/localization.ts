@@ -148,6 +148,43 @@ export function generateAsopOverrides(
   return overrides;
 }
 
+export interface AsopRow {
+  vehicle_id: number;
+  sort_position: number;
+  custom_label: string | null;
+  vehicle_name: string;
+  class_name: string;
+}
+
+export interface AccountShipOrder {
+  accountId: number;
+  isPrimary: boolean;
+  items: AsopRow[];
+}
+
+/**
+ * Merge several RSI accounts' ship orders into one list: the primary account
+ * first, then the others by ascending id, each in its own sort_position order.
+ * A ship already listed is skipped (the first label wins) and positions are
+ * renumbered from 1.
+ */
+export function mergeShipOrders(orders: AccountShipOrder[]): AsopRow[] {
+  const ranked = [...orders].sort((a, b) =>
+    a.isPrimary === b.isPrimary ? a.accountId - b.accountId : a.isPrimary ? -1 : 1,
+  );
+  const seen = new Set<number>();
+  const merged: AsopRow[] = [];
+  for (const order of ranked) {
+    const items = [...order.items].sort((a, b) => a.sort_position - b.sort_position);
+    for (const item of items) {
+      if (seen.has(item.vehicle_id)) continue;
+      seen.add(item.vehicle_id);
+      merged.push({ ...item, sort_position: merged.length + 1 });
+    }
+  }
+  return merged;
+}
+
 function stripManufacturer(fullName: string): string {
   const parts = fullName.split(" ");
   return parts.length > 1 ? parts.slice(1).join(" ") : fullName;

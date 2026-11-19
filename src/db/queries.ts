@@ -695,13 +695,17 @@ export async function getHeadGadgets(
   return { head_uuid: headUuid, head_name: head.name, head_type: head.type, kind, slots: slotsOut };
 }
 
-export async function getUserOwnedModuleTitles(db: D1Database, userId: string): Promise<string[]> {
+export async function getUserOwnedModuleTitles(
+  db: D1Database,
+  userId: string,
+  accountId: number | null,
+): Promise<string[]> {
   const result = await db
     .prepare(
       `SELECT DISTINCT title FROM user_pledge_items
-       WHERE user_id = ? AND kind = 'Component' AND LOWER(title) LIKE '%module%'`
+       WHERE user_id = ? AND kind = 'Component' AND LOWER(title) LIKE '%module%'${accountId === null ? "" : " AND rsi_account_id = ?"}`
     )
-    .bind(userId)
+    .bind(...(accountId === null ? [userId] : [userId, accountId]))
     .all<{ title: string }>();
   return result.results.map((r) => r.title);
 }
@@ -3537,6 +3541,11 @@ export interface ChatRow {
   updated_at: string;
 }
 
+/** A chat with the accounts it covers (migration 0288); NULL = all accounts. */
+export interface ChatDetailRow extends ChatRow {
+  account_ids_json: string | null;
+}
+
 export interface ChatMessageRow {
   id: number;
   role: string;
@@ -3546,13 +3555,26 @@ export interface ChatMessageRow {
 
 export async function createChat(
   db: D1Database,
-  opts: { userId: string; provider: string; model: string; title: string },
+  opts: { userId: string; provider: string; model: string; title: string; accountIdsJson?: string | null },
 ): Promise<number> {
   const r = await db
-    .prepare("INSERT INTO ai_chats (user_id, provider, model, title) VALUES (?, ?, ?, ?)")
-    .bind(opts.userId, opts.provider, opts.model, opts.title)
+    .prepare("INSERT INTO ai_chats (user_id, provider, model, title, account_ids_json) VALUES (?, ?, ?, ?, ?)")
+    .bind(opts.userId, opts.provider, opts.model, opts.title, opts.accountIdsJson ?? null)
     .run();
   return r.meta.last_row_id as number;
+}
+
+/** Replace the accounts a chat covers (owner-scoped). NULL means all accounts. */
+export async function setChatAccounts(
+  db: D1Database,
+  userId: string,
+  chatId: number,
+  accountIdsJson: string | null,
+): Promise<void> {
+  await db
+    .prepare("UPDATE ai_chats SET account_ids_json = ? WHERE id = ? AND user_id = ?")
+    .bind(accountIdsJson, chatId, userId)
+    .run();
 }
 
 export async function addChatMessage(
@@ -3582,13 +3604,13 @@ export async function getChat(
   db: D1Database,
   userId: string,
   chatId: number,
-): Promise<{ chat: ChatRow; messages: ChatMessageRow[] } | null> {
+): Promise<{ chat: ChatDetailRow; messages: ChatMessageRow[] } | null> {
   const chat = await db
     .prepare(
-      "SELECT id, provider, model, title, created_at, updated_at FROM ai_chats WHERE id = ? AND user_id = ?",
+      "SELECT id, provider, model, title, created_at, updated_at, account_ids_json FROM ai_chats WHERE id = ? AND user_id = ?",
     )
     .bind(chatId, userId)
-    .first<ChatRow>();
+    .first<ChatDetailRow>();
   if (!chat) return null;
   const msgs = await db
     .prepare("SELECT id, role, content, created_at FROM ai_chat_messages WHERE chat_id = ? ORDER BY id")
@@ -3680,25 +3702,41 @@ export async function getEffectiveShipLoadout(
   return { ship: entry.ship_name, ports };
 }
 
-/** Entitled loaner ships derived from owned concept/in-production ships (compact, for chat). */
+export interface EntitledLoaner {
+  loaner: string;
+  granted_by: string;
+  rsi_account_id: number;
+}
+
+/**
+ * Entitled loaner ships derived from owned concept/in-production ships (compact, for chat).
+ * One row per (loaner, account). `accountIds` null means every account.
+ */
 export async function getEntitledLoaners(
   db: D1Database,
   userId: string,
-): Promise<Array<{ loaner: string; granted_by: string }>> {
+  accountIds: number[] | null,
+): Promise<EntitledLoaner[]> {
+  const scoped = accountIds !== null;
   const result = await db
     .prepare(
-      `SELECT l.name AS loaner, group_concat(DISTINCT owned.name) AS granted_by
+      `SELECT l.name AS loaner, group_concat(DISTINCT owned.name) AS granted_by,
+              uf.rsi_account_id AS rsi_account_id
          FROM user_fleet uf
          JOIN vehicles owned ON owned.id = uf.vehicle_id
          JOIN production_statuses ops ON ops.id = owned.production_status_id
          JOIN vehicle_loaners vl ON vl.vehicle_id = owned.id
          JOIN vehicles l ON l.id = vl.loaner_id
         WHERE uf.user_id = ?1 AND uf.is_loaner = 0 AND ops.key != 'flight_ready'
-          AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
-        GROUP BY l.id ORDER BY l.name`,
+          AND NOT EXISTS (
+            SELECT 1 FROM user_fleet x
+             WHERE x.user_id = ?1 AND x.vehicle_id = l.id AND x.rsi_account_id IS uf.rsi_account_id
+          )
+          ${scoped ? "AND uf.rsi_account_id IN (SELECT value FROM json_each(?2))" : ""}
+        GROUP BY l.id, uf.rsi_account_id ORDER BY l.name, uf.rsi_account_id`,
     )
-    .bind(userId)
-    .all<{ loaner: string; granted_by: string }>();
+    .bind(...(scoped ? [userId, JSON.stringify(accountIds)] : [userId]))
+    .all<EntitledLoaner>();
   return result.results;
 }
 

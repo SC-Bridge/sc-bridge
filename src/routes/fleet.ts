@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
-import { getOrCreatePrimaryAccountId } from "../lib/rsi-accounts";
+import { ACCOUNTS_QUERY, parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -159,9 +159,9 @@ export function fleetRoutes() {
 
       // Confirm the fleet entry belongs to the user; capture vehicle_id for FK check.
       const fleetEntry = await db
-        .prepare("SELECT id, vehicle_id FROM user_fleet WHERE id = ? AND user_id = ?")
+        .prepare("SELECT id, vehicle_id, rsi_account_id FROM user_fleet WHERE id = ? AND user_id = ?")
         .bind(id, userID)
-        .first<{ id: number; vehicle_id: number }>();
+        .first<{ id: number; vehicle_id: number; rsi_account_id: number | null }>();
 
       if (!fleetEntry) {
         return c.json({ error: "Fleet entry not found" }, 404);
@@ -182,10 +182,10 @@ export function fleetRoutes() {
           );
         }
 
-        // User must own the paint.
+        // The paint must be owned on the ship's own RSI account.
         const owned = await db
-          .prepare("SELECT 1 FROM user_paints WHERE user_id = ? AND paint_id = ?")
-          .bind(userID, paint_id)
+          .prepare("SELECT 1 FROM user_paints WHERE user_id = ? AND paint_id = ? AND rsi_account_id IS ?")
+          .bind(userID, paint_id, fleetEntry.rsi_account_id)
           .first();
         if (!owned) {
           return c.json({ error: "You do not own this paint" }, 403);
@@ -316,16 +316,18 @@ export function fleetRoutes() {
     validate("json", z.object({
       vehicle_id: z.number().int().positive(),
       custom_name: z.string().trim().max(120).optional(),
+      rsi_account_id: z.number().int().positive().optional(),
     })),
     async (c) => {
       const db = c.env.DB;
       const userID = getAuthUser(c).id;
-      const { vehicle_id, custom_name } = c.req.valid("json");
+      const { vehicle_id, custom_name, rsi_account_id } = c.req.valid("json");
 
       const vehicle = await db.prepare("SELECT id FROM vehicles WHERE id = ?").bind(vehicle_id).first();
       if (!vehicle) return c.json({ error: "Vehicle not found" }, 404);
 
-      const accountId = await getOrCreatePrimaryAccountId(db, userID);
+      const accountId = await resolveAccountId(db, userID, rsi_account_id);
+      if (accountId === null) return c.json({ error: "RSI account not found" }, 404);
       await db
         .prepare(
           `INSERT INTO user_fleet (user_id, vehicle_id, source, custom_name, imported_at, rsi_account_id)
@@ -342,21 +344,39 @@ export function fleetRoutes() {
     },
   );
 
-  // DELETE /api/vehicles/ingame — clear ALL in-game ships (post-wipe reset)
-  routes.delete("/ingame", async (c) => {
-    const db = c.env.DB;
-    const userID = getAuthUser(c).id;
-    const res = await db
-      .prepare("DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
-      .bind(userID)
-      .run();
-    c.executionCtx.waitUntil(
-      resolveVerifiedHandle(db, userID)
-        .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
-        .catch(() => {}),
-    );
-    return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
-  });
+  // DELETE /api/vehicles/ingame — clear in-game ships (post-wipe reset).
+  // ?accounts=1,2 limits it to those RSI accounts; absent or "all" clears every account.
+  routes.delete("/ingame",
+    validate("query", z.object({ accounts: z.string().max(200).optional() })),
+    async (c) => {
+      const db = c.env.DB;
+      const userID = getAuthUser(c).id;
+      const rawAccounts = c.req.valid("query").accounts;
+      // A malformed list must not fall through to "clear every account".
+      if (rawAccounts !== undefined && !ACCOUNTS_QUERY.safeParse(rawAccounts).success) {
+        return c.json({ error: "Invalid accounts" }, 400);
+      }
+      const accountIds = parseAccountsParam(rawAccounts);
+      const res = accountIds
+        ? await db
+            .prepare(
+              `DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'
+                 AND rsi_account_id IN (SELECT value FROM json_each(?))`,
+            )
+            .bind(userID, JSON.stringify(accountIds))
+            .run()
+        : await db
+            .prepare("DELETE FROM user_fleet WHERE user_id = ? AND source = 'ingame'")
+            .bind(userID)
+            .run();
+      c.executionCtx.waitUntil(
+        resolveVerifiedHandle(db, userID)
+          .then((handle) => purgePublicFleetCache(c.env.SC_BRIDGE_CACHE, handle))
+          .catch(() => {}),
+      );
+      return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
+    },
+  );
 
   // DELETE /api/vehicles/ingame/:id — remove a single in-game ship.
   // Scoped to source='ingame' so pledge/imported ships can't be deleted here.
@@ -481,8 +501,8 @@ async function getFleetLoaners(
 ) {
   // For each owned unreleased ship (concept / in-production, not an imported
   // loaner itself), expose the loaner ships it grants. Deduped by loaner ship,
-  // with loaner_for listing the owned ship(s) that grant it. Loaner ships the
-  // user already owns are excluded so nothing shows up twice.
+  // per RSI account, with loaner_for listing the owned ship(s) on that account that
+  // grant it. A loaner is hidden only when the same account already owns it.
   const result = await db
     .prepare(
       `SELECT l.id AS vehicle_id,
@@ -501,6 +521,7 @@ async function getFleetLoaners(
         m.code AS manufacturer_code,
         ps.key AS production_status,
         1 AS is_derived_loaner,
+        uf.rsi_account_id,
         group_concat(DISTINCT owned.name) AS loaner_for
       FROM user_fleet uf
       JOIN vehicles owned ON owned.id = uf.vehicle_id
@@ -512,9 +533,12 @@ async function getFleetLoaners(
       WHERE uf.user_id = ?1
         AND uf.is_loaner = 0
         AND ops.key != 'flight_ready'
-        AND l.id NOT IN (SELECT vehicle_id FROM user_fleet WHERE user_id = ?1)
-      GROUP BY l.id
-      ORDER BY l.name`,
+        AND NOT EXISTS (
+          SELECT 1 FROM user_fleet x
+          WHERE x.user_id = ?1 AND x.vehicle_id = l.id AND x.rsi_account_id IS uf.rsi_account_id
+        )
+      GROUP BY l.id, uf.rsi_account_id
+      ORDER BY l.name, uf.rsi_account_id`,
     )
     .bind(userID)
     .all();

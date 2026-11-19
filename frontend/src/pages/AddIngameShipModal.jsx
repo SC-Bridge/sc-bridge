@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { X, Check, Plus, Search } from 'lucide-react'
-import { useShips, addIngameShip } from '../hooks/useAPI'
+import { useShips, useRsiAccounts, useStatus, addIngameShip } from '../hooks/useAPI'
+import useAccountFilter from '../hooks/useAccountFilter'
+import { accountName } from '../lib/accounts'
 
 /**
  * Modal for adding in-game-purchased ships to the fleet. Search the full ship
@@ -9,6 +11,17 @@ import { useShips, addIngameShip } from '../hooks/useAPI'
  */
 export default function AddIngameShipModal({ onClose, onAdded }) {
   const { data: ships } = useShips()
+  const { data: appStatus } = useStatus()
+  const { data: accountsData } = useRsiAccounts({ skip: !appStatus?.features?.multiAccount })
+  const accounts = accountsData?.accounts
+  const accountFilter = useAccountFilter(accounts)
+  const defaultAccountId = useMemo(() => {
+    if (!accountFilter.active) return undefined
+    if (accountFilter.selectedIds.size === 1) return [...accountFilter.selectedIds][0]
+    return (accounts.find((a) => a.is_primary) ?? accounts[0]).id
+  }, [accountFilter.active, accountFilter.selectedIds, accounts])
+  const [pickedAccount, setPickedAccount] = useState(null)
+  const accountId = pickedAccount ?? defaultAccountId
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(null)
   const [added, setAdded] = useState({}) // vehicle_id → count added this session
@@ -27,7 +40,7 @@ export default function AddIngameShipModal({ onClose, onAdded }) {
     setError(null)
     setAdding(ship.id)
     try {
-      await addIngameShip(ship.id)
+      await addIngameShip(ship.id, undefined, accountId)
       setAdded((a) => ({ ...a, [ship.id]: (a[ship.id] || 0) + 1 }))
       onAdded?.()
     } catch (e) {
@@ -64,6 +77,21 @@ export default function AddIngameShipModal({ onClose, onAdded }) {
               className="w-full bg-white/[0.04] border border-white/10 rounded pl-8 pr-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-sc-accent/40"
             />
           </div>
+          {accountFilter.active && (
+            <label className="flex items-center gap-2 mt-2 text-[11px] text-gray-400">
+              Account
+              <select
+                aria-label="Account"
+                value={accountId}
+                onChange={(e) => setPickedAccount(Number(e.target.value))}
+                className="flex-1 bg-white/[0.04] border border-white/10 rounded px-2 py-1 text-xs text-gray-200"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{accountName(a)}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {error && <p className="text-[11px] text-red-400 mt-2">{error}</p>}
         </div>
 

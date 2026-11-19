@@ -268,19 +268,62 @@ describe("Fleet API — /api/vehicles", () => {
       return paintId;
     }
 
-    async function grantPaintOwnership(userId: string, paintId: number) {
+    async function grantPaintOwnership(userId: string, paintId: number, rsiAccountId: number) {
       await env.DB
-        .prepare("INSERT INTO user_paints (user_id, paint_id) VALUES (?, ?)")
-        .bind(userId, paintId)
+        .prepare("INSERT INTO user_paints (user_id, paint_id, rsi_account_id) VALUES (?, ?, ?)")
+        .bind(userId, paintId, rsiAccountId)
         .run();
     }
+
+    async function secondRsiAccount(userId: string): Promise<number> {
+      await env.DB
+        .prepare("INSERT INTO user_rsi_accounts (user_id, label, is_primary, is_placeholder) VALUES (?, 'Alt', 0, 1)")
+        .bind(userId)
+        .run();
+      const row = await env.DB
+        .prepare("SELECT id FROM user_rsi_accounts WHERE user_id = ? AND is_primary = 0 ORDER BY id DESC LIMIT 1")
+        .bind(userId)
+        .first<{ id: number }>();
+      return row!.id;
+    }
+
+    it("refuses a paint owned only on another account", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "paint-equip-acct-1", name: "Account Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+      const paintId = await seedPaintLinked(vehicleId, "Other Account Livery");
+      const otherAccountId = await secondRsiAccount(userId);
+      await grantPaintOwnership(userId, paintId, otherAccountId);
+
+      const res = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/paint`, {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ paint_id: paintId }),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it("accepts a paint owned on the ship's account", async () => {
+      const { userId, sessionToken } = await createTestUser(env.DB);
+      const vehicleId = await seedVehicle(env.DB, { slug: "paint-equip-acct-2", name: "Same Account Ship" });
+      const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
+      const paintId = await seedPaintLinked(vehicleId, "Same Account Livery");
+      await grantPaintOwnership(userId, paintId, await getOrCreatePrimaryAccountId(env.DB, userId));
+
+      const res = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/paint`, {
+        method: "PATCH",
+        headers: { ...(await authHeaders(sessionToken)), "Content-Type": "application/json" },
+        body: JSON.stringify({ paint_id: paintId }),
+      });
+      expect(res.status).toBe(200);
+    });
 
     it("equips a paint the user owns + has the linkage", async () => {
       const { userId, sessionToken } = await createTestUser(env.DB);
       const vehicleId = await seedVehicle(env.DB, { slug: "paint-equip-1", name: "Test Ship" });
       const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
       const paintId = await seedPaintLinked(vehicleId, "Test Livery");
-      await grantPaintOwnership(userId, paintId);
+      await grantPaintOwnership(userId, paintId, await getOrCreatePrimaryAccountId(env.DB, userId));
 
       const res = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/paint`, {
         method: "PATCH",
@@ -317,7 +360,7 @@ describe("Fleet API — /api/vehicles", () => {
       const otherVehicleId = await seedVehicle(env.DB, { slug: "paint-equip-3-other", name: "Other Ship" });
       const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
       const paintId = await seedPaintLinked(otherVehicleId, "Wrong Livery"); // linked to OTHER vehicle
-      await grantPaintOwnership(userId, paintId);
+      await grantPaintOwnership(userId, paintId, await getOrCreatePrimaryAccountId(env.DB, userId));
 
       const res = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/paint`, {
         method: "PATCH",
@@ -332,7 +375,7 @@ describe("Fleet API — /api/vehicles", () => {
       const vehicleId = await seedVehicle(env.DB, { slug: "paint-equip-4", name: "Test Ship 4" });
       const fleetId = await seedFleetEntry(env.DB, userId, vehicleId);
       const paintId = await seedPaintLinked(vehicleId, "To Unset Livery");
-      await grantPaintOwnership(userId, paintId);
+      await grantPaintOwnership(userId, paintId, await getOrCreatePrimaryAccountId(env.DB, userId));
 
       // Equip first
       await env.DB
@@ -361,7 +404,7 @@ describe("Fleet API — /api/vehicles", () => {
       const vehicleId = await seedVehicle(env.DB, { slug: "paint-equip-5", name: "Test Ship 5" });
       const fleetId = await seedFleetEntry(env.DB, user1.userId, vehicleId);
       const paintId = await seedPaintLinked(vehicleId, "Cross-user Livery");
-      await grantPaintOwnership(user2.userId, paintId);
+      await grantPaintOwnership(user2.userId, paintId, await getOrCreatePrimaryAccountId(env.DB, user2.userId));
 
       const res = await SELF.fetch(`http://localhost/api/vehicles/${fleetId}/paint`, {
         method: "PATCH",
