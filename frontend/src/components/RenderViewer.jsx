@@ -17,7 +17,7 @@ function dedupeByHash(variants) {
 
 /**
  * Large render view: the 2048 image of the selected variant with a strip of 512 thumbnails.
- * The selected variant is mirrored to `?render=<variant>` (history replaced) and removed again on close.
+ * The selected variant is mirrored to `?render=<variant>` (history replaced) and removed again by the close handler.
  * Not `view`: pages already use that for their own layout.
  */
 export default function RenderViewer({ kind, itemKey, initialVariant = '', title, onClose }) {
@@ -52,32 +52,28 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
     [items, setSearchParams],
   )
 
-  // setSearchParams changes identity with the URL, so the unmount cleanup calls it through a ref.
-  const setParamsRef = useRef(setSearchParams)
-  setParamsRef.current = setSearchParams
-  useEffect(
-    () => () => {
-      setParamsRef.current(
-        (prev) => {
-          const p = new URLSearchParams(prev)
-          p.delete('render')
-          return p
-        },
-        { replace: true },
-      )
-    },
-    [],
-  )
+  // Every way of closing (Esc, backdrop, close button) removes ?render= first.
+  const close = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        p.delete('render')
+        return p
+      },
+      { replace: true },
+    )
+    onClose?.()
+  }, [setSearchParams, onClose])
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.()
+      if (e.key === 'Escape') close()
       else if (e.key === 'ArrowRight') select(Math.min(index + 1, items.length - 1))
       else if (e.key === 'ArrowLeft') select(Math.max(index - 1, 0))
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [index, items.length, select, onClose])
+  }, [index, items.length, select, close])
 
   useEffect(() => {
     const previous = document.activeElement
@@ -93,7 +89,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
     <div
       data-testid="render-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-      onClick={onClose}
+      onClick={close}
     >
       <div
         ref={dialogRef}
@@ -107,7 +103,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
         <button
           type="button"
           aria-label="Close"
-          onClick={onClose}
+          onClick={close}
           className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-white"
         >
           <X className="h-5 w-5" />

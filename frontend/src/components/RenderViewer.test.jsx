@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import RenderViewer from './RenderViewer'
 
 const VARIANTS = [
@@ -28,8 +29,39 @@ function setup(entry = '/ships/x', onClose = vi.fn()) {
 }
 
 describe('RenderViewer', () => {
-  it('leaves a page layout ?view= alone and removes ?render= when it closes', () => {
-    const { unmount } = render(
+  it('removes ?render= when it is closed', () => {
+    const onClose = setup('/ships/x?render=paint_x')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByTestId('search').textContent).toBe('')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('does not navigate back when it unmounts because the route changed', () => {
+    function Page() {
+      const [open, setOpen] = useState(true)
+      const navigate = useNavigate()
+      return (
+        <>
+          {open && <RenderViewer kind="vehicle" itemKey="x" title="Ship X" onClose={() => setOpen(false)} />}
+          <button onClick={() => { setOpen(false); navigate('/elsewhere') }}>go</button>
+        </>
+      )
+    }
+    function Path() {
+      return <div data-testid="path">{useLocation().pathname}</div>
+    }
+    render(
+      <MemoryRouter initialEntries={['/ships/x?render=paint_x']}>
+        <Page />
+        <Path />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByText('go'))
+    expect(screen.getByTestId('path').textContent).toBe('/elsewhere')
+  })
+
+  it('leaves a page layout ?view= alone', () => {
+    render(
       <MemoryRouter initialEntries={['/p?view=grid']}>
         <RenderViewer kind="vehicle" itemKey="x" title="Ship X" onClose={vi.fn()} />
         <Search />
@@ -37,7 +69,6 @@ describe('RenderViewer', () => {
     )
     fireEvent.keyDown(document, { key: 'ArrowRight' })
     expect(screen.getByTestId('search').textContent).toBe('?view=grid&render=paint_x')
-    unmount()
   })
 
   it('renders one thumbnail per distinct hash inside an aria-modal dialog', () => {

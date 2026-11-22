@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import PaintBrowser from './PaintBrowser'
 
 const PAINTS = [
@@ -28,24 +28,35 @@ vi.mock('../hooks/useRenderVariants', () => ({
   }),
 }))
 
+function Search() {
+  return <div data-testid="search">{useLocation().search}</div>
+}
+
 function openViewer(entry) {
-  render(<MemoryRouter initialEntries={[entry]}><PaintBrowser /></MemoryRouter>)
+  render(<MemoryRouter initialEntries={[entry]}><PaintBrowser /><Search /></MemoryRouter>)
   fireEvent.load(screen.getByAltText('Valiant'))
   fireEvent.click(screen.getByRole('button', { name: /Open large view of Valiant/ }))
+}
+
+function mainImageSrc() {
+  return screen.getByRole('dialog').querySelector('img[src$="/2048.webp"]')?.getAttribute('src')
 }
 
 describe('PaintBrowser paint card', () => {
   it('keeps the dialog open and the grid layout when another thumbnail is selected', () => {
     openViewer('/paints')
-    fireEvent.click(screen.getAllByRole('button', { name: /^Show / })[0])
+    const [stock, painted] = screen.getAllByRole('button', { name: /^Show / })
+    fireEvent.click(stock)
+    fireEvent.click(painted)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     // only the grid card has an open-viewer button; the list layout has none
     expect(screen.getByRole('button', { name: /Open large view of Valiant/ })).toBeInTheDocument()
+    expect(screen.getByTestId('search').textContent).not.toContain('view=')
   })
 
   it('starts on the paint variant even with ?view=grid on the page', () => {
     openViewer('/paints?view=grid')
-    expect(screen.getByTestId('caption').textContent).toBe('Valiant')
+    expect(mainImageSrc()).toBe('https://renders.scbridge.app/p1hash/2048.webp')
   })
 
   it('opens the large view when the render is clicked', () => {
