@@ -4328,7 +4328,7 @@ CREATE INDEX idx_user_hangar_cleanup_buys_rsi_account ON user_hangar_cleanup_buy
 CREATE INDEX idx_user_hangar_cleanup_state_rsi_account ON user_hangar_cleanup_state(rsi_account_id);
 CREATE INDEX idx_paint_vehicles_default
   ON paint_vehicles(vehicle_id) WHERE is_default_for_vehicle = 1;
-CREATE INDEX idx_item_renders_variant ON item_renders(kind, variant);
+CREATE INDEX idx_item_renders_variant ON item_renders(variant);
 CREATE INDEX idx_item_renders_item_key ON item_renders(item_key, variant);
 -- ── data ──
 INSERT INTO vehicle_types VALUES(1,'spaceship','Spaceship');

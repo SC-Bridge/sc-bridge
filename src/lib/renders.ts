@@ -84,15 +84,22 @@ export function renderJoin(alias: string, itemKeyExpr: string, variantExpr = "''
  * class_name as the variant. Select `alias.item_key` and `alias.variant` so the
  * large view opens the base item with that finish selected.
  * One row per item, views as in `renderJoin`.
+ *
+ * Two lookups, not one with OR: each uses an index ((item_key, variant) and
+ * (variant)), where an OR makes SQLite scan item_renders once per loot row.
  */
 export function lootRenderJoin(alias: string, classNameExpr: string): string {
-  return `LEFT JOIN item_renders ${alias} ON ${alias}.id = (
-    SELECT _ir.id FROM item_renders _ir
-    WHERE ((_ir.item_key = lower(${classNameExpr}) AND _ir.variant = '')
-        OR _ir.variant = lower(${classNameExpr}))
-      AND ${renderViewFilter("_ir")}
-    ORDER BY (_ir.variant <> ''), ${renderViewRank("_ir")}, _ir.item_key
-    LIMIT 1)`;
+  return `LEFT JOIN item_renders ${alias} ON ${alias}.id = COALESCE(
+    (SELECT _irs.id FROM item_renders _irs
+      WHERE _irs.item_key = lower(${classNameExpr}) AND _irs.variant = ''
+        AND ${renderViewFilter("_irs")}
+      ORDER BY ${renderViewRank("_irs")}
+      LIMIT 1),
+    (SELECT _irf.id FROM item_renders _irf
+      WHERE _irf.variant = lower(${classNameExpr}) AND _irf.variant <> ''
+        AND ${renderViewFilter("_irf")}
+      ORDER BY ${renderViewRank("_irf")}, _irf.item_key
+      LIMIT 1))`;
 }
 
 /** SELECT list for the row joined by `renderJoin(alias, …)`. */

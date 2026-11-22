@@ -21,5 +21,5 @@ CREATE TABLE IF NOT EXISTS item_renders (
   UNIQUE (kind, item_key, variant, view)
 );
 
-CREATE INDEX IF NOT EXISTS idx_item_renders_variant ON item_renders(kind, variant);
+CREATE INDEX IF NOT EXISTS idx_item_renders_variant ON item_renders(variant);
 CREATE INDEX IF NOT EXISTS idx_item_renders_item_key ON item_renders(item_key, variant);

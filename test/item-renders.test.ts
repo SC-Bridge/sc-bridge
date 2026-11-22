@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders, seedVehicle, seedFleetEntry } from "./helpers";
-import { RENDER_KINDS, toRenderRef } from "../src/lib/renders";
+import { RENDER_KINDS, lootRenderJoin, toRenderRef } from "../src/lib/renders";
 import { renderRoutes } from "../src/routes/renders";
 import { armourSetRenderKey } from "../src/lib/loot-sets";
 
@@ -634,6 +634,21 @@ describe("render on armour sets", () => {
     const body = (await res.json()) as { render: Render; render_item_key: string | null };
     expect(body.render).toBeNull();
     expect(body.render_item_key).toBeNull();
+  });
+});
+
+describe("lootRenderJoin query plan", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("looks item_renders up by index, never by scanning it per loot row", async () => {
+    const plan = await env.DB
+      .prepare(`EXPLAIN QUERY PLAN SELECT lm.id, r.hash FROM loot_map lm ${lootRenderJoin("r", "lm.class_name")}`)
+      .all<{ detail: string }>();
+    const details = plan.results.map((p) => p.detail);
+    expect(details.some((d) => /SEARCH _ir/.test(d))).toBe(true);
+    expect(details.filter((d) => /SCAN _ir/.test(d))).toEqual([]);
   });
 });
 
