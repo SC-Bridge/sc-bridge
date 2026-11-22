@@ -26,8 +26,13 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
   const [selected, setSelected] = useState(() => searchParams.get('view') ?? initialVariant)
   const dialogRef = useRef(null)
 
-  const index = Math.max(0, items.findIndex((v) => v.variant === selected))
+  // Resolve against every variant first: the requested one may share a hash with an earlier entry.
+  const requested = variants.find((v) => v.variant === selected)
+  const index = requested ? Math.max(0, items.findIndex((v) => v.hash === requested.hash)) : 0
   const current = items[index] ?? null
+  const [failure, setFailure] = useState({ hash: null, stage: 0 })
+  // 0 = 2048 render, 1 = 512 render, 2 = placeholder; resets when the shown hash changes
+  const stage = current && failure.hash === current.hash ? failure.stage : 0
 
   const select = useCallback(
     (i) => {
@@ -57,7 +62,11 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
   }, [index, items.length, select, onClose])
 
   useEffect(() => {
+    const previous = document.activeElement
     dialogRef.current?.focus()
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus()
+    }
   }, [])
 
   const caption = current ? current.name || (current.variant === '' ? title : current.variant) : title
@@ -87,15 +96,18 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
         </button>
 
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
-          {current ? (
+          {current && stage < 2 ? (
             <img
-              src={renderUrl(current, 2048)}
+              src={renderUrl(current, stage === 0 ? 2048 : 512)}
+              onError={() => setFailure({ hash: current.hash, stage: stage + 1 })}
               alt={caption || ''}
               width={current.width}
               height={current.height}
-              style={{ maxWidth: Math.min(current.width, 2048) }}
+              style={{ maxWidth: current.width }}
               className="h-auto max-h-[70vh] w-full object-contain"
             />
+          ) : current ? (
+            <p className="py-16 text-sm text-gray-400">Image unavailable</p>
           ) : (
             <p className="py-16 text-sm text-gray-400">{loading ? 'Loading renders…' : 'No renders available'}</p>
           )}
@@ -114,7 +126,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
                   key={v.hash}
                   type="button"
                   aria-label={`Show ${label}`}
-                  aria-current={i === index}
+                  aria-current={i === index ? 'true' : undefined}
                   onClick={() => select(i)}
                   className={`shrink-0 rounded border-2 ${i === index ? 'border-sc-accent' : 'border-transparent'}`}
                 >

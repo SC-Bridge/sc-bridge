@@ -64,4 +64,38 @@ describe('RenderViewer', () => {
     fireEvent.click(screen.getByTestId('render-backdrop'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('selects the shown image for a ?view= variant that was deduped by hash', () => {
+    setup('/ships/x?view=paint_y')
+    const src = screen.getByRole('dialog').querySelector('img').getAttribute('src')
+    expect(src).toBe('https://renders.scbridge.app/h1/2048.webp')
+  })
+
+  it('falls back to the first variant for an unknown ?view=', () => {
+    setup('/ships/x?view=nope')
+    expect(screen.getByTestId('caption').textContent).toBe('Ship X')
+    expect(screen.getByRole('dialog').querySelector('img').getAttribute('src')).toBe(
+      'https://renders.scbridge.app/h0/2048.webp',
+    )
+  })
+
+  it('falls back to the 512 render, then a placeholder, when the main image fails', () => {
+    setup()
+    const main = () => screen.getByRole('dialog').querySelector('img[width]')
+    fireEvent.error(main())
+    expect(main().getAttribute('src')).toBe('https://renders.scbridge.app/h0/512.webp')
+    fireEvent.error(main())
+    expect(main()).toBeNull()
+    expect(screen.getByText('Image unavailable')).toBeInTheDocument()
+    // Changing variant resets the failure state
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(main().getAttribute('src')).toBe('https://renders.scbridge.app/h1/2048.webp')
+  })
+
+  it('only sets aria-current on the selected thumbnail', () => {
+    setup()
+    const thumbs = screen.getAllByRole('button', { name: /^Show / })
+    expect(thumbs[0].getAttribute('aria-current')).toBe('true')
+    expect(thumbs[1].hasAttribute('aria-current')).toBe(false)
+  })
 })
