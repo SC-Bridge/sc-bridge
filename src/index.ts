@@ -126,7 +126,7 @@ app.use("*", async (c, next) => {
     "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' https://imagedelivery.net https://robertsspaceindustries.com " +
     "https://media.robertsspaceindustries.com https://cdn.robertsspaceindustries.com " +
-    "https://media.starcitizen.tools https://starcitizen.tools " +
+    "https://media.starcitizen.tools https://starcitizen.tools https://renders.scbridge.app " +
     "https://avatars.githubusercontent.com https://www.gravatar.com https://www.googletagmanager.com data:; " +
     // F249: gtag.js beacons /g/collect to www.google.com in some GA4 configs,
     // not the *.google-analytics.com / analytics.google.com hosts. Without

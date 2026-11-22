@@ -78,5 +78,12 @@ describe("Health & Status", () => {
       expect(res.headers.get("X-Frame-Options")).toBe("DENY");
       expect(res.headers.get("Cache-Control")).toBe("no-store");
     });
+
+    it("allows game renders from the renders origin in the CSP", async () => {
+      const res = await SELF.fetch("http://localhost/api/health");
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      const imgSrc = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith("img-src"));
+      expect(imgSrc).toContain("https://renders.scbridge.app");
+    });
   });
 });
