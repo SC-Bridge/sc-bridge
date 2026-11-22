@@ -25,7 +25,7 @@ function buildChain(urls) {
  * Shows an item image: game render first, then src, fallbackSrc and baseSrc.
  * `placeholderContent` (optional) replaces the default text placeholder, e.g. ShipImage's Rocket icon.
  */
-export default function ItemImage({
+function ItemImageInner({
   render,
   src,
   fallbackSrc,
@@ -116,4 +116,11 @@ export default function ItemImage({
       )}
     </div>
   )
+}
+
+// Keyed on the URL chain so a re-render with different sources starts from a clean loading state.
+export default function ItemImage(props) {
+  const { render, src, fallbackSrc, baseSrc, size = 512 } = props
+  const chainKey = [renderUrl(render, size), src, fallbackSrc, baseSrc].join('|')
+  return <ItemImageInner key={chainKey} {...props} />
 }

@@ -65,13 +65,44 @@ describe('ItemImage', () => {
   })
 })
 
+describe('ItemImage source changes', () => {
+  it('resets to loading with the new render after a total error', () => {
+    const { container, rerender } = render(<ItemImage render={R} alt="Thing" />)
+    fireEvent.error(container.querySelector('img'))
+    expect(screen.getByText('No image yet')).toBeInTheDocument()
+    rerender(<ItemImage render={{ ...R, hash: 'def' }} alt="Thing" />)
+    const img = container.querySelector('img')
+    expect(img.getAttribute('src')).toBe('https://renders.scbridge.app/def/512.webp')
+    expect(img.className).toContain('opacity-0')
+    expect(screen.queryByText('No image yet')).toBeNull()
+  })
+
+  it('resets to loading with the new src after a total error', () => {
+    const { container, rerender } = render(<ItemImage src="https://x/a.jpg" alt="Thing" />)
+    fireEvent.error(container.querySelector('img'))
+    expect(screen.getByText('No image yet')).toBeInTheDocument()
+    rerender(<ItemImage src="https://x/b.jpg" alt="Thing" />)
+    const img = container.querySelector('img')
+    expect(img.getAttribute('src')).toBe('https://x/b.jpg')
+    expect(img.className).toContain('opacity-0')
+  })
+
+  it('drops a stale loaded state when the source changes', () => {
+    const { container, rerender } = render(<ItemImage src="https://x/a.jpg" alt="Thing" />)
+    fireEvent.load(container.querySelector('img'))
+    expect(container.querySelector('img').className).toContain('opacity-100')
+    rerender(<ItemImage src="https://x/b.jpg" alt="Thing" />)
+    expect(container.querySelector('img').className).toContain('opacity-0')
+  })
+})
+
 describe('ShipImage wrapper', () => {
   it('keeps the Rocket placeholder and variant banner without a render', () => {
     const { container } = render(<ShipImage src="https://x/v.jpg" baseSrc="https://x/b.jpg" alt="Ship" />)
     fireEvent.error(container.querySelector('img'))
     fireEvent.load(container.querySelector('img'))
     expect(screen.getByText('Variant image unavailable')).toBeInTheDocument()
-    fireEvent.error(container.querySelector('img'))
+    expect(container.querySelector('svg')).toBeNull()
   })
 
   it('shows the Rocket icon placeholder on total failure', () => {
