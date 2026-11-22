@@ -3,6 +3,7 @@ import { env, SELF } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders, seedVehicle, seedFleetEntry } from "./helpers";
 import { toRenderRef } from "../src/lib/renders";
+import { armourSetRenderKey } from "../src/lib/loot-sets";
 
 const INSERT_SQL =
   "INSERT INTO item_renders (kind, item_key, variant, view, hash, width, height, source_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
@@ -362,6 +363,149 @@ describe("render on ship, paint and fleet rows", () => {
     expect(mine).toHaveLength(1);
     expect(mine[0].variant_count).toBe(2);
     expect(mine[0].render?.hash).toBe("s0s0s0s0s0s0s0s0");
+  });
+});
+
+describe("paint render matching is case-insensitive on class_name", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("a paint with a mixed-case class_name matches the lower-case variant", async () => {
+    const hull = await seedShip("zzr-case", "Zzr Case", "zzr_case");
+    await seedPaint("Zzr Case Shared", "zzr-case-shared", "Paint_Zzr_Shared", [hull]);
+    await env.DB.batch([renderRow("zzr_case", "paint_zzr_shared", "iso", "q0q0q0q0q0q0q0q0")]);
+
+    const onHull = await SELF.fetch("http://localhost/api/paints/ship/zzr-case");
+    const paints = (await onHull.json()) as Array<{ slug: string; render: Render }>;
+    expect(paints.find((p) => p.slug === "zzr-case-shared")!.render?.hash).toBe("q0q0q0q0q0q0q0q0");
+
+    const detail = await SELF.fetch("http://localhost/api/paints/zzr-case-shared");
+    const body = (await detail.json()) as { render: Render };
+    expect(body.render?.hash).toBe("q0q0q0q0q0q0q0q0");
+  });
+});
+
+// ── render on loot items and armour sets ─────────────────────────────
+//
+// Loot rows carry `render` from item_key = class_name, variant ''. An armour
+// set's render is keyed by its pieces' class_names (armourSetRenderKey).
+
+function lootRender(kind: string, itemKey: string, view: string, hash: string) {
+  return env.DB.prepare(INSERT_SQL).bind(kind, itemKey, "", view, hash, 1024, 2048, "4.10.3-live");
+}
+
+function lootRow(table: string, uuid: string, name: string, className: string, type: string, category: string) {
+  return env.DB
+    .prepare(`INSERT INTO ${table} (uuid, name, class_name, type, category, game_version_id) VALUES (?, ?, ?, ?, ?, 1)`)
+    .bind(uuid, name, className, type, category);
+}
+
+describe("render on loot items", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+    await env.DB.batch([
+      lootRow("loot_map", "zzr-loot-0001", "Zzr Jacket", "zzr_jacket_01", "Char_Clothing_Torso_1", "clothing"),
+      lootRow("loot_map", "zzr-loot-0002", "Zzr Medpen", "zzr_medpen_01", "FPS_Consumable", "consumable"),
+      lootRow("loot_map", "zzr-loot-0003", "Zzr Mixed Pistol", "ZZR_Mixed_Pistol", "WeaponPersonal", "weapon"),
+      lootRow("ptu_loot_map", "zzr-loot-0004", "Zzr PTU Rifle", "zzr_ptu_rifle", "WeaponPersonal", "weapon"),
+      lootRender("fps_clothing", "zzr_jacket_01", "worn_female", "f9f9f9f9f9f9f9f9"),
+      lootRender("fps_clothing", "zzr_jacket_01", "worn_male", "e8e8e8e8e8e8e8e8"),
+      lootRender("fps_weapon", "zzr_mixed_pistol", "side", "d7d7d7d7d7d7d7d7"),
+      lootRender("fps_weapon", "zzr_ptu_rifle", "side", "c6c6c6c6c6c6c6c6"),
+    ]);
+  });
+
+  it("GET /api/loot lists a clothing item once, with its worn_male render", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot");
+    expect(res.status).toBe(200);
+    const items = (await res.json()) as Array<{ uuid: string; render: Render }>;
+    const jacket = items.filter((i) => i.uuid === "zzr-loot-0001");
+    expect(jacket).toHaveLength(1);
+    expect(jacket[0].render).toEqual({ hash: "e8e8e8e8e8e8e8e8", width: 1024, height: 2048, view: "worn_male" });
+    expect(jacket[0]).not.toHaveProperty("render_hash");
+    expect(items.find((i) => i.uuid === "zzr-loot-0002")!.render).toBeNull();
+    expect(items.find((i) => i.uuid === "zzr-loot-0003")!.render?.hash).toBe("d7d7d7d7d7d7d7d7");
+  });
+
+  it("GET /api/loot?channel=PTU reads ptu_loot_map and still joins item_renders", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot?channel=PTU");
+    expect(res.status).toBe(200);
+    const items = (await res.json()) as Array<{ uuid: string; render: Render }>;
+    expect(items.find((i) => i.uuid === "zzr-loot-0004")!.render?.hash).toBe("c6c6c6c6c6c6c6c6");
+  });
+
+  it("GET /api/loot/:uuid returns render and render_variants_kind", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/zzr-loot-0001");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.render).toEqual({ hash: "e8e8e8e8e8e8e8e8", width: 1024, height: 2048, view: "worn_male" });
+    expect(body.render_variants_kind).toBe("fps_clothing");
+    expect(body).not.toHaveProperty("render_hash");
+  });
+
+  it("GET /api/loot/:uuid gives render and render_variants_kind null without a render", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/zzr-loot-0002");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.render).toBeNull();
+    expect(body.render_variants_kind).toBeNull();
+  });
+
+  it("GET /api/loot/:uuid?channel=PTU joins item_renders for a PTU item", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/zzr-loot-0004?channel=PTU");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect((body.render as Render)?.hash).toBe("c6c6c6c6c6c6c6c6");
+    expect(body.render_variants_kind).toBe("fps_weapon");
+  });
+});
+
+describe("armourSetRenderKey", () => {
+  it("lower-cases, drops undersuits, sorts and joins with a comma", () => {
+    expect(
+      armourSetRenderKey(
+        ["KAP_Combat_Heavy_Legs_01_01_01", "cds_undersuit_01_01_12", "kap_combat_heavy_core_01_01_01"],
+        new Set(["cds_undersuit_01_01_12"]),
+      ),
+    ).toBe("kap_combat_heavy_core_01_01_01,kap_combat_heavy_legs_01_01_01");
+  });
+
+  it("matches undersuit class_names case-insensitively", () => {
+    expect(armourSetRenderKey(["B_Core", "A_Legs", "CDS_Undersuit"], new Set(["cds_undersuit"]))).toBe("a_legs,b_core");
+  });
+});
+
+describe("render on armour sets", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+    const A = "INSERT INTO fps_armour (uuid, name, class_name, sub_type, game_version_id) VALUES (?, ?, ?, ?, 1)";
+    await env.DB.batch([
+      env.DB.prepare(A).bind("zzr-fa-1", "Zzr Armor Core", "ZZR_Armor_Core_01", "Medium"),
+      env.DB.prepare(A).bind("zzr-fa-2", "Zzr Armor Legs", "zzr_armor_legs_01", "Medium"),
+      env.DB.prepare(A).bind("zzr-fa-3", "Zzr Armor Undersuit", "zzr_undersuit_01", "UNDEFINED"),
+      lootRow("loot_map", "zzr-set-0001", "Zzr Armor Core", "ZZR_Armor_Core_01", "Char_Armor_Torso", "armour"),
+      lootRow("loot_map", "zzr-set-0002", "Zzr Armor Legs", "zzr_armor_legs_01", "Char_Armor_Legs", "armour"),
+      lootRow("loot_map", "zzr-set-0003", "Zzr Armor Undersuit", "zzr_undersuit_01", "Char_Armor_Undersuit", "undersuit"),
+      lootRow("loot_map", "zzr-set-0004", "Zzb Armor Core", "zzb_armor_core_01", "Char_Armor_Torso", "armour"),
+      lootRender("armour_set", "zzr_armor_core_01,zzr_armor_legs_01", "worn_female", "b5b5b5b5b5b5b5b5"),
+      lootRender("armour_set", "zzr_armor_core_01,zzr_armor_legs_01", "worn_male", "a4a4a4a4a4a4a4a4"),
+    ]);
+  });
+
+  it("GET /api/loot/sets/:setSlug returns the set render looked up by its piece key", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/sets/zzr-armor");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { pieces: unknown[]; render: Render };
+    expect(body.pieces).toHaveLength(3);
+    expect(body.render).toEqual({ hash: "a4a4a4a4a4a4a4a4", width: 1024, height: 2048, view: "worn_male" });
+  });
+
+  it("GET /api/loot/sets/:setSlug gives render: null when the set has no render", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/sets/zzb-armor");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { render: Render };
+    expect(body.render).toBeNull();
   });
 });
 

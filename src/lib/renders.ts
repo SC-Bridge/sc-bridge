@@ -38,6 +38,21 @@ export interface RenderCols {
 }
 
 /**
+ * The one place that says which view a card or list shows: iso, then side,
+ * then worn_male; worn_female never (the large view offers both worn views).
+ * `renderViewFilter` limits rows to those views and `renderViewRank` orders
+ * them; use both on the same item_renders alias.
+ */
+export function renderViewFilter(alias: string): string {
+  return `${alias}.view IN ('iso', 'side', 'worn_male')`;
+}
+
+/** ORDER BY expression for `renderViewFilter`: lowest is preferred. */
+export function renderViewRank(alias: string): string {
+  return `CASE ${alias}.view WHEN 'iso' THEN 0 WHEN 'side' THEN 1 ELSE 2 END`;
+}
+
+/**
  * LEFT JOIN that attaches at most one render row to each result row.
  *
  * `itemKeyExpr` and `variantExpr` are SQL expressions from the outer query
@@ -46,8 +61,8 @@ export interface RenderCols {
  * `item_key`, so the (item_key, variant) index is still used.
  *
  * The match is a correlated lookup of one id, not a plain join, so an item
- * with renders in several views can never multiply rows. The view picked
- * for cards is iso, then side, then worn_male; worn_female never.
+ * with renders in several views can never multiply rows. The view is picked
+ * by `renderViewFilter` / `renderViewRank`.
  * Joined on item_key and variant, never on kind.
  */
 export function renderJoin(alias: string, itemKeyExpr: string, variantExpr = "''"): string {
@@ -55,8 +70,8 @@ export function renderJoin(alias: string, itemKeyExpr: string, variantExpr = "''
     SELECT _ir.id FROM item_renders _ir
     WHERE _ir.item_key = lower(${itemKeyExpr})
       AND _ir.variant = lower(${variantExpr})
-      AND _ir.view IN ('iso', 'side', 'worn_male')
-    ORDER BY CASE _ir.view WHEN 'iso' THEN 0 WHEN 'side' THEN 1 ELSE 2 END
+      AND ${renderViewFilter("_ir")}
+    ORDER BY ${renderViewRank("_ir")}
     LIMIT 1)`;
 }
 

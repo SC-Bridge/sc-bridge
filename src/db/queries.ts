@@ -15,12 +15,14 @@ import type {
   PaintHullRender,
   RenderRef,
 } from "../lib/types";
-import { extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
+import { armourSetRenderKey, extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
 import { ptuShadowExists } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
 import { buyPriceSQL, sellPriceSQL, priceSourceSQL, pricedSQL, buyablePricedSQL } from "../lib/pricing-sql";
-import { renderCols, renderJoin, toRenderRef, withRender, type RenderCols } from "../lib/renders";
+import {
+  renderCols, renderJoin, renderViewFilter, renderViewRank, toRenderRef, withRender, type RenderCols,
+} from "../lib/renders";
 
 // --- Loot summary stats (category-aware card display) ---
 // LEFT JOINs to detail tables for key stats shown on item cards.
@@ -856,9 +858,9 @@ function firstHullRenderJoin(alias: string): string {
     JOIN vehicles _hv ON _hv.id = _hpv.vehicle_id
     JOIN item_renders _hr ON _hr.item_key = lower(_hv.class_name)
       AND _hr.variant = lower(p.class_name)
-      AND _hr.view IN ('iso', 'side', 'worn_male')
+      AND ${renderViewFilter("_hr")}
     WHERE _hpv.paint_id = p.id
-    ORDER BY _hv.name, CASE _hr.view WHEN 'iso' THEN 0 WHEN 'side' THEN 1 ELSE 2 END
+    ORDER BY _hv.name, ${renderViewRank("_hr")}
     LIMIT 1)`;
 }
 
@@ -1422,14 +1424,24 @@ export async function getGameVersions(db: D1Database): Promise<{ code: string; c
   return result.results;
 }
 
-export async function getLootItems(db: D1Database, isPTU = false): Promise<LootItem[]> {
+/**
+ * Every listable loot item with its stock render (item_key = class_name,
+ * variant ''). item_renders has no PTU shadow, so both channels join the
+ * same table; renderJoin attaches at most one row per item.
+ */
+export async function getLootItems(
+  db: D1Database,
+  isPTU = false,
+): Promise<Array<LootItem & { render: RenderRef | null }>> {
   const lm = isPTU ? "ptu_loot_map" : "loot_map";
   const sql = `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         lm.category, lm.manufacturer_name,
         ${lootHasFlags(isPTU)},
-        ${LOOT_SUMMARY_COLS}
+        ${LOOT_SUMMARY_COLS},
+        ${renderCols("r")}
       FROM ${lm} lm
       ${lootSummaryJoins(isPTU)}
+      ${renderJoin("r", "lm.class_name")}
       WHERE lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
         AND (lm.type IS NOT NULL AND lm.type != '' OR lm.category IS NOT NULL)
@@ -1451,8 +1463,8 @@ export async function getLootItems(db: D1Database, isPTU = false): Promise<LootI
         AND (lm.class_name IS NULL OR lm.class_name NOT LIKE '%_placeholder_%')
         AND NOT (lm.class_name LIKE 'vncl_%' AND lm.category IN ('ship_component', 'ship_weapon'))
       ORDER BY lm.name ASC`;
-  const result = await db.prepare(sql).all();
-  return result.results as unknown as LootItem[];
+  const result = await db.prepare(sql).all<LootItem & RenderCols>();
+  return result.results.map(withRender);
 }
 
 /**
@@ -1527,14 +1539,17 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
   // stay unprefixed.
   const t = (name: string) => (isPTU ? `ptu_${name}` : name);
 
-  const sql = `SELECT lm.*
+  // The stock render (variant '') rides along; render_variants_kind is that
+  // row's kind, which the page passes to GET /api/renders/:kind/:itemKey.
+  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind
       FROM ${t("loot_map")} lm
+      ${renderJoin("r", "lm.class_name")}
       WHERE lm.uuid = ?`;
-  const row = await db.prepare(sql).bind(uuid).first();
+  const row = await db.prepare(sql).bind(uuid).first<Record<string, unknown> & RenderCols>();
   if (!row) return null;
 
   // Fetch linked item details based on which FK is set
-  const item = row as Record<string, unknown>;
+  const item: Record<string, unknown> = withRender(row);
   let details: Record<string, unknown> | null = null;
 
   if (item.fps_weapon_id) {
@@ -2244,6 +2259,8 @@ export interface LootSetDetail {
   setName: string;
   manufacturer: string | null;
   pieces: Record<string, unknown>[];
+  /** The set's render (item_renders keyed by armourSetRenderKey), or null. */
+  render: RenderRef | null;
 }
 
 export async function getLootSets(
@@ -2397,7 +2414,48 @@ export async function getLootSetBySlug(
     return { ...item, item_details: details, locations };
   });
 
-  return { setName, manufacturer, pieces };
+  const render = await getArmourSetRender(
+    db,
+    matchingItems.map((i) => i.class_name as string | null).filter((c): c is string => !!c),
+    fpsArmour,
+  );
+
+  return { setName, manufacturer, pieces, render };
+}
+
+/**
+ * The render of an armour set, keyed by `armourSetRenderKey` of its pieces.
+ * Undersuits (fps_armour sub_type 'UNDEFINED') are looked up in `fpsArmour`
+ * (fps_armour or its PTU shadow) and left out of the key. item_renders has
+ * no PTU shadow.
+ */
+async function getArmourSetRender(
+  db: D1Database,
+  pieceClassNames: string[],
+  fpsArmour: string,
+): Promise<RenderRef | null> {
+  if (pieceClassNames.length === 0) return null;
+  const lowered = [...new Set(pieceClassNames.map((c) => c.toLowerCase()))];
+  const undersuits = await db
+    .prepare(
+      `SELECT DISTINCT lower(class_name) AS class_name FROM ${fpsArmour}
+       WHERE sub_type = 'UNDEFINED' AND lower(class_name) IN (${lowered.map(() => "?").join(",")})`,
+    )
+    .bind(...lowered)
+    .all<{ class_name: string }>();
+  const key = armourSetRenderKey(lowered, undersuits.results.map((u) => u.class_name));
+  if (!key) return null;
+  const row = await db
+    .prepare(
+      `SELECT r.hash AS render_hash, r.width AS render_width, r.height AS render_height, r.view AS render_view
+       FROM item_renders r
+       WHERE r.item_key = ? AND r.variant = '' AND ${renderViewFilter("r")}
+       ORDER BY ${renderViewRank("r")}
+       LIMIT 1`,
+    )
+    .bind(key)
+    .first<RenderCols>();
+  return row ? toRenderRef(row) : null;
 }
 
 /**

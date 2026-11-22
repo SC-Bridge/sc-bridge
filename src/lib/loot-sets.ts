@@ -70,6 +70,26 @@ export function makeSetSlug(setName: string): string {
   return slugFromName(setName);
 }
 
+/**
+ * item_renders key for an armour set render: the pieces' class_names,
+ * lower-cased, undersuits left out, sorted and joined with ",". The render
+ * publisher builds the same key from the pieces the exporter dressed the
+ * body in, minus the undersuit it adds itself, so the two must match byte
+ * for byte.
+ *
+ * `undersuitClassNames` are the class_names that are undersuits (fps_armour
+ * rows with sub_type 'UNDEFINED', the rule the publisher uses); the caller
+ * looks them up. Compared lower-cased. A class_name listed twice counts once.
+ */
+export function armourSetRenderKey(
+  pieceClassNames: string[],
+  undersuitClassNames: Iterable<string> = [],
+): string {
+  const undersuits = new Set([...undersuitClassNames].map((c) => c.toLowerCase()));
+  const pieces = new Set(pieceClassNames.map((c) => c.toLowerCase()));
+  return [...pieces].filter((c) => !undersuits.has(c)).sort().join(",");
+}
+
 /** Leading stack quantity on a reward entry, e.g. "20x " in "20x Rifle Battery". */
 const REWARD_QUANTITY_PREFIX = /^\d+x\s+/;
 
