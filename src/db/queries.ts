@@ -3757,3 +3757,40 @@ export async function renameChat(db: D1Database, userId: string, chatId: number,
     .run();
   return (r.meta.changes ?? 0) > 0;
 }
+
+export interface RenderVariant {
+  variant: string;
+  view: string;
+  hash: string;
+  width: number;
+  height: number;
+  name: string | null;
+}
+
+/**
+ * Every render of one item (all views, stock and variants). A vehicle paint is
+ * named from `paints`; a weapon finish from its own FPS record in the default
+ * LIVE game version. Joined on item_key, never kind. Stock first, then by name.
+ */
+export async function getRendersForItem(db: D1Database, itemKey: string): Promise<RenderVariant[]> {
+  const liveVersions = `SELECT id FROM game_versions WHERE channel = 'LIVE' AND is_default = 1`;
+  const finishName = (table: string) =>
+    `(SELECT t.name FROM ${table} t WHERE t.class_name = r.variant
+        AND t.game_version_id IN (${liveVersions}) ORDER BY t.game_version_id DESC LIMIT 1)`;
+  const { results } = await db
+    .prepare(
+      `SELECT r.variant, r.view, r.hash, r.width, r.height,
+        CASE WHEN r.variant = '' THEN NULL ELSE COALESCE(
+          (SELECT p.name FROM paints p WHERE p.class_name = r.variant ORDER BY p.id LIMIT 1),
+          ${finishName("fps_weapons")},
+          ${finishName("fps_melee")},
+          ${finishName("fps_attachments")}
+        ) END AS name
+      FROM item_renders r
+      WHERE r.item_key = ?
+      ORDER BY (r.variant <> ''), name, r.variant, r.view`,
+    )
+    .bind(itemKey)
+    .all<RenderVariant>();
+  return results;
+}

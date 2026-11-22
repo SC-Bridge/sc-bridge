@@ -8,6 +8,14 @@ export interface RateLimiter {
   limit(args: { key: string }): Promise<{ success: boolean }>;
 }
 
+/** A published render as the API hands it to the frontend. */
+export interface RenderRef {
+  hash: string;
+  width: number;
+  height: number;
+  view: string;
+}
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
