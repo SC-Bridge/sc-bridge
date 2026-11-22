@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { setupTestDatabase } from "./apply-migrations";
 import { createTestUser, authHeaders, seedVehicle, seedFleetEntry } from "./helpers";
-import { toRenderRef } from "../src/lib/renders";
+import { RENDER_KINDS, toRenderRef } from "../src/lib/renders";
+import { renderRoutes } from "../src/routes/renders";
 import { armourSetRenderKey } from "../src/lib/loot-sets";
 
 const INSERT_SQL =
@@ -59,10 +60,33 @@ describe("GET /api/renders/:kind/:itemKey", () => {
     });
   });
 
-  it("returns an empty list for an unknown item", async () => {
+  it("returns 404 for an unknown item and caches nothing", async () => {
+    // Mount the routes with a real cache (ENVIRONMENT is not "test") and a KV
+    // that records writes; a known item is the control that writes do happen.
+    const puts: string[] = [];
+    const kv = {
+      get: async () => null,
+      put: async (key: string) => { puts.push(key); },
+    };
+    const pending: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => { pending.push(p); }, passThroughOnException: () => {}, props: {} };
+    const bindings = { DB: env.DB, SC_BRIDGE_CACHE: kv, ENVIRONMENT: "production" } as unknown as Record<string, unknown>;
+    const app = renderRoutes();
+
+    const unknown = await app.request("/vehicle/nope_nothing", {}, bindings, ctx as unknown as ExecutionContext);
+    expect(unknown.status).toBe(404);
+    await Promise.all(pending);
+    expect(puts).toEqual([]);
+
+    const known = await app.request("/vehicle/aegs_gladius", {}, bindings, ctx as unknown as ExecutionContext);
+    expect(known.status).toBe(200);
+    await Promise.all(pending);
+    expect(puts).toEqual(["renders:item:vehicle:aegs_gladius"]);
+  });
+
+  it("returns 404 for an unknown item through the app", async () => {
     const res = await SELF.fetch("http://localhost/api/renders/vehicle/nope_nothing");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ variants: [] });
+    expect(res.status).toBe(404);
   });
 
   it("rejects an unknown kind with 400", async () => {
@@ -84,11 +108,43 @@ describe("GET /api/renders/:kind/:itemKey", () => {
     expect(body.variants[1]).toMatchObject({ variant: "behr_rifle_camo", name: "Camo Finish" });
   });
 
-  it("accepts a long comma-joined armour set key", async () => {
-    const key = Array.from({ length: 12 }, (_, i) => `zzr_long_armour_piece_name_${i}_xxxxxxxxxxxx`).join(",");
+  it("accepts a long comma-joined armour set key of up to 400 characters", async () => {
+    const key = Array.from({ length: 9 }, (_, i) => `zzr_long_armour_piece_name_${i}_xxxxxxxxxxxx`).join(",");
     expect(key.length).toBeGreaterThan(200);
+    expect(key.length).toBeLessThanOrEqual(400);
+    await env.DB.prepare(INSERT_SQL).bind("armour_set", key, "", "worn_male", "llllllllllllllll", 1024, 2048, "4.10.3-live").run();
     const res = await SELF.fetch(`http://localhost/api/renders/armour_set/${encodeURIComponent(key)}`);
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { variants: { hash: string }[] };
+    expect(body.variants.map((v) => v.hash)).toEqual(["llllllllllllllll"]);
+  });
+
+  it("rejects an item key longer than 400 characters with 400", async () => {
+    const key = "a".repeat(401);
+    const res = await SELF.fetch(`http://localhost/api/renders/armour_set/${key}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an item key with characters outside a-z 0-9 _ , . - with 400", async () => {
+    for (const key of ["AEGS_Gladius", "aegs gladius", "aegs:gladius", "aegs/gladius"]) {
+      const res = await SELF.fetch(`http://localhost/api/renders/vehicle/${encodeURIComponent(key)}`);
+      expect(res.status, key).toBe(400);
+    }
+  });
+
+  it("names a finish from loot_map when no paint or FPS record names it", async () => {
+    await env.DB.batch([
+      env.DB.prepare(INSERT_SQL).bind("ship_weapon", "zzr_cannon_s3", "", "iso", "gggggggggggggggg", 2048, 1536, "4.10.3-live"),
+      env.DB.prepare(INSERT_SQL).bind("ship_weapon", "zzr_cannon_s3", "zzr_cannon_s3_gold", "iso", "hhhhhhhhhhhhhhhh", 2048, 1536, "4.10.3-live"),
+      env.DB.prepare("INSERT INTO loot_map (uuid, name, class_name, type, category, game_version_id) VALUES (?, ?, ?, ?, ?, 1)")
+        .bind("zzr-cannon-gold", "Zzr Cannon Gold", "zzr_cannon_s3_gold", "WeaponGun", "ship_weapon"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/renders/ship_weapon/zzr_cannon_s3");
+    const body = (await res.json()) as { variants: { variant: string; name: string | null }[] };
+    expect(body.variants).toEqual([
+      expect.objectContaining({ variant: "", name: null }),
+      expect.objectContaining({ variant: "zzr_cannon_s3_gold", name: "Zzr Cannon Gold" }),
+    ]);
   });
 });
 
@@ -181,7 +237,8 @@ describe("render on ship, paint and fleet rows", () => {
     expect(both[0].render).toEqual({ hash: "c0c0c0c0c0c0c0c0", width: 2048, height: 1536, view: "iso" });
     expect(both[0].image_url).toBe("https://example.test/zzr-list-both.jpg");
     expect(ships.find((s) => s.slug === "zzr-list-side")?.render?.view).toBe("side");
-    expect(ships.find((s) => s.slug === "zzr-list-female")?.render).toBeNull();
+    // worn_female is ranked last, not excluded: a female-only item still shows it.
+    expect(ships.find((s) => s.slug === "zzr-list-female")?.render?.hash).toBe("e3e3e3e3e3e3e3e3");
   });
 
   it("GET /api/paints/ship/:slug returns each paint's render on that hull", async () => {
@@ -421,7 +478,60 @@ describe("render on loot items", () => {
       lootRender("fps_clothing", "zzr_jacket_01", "worn_male", "e8e8e8e8e8e8e8e8"),
       lootRender("fps_weapon", "zzr_mixed_pistol", "side", "d7d7d7d7d7d7d7d7"),
       lootRender("fps_weapon", "zzr_ptu_rifle", "side", "c6c6c6c6c6c6c6c6"),
+      // Female-only clothing.
+      lootRow("loot_map", "zzr-loot-0005", "Zzr Dress", "zzr_dress_01", "Char_Clothing_Torso_1", "clothing"),
+      lootRender("fps_clothing", "zzr_dress_01", "worn_female", "b4b4b4b4b4b4b4b4"),
+      // A weapon finish is its own loot row but is published under the base
+      // weapon's key, with the finish class_name as the variant.
+      lootRow("loot_map", "zzr-loot-0006", "Zzr Rifle", "zzr_rifle_01", "WeaponPersonal", "weapon"),
+      lootRow("loot_map", "zzr-loot-0007", "Zzr Rifle Black", "ZZR_Rifle_01_Black02", "WeaponPersonal", "weapon"),
+      lootRender("fps_weapon", "zzr_rifle_01", "side", "a3a3a3a3a3a3a3a3"),
+      env.DB.prepare(INSERT_SQL).bind("fps_weapon", "zzr_rifle_01", "zzr_rifle_01_black02", "worn_male", "a5a5a5a5a5a5a5a5", 1024, 2048, "4.10.3-live"),
+      env.DB.prepare(INSERT_SQL).bind("fps_weapon", "zzr_rifle_01", "zzr_rifle_01_black02", "side", "a6a6a6a6a6a6a6a6", 2048, 1024, "4.10.3-live"),
+      // An item with its own stock render keeps it even when another item
+      // publishes a variant of the same name.
+      lootRow("loot_map", "zzr-loot-0008", "Zzr Own Stock", "zzr_own_stock", "WeaponPersonal", "weapon"),
+      lootRender("fps_weapon", "zzr_own_stock", "side", "a7a7a7a7a7a7a7a7"),
+      env.DB.prepare(INSERT_SQL).bind("fps_weapon", "zzr_other_base", "zzr_own_stock", "iso", "a8a8a8a8a8a8a8a8", 2048, 1024, "4.10.3-live"),
     ]);
+  });
+
+  it("GET /api/loot gives a female-only clothing item its worn_female render", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot");
+    const items = (await res.json()) as Array<{ uuid: string; render: Render }>;
+    const dress = items.filter((i) => i.uuid === "zzr-loot-0005");
+    expect(dress).toHaveLength(1);
+    expect(dress[0].render).toEqual({ hash: "b4b4b4b4b4b4b4b4", width: 1024, height: 2048, view: "worn_female" });
+  });
+
+  it("GET /api/loot gives a weapon finish the base weapon's render of that finish", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot");
+    type Row = { uuid: string; render: Render; render_item_key: string | null; render_variant: string | null; render_variants_kind: string | null };
+    const items = (await res.json()) as Row[];
+    const finish = items.filter((i) => i.uuid === "zzr-loot-0007");
+    expect(finish).toHaveLength(1);
+    expect(finish[0].render).toEqual({ hash: "a6a6a6a6a6a6a6a6", width: 2048, height: 1024, view: "side" });
+    expect(finish[0].render_item_key).toBe("zzr_rifle_01");
+    expect(finish[0].render_variant).toBe("zzr_rifle_01_black02");
+    expect(finish[0].render_variants_kind).toBe("fps_weapon");
+    const base = items.find((i) => i.uuid === "zzr-loot-0006")!;
+    expect(base.render?.hash).toBe("a3a3a3a3a3a3a3a3");
+    expect(base.render_item_key).toBe("zzr_rifle_01");
+    expect(base.render_variant).toBe("");
+    const own = items.filter((i) => i.uuid === "zzr-loot-0008");
+    expect(own).toHaveLength(1);
+    expect(own[0].render?.hash).toBe("a7a7a7a7a7a7a7a7");
+    expect(own[0].render_item_key).toBe("zzr_own_stock");
+  });
+
+  it("GET /api/loot/:uuid gives a weapon finish the base weapon's render of that finish", async () => {
+    const res = await SELF.fetch("http://localhost/api/loot/zzr-loot-0007");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect((body.render as Render)?.hash).toBe("a6a6a6a6a6a6a6a6");
+    expect(body.render_item_key).toBe("zzr_rifle_01");
+    expect(body.render_variant).toBe("zzr_rifle_01_black02");
+    expect(body.render_variants_kind).toBe("fps_weapon");
   });
 
   it("GET /api/loot lists a clothing item once, with its worn_male render", async () => {
@@ -482,6 +592,11 @@ describe("armourSetRenderKey", () => {
     ).toBe("kap_combat_heavy_core_01_01_01,kap_combat_heavy_legs_01_01_01");
   });
 
+  // Shared parity vector: scripts/renders/link.py armour_set_key must give the same.
+  it("dedupes pieces case-insensitively (parity vector with the publisher)", () => {
+    expect(armourSetRenderKey(["KAP_Arms", "kap_arms", "kap_core", "UndS"], ["unds"])).toBe("kap_arms,kap_core");
+  });
+
   it("matches undersuit class_names case-insensitively", () => {
     expect(armourSetRenderKey(["B_Core", "A_Legs", "CDS_Undersuit"], new Set(["cds_undersuit"]))).toBe("a_legs,b_core");
   });
@@ -519,6 +634,16 @@ describe("render on armour sets", () => {
     const body = (await res.json()) as { render: Render; render_item_key: string | null };
     expect(body.render).toBeNull();
     expect(body.render_item_key).toBeNull();
+  });
+});
+
+describe("RENDER_KINDS", () => {
+  it("is exactly the 17 kinds the publisher writes", () => {
+    expect([...RENDER_KINDS]).toEqual([
+      "vehicle", "ship_weapon", "fps_weapon", "fps_melee", "fps_attachment", "fps_armour",
+      "armour_set", "fps_clothing", "consumable", "vehicle_component", "ship_missile",
+      "carryable", "prop", "fps_utility", "cargo_crate", "storage_container", "harvestable",
+    ]);
   });
 });
 

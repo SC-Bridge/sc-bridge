@@ -1252,7 +1252,8 @@ export default function ShipDetail() {
   const { data: ship, loading, error, refetch } = useShip(slug)
   const { data: session } = useSession()
   const isAuthed = !!session?.user
-  const [viewerOpen, setViewerOpen] = useState(false)
+  // A link with ?render=<variant> opens the large view with that variant selected.
+  const [viewerOpen, setViewerOpen] = useState(() => searchParams.has('render'))
 
   if (loading) return <LoadingState message="Loading ship data..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />

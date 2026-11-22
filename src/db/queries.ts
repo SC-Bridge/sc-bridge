@@ -21,7 +21,7 @@ import { ptuShadowExists } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
 import { buyPriceSQL, sellPriceSQL, priceSourceSQL, pricedSQL, buyablePricedSQL } from "../lib/pricing-sql";
 import {
-  renderCols, renderJoin, renderViewFilter, renderViewRank, toRenderRef, withRender, type RenderCols,
+  lootRenderJoin, renderCols, renderJoin, renderViewFilter, renderViewRank, toRenderRef, withRender, type RenderCols,
 } from "../lib/renders";
 
 // --- Loot summary stats (category-aware card display) ---
@@ -1425,9 +1425,10 @@ export async function getGameVersions(db: D1Database): Promise<{ code: string; c
 }
 
 /**
- * Every listable loot item with its stock render (item_key = class_name,
- * variant ''). item_renders has no PTU shadow, so both channels join the
- * same table; renderJoin attaches at most one row per item.
+ * Every listable loot item with its render (see lootRenderJoin: the stock
+ * render, or for a weapon finish the base weapon's render of that finish).
+ * item_renders has no PTU shadow, so both channels join the same table;
+ * lootRenderJoin attaches at most one row per item.
  */
 export async function getLootItems(
   db: D1Database,
@@ -1438,10 +1439,11 @@ export async function getLootItems(
         lm.category, lm.manufacturer_name,
         ${lootHasFlags(isPTU)},
         ${LOOT_SUMMARY_COLS},
-        ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
+        ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+        r.variant AS render_variant
       FROM ${lm} lm
       ${lootSummaryJoins(isPTU)}
-      ${renderJoin("r", "lm.class_name")}
+      ${lootRenderJoin("r", "lm.class_name")}
       WHERE lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
         AND (lm.type IS NOT NULL AND lm.type != '' OR lm.category IS NOT NULL)
@@ -1539,11 +1541,13 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
   // stay unprefixed.
   const t = (name: string) => (isPTU ? `ptu_${name}` : name);
 
-  // The stock render (variant '') rides along; render_variants_kind is that
-  // row's kind, which the page passes to GET /api/renders/:kind/:itemKey.
-  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
+  // The render rides along (lootRenderJoin: stock, or the base weapon's render
+  // of this finish). The page passes render_variants_kind + render_item_key to
+  // GET /api/renders/:kind/:itemKey and preselects render_variant.
+  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+        r.variant AS render_variant
       FROM ${t("loot_map")} lm
-      ${renderJoin("r", "lm.class_name")}
+      ${lootRenderJoin("r", "lm.class_name")}
       WHERE lm.uuid = ?`;
   const row = await db.prepare(sql).bind(uuid).first<Record<string, unknown> & RenderCols>();
   if (!row) return null;
@@ -3888,7 +3892,9 @@ export interface RenderVariant {
 /**
  * Every render of one item (all views, stock and variants). A vehicle paint is
  * named from `paints`; a weapon finish from its own FPS record in the default
- * LIVE game version. Joined on item_key, never kind. Stock first, then by name.
+ * LIVE game version, else from its loot_map row (ship weapons and anything
+ * else without an FPS record). Joined on item_key, never kind. Stock first,
+ * then by name.
  */
 export async function getRendersForItem(db: D1Database, itemKey: string): Promise<RenderVariant[]> {
   const liveVersions = `SELECT id FROM game_versions WHERE channel = 'LIVE' AND is_default = 1`;
@@ -3902,7 +3908,8 @@ export async function getRendersForItem(db: D1Database, itemKey: string): Promis
           (SELECT p.name FROM paints p WHERE p.class_name = r.variant ORDER BY p.id LIMIT 1),
           ${finishName("fps_weapons")},
           ${finishName("fps_melee")},
-          ${finishName("fps_attachments")}
+          ${finishName("fps_attachments")},
+          (SELECT lm.name FROM loot_map lm WHERE lm.class_name = r.variant LIMIT 1)
         ) END AS name
       FROM item_renders r
       WHERE r.item_key = ?

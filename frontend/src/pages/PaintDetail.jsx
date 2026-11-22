@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Palette, Rocket, AlertCircle } from 'lucide-react'
 import { usePaintDetail } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
@@ -10,12 +10,17 @@ import ItemImage from '../components/ItemImage'
 import RenderViewer from '../components/RenderViewer'
 import EmptyState from '../components/EmptyState'
 
+const FIRST_HULL = 'first'
+
 export default function PaintDetail() {
   const { slug } = useParams()
   const decoded = slug ? decodeURIComponent(slug) : ''
   const { data, loading, error, refetch } = usePaintDetail(decoded)
+  const [searchParams] = useSearchParams()
   // The hull whose large view is open (an entry of data.hull_renders), or null.
-  const [viewerHull, setViewerHull] = useState(null)
+  // A link with ?render=<variant> opens the first hull's view (FIRST_HULL until
+  // the paint has loaded); the viewer selects that variant from the URL.
+  const [viewerHull, setViewerHull] = useState(() => (searchParams.has('render') ? FIRST_HULL : null))
 
   if (loading) return <LoadingState message="Loading paint..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -39,6 +44,7 @@ export default function PaintDetail() {
   const hero = data.image_url || data.image_url_large || data.image_url_medium || data.image_url_small
   const hullRenders = data.hull_renders || []
   const renderBySlug = new Map(hullRenders.map(h => [h.vehicle_slug, h.render]))
+  const openHull = viewerHull === FIRST_HULL ? hullRenders[0] ?? null : viewerHull
 
   return (
     <div className="space-y-5 animate-fade-in-up">
@@ -154,12 +160,12 @@ export default function PaintDetail() {
         </div>
       </div>
 
-      {viewerHull && (
+      {openHull && (
         <RenderViewer
           kind="vehicle"
-          itemKey={viewerHull.item_key}
+          itemKey={openHull.item_key}
           initialVariant={data.class_name?.toLowerCase() ?? ''}
-          title={`${data.name} on ${viewerHull.vehicle_name}`}
+          title={`${data.name} on ${openHull.vehicle_name}`}
           onClose={() => setViewerHull(null)}
         />
       )}

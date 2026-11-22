@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Shield, FileText } from 'lucide-react'
 import { useLootSet, useLootCollection, setLootCollectionQuantity } from '../hooks/useAPI'
 import { useSession } from '../lib/auth-client'
@@ -170,7 +170,9 @@ export default function ArmorSetDetail() {
   const { setSlug } = useParams()
   const { data: session } = useSession()
   const isAuthed = !!session?.user
-  const [viewerOpen, setViewerOpen] = useState(false)
+  const [searchParams] = useSearchParams()
+  // A link with ?render=<variant> opens the large view with that variant selected.
+  const [viewerOpen, setViewerOpen] = useState(() => searchParams.has('render'))
 
   const { data: set, loading, error, refetch } = useLootSet(setSlug)
   const { data: collection, refetch: refetchCollection } = useLootCollection(isAuthed)

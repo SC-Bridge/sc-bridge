@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS item_renders (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   kind           TEXT NOT NULL,            -- 'vehicle', 'fps_weapon', 'armour_set', ...
-  item_key       TEXT NOT NULL,            -- class_name; armour sets use their slug
+  item_key       TEXT NOT NULL,            -- class_name; armour sets use the sorted, comma-joined lower-case piece class_names (undersuits excluded)
   variant        TEXT NOT NULL DEFAULT '', -- '' = stock; a paint or finish class_name otherwise
   view           TEXT NOT NULL,            -- 'iso' | 'side' | 'worn_male' | 'worn_female'
   hash           TEXT NOT NULL,            -- R2 key prefix
