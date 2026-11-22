@@ -4,6 +4,7 @@ import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate } from "../lib/validation";
 import { getOrgMembership, canManageOp } from "../lib/org-auth";
 import { calculatePayouts, type ParticipantInput } from "../lib/ops-payout";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 
 /** Parse an integer route param, returning null if not a valid number */
 function parseIntParam(c: Context, name: string): number | null {
@@ -157,14 +158,16 @@ export function opsRoutes() {
         `SELECT s.*, uf.custom_name, v.name as vehicle_name, v.slug as vehicle_slug,
           v.image_url, v.focus, v.size_label,
           m.name as manufacturer_name,
-          u.name as owner_name
+          u.name as owner_name,
+          ${renderCols("ir")}
          FROM org_op_ships s
          JOIN user_fleet uf ON uf.id = s.user_fleet_id
          JOIN vehicles v ON v.id = uf.vehicle_id
          LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
          JOIN user u ON u.id = s.owner_user_id
+         ${renderJoin("ir", "v.class_name")}
          WHERE s.org_op_id = ?`,
-      ).bind(opId).all(),
+      ).bind(opId).all<RenderCols>(),
       db.prepare(
         `SELECT e.*, u.name as logged_by_name
          FROM org_op_earnings e
@@ -191,7 +194,7 @@ export function opsRoutes() {
     return c.json({
       op,
       participants: participants.results,
-      ships: ships.results,
+      ships: ships.results.map(withRender),
       earnings: earnings.results,
       capital: capital.results,
       payouts: payouts.results,

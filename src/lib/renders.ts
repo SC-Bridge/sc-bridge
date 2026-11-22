@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RenderRef } from "./types";
 
 /** Every kind of item that can have a published render. */
 export const RENDER_KINDS = [
@@ -24,3 +25,60 @@ export const RENDER_KINDS = [
 export type RenderKind = (typeof RENDER_KINDS)[number];
 
 export const RenderKindSchema = z.enum(RENDER_KINDS);
+
+/**
+ * The render_* columns a query selects through `renderJoin` + `renderCols`.
+ * They are folded into `render` by `toRenderRef` / `withRender`.
+ */
+export interface RenderCols {
+  render_hash: string | null;
+  render_width: number | null;
+  render_height: number | null;
+  render_view: string | null;
+}
+
+/**
+ * LEFT JOIN that attaches at most one render row to each result row.
+ *
+ * `itemKeyExpr` and `variantExpr` are SQL expressions from the outer query
+ * (e.g. `v.class_name`, `p.class_name`). Both are lower-cased: item_renders
+ * keys are lower-case class_names. lower() wraps the outer value, not
+ * `item_key`, so the (item_key, variant) index is still used.
+ *
+ * The match is a correlated lookup of one id, not a plain join, so an item
+ * with renders in several views can never multiply rows. The view picked
+ * for cards is iso, then side, then worn_male; worn_female never.
+ * Joined on item_key and variant, never on kind.
+ */
+export function renderJoin(alias: string, itemKeyExpr: string, variantExpr = "''"): string {
+  return `LEFT JOIN item_renders ${alias} ON ${alias}.id = (
+    SELECT _ir.id FROM item_renders _ir
+    WHERE _ir.item_key = lower(${itemKeyExpr})
+      AND _ir.variant = lower(${variantExpr})
+      AND _ir.view IN ('iso', 'side', 'worn_male')
+    ORDER BY CASE _ir.view WHEN 'iso' THEN 0 WHEN 'side' THEN 1 ELSE 2 END
+    LIMIT 1)`;
+}
+
+/** SELECT list for the row joined by `renderJoin(alias, …)`. */
+export function renderCols(alias: string): string {
+  return `${alias}.hash AS render_hash, ${alias}.width AS render_width,
+    ${alias}.height AS render_height, ${alias}.view AS render_view`;
+}
+
+/** Fold the render_* columns into a RenderRef; null when no render matched. */
+export function toRenderRef(row: RenderCols): RenderRef | null {
+  if (row.render_hash == null) return null;
+  return {
+    hash: row.render_hash,
+    width: row.render_width as number,
+    height: row.render_height as number,
+    view: row.render_view as string,
+  };
+}
+
+/** Replace a row's render_* columns with a single `render` field. */
+export function withRender<T extends RenderCols>(row: T): Omit<T, keyof RenderCols> & { render: RenderRef | null } {
+  const { render_hash, render_width, render_height, render_view, ...rest } = row;
+  return { ...rest, render: toRenderRef({ render_hash, render_width, render_height, render_view }) };
+}

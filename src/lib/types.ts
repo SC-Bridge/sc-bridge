@@ -16,6 +16,13 @@ export interface RenderRef {
   view: string;
 }
 
+/** getPaintBySlug: the paint's render on one fitted hull. */
+export interface PaintHullRender {
+  vehicle_slug: string;
+  vehicle_name: string;
+  render: RenderRef;
+}
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -178,6 +185,8 @@ export interface Vehicle {
   manufacturer_name?: string;
   manufacturer_code?: string;
   production_status?: string;
+  /** The stock render (item_renders variant ''), or null when none is published. */
+  render?: RenderRef | null;
 }
 
 export interface VehicleImage {
@@ -314,6 +323,8 @@ export interface Paint {
   is_standard?: number;
   /** getPaintsForVehicle only: 1 when this is the hull's default paint. */
   is_default?: number;
+  /** This paint's render on a hull it fits, or null when none is published. */
+  render?: RenderRef | null;
   vehicles: PaintVehicle[];
 }
 

@@ -1,4 +1,6 @@
 import { cacheSlug } from "./cache";
+import { renderCols, renderJoin, withRender, type RenderCols } from "./renders";
+import type { RenderRef } from "./types";
 
 export function publicFleetCacheKey(handle: string): string {
   return `public-fleet:${cacheSlug(handle.toLowerCase())}`;
@@ -59,7 +61,8 @@ export const PUBLIC_FLEET_SELECT = `
   p.image_url as paint_image_url,
   p.image_url_medium as paint_image_url_medium,
   p.image_url_small as paint_image_url_small,
-  COALESCE(rps.key, ps.key) as production_status
+  COALESCE(rps.key, ps.key) as production_status,
+  ${renderCols("ir")}
 `;
 
 export interface PublicFleetShip {
@@ -87,6 +90,8 @@ export interface PublicFleetShip {
   paint_image_url_medium: string | null;
   paint_image_url_small: string | null;
   production_status: string | null;
+  /** The hull in its equipped paint, or stock when none is equipped. */
+  render?: RenderRef | null;
 }
 
 export interface PublicFleetPayload {
@@ -141,13 +146,14 @@ export async function loadPublicFleet(
        LEFT JOIN paints p ON p.id = uf.equipped_paint_id
        LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
        LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
+       ${renderJoin("ir", "COALESCE(rv.class_name, v.class_name)", "COALESCE(p.class_name, '')")}
        WHERE uf.user_id = ?
        ORDER BY COALESCE(rv.name, v.name)`,
     )
     .bind(row.user_id)
-    .all<PublicFleetShip>();
+    .all<RenderCols & Omit<PublicFleetShip, "render">>();
 
-  return { handle: row.verified_handle, ships: ships.results };
+  return { handle: row.verified_handle, ships: ships.results.map(withRender) };
 }
 
 // ── Non-JS rendering of /u/:handle/fleet ────────────────────────────────

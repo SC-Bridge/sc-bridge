@@ -5,6 +5,7 @@ import { validate } from "../lib/validation";
 import { analyzeFleet } from "./analysis";
 import { scrapeRsiOrg } from "../lib/rsi-org-scraper";
 import { opsRoutes } from "./ops";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 
 /**
  * /api/orgs/* — Organisation endpoints
@@ -563,7 +564,8 @@ export function orgRoutes() {
           COALESCE(rm.code, m.code) as manufacturer_code,
           COALESCE(rps.key, ps.key) as production_status,
           u.name as owner_name,
-          CASE WHEN v.replaced_by_vehicle_id IS NOT NULL THEN v.name END as original_vehicle_name
+          CASE WHEN v.replaced_by_vehicle_id IS NOT NULL THEN v.name END as original_vehicle_name,
+          ${renderCols("ir")}
         FROM user_fleet uf
         JOIN member mb ON mb.userId = uf.user_id AND mb.organizationId = ?
         JOIN vehicles v ON v.id = uf.vehicle_id
@@ -573,13 +575,14 @@ export function orgRoutes() {
         LEFT JOIN manufacturers rm ON rm.id = rv.manufacturer_id
         LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
         LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
+        ${renderJoin("ir", "COALESCE(rv.class_name, v.class_name)")}
         WHERE ${visibilityClause}
         ORDER BY COALESCE(rv.name, v.name)`,
       )
       .bind(org.id)
-      .all();
+      .all<RenderCols>();
 
-    return c.json({ fleet: fleet.results, callerRole });
+    return c.json({ fleet: fleet.results.map(withRender), callerRole });
   });
 
   // GET /api/orgs/:slug/members — member list (org members only, non-members get 404)
