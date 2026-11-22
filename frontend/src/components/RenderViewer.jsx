@@ -17,13 +17,14 @@ function dedupeByHash(variants) {
 
 /**
  * Large render view: the 2048 image of the selected variant with a strip of 512 thumbnails.
- * The selected variant is mirrored to `?view=<variant>` (history replaced).
+ * The selected variant is mirrored to `?render=<variant>` (history replaced) and removed again on close.
+ * Not `view`: pages already use that for their own layout.
  */
 export default function RenderViewer({ kind, itemKey, initialVariant = '', title, onClose }) {
   const { variants, loading } = useRenderVariants(kind, itemKey)
   const [searchParams, setSearchParams] = useSearchParams()
   const items = useMemo(() => dedupeByHash(variants), [variants])
-  const [selected, setSelected] = useState(() => searchParams.get('view') ?? initialVariant)
+  const [selected, setSelected] = useState(() => searchParams.get('render') ?? initialVariant)
   const dialogRef = useRef(null)
 
   // Resolve against every variant first: the requested one may share a hash with an earlier entry.
@@ -42,13 +43,30 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev)
-          p.set('view', next.variant)
+          p.set('render', next.variant)
           return p
         },
         { replace: true },
       )
     },
     [items, setSearchParams],
+  )
+
+  // setSearchParams changes identity with the URL, so the unmount cleanup calls it through a ref.
+  const setParamsRef = useRef(setSearchParams)
+  setParamsRef.current = setSearchParams
+  useEffect(
+    () => () => {
+      setParamsRef.current(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.delete('render')
+          return p
+        },
+        { replace: true },
+      )
+    },
+    [],
   )
 
   useEffect(() => {

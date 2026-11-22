@@ -12,8 +12,7 @@ export default function LootRender({ item, title, aspectRatio = 'landscape', siz
   const canOpen = Boolean(item.render && item.render_variants_kind && item.render_item_key)
 
   return (
-    // The viewer is a React child of its card, so keep its clicks from selecting the card.
-    <div onClick={(e) => e.stopPropagation()}>
+    <div>
       <ItemImage
         render={item.render}
         alt={title}
@@ -21,15 +20,18 @@ export default function LootRender({ item, title, aspectRatio = 'landscape', siz
         aspectRatio={aspectRatio}
         hoverZoom
         className={className}
-        onOpen={canOpen ? () => setOpen(true) : undefined}
+        onOpen={canOpen ? (e) => { e.stopPropagation(); setOpen(true) } : undefined}
       />
       {open && canOpen && (
-        <RenderViewer
-          kind={item.render_variants_kind}
-          itemKey={item.render_item_key}
-          title={title}
-          onClose={() => setOpen(false)}
-        />
+        // The viewer is a React child of its card, so keep its clicks from selecting the card.
+        <div onClick={(e) => e.stopPropagation()}>
+          <RenderViewer
+            kind={item.render_variants_kind}
+            itemKey={item.render_item_key}
+            title={title}
+            onClose={() => setOpen(false)}
+          />
+        </div>
       )}
     </div>
   )

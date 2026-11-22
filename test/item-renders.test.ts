@@ -83,6 +83,13 @@ describe("GET /api/renders/:kind/:itemKey", () => {
     expect(body.variants).toHaveLength(2);
     expect(body.variants[1]).toMatchObject({ variant: "behr_rifle_camo", name: "Camo Finish" });
   });
+
+  it("accepts a long comma-joined armour set key", async () => {
+    const key = Array.from({ length: 12 }, (_, i) => `zzr_long_armour_piece_name_${i}_xxxxxxxxxxxx`).join(",");
+    expect(key.length).toBeGreaterThan(200);
+    const res = await SELF.fetch(`http://localhost/api/renders/armour_set/${encodeURIComponent(key)}`);
+    expect(res.status).toBe(200);
+  });
 });
 
 // ── render on ships, paints and fleet rows ───────────────────────────

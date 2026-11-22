@@ -19,13 +19,35 @@ vi.mock('../hooks/useAPI', () => ({
 
 vi.mock('../hooks/useRenderVariants', () => ({
   useRenderVariants: () => ({
-    variants: [{ variant: 'paint_gladius_valiant', view: 'iso', hash: 'p1hash', width: 2048, height: 1024, name: 'Valiant' }],
+    variants: [
+      { variant: '', view: 'iso', hash: 'p0hash', width: 2048, height: 1024, name: null },
+      { variant: 'paint_gladius_valiant', view: 'iso', hash: 'p1hash', width: 2048, height: 1024, name: 'Valiant' },
+    ],
     loading: false,
     error: null,
   }),
 }))
 
+function openViewer(entry) {
+  render(<MemoryRouter initialEntries={[entry]}><PaintBrowser /></MemoryRouter>)
+  fireEvent.load(screen.getByAltText('Valiant'))
+  fireEvent.click(screen.getByRole('button', { name: /Open large view of Valiant/ }))
+}
+
 describe('PaintBrowser paint card', () => {
+  it('keeps the dialog open and the grid layout when another thumbnail is selected', () => {
+    openViewer('/paints')
+    fireEvent.click(screen.getAllByRole('button', { name: /^Show / })[0])
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // only the grid card has an open-viewer button; the list layout has none
+    expect(screen.getByRole('button', { name: /Open large view of Valiant/ })).toBeInTheDocument()
+  })
+
+  it('starts on the paint variant even with ?view=grid on the page', () => {
+    openViewer('/paints?view=grid')
+    expect(screen.getByTestId('caption').textContent).toBe('Valiant')
+  })
+
   it('opens the large view when the render is clicked', () => {
     render(<MemoryRouter><PaintBrowser /></MemoryRouter>)
     const img = screen.getByAltText('Valiant')

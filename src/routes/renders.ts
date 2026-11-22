@@ -8,7 +8,7 @@ import { validate } from "../lib/validation";
 
 const RenderParams = z.object({
   kind: RenderKindSchema,
-  itemKey: z.string().min(1).max(200),
+  itemKey: z.string().min(1).max(1000),
 });
 
 /**

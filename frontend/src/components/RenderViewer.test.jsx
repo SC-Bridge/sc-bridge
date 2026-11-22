@@ -28,6 +28,18 @@ function setup(entry = '/ships/x', onClose = vi.fn()) {
 }
 
 describe('RenderViewer', () => {
+  it('leaves a page layout ?view= alone and removes ?render= when it closes', () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/p?view=grid']}>
+        <RenderViewer kind="vehicle" itemKey="x" title="Ship X" onClose={vi.fn()} />
+        <Search />
+      </MemoryRouter>,
+    )
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(screen.getByTestId('search').textContent).toBe('?view=grid&render=paint_x')
+    unmount()
+  })
+
   it('renders one thumbnail per distinct hash inside an aria-modal dialog', () => {
     setup()
     const dialog = screen.getByRole('dialog')
@@ -35,12 +47,12 @@ describe('RenderViewer', () => {
     expect(screen.getAllByRole('button', { name: /^Show / })).toHaveLength(2)
   })
 
-  it('ArrowRight selects the next variant and syncs ?view=', () => {
+  it('ArrowRight selects the next variant and syncs ?render=', () => {
     setup()
     expect(screen.getByTestId('caption').textContent).toBe('Ship X')
     fireEvent.keyDown(document, { key: 'ArrowRight' })
     expect(screen.getByTestId('caption').textContent).toBe('Paint X')
-    expect(screen.getByTestId('search').textContent).toBe('?view=paint_x')
+    expect(screen.getByTestId('search').textContent).toBe('?render=paint_x')
   })
 
   it('Escape calls onClose', () => {
@@ -49,8 +61,8 @@ describe('RenderViewer', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('opens on the variant named in ?view=', () => {
-    setup('/ships/x?view=paint_x')
+  it('opens on the variant named in ?render=', () => {
+    setup('/ships/x?render=paint_x')
     expect(screen.getByTestId('caption').textContent).toBe('Paint X')
     expect(screen.getByRole('dialog').querySelector('img').getAttribute('src')).toBe(
       'https://renders.scbridge.app/h1/2048.webp',
@@ -65,14 +77,14 @@ describe('RenderViewer', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('selects the shown image for a ?view= variant that was deduped by hash', () => {
-    setup('/ships/x?view=paint_y')
+  it('selects the shown image for a ?render= variant that was deduped by hash', () => {
+    setup('/ships/x?render=paint_y')
     const src = screen.getByRole('dialog').querySelector('img').getAttribute('src')
     expect(src).toBe('https://renders.scbridge.app/h1/2048.webp')
   })
 
-  it('falls back to the first variant for an unknown ?view=', () => {
-    setup('/ships/x?view=nope')
+  it('falls back to the first variant for an unknown ?render=', () => {
+    setup('/ships/x?render=nope')
     expect(screen.getByTestId('caption').textContent).toBe('Ship X')
     expect(screen.getByRole('dialog').querySelector('img').getAttribute('src')).toBe(
       'https://renders.scbridge.app/h0/2048.webp',
