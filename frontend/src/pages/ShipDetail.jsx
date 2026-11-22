@@ -17,6 +17,8 @@ import { hullTotal } from '../lib/hullHp'
 import { visibleModules } from '../lib/moduleVisibility'
 import { useSession } from '../lib/auth-client'
 import ShipImage from '../components/ShipImage'
+import RenderViewer from '../components/RenderViewer'
+import ItemImage from '../components/ItemImage'
 import StatusBadge from '../components/StatusBadge'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
@@ -913,8 +915,8 @@ function PaintsTab({ slug, isAuthed, shipImage }) {
             return (
               <div key={paint.id} className="flex items-center gap-4 px-4 py-3">
                 <div className="shrink-0 w-12 h-12 rounded overflow-hidden bg-sc-surface border border-sc-border/40 flex items-center justify-center">
-                  {thumb
-                    ? <img src={thumb} alt={paint.name} className={`w-full h-full object-cover ${isAuthed && !owned ? 'opacity-50' : ''}`} />
+                  {thumb || paint.render
+                    ? <ItemImage render={paint.render} src={thumb} alt={paint.name} aspectRatio="square" className={isAuthed && !owned ? 'opacity-50' : ''} />
                     : <Palette className="w-5 h-5 text-gray-600" />
                   }
                 </div>
@@ -957,8 +959,8 @@ function PaintsTab({ slug, isAuthed, shipImage }) {
                 className={`bg-sc-surface border rounded overflow-hidden ${owned ? 'border-emerald-500/40' : 'border-sc-border/40'}`}
               >
                 <div className="aspect-square flex items-center justify-center bg-sc-bg relative">
-                  {thumb
-                    ? <img src={thumb} alt={paint.name} className={`w-full h-full object-cover ${isAuthed && !owned ? 'opacity-50' : ''}`} />
+                  {thumb || paint.render
+                    ? <ItemImage render={paint.render} src={thumb} alt={paint.name} aspectRatio="square" className={isAuthed && !owned ? 'opacity-50' : ''} />
                     : <Palette className="w-8 h-8 text-gray-600" />
                   }
                   {owned && (
@@ -1250,6 +1252,7 @@ export default function ShipDetail() {
   const { data: ship, loading, error, refetch } = useShip(slug)
   const { data: session } = useSession()
   const isAuthed = !!session?.user
+  const [viewerOpen, setViewerOpen] = useState(false)
 
   if (loading) return <LoadingState message="Loading ship data..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -1295,12 +1298,23 @@ export default function ShipDetail() {
       {/* Hero image */}
       <div className="panel overflow-hidden rounded-lg">
         <ShipImage
+          render={ship.render}
+          size={2048}
           src={ship.image_url_large || ship.image_url_medium}
           fallbackSrc={ship.image_url_medium || ship.image_url}
           alt={ship.name}
           aspectRatio="landscape"
+          onOpen={() => setViewerOpen(true)}
         />
       </div>
+      {viewerOpen && ship.render && ship.class_name && (
+        <RenderViewer
+          kind="vehicle"
+          itemKey={ship.class_name.toLowerCase()}
+          title={ship.name}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
 
       {/* Tab bar */}
       <div className="flex items-center border-b border-sc-border">

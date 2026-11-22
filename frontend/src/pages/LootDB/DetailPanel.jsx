@@ -6,6 +6,7 @@ import LoadingState from '../../components/LoadingState'
 import LocationSection from './LocationSection'
 import ResistanceBar from './ResistanceBar'
 import MadeStepper from './MadeStepper'
+import LootRender from './LootRender'
 import { applyBuildMultipliers } from './lootHelpers'
 
 // ── Detail panel helpers ──────────────────────────────────────────────────────
@@ -307,6 +308,8 @@ export default function DetailPanel({ uuid, build = null, manufacturerName, coll
           <div className="flex-1 overflow-y-auto p-4 pb-8 space-y-5">
             {/* Name + badges. Build variant: build name as title, base item as
                 subtitle (the build is a tuned version of that item). */}
+            <LootRender item={item} title={build ? build.name : humanizeRawDisplayName(item.name)} size={2048} className="rounded border border-sc-border/50" />
+
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-white leading-tight">
                 {build ? build.name : humanizeRawDisplayName(item.name)}

@@ -34,6 +34,7 @@ export default function ShipDetailPanel({ ship, onClose }) {
 
       {/* Ship Image */}
       <ShipImage
+        render={ship.render}
         src={ship.image_url}
         alt={ship.vehicle_name}
         aspectRatio="landscape"

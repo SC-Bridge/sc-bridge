@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Palette, Check } from 'lucide-react'
 import { useShipPaints, useOwnedPaints, equipFleetPaint } from '../../hooks/useAPI'
+import ItemImage from '../../components/ItemImage'
 import { paintThumb, pickerPaints, isEquipped, equipTarget } from '../../lib/paints'
 
 /**
@@ -96,8 +97,8 @@ export default function PaintsSection({ shipSlug, fleetId, equippedPaintId, rsiA
               } ${isBusy ? 'opacity-60' : ''}`}
             >
               <div className="aspect-square flex items-center justify-center bg-sc-bg relative">
-                {thumb
-                  ? <img src={thumb} alt={paint.name} className="w-full h-full object-cover" />
+                {thumb || paint.render
+                  ? <ItemImage render={paint.render} src={thumb} alt={paint.name} aspectRatio="square" />
                   : <Palette className="w-8 h-8 text-gray-600" />
                 }
                 {equipped && (

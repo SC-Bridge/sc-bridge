@@ -212,14 +212,14 @@ describe("render on ship, paint and fleet rows", () => {
       render: Render;
       image_url: string | null;
       vehicles: Array<{ slug: string }>;
-      hull_renders: Array<{ vehicle_slug: string; vehicle_name: string; render: Render }>;
+      hull_renders: Array<{ vehicle_slug: string; vehicle_name: string; item_key: string; render: Render }>;
     };
     expect(body.image_url).toBe("https://example.test/zzr-detail.jpg");
     expect(body.vehicles).toHaveLength(3);
     expect(body.hull_renders).toEqual([
-      { vehicle_slug: "zzr-hull-alpha", vehicle_name: "Zzr Hull Alpha",
+      { vehicle_slug: "zzr-hull-alpha", vehicle_name: "Zzr Hull Alpha", item_key: "zzr_hull_alpha",
         render: { hash: "h0h0h0h0h0h0h0h0", width: 2048, height: 1536, view: "iso" } },
-      { vehicle_slug: "zzr-hull-bravo", vehicle_name: "Zzr Hull Bravo",
+      { vehicle_slug: "zzr-hull-bravo", vehicle_name: "Zzr Hull Bravo", item_key: "zzr_hull_bravo",
         render: { hash: "h2h2h2h2h2h2h2h2", width: 2048, height: 1536, view: "iso" } },
     ]);
     expect(body.render?.hash).toBe("h0h0h0h0h0h0h0h0");
@@ -237,10 +237,11 @@ describe("render on ship, paint and fleet rows", () => {
     ]);
     const res = await SELF.fetch("http://localhost/api/paints");
     expect(res.status).toBe(200);
-    const paints = (await res.json()) as Array<{ slug: string; render: Render; image_url: string | null }>;
+    const paints = (await res.json()) as Array<{ slug: string; render: Render; render_item_key: string | null; image_url: string | null }>;
     const listed = paints.filter((p) => p.slug === "zzr-listed");
     expect(listed).toHaveLength(1);
     expect(listed[0].render).toEqual({ hash: "l1l1l1l1l1l1l1l1", width: 2048, height: 1536, view: "side" });
+    expect(listed[0].render_item_key).toBe("zzr_list_mike");
     expect(listed[0].image_url).toBe("https://example.test/zzr-listed.jpg");
     expect(paints.find((p) => p.slug === "zzr-unrendered")!.render).toBeNull();
   });
@@ -419,12 +420,15 @@ describe("render on loot items", () => {
   it("GET /api/loot lists a clothing item once, with its worn_male render", async () => {
     const res = await SELF.fetch("http://localhost/api/loot");
     expect(res.status).toBe(200);
-    const items = (await res.json()) as Array<{ uuid: string; render: Render }>;
+    const items = (await res.json()) as Array<{ uuid: string; render: Render; render_variants_kind: string | null; render_item_key: string | null }>;
     const jacket = items.filter((i) => i.uuid === "zzr-loot-0001");
     expect(jacket).toHaveLength(1);
     expect(jacket[0].render).toEqual({ hash: "e8e8e8e8e8e8e8e8", width: 1024, height: 2048, view: "worn_male" });
     expect(jacket[0]).not.toHaveProperty("render_hash");
+    expect(jacket[0].render_variants_kind).toBe("fps_clothing");
+    expect(jacket[0].render_item_key).toEqual(expect.any(String));
     expect(items.find((i) => i.uuid === "zzr-loot-0002")!.render).toBeNull();
+    expect(items.find((i) => i.uuid === "zzr-loot-0002")!.render_item_key).toBeNull();
     expect(items.find((i) => i.uuid === "zzr-loot-0003")!.render?.hash).toBe("d7d7d7d7d7d7d7d7");
   });
 
@@ -496,16 +500,18 @@ describe("render on armour sets", () => {
   it("GET /api/loot/sets/:setSlug returns the set render looked up by its piece key", async () => {
     const res = await SELF.fetch("http://localhost/api/loot/sets/zzr-armor");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { pieces: unknown[]; render: Render };
+    const body = (await res.json()) as { pieces: unknown[]; render: Render; render_item_key: string | null };
     expect(body.pieces).toHaveLength(3);
+    expect(body.render_item_key).toBe("zzr_armor_core_01,zzr_armor_legs_01");
     expect(body.render).toEqual({ hash: "a4a4a4a4a4a4a4a4", width: 1024, height: 2048, view: "worn_male" });
   });
 
   it("GET /api/loot/sets/:setSlug gives render: null when the set has no render", async () => {
     const res = await SELF.fetch("http://localhost/api/loot/sets/zzb-armor");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { render: Render };
+    const body = (await res.json()) as { render: Render; render_item_key: string | null };
     expect(body.render).toBeNull();
+    expect(body.render_item_key).toBeNull();
   });
 });
 

@@ -20,6 +20,8 @@ export interface RenderRef {
 export interface PaintHullRender {
   vehicle_slug: string;
   vehicle_name: string;
+  /** item_renders key of the hull (its lower-cased class_name), for the large view. */
+  item_key: string;
   render: RenderRef;
 }
 

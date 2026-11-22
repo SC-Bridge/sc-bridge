@@ -695,6 +695,7 @@ export default function FleetTable() {
                     <td className="table-cell" style={accountStripeStyle(v.rsi_account_id, rsiAccounts)}>
                       <div className="flex items-center gap-3">
                         <ShipImage
+                          render={v.render}
                           src={v.paint_image_url_medium || v.paint_image_url || v.image_url}
                           alt={v.vehicle_name}
                           aspectRatio="thumbnail-lg"

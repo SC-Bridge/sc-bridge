@@ -7,6 +7,8 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
+import ItemImage from '../components/ItemImage'
+import RenderViewer from '../components/RenderViewer'
 
 const PAGE_SIZE = 36
 
@@ -165,33 +167,56 @@ function PaintPlaceholder({ size = 'lg' }) {
   )
 }
 
-function PaintImage({ src, alt, className, size = 'lg' }) {
-  const [broken, setBroken] = useState(false)
-  if (!src || broken) return <PaintPlaceholder size={size} />
-  return <img src={src} alt={alt} loading="lazy" className={className} onError={() => setBroken(true)} />
+// Paint image: the render of the paint on its first hull, then the RSI store art, then the placeholder.
+// With a render, the image opens the large view and the name below links to the paint page.
+function PaintThumb({ paint, thumb, aspectRatio, size = 'lg', onOpen }) {
+  return (
+    <ItemImage
+      render={paint.render}
+      src={thumb}
+      alt={paint.name}
+      aspectRatio={aspectRatio}
+      hoverZoom
+      placeholderContent={<PaintPlaceholder size={size} />}
+      onOpen={onOpen}
+    />
+  )
 }
 
 function PaintCard({ paint }) {
   const thumb = paint.image_url_medium || paint.image_url_small || paint.image_url
   const shipNames = paint.vehicles.map((v) => v.name).join(', ')
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const canView = Boolean(paint.render && paint.render_item_key)
+  const paintHref = `/paints/${encodeURIComponent(paint.slug)}`
 
   return (
-    <Link
-      to={`/paints/${encodeURIComponent(paint.slug)}`}
-      className="block bg-sc-panel border border-sc-border/40 rounded overflow-hidden group hover:border-sc-accent/40 transition-colors"
-    >
-      <div className="aspect-square flex items-center justify-center bg-sc-darker/50">
-        <PaintImage src={thumb} alt={paint.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-      </div>
-      <div className="p-2 space-y-1">
+    <div className="bg-sc-panel border border-sc-border/40 rounded overflow-hidden group hover:border-sc-accent/40 transition-colors">
+      {canView ? (
+        <PaintThumb paint={paint} thumb={thumb} aspectRatio="square" onOpen={() => setViewerOpen(true)} />
+      ) : (
+        <Link to={paintHref} className="block">
+          <PaintThumb paint={paint} thumb={thumb} aspectRatio="square" />
+        </Link>
+      )}
+      <Link to={paintHref} className="block p-2 space-y-1">
         <p className="text-xs font-mono text-gray-200 truncate group-hover:text-sc-accent transition-colors" title={paint.name}>{paint.name}</p>
         {paint.vehicles.length > 0 && (
           <p className="text-[10px] text-gray-500 truncate" title={shipNames}>
             {paint.vehicles.length === 1 ? paint.vehicles[0].name : `${paint.vehicles.length} ships`}
           </p>
         )}
-      </div>
-    </Link>
+      </Link>
+      {viewerOpen && canView && (
+        <RenderViewer
+          kind="vehicle"
+          itemKey={paint.render_item_key}
+          initialVariant={paint.class_name?.toLowerCase() ?? ''}
+          title={paint.name}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
+    </div>
   )
 }
 
@@ -201,7 +226,7 @@ function PaintRow({ paint }) {
   return (
     <div className="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors">
       <Link to={`/paints/${encodeURIComponent(paint.slug)}`} className="shrink-0 w-14 h-14 rounded overflow-hidden bg-sc-darker/50 border border-sc-border/40 flex items-center justify-center">
-        <PaintImage src={thumb} alt={paint.name} className="w-full h-full object-cover" size="sm" />
+        <PaintThumb paint={paint} thumb={thumb} aspectRatio="square" size="sm" />
       </Link>
       <div className="min-w-0 flex-1">
         <Link to={`/paints/${encodeURIComponent(paint.slug)}`} className="text-sm font-mono text-gray-200 hover:text-sc-accent transition-colors inline-block">

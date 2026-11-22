@@ -878,7 +878,7 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
         END AS description,
         p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
         p.created_at, p.updated_at,
-        ${renderCols("r")}
+        ${renderCols("r")}, r.item_key AS render_item_key
       FROM paints p
       ${firstHullRenderJoin("r")}
       WHERE p.is_base_variant = 0
@@ -962,7 +962,7 @@ export async function getPaintBySlug(
       `SELECT v.id, v.name, v.slug, v.image_url,
         COALESCE(rm.name, m.name) AS manufacturer_name,
         COALESCE(rm.code, m.code) AS manufacturer_code,
-        ${renderCols("r")}
+        ${renderCols("r")}, r.item_key AS render_item_key
        FROM paint_vehicles pv
        JOIN vehicles v ON v.id = pv.vehicle_id
        JOIN paints p ON p.id = pv.paint_id
@@ -974,7 +974,7 @@ export async function getPaintBySlug(
        ORDER BY v.name`,
     )
     .bind(row.id)
-    .all<RenderCols & { id: number; name: string; slug: string; image_url: string | null; manufacturer_name: string | null; manufacturer_code: string | null }>();
+    .all<RenderCols & { render_item_key: string | null; id: number; name: string; slug: string; image_url: string | null; manufacturer_name: string | null; manufacturer_code: string | null }>();
 
   const manufacturerName = vRes.results[0]?.manufacturer_name ?? null;
   const manufacturerCode = vRes.results[0]?.manufacturer_code ?? null;
@@ -984,7 +984,7 @@ export async function getPaintBySlug(
   const hullRenders: PaintHullRender[] = [];
   for (const v of vRes.results) {
     const render = toRenderRef(v);
-    if (render) hullRenders.push({ vehicle_slug: v.slug, vehicle_name: v.name, render });
+    if (render && v.render_item_key) hullRenders.push({ vehicle_slug: v.slug, vehicle_name: v.name, item_key: v.render_item_key, render });
   }
   const vehicles = vRes.results.map((v) => ({
     id: v.id,
@@ -1438,7 +1438,7 @@ export async function getLootItems(
         lm.category, lm.manufacturer_name,
         ${lootHasFlags(isPTU)},
         ${LOOT_SUMMARY_COLS},
-        ${renderCols("r")}
+        ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
       FROM ${lm} lm
       ${lootSummaryJoins(isPTU)}
       ${renderJoin("r", "lm.class_name")}
@@ -1541,7 +1541,7 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
 
   // The stock render (variant '') rides along; render_variants_kind is that
   // row's kind, which the page passes to GET /api/renders/:kind/:itemKey.
-  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind
+  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
       FROM ${t("loot_map")} lm
       ${renderJoin("r", "lm.class_name")}
       WHERE lm.uuid = ?`;
@@ -2261,6 +2261,8 @@ export interface LootSetDetail {
   pieces: Record<string, unknown>[];
   /** The set's render (item_renders keyed by armourSetRenderKey), or null. */
   render: RenderRef | null;
+  /** The item_renders key the set render was matched on (for the large view), or null. */
+  render_item_key: string | null;
 }
 
 export async function getLootSets(
@@ -2414,13 +2416,13 @@ export async function getLootSetBySlug(
     return { ...item, item_details: details, locations };
   });
 
-  const render = await getArmourSetRender(
+  const { render, renderItemKey } = await getArmourSetRender(
     db,
     matchingItems.map((i) => i.class_name as string | null).filter((c): c is string => !!c),
     fpsArmour,
   );
 
-  return { setName, manufacturer, pieces, render };
+  return { setName, manufacturer, pieces, render, render_item_key: renderItemKey };
 }
 
 /**
@@ -2433,8 +2435,9 @@ async function getArmourSetRender(
   db: D1Database,
   pieceClassNames: string[],
   fpsArmour: string,
-): Promise<RenderRef | null> {
-  if (pieceClassNames.length === 0) return null;
+): Promise<{ render: RenderRef | null; renderItemKey: string | null }> {
+  const none = { render: null, renderItemKey: null };
+  if (pieceClassNames.length === 0) return none;
   const lowered = [...new Set(pieceClassNames.map((c) => c.toLowerCase()))];
   const undersuits = await db
     .prepare(
@@ -2444,7 +2447,7 @@ async function getArmourSetRender(
     .bind(...lowered)
     .all<{ class_name: string }>();
   const key = armourSetRenderKey(lowered, undersuits.results.map((u) => u.class_name));
-  if (!key) return null;
+  if (!key) return none;
   const row = await db
     .prepare(
       `SELECT r.hash AS render_hash, r.width AS render_width, r.height AS render_height, r.view AS render_view
@@ -2455,7 +2458,7 @@ async function getArmourSetRender(
     )
     .bind(key)
     .first<RenderCols>();
-  return row ? toRenderRef(row) : null;
+  return row ? { render: toRenderRef(row), renderItemKey: key } : none;
 }
 
 /**

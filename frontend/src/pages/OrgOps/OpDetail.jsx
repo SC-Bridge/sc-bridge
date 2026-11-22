@@ -273,7 +273,7 @@ export default function OpDetail() {
               <p className="text-xs text-gray-600">No ships assigned</p>
             ) : ships.map((s) => (
               <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/[0.02]">
-                <ShipImage src={s.image_url} alt={s.vehicle_name} aspectRatio="thumbnail" className="w-10 rounded border border-sc-border/50 shrink-0" />
+                <ShipImage render={s.render} src={s.image_url} alt={s.vehicle_name} aspectRatio="thumbnail" className="w-10 rounded border border-sc-border/50 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <span className="text-sm text-white truncate block">{s.custom_name || s.vehicle_name}</span>
                   <span className="text-[10px] text-gray-500">{s.owner_name}{s.role ? ` · ${s.role}` : ''}</span>

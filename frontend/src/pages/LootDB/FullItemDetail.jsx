@@ -10,6 +10,7 @@ import ErrorState from '../../components/ErrorState'
 import ResistanceBar from './ResistanceBar'
 import LocationSection from './LocationSection'
 import ReportPriceModal from './ReportPriceModal'
+import LootRender from './LootRender'
 
 // Price provenance → display label + badge style (#139: UEX / SC-Companion / User Reported)
 const PRICE_SOURCE_BADGES = {
@@ -203,6 +204,9 @@ export default function FullItemDetail() {
 
       {/* Header */}
       <div className="space-y-3">
+        <div className="max-w-md">
+          <LootRender item={item} title={humanizeRawDisplayName(item.name)} size={2048} aspectRatio="square" className="rounded border border-sc-border/50" />
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-[10px] font-display uppercase tracking-wide px-1.5 py-0.5 rounded ${catStyle}`}>
             {catLabel}

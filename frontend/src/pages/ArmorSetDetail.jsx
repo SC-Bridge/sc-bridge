@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Shield, FileText } from 'lucide-react'
 import { useLootSet, useLootCollection, setLootCollectionQuantity } from '../hooks/useAPI'
@@ -5,6 +6,8 @@ import { useSession } from '../lib/auth-client'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
+import ItemImage from '../components/ItemImage'
+import RenderViewer from '../components/RenderViewer'
 import CollectionStepper from './LootDB/CollectionStepper'
 import LocationSection from './LootDB/LocationSection'
 import SourceIcons from './LootDB/SourceIcons'
@@ -167,6 +170,7 @@ export default function ArmorSetDetail() {
   const { setSlug } = useParams()
   const { data: session } = useSession()
   const isAuthed = !!session?.user
+  const [viewerOpen, setViewerOpen] = useState(false)
 
   const { data: set, loading, error, refetch } = useLootSet(setSlug)
   const { data: collection, refetch: refetchCollection } = useLootCollection(isAuthed)
@@ -227,6 +231,27 @@ export default function ArmorSetDetail() {
           </>
         )}
       </div>
+
+      {/* Set render */}
+      {set.render && (
+        <div className="max-w-md rounded-lg overflow-hidden border border-sc-border">
+          <ItemImage
+            render={set.render}
+            size={2048}
+            alt={setName}
+            aspectRatio="square"
+            onOpen={set.render_item_key ? () => setViewerOpen(true) : undefined}
+          />
+        </div>
+      )}
+      {viewerOpen && set.render_item_key && (
+        <RenderViewer
+          kind="armour_set"
+          itemKey={set.render_item_key}
+          title={setName}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
 
       {/* Aggregate stats */}
       <AggregateStats pieces={pieces} />

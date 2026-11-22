@@ -89,6 +89,7 @@ export default function Salvageable() {
             className="panel-hover group cursor-pointer overflow-hidden block"
           >
             <ShipImage
+              render={ship.render}
               src={ship.image_url_small}
               alt={ship.name}
               aspectRatio="landscape"
