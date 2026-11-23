@@ -3,6 +3,7 @@
  */
 
 import { compactSlug, slugFromName } from "./slug";
+import { shipNameMap } from "./rsi-ship-names";
 
 // --- Preloaded vehicle map for in-memory slug matching ---
 
@@ -90,6 +91,16 @@ export function findVehicleSlugLocal(
   if (displayName) {
     const found = map.nameToSlug.get(displayName.toLowerCase());
     if (found) return found;
+  }
+
+  // Try the RSI ship-name alias table — explicit renames the heuristics below
+  // cannot bridge, e.g. hangar item "Ares Ion" → DB "Ares Star Fighter Ion" (#280)
+  if (displayName) {
+    const alias = shipNameMap[displayName.toLowerCase()];
+    if (alias) {
+      const found = map.nameToSlug.get(alias);
+      if (found) return found;
+    }
   }
 
   // Try compact match
