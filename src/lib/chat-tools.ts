@@ -1,6 +1,7 @@
 import { getEffectiveShipLoadout } from "../db/queries";
 import { accountName, listRsiAccounts } from "./rsi-accounts";
 import type { FetchFn, ToolCall, ToolSpec } from "./llm";
+import { getShipDetailsTool, searchShipsTool } from "./chat-tools/catalogue-ships";
 
 /** What every chat tool runs with. Personal queries bind userId/scopeIds from here, never from tool args. */
 export interface ToolContext {
@@ -125,7 +126,11 @@ const getShipLoadoutTool: ChatToolHandler = {
 };
 
 /** Every tool the Fleet Chat offers, in the order the model sees them. */
-export const CHAT_TOOL_HANDLERS: ChatToolHandler[] = [getShipLoadoutTool];
+export const CHAT_TOOL_HANDLERS: ChatToolHandler[] = [
+  getShipLoadoutTool,
+  searchShipsTool,
+  getShipDetailsTool,
+];
 
 export const CHAT_TOOLS: ToolSpec[] = CHAT_TOOL_HANDLERS.map((h) => h.spec);
 
