@@ -15,7 +15,7 @@ import type {
 } from "../lib/types";
 import { extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
-import { ptuShadowExists } from "../lib/ptu";
+import { ptuShadowExists, resolveTable } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
 import { buyPriceSQL, sellPriceSQL, priceSourceSQL, pricedSQL, buyablePricedSQL } from "../lib/pricing-sql";
 
@@ -1466,6 +1466,65 @@ export async function reportUserItemPrice(
   return { ok: true };
 }
 
+/**
+ * Every typed stat column for a ship component (`vc` = vehicle_components),
+ * across the component_* stat tables joined by `componentStatJoins`.
+ */
+export const COMPONENT_STAT_COLS = `vc.name, vc.type, vc.sub_type, vc.size, vc.grade, vc.description,
+        vc.power_draw, vc.thermal_output,
+        cp.power_output, cp.overpower_performance, cp.overclock_performance,
+        cp.overclock_threshold_min, cp.overclock_threshold_max,
+        cc.cooling_rate, cc.max_temperature, cc.overheat_temperature,
+        cs.shield_hp, cs.shield_regen, cs.resist_physical, cs.resist_energy,
+        cs.resist_distortion, cs.resist_thermal, cs.regen_delay, cs.downed_regen_delay,
+        cq.quantum_speed, cq.quantum_range, cq.fuel_rate, cq.spool_time, cq.cooldown_time,
+        cq.calibration_rate, cq.engage_speed, cq.stage1_accel, cq.stage2_accel,
+        cw.rounds_per_minute, cw.ammo_container_size, cw.damage_per_shot, cw.damage_type,
+        cw.projectile_speed, cw.effective_range, cw.dps, cw.heat_per_shot, cw.fire_modes,
+        ct.rotation_speed, ct.min_pitch, ct.max_pitch, ct.min_yaw, ct.max_yaw, ct.gimbal_type,
+        cth.thrust_force, cth.fuel_burn_rate,
+        cr.radar_range, cr.radar_angle,
+        ce.qed_range, ce.qed_strength,
+        cfn.hydrogen_flow_rate, cfn.quantum_flow_rate, cfn.max_integrity`;
+
+/** LEFT JOINs from `vc` to each component_* stat table. `t` resolves LIVE/PTU table names. */
+export function componentStatJoins(t: (name: string) => string = (n) => n): string {
+  return `LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
+      LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
+      LEFT JOIN ${t("component_shields")} cs ON cs.component_id = vc.id
+      LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
+      LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
+      LEFT JOIN ${t("component_turrets")} ct ON ct.component_id = vc.id
+      LEFT JOIN ${t("component_thrusters")} cth ON cth.component_id = vc.id
+      LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
+      LEFT JOIN ${t("component_qed")} ce ON ce.component_id = vc.id
+      LEFT JOIN ${t("component_fuel_nozzles")} cfn ON cfn.component_id = vc.id`;
+}
+
+/** Every shop selling an item (by class name), cheapest first. Backs GET /api/loadout/cart/shops. */
+export async function getComponentShops(
+  db: D1Database,
+  className: string,
+  isPTU = false,
+): Promise<{ location_key: string; buy_price: number; shop_name: string; location_label: string | null }[]> {
+  const t = (n: string) => resolveTable(n, isPTU);
+  const rows = await db
+    .prepare(`SELECT t.shop_name_key AS location_key,
+                ROUND(${buyPriceSQL("ti")}) AS buy_price,
+                COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_name,
+                s.location_label
+         FROM ${t("terminal_inventory")} ti
+         JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
+         JOIN ${t("terminals")} t ON t.id = ti.terminal_id
+         LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
+         WHERE ${buyablePricedSQL("ti")}
+           AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') = ?
+         ORDER BY ${buyPriceSQL("ti")} ASC`)
+    .bind(className)
+    .all<{ location_key: string; buy_price: number; shop_name: string; location_label: string | null }>();
+  return rows.results;
+}
+
 export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false): Promise<Record<string, unknown> | null> {
   // Channel-aware table aliases. Every versioned table this function references
   // routes through `t(...)`; non-versioned tables (npc_factions, user_*, etc.)
@@ -1579,33 +1638,9 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
       .first() as Record<string, unknown> | null;
   } else if (item.vehicle_component_id) {
     details = await db
-      .prepare(`SELECT vc.name, vc.type, vc.sub_type, vc.size, vc.grade, vc.description,
-        vc.power_draw, vc.thermal_output,
-        cp.power_output, cp.overpower_performance, cp.overclock_performance,
-        cp.overclock_threshold_min, cp.overclock_threshold_max,
-        cc.cooling_rate, cc.max_temperature, cc.overheat_temperature,
-        cs.shield_hp, cs.shield_regen, cs.resist_physical, cs.resist_energy,
-        cs.resist_distortion, cs.resist_thermal, cs.regen_delay, cs.downed_regen_delay,
-        cq.quantum_speed, cq.quantum_range, cq.fuel_rate, cq.spool_time, cq.cooldown_time,
-        cq.calibration_rate, cq.engage_speed, cq.stage1_accel, cq.stage2_accel,
-        cw.rounds_per_minute, cw.ammo_container_size, cw.damage_per_shot, cw.damage_type,
-        cw.projectile_speed, cw.effective_range, cw.dps, cw.heat_per_shot, cw.fire_modes,
-        ct.rotation_speed, ct.min_pitch, ct.max_pitch, ct.min_yaw, ct.max_yaw, ct.gimbal_type,
-        cth.thrust_force, cth.fuel_burn_rate,
-        cr.radar_range, cr.radar_angle,
-        ce.qed_range, ce.qed_strength,
-        cfn.hydrogen_flow_rate, cfn.quantum_flow_rate, cfn.max_integrity
+      .prepare(`SELECT ${COMPONENT_STAT_COLS}
       FROM ${t("vehicle_components")} vc
-      LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
-      LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
-      LEFT JOIN ${t("component_shields")} cs ON cs.component_id = vc.id
-      LEFT JOIN ${t("component_quantum_drives")} cq ON cq.component_id = vc.id
-      LEFT JOIN ${t("component_weapons")} cw ON cw.component_id = vc.id
-      LEFT JOIN ${t("component_turrets")} ct ON ct.component_id = vc.id
-      LEFT JOIN ${t("component_thrusters")} cth ON cth.component_id = vc.id
-      LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
-      LEFT JOIN ${t("component_qed")} ce ON ce.component_id = vc.id
-      LEFT JOIN ${t("component_fuel_nozzles")} cfn ON cfn.component_id = vc.id
+      ${componentStatJoins(t)}
       WHERE vc.id = ?`)
       .bind(item.vehicle_component_id)
       .first() as Record<string, unknown> | null;
