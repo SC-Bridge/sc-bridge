@@ -3,6 +3,7 @@ import { accountName, listRsiAccounts } from "./rsi-accounts";
 import type { FetchFn, ToolCall, ToolSpec } from "./llm";
 import { getShipDetailsTool, searchShipsTool } from "./chat-tools/catalogue-ships";
 import { getComponentDetailsTool, searchComponentsTool } from "./chat-tools/catalogue-components";
+import { getMyItemsTool } from "./chat-tools/my-items";
 
 /** What every chat tool runs with. Personal queries bind userId/scopeIds from here, never from tool args. */
 export interface ToolContext {
@@ -133,6 +134,7 @@ export const CHAT_TOOL_HANDLERS: ChatToolHandler[] = [
   getShipDetailsTool,
   searchComponentsTool,
   getComponentDetailsTool,
+  getMyItemsTool,
 ];
 
 export const CHAT_TOOLS: ToolSpec[] = CHAT_TOOL_HANDLERS.map((h) => h.spec);
