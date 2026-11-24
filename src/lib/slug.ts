@@ -84,3 +84,14 @@ export function compactSlug(s: string): string {
 
   return result.join("");
 }
+
+/**
+ * Folds diacritics to their base letters: "Hyūn" → "Hyun", "San'tok.yāi" → "San'tok.yai".
+ *
+ * RSI titles some ships with diacritics while the vehicles table may spell them in
+ * plain ASCII (or the other way round). The slug helpers above silently drop
+ * non-ASCII letters ("Hyūn" → "hyn"), so fold before slugging or comparing (#282).
+ */
+export function foldDiacritics(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
