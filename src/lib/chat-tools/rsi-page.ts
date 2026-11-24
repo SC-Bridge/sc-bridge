@@ -118,11 +118,13 @@ export const readRsiPageTool: ChatToolHandler = {
     const start = path ? rsiUrlFor(path) : null;
     if (!start) return { error: "Only RSI patch notes and comm-link pages can be read (paths under /patch-notes or /comm-link)." };
     let url: URL = start;
+    // Call unbound: workerd's global fetch throws "Illegal invocation" when called as ctx.fetchFn(...).
+    const { fetchFn } = ctx;
 
     for (let hop = 0; ; hop++) {
       let resp: Response;
       try {
-        resp = await ctx.fetchFn(url.href, {
+        resp = await fetchFn(url.href, {
           redirect: "manual",
           headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
           signal: AbortSignal.timeout(8000),

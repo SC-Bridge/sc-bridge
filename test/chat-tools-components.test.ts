@@ -124,6 +124,17 @@ describe("chat tools — search_components / get_component_details", () => {
     expect(out.candidates).toHaveLength(2);
   });
 
+  it("exact name shared by several components returns candidates", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const t = tag();
+    await seedComponent({ name: `${t} Twin Name`, className: `${t}_tw_s1`, type: "Shield", size: 1 });
+    await seedComponent({ name: `${t} Twin Name`, className: `${t}_tw_s2`, type: "Shield", size: 2 });
+    const out = await run(userId, "get_component_details", { name: `${t} Twin Name` });
+    expect(out.error).toBeTruthy();
+    expect(out.candidates.map((c: { class_name: string }) => c.class_name).sort()).toEqual([`${t}_tw_s1`, `${t}_tw_s2`]);
+    expect(out.candidates.map((c: { size: number }) => c.size).sort()).toEqual([1, 2]);
+  });
+
   it("cart/shops route still lists every shop cheapest first", async () => {
     const { sessionToken } = await createTestUser(env.DB);
     const t = tag();

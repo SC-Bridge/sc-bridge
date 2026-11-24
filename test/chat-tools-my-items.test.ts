@@ -4,6 +4,7 @@ import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
 import { createTestUser } from "./helpers";
 import { createRsiAccount } from "../src/lib/rsi-accounts";
 import { executeChatTool } from "../src/lib/chat-tools";
+import { MY_ITEMS_MAX_CHARS } from "../src/lib/chat-tools/my-items";
 
 let seq = 0;
 
@@ -56,6 +57,34 @@ async function seedCollection(userId: string, itemName: string): Promise<void> {
     .run();
   await env.DB.prepare("INSERT INTO user_loot_collection (user_id, loot_uuid, quantity) VALUES (?, ?, 2)").bind(userId, uuid).run();
 }
+
+describe("chat tools — get_my_items size budget", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("keeps a big pledges result under the size budget", async () => {
+    const { userId } = await createTestUser(env.DB);
+    const acct = await account(userId);
+    for (let i = 0; i < 100; i++) await seedPledge(userId, acct, { name: `Big Pledge ${i} with a fairly long store title` });
+    await env.DB
+      .prepare(
+        `WITH RECURSIVE n(k) AS (SELECT 1 UNION ALL SELECT k + 1 FROM n WHERE k < 20)
+         INSERT INTO user_pledge_items (user_id, user_pledge_id, title, kind, sort_order)
+         SELECT up.user_id, up.id, 'Item ' || n.k || ' of a pledge with a long descriptive title here', 'Ship', n.k
+           FROM user_pledges up CROSS JOIN n WHERE up.user_id = ?`,
+      )
+      .bind(userId)
+      .run();
+
+    const out = await run(userId, { section: "pledges" });
+    expect(out.total).toBe(100);
+    expect(JSON.stringify(out.items).length).toBeLessThanOrEqual(MY_ITEMS_MAX_CHARS);
+    expect(out.truncated).toBe(true);
+    expect(out.items.length).toBeGreaterThan(0);
+    expect(out.items.length).toBeLessThan(100);
+  });
+});
 
 describe("chat tools — get_my_items", () => {
   beforeAll(async () => {

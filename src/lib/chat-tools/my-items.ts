@@ -2,6 +2,18 @@ import type { ChatToolHandler, ToolContext } from "../chat-tools";
 import { str } from "./args";
 
 export const MY_ITEMS_CAP = 100;
+/** Serialised size cap for one section's items. The result is re-sent to the model on every later round. */
+export const MY_ITEMS_MAX_CHARS = 24_000;
+
+/** Longest prefix of `items` whose JSON fits in MY_ITEMS_MAX_CHARS. */
+function fitToBudget(items: Record<string, unknown>[]): Record<string, unknown>[] {
+  let size = 2; // "[]"
+  for (let i = 0; i < items.length; i++) {
+    size += JSON.stringify(items[i]).length + (i > 0 ? 1 : 0);
+    if (size > MY_ITEMS_MAX_CHARS) return items.slice(0, i);
+  }
+  return items;
+}
 
 /** Keeps rows of table alias `a` inside the chat's account scope (null scope = all accounts). */
 const scoped = (a: string) => `(? IS NULL OR ${a}.rsi_account_id IN (SELECT value FROM json_each(?)))`;
@@ -116,7 +128,9 @@ async function listSection(section: Section, ctx: ToolContext) {
     .prepare(`SELECT ${section.cols} FROM ${section.from} ORDER BY ${section.order} LIMIT ${MY_ITEMS_CAP}`)
     .bind(...binds)
     .all<Record<string, unknown>>();
-  return { total: total?.n ?? 0, items: section.map ? results.map(section.map) : results };
+  const rows = section.map ? results.map(section.map) : results;
+  const items = fitToBudget(rows);
+  return { total: total?.n ?? 0, items, ...(items.length < rows.length ? { truncated: true } : {}) };
 }
 
 export const getMyItemsTool: ChatToolHandler = {

@@ -91,6 +91,18 @@ describe("chat tools — read_rsi_page", () => {
     expect(out.error).toBe("Could not reach RSI");
   });
 
+  it("calls fetch unbound, as the global fetch requires in workerd", async () => {
+    // workerd's global fetch throws "Illegal invocation" when called as a method of another object.
+    const { fn } = fakeFetch({ [`${RSI}/patch-notes`]: { status: 200, body: "<html><body><p>ok</p></body></html>" } });
+    const strict = function (this: unknown, ...a: Parameters<typeof fetch>) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      return fn(...a);
+    } as typeof fetch;
+    const out = await read("/patch-notes", strict);
+    expect(out.error).toBeUndefined();
+    expect(out.text).toContain("ok");
+  });
+
   it("truncates to 12000 with truncated true", async () => {
     const body = `<html><body><p>${"word ".repeat(5000)}</p></body></html>`;
     const { fn } = fakeFetch({ [`${RSI}/patch-notes`]: { status: 200, body } });

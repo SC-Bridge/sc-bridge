@@ -196,20 +196,25 @@ async function resolveComponent(db: D1Database, args: Record<string, unknown>): 
     }
   }
   const needle = name ?? className!;
-  for (const [sql, a] of tables) {
-    const row = await db.prepare(`${sql} AND LOWER(${a}.name) = LOWER(?) LIMIT 1`).bind(needle).first<Found>();
-    if (row) return row;
-  }
-  const matches: Found[] = [];
-  for (const [sql, a] of tables) {
-    const { results } = await db.prepare(`${sql} AND ${a}.name LIKE ? ORDER BY ${a}.name LIMIT ${CANDIDATE_CAP + 1}`).bind(`%${needle}%`).all<Found>();
-    matches.push(...results);
-  }
+  const lookup = async (cond: string, bind: string) => {
+    const found: Found[] = [];
+    for (const [sql, a] of tables) {
+      const { results } = await db
+        .prepare(`${sql} AND ${cond.replaceAll("$", a)} ORDER BY ${a}.name, ${a}.size LIMIT ${CANDIDATE_CAP + 1}`)
+        .bind(bind)
+        .all<Found>();
+      found.push(...results);
+    }
+    return found;
+  };
+  // Many components share an exact name (164 on staging, e.g. one name across sizes): never pick one silently.
+  const exact = await lookup("LOWER($.name) = LOWER(?)", needle);
+  const matches = exact.length > 0 ? exact : await lookup("$.name LIKE ?", `%${needle}%`);
   if (matches.length === 1) return matches[0];
   if (matches.length === 0) return { error: `No component matches "${needle}".` };
   return {
     error: "Several components match — call again with one of these class names.",
-    candidates: matches.slice(0, CANDIDATE_CAP).map((r) => ({ class_name: r.class_name, name: r.name })),
+    candidates: matches.slice(0, CANDIDATE_CAP).map((r) => ({ class_name: r.class_name, name: r.name, size: r.size, type: r.type })),
   };
 }
 
