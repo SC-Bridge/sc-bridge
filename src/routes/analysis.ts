@@ -179,9 +179,9 @@ export function analysisRoutes(deps: { fetchFn?: FetchFn } = {}) {
   // POST /api/llm/generate-analysis
   routes.post("/llm/generate-analysis",
     validate("json", z.object({
-      provider: z.string().max(20).optional(),
-      model: z.string().max(100).optional(),
-      context: z.string().max(1000).optional(),
+      provider: z.string().max(20).nullish(),
+      model: z.string().max(100).nullish(),
+      context: z.string().max(1000).nullish(),
       // 'all' or a non-empty id list; absent means all.
       accounts: AI_ACCOUNTS_BODY.optional(),
     })),
