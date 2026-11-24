@@ -6,6 +6,7 @@ import { createTestUser, seedVehicle } from "./helpers";
 import { createRsiAccount } from "../src/lib/rsi-accounts";
 import { encrypt } from "../src/lib/crypto";
 import { analysisRoutes } from "../src/routes/analysis";
+import { DEFAULT_MODELS } from "../src/lib/llm";
 import type { HonoEnv } from "../src/lib/types";
 
 let seq = 0;
@@ -156,5 +157,28 @@ describe("generate-analysis account scoping", () => {
       accounts: string[] | null;
     };
     expect(latest.accounts).toEqual(hist.history[0].accounts);
+  });
+});
+
+describe("generate-analysis with no saved model", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("accepts model: null (what the Analysis page sends) and falls back to the default model", async () => {
+    const { userId } = await createTestUser(env.DB);
+    // Settings saves a key without a model, leaving model = ''
+    const enc = await encrypt("sk-fake-test-key", env.ENCRYPTION_KEY);
+    await env.DB
+      .prepare("INSERT INTO user_llm_configs (user_id, provider, encrypted_api_key, model) VALUES (?, 'anthropic', ?, '')")
+      .bind(userId, enc)
+      .run();
+    const acct = await seedAccount(userId, true);
+    await seedShip(userId, acct, "Null Model Ship");
+
+    const res = await generate(appFor(userId, []), { provider: "anthropic", model: null, accounts: "all" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { model: string };
+    expect(body.model).toBe(DEFAULT_MODELS.anthropic);
   });
 });

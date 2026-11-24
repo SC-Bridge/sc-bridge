@@ -214,3 +214,18 @@ describe("AI chat account scoping", () => {
     expect(detailAll.chat.accounts).toBeNull();
   });
 });
+
+describe("chat with no saved model", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("accepts model: null (what the Analysis page sends)", async () => {
+    const { userId } = await createTestUser(env.DB);
+    await seedKey(userId);
+    const a = await seedAccount(userId, true, "Main");
+    await seedNamedShip(userId, a, "Null Model Ship");
+    const res = await send(appFor(userId, []), { model: null });
+    expect(res.status).toBe(200);
+  });
+});

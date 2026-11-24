@@ -253,3 +253,50 @@ describe("Settings — /api/settings/preferences", () => {
     });
   });
 });
+
+describe("Settings — /api/settings/llm-config key removal", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  async function put(headers: Record<string, string>, body: unknown) {
+    return SELF.fetch("http://localhost/api/settings/llm-config", {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function providers(headers: Record<string, string>) {
+    const res = await SELF.fetch("http://localhost/api/settings/llm-config", { headers });
+    const body = (await res.json()) as { providers: Record<string, { api_key_set: boolean }> };
+    return body.providers;
+  }
+
+  it("removes one provider's key when the Settings page sends an empty api_key", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = await authHeaders(sessionToken);
+
+    expect((await put(headers, { provider: "anthropic", api_key: "sk-ant-test-key-1234567890" })).status).toBe(200);
+    expect((await put(headers, { provider: "openai", api_key: "sk-openai-test-key-1234567890" })).status).toBe(200);
+    expect((await providers(headers)).anthropic?.api_key_set).toBe(true);
+
+    // Exactly what frontend/src/pages/Settings.jsx sends on "Remove"
+    const res = await put(headers, { provider: "anthropic", api_key: "" });
+    expect(res.status).toBe(200);
+
+    const after = await providers(headers);
+    expect(after.anthropic?.api_key_set ?? false).toBe(false);
+    expect(after.openai?.api_key_set).toBe(true);
+  });
+
+  it("still updates only the model when api_key is omitted", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = await authHeaders(sessionToken);
+
+    await put(headers, { provider: "anthropic", api_key: "sk-ant-test-key-1234567890" });
+    const res = await put(headers, { provider: "anthropic", model: "claude-haiku-4-5-20251001" });
+    expect(res.status).toBe(200);
+    expect((await providers(headers)).anthropic?.api_key_set).toBe(true);
+  });
+});
