@@ -1,7 +1,7 @@
 import { chatCompletion, mapProviderError, type FetchFn, type LLMMessage, type LLMProviderId } from "./llm";
-import { GET_SHIP_LOADOUT_TOOL, executeChatTool } from "./chat-tools";
+import { CHAT_TOOLS, executeChatTool } from "./chat-tools";
 
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 8;
 
 export interface ChatTurnResult {
   ok: boolean;
@@ -14,7 +14,7 @@ export interface ChatTurnResult {
 
 /**
  * Run one chat turn with on-demand tool calling: the model may call
- * get_ship_loadout up to MAX_TOOL_ROUNDS times; each call is executed
+ * the Fleet Chat tools (CHAT_TOOLS) up to MAX_TOOL_ROUNDS times; each call is executed
  * server-side (user-scoped) and fed back, then the model produces a final
  * answer. The final round drops the tools to force a text reply, so the loop
  * always terminates.
@@ -48,7 +48,7 @@ export async function runChatTurn(opts: {
         max_tokens: opts.maxTokens ?? 1500,
         system,
         messages,
-        ...(useTools ? { tools: [GET_SHIP_LOADOUT_TOOL] } : {}),
+        ...(useTools ? { tools: CHAT_TOOLS } : {}),
       },
       fetchImpl,
     );
@@ -61,7 +61,7 @@ export async function runChatTurn(opts: {
       rounds++;
       messages.push({ role: "assistant", content: comp.text || "", toolCalls: comp.toolCalls });
       for (const call of comp.toolCalls) {
-        const resultStr = await executeChatTool(db, userId, call, opts.scopeIds ?? null);
+        const resultStr = await executeChatTool(db, userId, call, opts.scopeIds ?? null, fetchImpl);
         let label = call.name;
         try {
           const parsed = JSON.parse(resultStr) as { ship?: string };

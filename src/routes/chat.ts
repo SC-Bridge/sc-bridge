@@ -147,8 +147,8 @@ export function chatRoutes(deps: { fetchFn?: FetchFn } = {}) {
         userMessage: body.message,
       });
 
-      // Agent loop: the model may call get_ship_loadout on demand (up to 4 rounds)
-      // to fetch a ship's full components, then produces a final answer.
+      // Agent loop: the model may call the Fleet Chat tools on demand (up to 8 rounds)
+      // to look things up, then produces a final answer.
       const turn = await runChatTurn({
         provider,
         apiKey,
