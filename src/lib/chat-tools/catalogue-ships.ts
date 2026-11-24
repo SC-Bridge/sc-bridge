@@ -139,7 +139,7 @@ export const getShipDetailsTool: ChatToolHandler = {
     const ship = await resolveShip(ctx.db, args);
     if ("error" in ship) return ship;
     const scopeJson = ctx.scopeIds ? JSON.stringify(ctx.scopeIds) : null;
-    const [owned, loadout] = await Promise.all([
+    const [owned, loadout, racked] = await Promise.all([
       ctx.db
         .prepare(
           `SELECT COUNT(*) AS n FROM user_fleet uf
@@ -149,19 +149,41 @@ export const getShipDetailsTool: ChatToolHandler = {
         .bind(ctx.userId, ship.id, scopeJson, scopeJson)
         .first<{ n: number }>(),
       getShipLoadout(ctx.db, ship.slug),
+      // getShipLoadout counts a rack's missile slots but not what is loaded in them.
+      ctx.db
+        .prepare(
+          `SELECT sp.parent_port_id AS rack_id, sm.name, sm.size, COUNT(*) AS count
+             FROM vehicle_ports sp JOIN ship_missiles sm ON sm.uuid = sp.equipped_item_uuid
+            WHERE sp.vehicle_id = ? AND sp.parent_port_id IS NOT NULL
+              AND COALESCE(sp.port_name, sp.name, '') LIKE 'missile_%_attach'
+            GROUP BY sp.parent_port_id, sm.name, sm.size
+            ORDER BY sm.name`,
+        )
+        .bind(ship.id)
+        .all<{ rack_id: number; name: string; size: number; count: number }>(),
     ]);
+    const missilesByRack = new Map<number, Array<{ name: string; size: number; count: number }>>();
+    for (const { rack_id, ...m } of racked.results) {
+      missilesByRack.set(rack_id, [...(missilesByRack.get(rack_id) ?? []), m]);
+    }
     const { id: _id, description, ...rest } = ship;
     return {
       label: rest.name,
       ...rest,
       description: clip(description),
       owned_count: owned?.n ?? 0,
-      loadout: loadout.map((p) => ({
-        port: p.port_name,
-        type: p.component_type,
-        size: p.component_size,
-        component: p.component_name,
-      })),
+      loadout: loadout.map((p) => {
+        const missiles = missilesByRack.get(p.port_id as number);
+        return {
+          port: p.port_name,
+          type: p.component_type,
+          size: p.component_size,
+          component: p.component_name,
+          // The arm, gimbal or turret the component sits on, when it isn't the component itself.
+          ...(p.mount_name && p.mount_name !== p.component_name ? { mount: p.mount_name } : {}),
+          ...(missiles ? { missiles } : {}),
+        };
+      }),
     };
   },
 };
