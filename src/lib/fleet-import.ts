@@ -2,7 +2,7 @@
  * Shared fleet import helpers — used by both HangarXplor and hangar-sync imports.
  */
 
-import { compactSlug, slugFromName } from "./slug";
+import { compactSlug, foldDiacritics, slugFromName } from "./slug";
 import { shipNameMap } from "./rsi-ship-names";
 
 // --- Preloaded vehicle map for in-memory slug matching ---
@@ -27,11 +27,11 @@ export async function preloadVehicleMap(db: D1Database): Promise<VehicleMap> {
   for (const row of result.results) {
     const r = row as { id: number; slug: string; name: string };
     slugToID.set(r.slug, r.id);
-    nameToSlug.set(r.name.toLowerCase(), r.slug);
-    // Also index with manufacturer stripped (4.7 names include mfr: "RSI Aurora Mk I SE")
-    const stripped = stripManufacturer(r.name);
-    if (stripped.toLowerCase() !== r.name.toLowerCase()) {
-      nameToSlug.set(stripped.toLowerCase(), r.slug);
+    // Index the full name and the manufacturer-stripped form (4.7 names include
+    // mfr: "RSI Aurora Mk I SE"), each also with diacritics folded (#282)
+    for (const name of [r.name, stripManufacturer(r.name)]) {
+      nameToSlug.set(name.toLowerCase(), r.slug);
+      nameToSlug.set(foldDiacritics(name).toLowerCase(), r.slug);
     }
     compactToSlug.set(compactSlug(r.slug), r.slug);
   }
@@ -50,9 +50,10 @@ export async function preloadVehicleMap(db: D1Database): Promise<VehicleMap> {
     if (!slugToID.has(r.slug)) {
       slugToID.set(r.slug, r.replacement_id);
     }
-    const lowerName = r.name.toLowerCase();
-    if (!nameToSlug.has(lowerName)) {
-      nameToSlug.set(lowerName, r.replacement_slug);
+    for (const lowerName of [r.name.toLowerCase(), foldDiacritics(r.name).toLowerCase()]) {
+      if (!nameToSlug.has(lowerName)) {
+        nameToSlug.set(lowerName, r.replacement_slug);
+      }
     }
     const compact = compactSlug(r.slug);
     if (!compactToSlug.has(compact)) {
@@ -91,6 +92,15 @@ export function findVehicleSlugLocal(
   if (displayName) {
     const found = map.nameToSlug.get(displayName.toLowerCase());
     if (found) return found;
+
+    // RSI titles some ships with diacritics the DB spells in ASCII, e.g. "Hyūn" vs
+    // "Gatac Hyun" (#282). The slug candidates lost those letters ("hyn"), so retry
+    // the whole match on the folded title. Folding is idempotent, so this recurses once.
+    const folded = foldDiacritics(displayName);
+    if (folded !== displayName) {
+      const foldedSlug = slugFromName(folded);
+      return findVehicleSlugLocal(map, [foldedSlug, compactSlug(foldedSlug), ...candidateSlugs], folded);
+    }
   }
 
   // Try the RSI ship-name alias table — explicit renames the heuristics below
@@ -230,7 +240,7 @@ export interface PaintMap {
 
 /** Normalize RSI paint title: "100 Series - Blue Ametrine Paint" → "100 series blue ametrine" */
 export function normalizePaintTitle(rsiTitle: string): string {
-  return rsiTitle
+  return foldDiacritics(rsiTitle)
     .replace(/\s*-\s*/g, " ")       // " - " → " "
     .replace(/\s+paint$/i, "")       // strip trailing " Paint"
     .replace(/\s+/g, " ")            // collapse whitespace
@@ -240,7 +250,7 @@ export function normalizePaintTitle(rsiTitle: string): string {
 
 /** Normalize DB paint name: "100 Series Blue Ametrine Livery" → "100 series blue ametrine" */
 function normalizeDbPaintName(dbName: string): string {
-  return dbName
+  return foldDiacritics(dbName)
     .replace(/\s+camo\s+livery$/i, "")  // strip " Camo Livery"
     .replace(/\s+livery$/i, "")          // strip " Livery"
     .replace(/\s+/g, " ")
