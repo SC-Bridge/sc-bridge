@@ -64,8 +64,8 @@ export async function runChatTurn(opts: {
         const resultStr = await executeChatTool(db, userId, call, opts.scopeIds ?? null, fetchImpl);
         let label = call.name;
         try {
-          const parsed = JSON.parse(resultStr) as { ship?: string };
-          if (parsed.ship) label = parsed.ship;
+          const parsed = JSON.parse(resultStr) as { ship?: string; label?: string };
+          label = parsed.ship || parsed.label || label;
         } catch {
           /* keep tool name */
         }

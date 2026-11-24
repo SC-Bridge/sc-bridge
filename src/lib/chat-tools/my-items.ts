@@ -136,6 +136,6 @@ export const getMyItemsTool: ChatToolHandler = {
     const key = str(args.section)?.toLowerCase();
     const section = key ? SECTIONS[key] : undefined;
     if (!section || !key) return { error: `Unknown section. Use one of: ${SECTION_LIST}.` };
-    return { section: key, ...(await listSection(section, ctx)) };
+    return { label: `Your ${key.replace("_", " ")}`, section: key, ...(await listSection(section, ctx)) };
   },
 };

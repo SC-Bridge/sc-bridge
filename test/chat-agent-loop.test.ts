@@ -70,7 +70,7 @@ describe("runChatTurn — agent loop", () => {
     expect(bodies[1]).toContain("Agent Shield");
   });
 
-  it("stops at the 4-round cap when the model keeps requesting tools", async () => {
+  it("stops at the 8-round cap when the model keeps requesting tools", async () => {
     const { userId } = await createTestUser(env.DB);
     const fleetId = await seedShip(userId, "agent-ship-b");
     const { fetch } = scripted([openaiToolCall(fleetId)]); // always a tool call
@@ -87,6 +87,6 @@ describe("runChatTurn — agent loop", () => {
     });
 
     expect(turn.ok).toBe(true);
-    expect(turn.rounds).toBe(4);
+    expect(turn.rounds).toBe(8);
   });
 });

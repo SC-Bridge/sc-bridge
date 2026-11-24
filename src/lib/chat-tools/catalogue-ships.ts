@@ -89,7 +89,7 @@ export const searchShipsTool: ChatToolHandler = {
       .prepare(`SELECT ${SHIP_COLS} FROM vehicles v ${SHIP_JOINS} WHERE ${whereSql} ORDER BY ${order}, v.name LIMIT ${SEARCH_CAP}`)
       .bind(...binds)
       .all();
-    return { total: total?.n ?? 0, ships: results };
+    return { label: "Searched ships", total: total?.n ?? 0, ships: results };
   },
 };
 
@@ -152,6 +152,7 @@ export const getShipDetailsTool: ChatToolHandler = {
     ]);
     const { id: _id, description, ...rest } = ship;
     return {
+      label: rest.name,
       ...rest,
       description: clip(description),
       owned_count: owned?.n ?? 0,

@@ -140,7 +140,7 @@ export const readRsiPageTool: ChatToolHandler = {
       if (resp.status !== 200) return { error: `RSI returned ${resp.status}` };
       const { title, text } = await htmlToText(resp, url);
       const truncated = text.length > MAX_TEXT;
-      return { url: url.href, title, text: truncated ? text.slice(0, MAX_TEXT) : text, truncated };
+      return { label: title || "RSI page", url: url.href, title, text: truncated ? text.slice(0, MAX_TEXT) : text, truncated };
     }
   },
 };

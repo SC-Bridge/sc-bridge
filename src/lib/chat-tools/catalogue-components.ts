@@ -155,6 +155,7 @@ export const searchComponentsTool: ChatToolHandler = {
       .all<Record<string, unknown>>();
 
     return {
+      label: "Searched components",
       total: total?.n ?? 0,
       components: results.map((r) => ({
         name: r.name,
@@ -231,6 +232,7 @@ export const getComponentDetailsTool: ChatToolHandler = {
     const shops = found.class_name ? await getComponentShops(ctx.db, found.class_name) : [];
     const details = Object.fromEntries(Object.entries(found).filter(([, v]) => v !== null && v !== undefined));
     return {
+      label: found.name,
       ...details,
       description: clip(found.description),
       shops: shops.map((s) => ({ shop: s.shop_name, location: s.location_label, buy_price: s.buy_price })),
