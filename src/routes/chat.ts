@@ -88,7 +88,7 @@ export function chatRoutes(deps: { fetchFn?: FetchFn } = {}) {
       z.object({
         chat_id: z.number().int().positive().optional(),
         provider: LLMProvider.default("anthropic"),
-        model: z.string().max(100).optional(),
+        model: z.string().max(100).nullish(),
         message: z.string().min(1).max(2000),
         // 'all' or a non-empty id list. Absent keeps the chat's stored scope (a new chat: all).
         accounts: AI_ACCOUNTS_BODY.optional(),
