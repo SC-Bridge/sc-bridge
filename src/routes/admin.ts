@@ -503,11 +503,16 @@ export function adminRoutes() {
    * HTTP request against a public endpoint, no auth required, no rate limiting.
    * Returns { ok: true, message } immediately; the sync runs synchronously
    * inside the request because it's small (~250 ships).
+   *
+   * Then sets pledge_price + on_sale from Fleetyards: the ship-matrix no
+   * longer carries prices, so it can't set them on its own.
    */
   routes.post("/rsi/ship-status", async (c) => {
     const { triggerShipProductionStatusSync } = await import("../sync/pipeline");
+    const { syncPledgePrices } = await import("../sync/fleetyards");
     const result = await triggerShipProductionStatusSync(c.env);
-    return c.json({ ok: true, message: result });
+    const prices = await syncPledgePrices(c.env.DB);
+    return c.json({ ok: true, message: `${result}; pledge prices updated: ${prices.updated}` });
   });
 
   /**
