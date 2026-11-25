@@ -22,6 +22,7 @@ import { delay, chunkArray } from "../lib/utils";
 import { SYNC_SOURCE } from "../lib/constants";
 import { logEvent } from "../lib/logger";
 import { shipNameMap } from "../lib/rsi-ship-names";
+import { foldDiacritics } from "../lib/slug";
 
 // --- Constants ---
 const PAGE_LIMIT = 100;
@@ -473,10 +474,19 @@ const MANUFACTURER_PREFIXES = [
   "grey's",
 ];
 
+/**
+ * Match key for a ship name: lowercased, whitespace collapsed, diacritics
+ * folded. RSI's ship-matrix titles the Gatac Hyun "Hyūn" while our row says
+ * "Gatac Hyun", so both sides of the match must fold or it never matches.
+ */
+function matchKey(name: string): string {
+  return foldDiacritics(name.toLowerCase().replace(/\s+/g, " ").trim());
+}
+
 /** Strip the leading manufacturer word(s) from a vehicle name. Returns the
- * stripped name (lowercased) + the original name lowercased. */
+ * stripped match key, or the whole name's match key when no prefix matches. */
 function stripManufacturerPrefix(name: string): string {
-  const lower = name.toLowerCase().replace(/\s+/g, " ").trim();
+  const lower = matchKey(name);
   for (const prefix of MANUFACTURER_PREFIXES) {
     if (lower.startsWith(prefix + " ")) {
       return lower.substring(prefix.length + 1).trim();
@@ -634,7 +644,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
     const slugToId = new Map<string, number>();
 
     for (const v of dbVehicles) {
-      const fullLower = v.name.toLowerCase().replace(/\s+/g, " ").trim();
+      const fullLower = matchKey(v.name);
       directNameToId.set(fullLower, v.id);
 
       const stripped = stripManufacturerPrefix(v.name);
@@ -713,7 +723,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       }
 
       // Try each matching strategy in order
-      const lower = shipName.toLowerCase().replace(/\s+/g, " ").trim();
+      const lower = matchKey(shipName);
       let dbId: number | undefined;
 
       // 1. shipNameMap override (handles "600i explorer" → "600i" etc.)
