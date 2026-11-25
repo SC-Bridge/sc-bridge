@@ -30,6 +30,10 @@ interface FleetyardsShip {
   name: string;
   productionStatus: string;
   loaners?: Array<{ slug: string; name: string }>;
+  /** USD on the RSI pledge store; null when RSI lists no price. */
+  pledgePrice?: number | null;
+  /** On sale on the RSI pledge store right now. */
+  onSale?: boolean;
 }
 
 interface VehicleRow {
@@ -247,6 +251,74 @@ export function buildLoanerPairs(
     }
   }
   return pairs;
+}
+
+interface PricedVehicleRow extends VehicleRow {
+  pledge_price: number | null;
+  on_sale: number | null;
+}
+
+/**
+ * Work out which vehicles need a new pledge_price / on_sale from the Fleetyards
+ * list. Exact slug matches go first so a looser fallback can't claim a vehicle
+ * before its own ship does. A null Fleetyards price leaves ours alone. Only
+ * changed rows are returned. Pure — exported for testing.
+ */
+export function buildPledgePriceUpdates(
+  ships: FleetyardsShip[],
+  vehicles: PricedVehicleRow[],
+): Array<{ id: number; price: number | null; onSale: number }> {
+  const byId = new Map<number, PricedVehicleRow>();
+  const slugToId = new Map<string, number>();
+  const normSlugToId = new Map<string, number>();
+  const normNameToId = new Map<string, number>();
+  for (const v of vehicles) {
+    byId.set(v.id, v);
+    slugToId.set(v.slug, v.id);
+    if (!normSlugToId.has(normKey(v.slug))) normSlugToId.set(normKey(v.slug), v.id);
+    if (!normNameToId.has(normKey(v.name))) normNameToId.set(normKey(v.name), v.id);
+  }
+  const ordered = [...ships].sort((a, b) => Number(!slugToId.has(a.slug)) - Number(!slugToId.has(b.slug)));
+  const claimed = new Set<number>();
+  const updates: Array<{ id: number; price: number | null; onSale: number }> = [];
+  for (const ship of ordered) {
+    const id = resolveVehicleId(ship.slug, ship.name, slugToId, normSlugToId, normNameToId);
+    if (id == null || claimed.has(id)) continue;
+    claimed.add(id);
+    const row = byId.get(id)!;
+    const price = typeof ship.pledgePrice === "number" && ship.pledgePrice >= 0 ? ship.pledgePrice : row.pledge_price;
+    const onSale = ship.onSale ? 1 : 0;
+    if (price !== row.pledge_price || onSale !== (row.on_sale ?? 0)) {
+      updates.push({ id, price, onSale });
+    }
+  }
+  return updates;
+}
+
+/**
+ * Set vehicles.pledge_price and on_sale from Fleetyards. RSI's ship-matrix
+ * dropped its price field, so this is the only live pledge-price source.
+ * Paint variants are skipped: they are not sold on their own.
+ */
+export async function syncPledgePrices(db: D1Database): Promise<{ ships: number; updated: number }> {
+  const fyShips = await fetchAllShips();
+  const vehicles = (
+    await db
+      .prepare(
+        "SELECT id, slug, name, pledge_price, on_sale FROM vehicles WHERE is_deleted = 0 AND is_paint_variant = 0",
+      )
+      .all<PricedVehicleRow>()
+  ).results;
+  const updates = buildPledgePriceUpdates(fyShips, vehicles);
+  const statements = updates.map((u) =>
+    db.prepare("UPDATE vehicles SET pledge_price = ?, on_sale = ? WHERE id = ?").bind(u.price, u.onSale, u.id),
+  );
+  for (let i = 0; i < statements.length; i += 50) {
+    await db.batch(statements.slice(i, i + 50));
+  }
+  console.log(`[fleetyards] Pledge prices: ${updates.length} updated from ${fyShips.length} ships`);
+  logEvent("fleetyards_pledge_price_sync", { ships: fyShips.length, updated: updates.length });
+  return { ships: fyShips.length, updated: updates.length };
 }
 
 /**
