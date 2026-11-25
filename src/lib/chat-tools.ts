@@ -1,8 +1,30 @@
 import { getEffectiveShipLoadout } from "../db/queries";
 import { accountName, listRsiAccounts } from "./rsi-accounts";
-import type { ToolCall, ToolSpec } from "./llm";
+import type { FetchFn, ToolCall, ToolSpec } from "./llm";
+import { getShipDetailsTool, searchShipsTool } from "./chat-tools/catalogue-ships";
+import { getComponentDetailsTool, searchComponentsTool } from "./chat-tools/catalogue-components";
+import { getMyItemsTool } from "./chat-tools/my-items";
+import { readRsiPageTool } from "./chat-tools/rsi-page";
 
-/** The single tool the Fleet Chat exposes: fetch one ship's effective loadout. */
+/** What every chat tool runs with. Personal queries bind userId/scopeIds from here, never from tool args. */
+export interface ToolContext {
+  db: D1Database;
+  userId: string;
+  /** The chat's account scope; null = all accounts. */
+  scopeIds: number[] | null;
+  fetchFn: FetchFn;
+}
+
+/**
+ * One Fleet Chat tool. `run` returns a JSON-serialisable value (or `{ error }`);
+ * a throw is caught by `executeChatTool`.
+ */
+export interface ChatToolHandler {
+  spec: ToolSpec;
+  run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
+}
+
+/** Fetch one of the user's fleet ships' effective loadout. */
 export const GET_SHIP_LOADOUT_TOOL: ToolSpec = {
   name: "get_ship_loadout",
   description:
@@ -88,31 +110,56 @@ async function resolveFleetEntry(
   return { id: candidates[0].id };
 }
 
+const getShipLoadoutTool: ChatToolHandler = {
+  spec: GET_SHIP_LOADOUT_TOOL,
+  async run(args, ctx) {
+    try {
+      const resolved = await resolveFleetEntry(ctx.db, ctx.userId, args, ctx.scopeIds);
+      if (resolved === null) {
+        return { error: "That ship isn't in your fleet (or couldn't be matched by name)." };
+      }
+      if ("message" in resolved) return { error: resolved.message };
+      const loadout = await getEffectiveShipLoadout(ctx.db, ctx.userId, resolved.id);
+      if (!loadout) return { error: "That ship isn't in your fleet." };
+      return loadout;
+    } catch {
+      return { error: "Could not look up that ship's loadout." };
+    }
+  },
+};
+
+/** Every tool the Fleet Chat offers, in the order the model sees them. */
+export const CHAT_TOOL_HANDLERS: ChatToolHandler[] = [
+  getShipLoadoutTool,
+  searchShipsTool,
+  getShipDetailsTool,
+  searchComponentsTool,
+  getComponentDetailsTool,
+  getMyItemsTool,
+  readRsiPageTool,
+];
+
+export const CHAT_TOOLS: ToolSpec[] = CHAT_TOOL_HANDLERS.map((h) => h.spec);
+
 /**
  * Execute a chat tool call server-side and return a JSON string for the model.
- * Never throws — unknown tools / unresolved ships return a JSON `{error}`.
+ * Never throws — unknown tools, bad args and failures return a JSON `{error}`.
  */
 export async function executeChatTool(
   db: D1Database,
   userId: string,
   call: ToolCall,
   scopeIds: number[] | null = null,
+  fetchFn: FetchFn = fetch,
 ): Promise<string> {
-  if (call.name !== "get_ship_loadout") {
+  const handler = CHAT_TOOL_HANDLERS.find((h) => h.spec.name === call.name);
+  if (!handler) {
     return JSON.stringify({ error: `Unknown tool: ${call.name}` });
   }
   try {
-    const resolved = await resolveFleetEntry(db, userId, call.arguments || {}, scopeIds);
-    if (resolved === null) {
-      return JSON.stringify({ error: "That ship isn't in your fleet (or couldn't be matched by name)." });
-    }
-    if ("message" in resolved) return JSON.stringify({ error: resolved.message });
-    const loadout = await getEffectiveShipLoadout(db, userId, resolved.id);
-    if (!loadout) {
-      return JSON.stringify({ error: "That ship isn't in your fleet." });
-    }
-    return JSON.stringify(loadout);
+    const result = await handler.run(call.arguments || {}, { db, userId, scopeIds, fetchFn });
+    return JSON.stringify(result);
   } catch {
-    return JSON.stringify({ error: "Could not look up that ship's loadout." });
+    return JSON.stringify({ error: `Could not run ${call.name}.` });
   }
 }
