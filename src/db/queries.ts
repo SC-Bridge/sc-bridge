@@ -1435,6 +1435,8 @@ export async function getLootItems(
   isPTU = false,
 ): Promise<Array<LootItem & { render: RenderRef | null }>> {
   const lm = isPTU ? "ptu_loot_map" : "loot_map";
+  const lil = isPTU ? "ptu_loot_item_locations" : "loot_item_locations";
+  const ti = isPTU ? "ptu_terminal_inventory" : "terminal_inventory";
   const sql = `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         lm.category, lm.manufacturer_name,
         ${lootHasFlags(isPTU)},
@@ -1464,6 +1466,12 @@ export async function getLootItems(
         -- without a class_name (test seeds, legacy rows) still pass.
         AND (lm.class_name IS NULL OR lm.class_name NOT LIKE '%_placeholder_%')
         AND NOT (lm.class_name LIKE 'vncl_%' AND lm.category IN ('ship_component', 'ship_weapon'))
+        -- Built-in ship parts (hull armour, doors, seats, beds, fixed turrets, tanks) load as
+        -- untyped ship components and cannot be bought, looted or swapped. Keep an untyped
+        -- one only when something sells or drops it.
+        AND NOT (lm.category = 'ship_component' AND COALESCE(lm.type, '') = ''
+          AND NOT EXISTS(SELECT 1 FROM ${lil} _src WHERE _src.loot_map_id = lm.id)
+          AND NOT EXISTS(SELECT 1 FROM ${ti} _sti WHERE _sti.item_uuid = lm.uuid AND ${pricedSQL("_sti")}))
       ORDER BY lm.name ASC`;
   const result = await db.prepare(sql).all<LootItem & RenderCols>();
   return result.results.map(withRender);
