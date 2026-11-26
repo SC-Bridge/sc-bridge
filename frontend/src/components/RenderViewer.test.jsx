@@ -29,6 +29,21 @@ function setup(entry = '/ships/x', onClose = vi.fn()) {
 }
 
 describe('RenderViewer', () => {
+  it('renders into document.body so a blurred or transformed card cannot clip it', () => {
+    // .panel uses backdrop-filter, which makes a card the containing block for a
+    // position:fixed child: the full-screen overlay would be boxed inside the card.
+    const { container } = render(
+      <MemoryRouter>
+        <div className="panel">
+          <RenderViewer kind="vehicle" itemKey="x" title="Ship X" onClose={vi.fn()} />
+        </div>
+      </MemoryRouter>,
+    )
+    const backdrop = screen.getByTestId('render-backdrop')
+    expect(container.contains(backdrop)).toBe(false)
+    expect(backdrop.parentElement).toBe(document.body)
+  })
+
   it('removes ?render= when it is closed', () => {
     const onClose = setup('/ships/x?render=paint_x')
     fireEvent.keyDown(document, { key: 'Escape' })

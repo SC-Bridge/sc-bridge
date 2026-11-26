@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { useRenderVariants } from '../hooks/useRenderVariants'
@@ -85,7 +86,10 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
 
   const caption = current ? current.name || (current.variant === '' ? title : current.variant) : title
 
-  return (
+  // Portal to <body>: an ancestor with backdrop-filter or transform (e.g. a .panel card)
+  // becomes the containing block for position:fixed and would clip the overlay to itself.
+  // React events still bubble through the component tree, so callers' handlers keep working.
+  return createPortal(
     <div
       data-testid="render-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
@@ -151,6 +155,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
