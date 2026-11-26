@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { SELF, env } from "cloudflare:test";
-import { setupTestDatabase } from "./apply-migrations";
+import { setupTestDatabase, TEST_GAME_VERSION_ID } from "./apply-migrations";
 import { createTestUser, authHeaders, seedLootItem } from "./helpers";
 
 describe("Loot API — /api/loot", () => {
@@ -35,6 +35,31 @@ describe("Loot API — /api/loot", () => {
       expect(found).toBeDefined();
       expect(found!.type).toBe("Weapon");
       expect(found!.rarity).toBe("Rare");
+    });
+
+    it("hides built-in ship parts: untyped ship components with no source", async () => {
+      // A ship's armour, doors and seats load as category 'ship_component' with no type;
+      // none can be bought, looted or swapped. A typed component stays, and so does an
+      // untyped one that some source does drop (a miscategorised loot item).
+      // Real rows always carry a class_name (the list's vncl_ filter drops ship components without one).
+      const builtIn = await seedLootItem(env.DB, { name: "Test Ship Armor", category: "ship_component" });
+      const dropped = await seedLootItem(env.DB, { name: "Test Dropped Hide", category: "ship_component" });
+      const typed = await seedLootItem(env.DB, { name: "Test Shield", type: "Shield", sub_type: "Medium", category: "ship_component" });
+      await env.DB.batch([
+        env.DB.prepare("UPDATE loot_map SET type = NULL, class_name = 'orig_315p_armor' WHERE id = ?").bind(builtIn.id),
+        env.DB.prepare("UPDATE loot_map SET type = NULL, class_name = 'test_dropped_hide' WHERE id = ?").bind(dropped.id),
+        env.DB.prepare("UPDATE loot_map SET class_name = 'test_shield_s1' WHERE id = ?").bind(typed.id),
+        env.DB.prepare(
+          `INSERT INTO loot_item_locations (loot_map_id, game_version_id, source_type, location_key, actor, faction, slot)
+           VALUES (?, ?, 'container', 'cccccccc-0000-4000-8000-000000000003', NULL, NULL, NULL)`,
+        ).bind(dropped.id, TEST_GAME_VERSION_ID),
+      ]);
+
+      const res = await SELF.fetch("http://localhost/api/loot");
+      const names = ((await res.json()) as Array<{ name: string }>).map((i) => i.name);
+      expect(names).not.toContain("Test Ship Armor");
+      expect(names).toContain("Test Dropped Hide");
+      expect(names).toContain("Test Shield");
     });
 
     it("sets cache-control header", async () => {
