@@ -77,7 +77,7 @@ function OrgFleet({ slug, callerRole }) {
       <div className="grid gap-2">
         {fleet.map((ship) => (
           <div key={ship.id} className="flex items-center gap-3 p-2 rounded border border-sc-border/50 bg-white/[0.02]">
-            <ShipImage src={ship.image_url} alt={ship.vehicle_name} aspectRatio="thumbnail" className="w-12 rounded border border-sc-border/50 shrink-0" />
+            <ShipImage render={ship.render} src={ship.image_url} alt={ship.vehicle_name} aspectRatio="thumbnail" className="w-12 rounded border border-sc-border/50 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm text-white truncate">{ship.vehicle_name}</span>

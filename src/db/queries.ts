@@ -12,12 +12,17 @@ import type {
   SyncHistory,
   UserLLMConfig,
   AIAnalysis,
+  PaintHullRender,
+  RenderRef,
 } from "../lib/types";
-import { extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
+import { armourSetRenderKey, extractSetName, makeSetSlug, parseRewardItemNames } from "../lib/loot-sets";
 import { normaliseTitle } from "../lib/titleNorm";
 import { ptuShadowExists, resolveTable } from "../lib/ptu";
 import { humanizePortName } from "../lib/loadout-format";
 import { buyPriceSQL, sellPriceSQL, priceSourceSQL, pricedSQL, buyablePricedSQL } from "../lib/pricing-sql";
+import {
+  lootRenderJoin, renderCols, renderJoin, renderViewFilter, renderViewRank, toRenderRef, withRender, type RenderCols,
+} from "../lib/renders";
 
 // --- Loot summary stats (category-aware card display) ---
 // LEFT JOINs to detail tables for key stats shown on item cards.
@@ -104,14 +109,16 @@ export async function getAllVehicles(db: D1Database): Promise<Vehicle[]> {
         v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
         v.pledge_url,
         m.name as manufacturer_name, m.code as manufacturer_code,
-        ps.key as production_status
+        ps.key as production_status,
+        ${renderCols("r")}
       FROM vehicles v
       LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
+      ${renderJoin("r", "v.class_name")}
       ORDER BY v.name`,
     )
-    .all();
-  return result.results as unknown as Vehicle[];
+    .all<RenderCols>();
+  return result.results.map(withRender) as unknown as Vehicle[];
 }
 
 export async function getVehicleBySlug(db: D1Database, slug: string): Promise<Vehicle | null> {
@@ -124,15 +131,17 @@ export async function getVehicleBySlug(db: D1Database, slug: string): Promise<Ve
         v.image_url, v.image_url_small, v.image_url_medium, v.image_url_large,
         v.pledge_url,
         m.name as manufacturer_name, m.code as manufacturer_code,
-        ps.key as production_status
+        ps.key as production_status,
+        ${renderCols("r")}
       FROM vehicles v
       LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
+      ${renderJoin("r", "v.class_name")}
       WHERE v.slug = ?`,
     )
     .bind(slug)
-    .first();
-  return row as unknown as Vehicle | null;
+    .first<RenderCols>();
+  return row ? (withRender(row) as unknown as Vehicle) : null;
 }
 
 export async function getVehicleCount(db: D1Database): Promise<number> {
@@ -838,6 +847,23 @@ export async function upsertPaint(
   return row?.id ?? 0;
 }
 
+/**
+ * LEFT JOIN of the render of paint `p` on its first fitted hull, by vehicle
+ * name, among the hulls (paint_vehicles) that have a render of it. One row
+ * per paint: the lookup returns a single id. Views as in `renderJoin`.
+ */
+function firstHullRenderJoin(alias: string): string {
+  return `LEFT JOIN item_renders ${alias} ON ${alias}.id = (
+    SELECT _hr.id FROM paint_vehicles _hpv
+    JOIN vehicles _hv ON _hv.id = _hpv.vehicle_id
+    JOIN item_renders _hr ON _hr.item_key = lower(_hv.class_name)
+      AND _hr.variant = lower(p.class_name)
+      AND ${renderViewFilter("_hr")}
+    WHERE _hpv.paint_id = p.id
+    ORDER BY _hv.name, ${renderViewRank("_hr")}
+    LIMIT 1)`;
+}
+
 export async function getAllPaints(db: D1Database): Promise<Paint[]> {
   const paintResult = await db
     .prepare(
@@ -851,8 +877,10 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
           ELSE p.description
         END AS description,
         p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
-        p.created_at, p.updated_at
+        p.created_at, p.updated_at,
+        ${renderCols("r")}, r.item_key AS render_item_key
       FROM paints p
+      ${firstHullRenderJoin("r")}
       WHERE p.is_base_variant = 0
         -- Synthetic "Standard" liveries (0289) are not items; the ship page lists them.
         AND COALESCE(p.is_standard, 0) = 0
@@ -864,10 +892,10 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
              OR p.image_url_small IS NOT NULL OR p.image_url_large IS NOT NULL)
       ORDER BY p.name`,
     )
-    .all();
+    .all<RenderCols>();
 
   const paints: Paint[] = paintResult.results.map((row) => ({
-    ...(row as unknown as Paint),
+    ...(withRender(row) as unknown as Paint),
     vehicles: [],
   }));
 
@@ -904,7 +932,11 @@ export async function getAllPaints(db: D1Database): Promise<Paint[]> {
 export async function getPaintBySlug(
   db: D1Database,
   slug: string,
-): Promise<(Paint & { manufacturer_code: string | null; manufacturer_name: string | null }) | null> {
+): Promise<(Paint & {
+  manufacturer_code: string | null;
+  manufacturer_name: string | null;
+  hull_renders: PaintHullRender[];
+}) | null> {
   const row = (await db
     .prepare(
       `SELECT p.id, p.uuid, p.name, p.slug, p.class_name,
@@ -929,24 +961,45 @@ export async function getPaintBySlug(
     .prepare(
       `SELECT v.id, v.name, v.slug, v.image_url,
         COALESCE(rm.name, m.name) AS manufacturer_name,
-        COALESCE(rm.code, m.code) AS manufacturer_code
+        COALESCE(rm.code, m.code) AS manufacturer_code,
+        ${renderCols("r")}, r.item_key AS render_item_key
        FROM paint_vehicles pv
        JOIN vehicles v ON v.id = pv.vehicle_id
+       JOIN paints p ON p.id = pv.paint_id
        LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
        LEFT JOIN vehicles rv ON rv.id = v.replaced_by_vehicle_id
        LEFT JOIN manufacturers rm ON rm.id = rv.manufacturer_id
+       ${renderJoin("r", "v.class_name", "p.class_name")}
        WHERE pv.paint_id = ?
        ORDER BY v.name`,
     )
     .bind(row.id)
-    .all<{ id: number; name: string; slug: string; image_url: string | null; manufacturer_name: string | null; manufacturer_code: string | null }>();
+    .all<RenderCols & { render_item_key: string | null; id: number; name: string; slug: string; image_url: string | null; manufacturer_name: string | null; manufacturer_code: string | null }>();
 
   const manufacturerName = vRes.results[0]?.manufacturer_name ?? null;
   const manufacturerCode = vRes.results[0]?.manufacturer_code ?? null;
 
+  // The paint on each fitted hull that has a render of it, by vehicle name.
+  // The paint's own `render` is the first of them.
+  const hullRenders: PaintHullRender[] = [];
+  for (const v of vRes.results) {
+    const render = toRenderRef(v);
+    if (render && v.render_item_key) hullRenders.push({ vehicle_slug: v.slug, vehicle_name: v.name, item_key: v.render_item_key, render });
+  }
+  const vehicles = vRes.results.map((v) => ({
+    id: v.id,
+    name: v.name,
+    slug: v.slug,
+    image_url: v.image_url,
+    manufacturer_name: v.manufacturer_name,
+    manufacturer_code: v.manufacturer_code,
+  }));
+
   return {
     ...row,
-    vehicles: vRes.results,
+    render: hullRenders[0]?.render ?? null,
+    vehicles,
+    hull_renders: hullRenders,
     manufacturer_code: manufacturerCode,
     manufacturer_name: manufacturerName,
   } as any;
@@ -959,20 +1012,22 @@ export async function getPaintsForVehicle(db: D1Database, vehicleSlug: string): 
         p.description, p.image_url, p.image_url_small, p.image_url_medium, p.image_url_large,
         p.created_at, p.updated_at,
         COALESCE(p.is_standard, 0) AS is_standard,
-        MAX(COALESCE(pv.is_default_for_vehicle, 0)) AS is_default
+        MAX(COALESCE(pv.is_default_for_vehicle, 0)) AS is_default,
+        ${renderCols("r")}
       FROM paints p
       JOIN paint_vehicles pv ON pv.paint_id = p.id
       JOIN vehicles v ON v.id = pv.vehicle_id
+      ${renderJoin("r", "v.class_name", "p.class_name")}
       WHERE p.is_base_variant = 0 AND v.slug = ?
       GROUP BY p.id
       -- The hull's default (its Standard, or a special edition's own livery) leads.
       ORDER BY is_default DESC, p.name`,
     )
     .bind(vehicleSlug)
-    .all();
+    .all<RenderCols>();
 
   const paints: Paint[] = paintResult.results.map((row) => ({
-    ...(row as unknown as Paint),
+    ...(withRender(row) as unknown as Paint),
     vehicles: [],
   }));
 
@@ -1032,19 +1087,21 @@ export async function updatePaintImages(
 export async function getPaintsByVehicleSlug(
   db: D1Database,
   vehicleSlug: string,
-): Promise<Array<{ name: string; class_name: string }>> {
+): Promise<Array<{ name: string; class_name: string; render: RenderRef | null }>> {
   const result = await db
     .prepare(
-      `SELECT p.name, p.class_name
+      `SELECT p.name, p.class_name,
+        ${renderCols("r")}
       FROM paints p
       JOIN paint_vehicles pv ON pv.paint_id = p.id
       JOIN vehicles v ON v.id = pv.vehicle_id
+      ${renderJoin("r", "v.class_name", "p.class_name")}
       WHERE p.is_base_variant = 0 AND v.slug = ?
       ORDER BY p.name`,
     )
     .bind(vehicleSlug)
-    .all();
-  return result.results as Array<{ name: string; class_name: string }>;
+    .all<RenderCols & { name: string; class_name: string }>();
+  return result.results.map(withRender);
 }
 
 export async function getVehicleSlugsWithPaints(db: D1Database): Promise<string[]> {
@@ -1367,14 +1424,26 @@ export async function getGameVersions(db: D1Database): Promise<{ code: string; c
   return result.results;
 }
 
-export async function getLootItems(db: D1Database, isPTU = false): Promise<LootItem[]> {
+/**
+ * Every listable loot item with its render (see lootRenderJoin: the stock
+ * render, or for a weapon finish the base weapon's render of that finish).
+ * item_renders has no PTU shadow, so both channels join the same table;
+ * lootRenderJoin attaches at most one row per item.
+ */
+export async function getLootItems(
+  db: D1Database,
+  isPTU = false,
+): Promise<Array<LootItem & { render: RenderRef | null }>> {
   const lm = isPTU ? "ptu_loot_map" : "loot_map";
   const sql = `SELECT lm.id, lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity,
         lm.category, lm.manufacturer_name,
         ${lootHasFlags(isPTU)},
-        ${LOOT_SUMMARY_COLS}
+        ${LOOT_SUMMARY_COLS},
+        ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+        r.variant AS render_variant
       FROM ${lm} lm
       ${lootSummaryJoins(isPTU)}
+      ${lootRenderJoin("r", "lm.class_name")}
       WHERE lm.name NOT IN ('<= PLACEHOLDER =>')
         AND lm.name NOT LIKE 'EntityClassDefinition.%'
         AND (lm.type IS NOT NULL AND lm.type != '' OR lm.category IS NOT NULL)
@@ -1396,8 +1465,8 @@ export async function getLootItems(db: D1Database, isPTU = false): Promise<LootI
         AND (lm.class_name IS NULL OR lm.class_name NOT LIKE '%_placeholder_%')
         AND NOT (lm.class_name LIKE 'vncl_%' AND lm.category IN ('ship_component', 'ship_weapon'))
       ORDER BY lm.name ASC`;
-  const result = await db.prepare(sql).all();
-  return result.results as unknown as LootItem[];
+  const result = await db.prepare(sql).all<LootItem & RenderCols>();
+  return result.results.map(withRender);
 }
 
 /**
@@ -1531,14 +1600,19 @@ export async function getLootByUuid(db: D1Database, uuid: string, isPTU = false)
   // stay unprefixed.
   const t = (name: string) => (isPTU ? `ptu_${name}` : name);
 
-  const sql = `SELECT lm.*
+  // The render rides along (lootRenderJoin: stock, or the base weapon's render
+  // of this finish). The page passes render_variants_kind + render_item_key to
+  // GET /api/renders/:kind/:itemKey and preselects render_variant.
+  const sql = `SELECT lm.*, ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+        r.variant AS render_variant
       FROM ${t("loot_map")} lm
+      ${lootRenderJoin("r", "lm.class_name")}
       WHERE lm.uuid = ?`;
-  const row = await db.prepare(sql).bind(uuid).first();
+  const row = await db.prepare(sql).bind(uuid).first<Record<string, unknown> & RenderCols>();
   if (!row) return null;
 
   // Fetch linked item details based on which FK is set
-  const item = row as Record<string, unknown>;
+  const item: Record<string, unknown> = withRender(row);
   let details: Record<string, unknown> | null = null;
 
   if (item.fps_weapon_id) {
@@ -2224,6 +2298,10 @@ export interface LootSetDetail {
   setName: string;
   manufacturer: string | null;
   pieces: Record<string, unknown>[];
+  /** The set's render (item_renders keyed by armourSetRenderKey), or null. */
+  render: RenderRef | null;
+  /** The item_renders key the set render was matched on (for the large view), or null. */
+  render_item_key: string | null;
 }
 
 export async function getLootSets(
@@ -2377,7 +2455,49 @@ export async function getLootSetBySlug(
     return { ...item, item_details: details, locations };
   });
 
-  return { setName, manufacturer, pieces };
+  const { render, renderItemKey } = await getArmourSetRender(
+    db,
+    matchingItems.map((i) => i.class_name as string | null).filter((c): c is string => !!c),
+    fpsArmour,
+  );
+
+  return { setName, manufacturer, pieces, render, render_item_key: renderItemKey };
+}
+
+/**
+ * The render of an armour set, keyed by `armourSetRenderKey` of its pieces.
+ * Undersuits (fps_armour sub_type 'UNDEFINED') are looked up in `fpsArmour`
+ * (fps_armour or its PTU shadow) and left out of the key. item_renders has
+ * no PTU shadow.
+ */
+async function getArmourSetRender(
+  db: D1Database,
+  pieceClassNames: string[],
+  fpsArmour: string,
+): Promise<{ render: RenderRef | null; renderItemKey: string | null }> {
+  const none = { render: null, renderItemKey: null };
+  if (pieceClassNames.length === 0) return none;
+  const lowered = [...new Set(pieceClassNames.map((c) => c.toLowerCase()))];
+  const undersuits = await db
+    .prepare(
+      `SELECT DISTINCT lower(class_name) AS class_name FROM ${fpsArmour}
+       WHERE sub_type = 'UNDEFINED' AND lower(class_name) IN (${lowered.map(() => "?").join(",")})`,
+    )
+    .bind(...lowered)
+    .all<{ class_name: string }>();
+  const key = armourSetRenderKey(lowered, undersuits.results.map((u) => u.class_name));
+  if (!key) return none;
+  const row = await db
+    .prepare(
+      `SELECT r.hash AS render_hash, r.width AS render_width, r.height AS render_height, r.view AS render_view
+       FROM item_renders r
+       WHERE r.item_key = ? AND r.variant = '' AND ${renderViewFilter("r")}
+       ORDER BY ${renderViewRank("r")}
+       LIMIT 1`,
+    )
+    .bind(key)
+    .first<RenderCols>();
+  return row ? { render: toRenderRef(row), renderItemKey: key } : none;
 }
 
 /**
@@ -2935,17 +3055,19 @@ export async function listSalvageableShips(
          v.image_url_small,
          m.name as manufacturer_name, m.code as manufacturer_code,
          COUNT(ss.id) as variant_count,
-         GROUP_CONCAT(DISTINCT ss.variant_type) as variant_types
+         GROUP_CONCAT(DISTINCT ss.variant_type) as variant_types,
+         ${renderCols("r")}
        FROM salvageable_ships ss
        JOIN vehicles v ON v.id = ss.base_vehicle_id
        LEFT JOIN manufacturers m ON m.id = v.manufacturer_id
+       ${renderJoin("r", "v.class_name")}
        WHERE ss.base_vehicle_id IS NOT NULL
        GROUP BY v.id
        ORDER BY v.name`,
     )
-    .all();
+    .all<RenderCols & Record<string, unknown>>();
 
-  return results;
+  return results.map(withRender);
 }
 
 // ============================================================================
@@ -3791,4 +3913,44 @@ export async function renameChat(db: D1Database, userId: string, chatId: number,
     .bind(title, chatId, userId)
     .run();
   return (r.meta.changes ?? 0) > 0;
+}
+
+export interface RenderVariant {
+  variant: string;
+  view: string;
+  hash: string;
+  width: number;
+  height: number;
+  name: string | null;
+}
+
+/**
+ * Every render of one item (all views, stock and variants). A vehicle paint is
+ * named from `paints`; a weapon finish from its own FPS record in the default
+ * LIVE game version, else from its loot_map row (ship weapons and anything
+ * else without an FPS record). Joined on item_key, never kind. Stock first,
+ * then by name.
+ */
+export async function getRendersForItem(db: D1Database, itemKey: string): Promise<RenderVariant[]> {
+  const liveVersions = `SELECT id FROM game_versions WHERE channel = 'LIVE' AND is_default = 1`;
+  const finishName = (table: string) =>
+    `(SELECT t.name FROM ${table} t WHERE t.class_name = r.variant
+        AND t.game_version_id IN (${liveVersions}) ORDER BY t.game_version_id DESC LIMIT 1)`;
+  const { results } = await db
+    .prepare(
+      `SELECT r.variant, r.view, r.hash, r.width, r.height,
+        CASE WHEN r.variant = '' THEN NULL ELSE COALESCE(
+          (SELECT p.name FROM paints p WHERE p.class_name = r.variant ORDER BY p.id LIMIT 1),
+          ${finishName("fps_weapons")},
+          ${finishName("fps_melee")},
+          ${finishName("fps_attachments")},
+          (SELECT lm.name FROM loot_map lm WHERE lm.class_name = r.variant LIMIT 1)
+        ) END AS name
+      FROM item_renders r
+      WHERE r.item_key = ?
+      ORDER BY (r.variant <> ''), name, r.variant, r.view`,
+    )
+    .bind(itemKey)
+    .all<RenderVariant>();
+  return results;
 }

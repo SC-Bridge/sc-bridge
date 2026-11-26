@@ -4,6 +4,7 @@ import SourceIcons from './SourceIcons'
 import CollectionStepper from './CollectionStepper'
 import MadeStepper from './MadeStepper'
 import ItemCardStats from './ItemCardStats'
+import LootRender from './LootRender'
 
 function fmtStat(n) {
   if (n == null) return ''
@@ -29,6 +30,8 @@ export default function ItemCard({ item, collectionQty, craftedQty = 0, savedBui
           <Check className="w-2.5 h-2.5 text-white" />
         </div>
       )}
+
+      <LootRender item={item} title={build ? item.name : humanizeRawDisplayName(item.name)} className="rounded" />
 
       {/* Top row: category badge + wishlist + rarity */}
       <div className="flex items-center gap-1">

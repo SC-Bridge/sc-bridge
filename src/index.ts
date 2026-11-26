@@ -8,6 +8,7 @@ import { rsiAccountRoutes } from "./routes/rsi-accounts";
 import { vehicleRoutes } from "./routes/vehicles";
 import { getShipLoadout, getSalvageForShip, listSalvageableShips, listChangelogEntries } from "./db/queries";
 import { paintRoutes } from "./routes/paints";
+import { renderRoutes } from "./routes/renders";
 import { importRoutes } from "./routes/import";
 import { settingsRoutes } from "./routes/settings";
 import { syncRoutes } from "./routes/sync";
@@ -125,7 +126,7 @@ app.use("*", async (c, next) => {
     "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' https://imagedelivery.net https://robertsspaceindustries.com " +
     "https://media.robertsspaceindustries.com https://cdn.robertsspaceindustries.com " +
-    "https://media.starcitizen.tools https://starcitizen.tools " +
+    "https://media.starcitizen.tools https://starcitizen.tools https://renders.scbridge.app " +
     "https://avatars.githubusercontent.com https://www.gravatar.com https://www.googletagmanager.com data:; " +
     // F249: gtag.js beacons /g/collect to www.google.com in some GA4 configs,
     // not the *.google-analytics.com / analytics.google.com hosts. Without
@@ -455,6 +456,7 @@ app.route("/api/ships", vehicleRoutes<HonoEnv>());
 app.route("/api/vehicles", fleetRoutes());
 app.route("/api/rsi-accounts", rsiAccountRoutes());
 app.route("/api/paints", paintRoutes<HonoEnv>());
+app.route("/api/renders", renderRoutes());
 app.route("/api/import", importRoutes());
 app.route("/api/settings", settingsRoutes());
 app.route("/api/sync", syncRoutes<HonoEnv>());

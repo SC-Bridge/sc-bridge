@@ -101,6 +101,7 @@ export default function PublicFleet() {
                 className="panel overflow-hidden"
               >
                 <ShipImage
+                  render={ship.render}
                   src={ship.paint_image_url_medium || ship.paint_image_url || ship.image_url}
                   alt={ship.vehicle_name}
                   aspectRatio="landscape"

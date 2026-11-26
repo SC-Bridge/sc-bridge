@@ -1,17 +1,26 @@
-import React from 'react'
-import { Link, useParams } from 'react-router-dom'
+import React, { useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Palette, Rocket, AlertCircle } from 'lucide-react'
 import { usePaintDetail } from '../hooks/useAPI'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import ShipImage from '../components/ShipImage'
+import ItemImage from '../components/ItemImage'
+import RenderViewer from '../components/RenderViewer'
 import EmptyState from '../components/EmptyState'
+
+const FIRST_HULL = 'first'
 
 export default function PaintDetail() {
   const { slug } = useParams()
   const decoded = slug ? decodeURIComponent(slug) : ''
   const { data, loading, error, refetch } = usePaintDetail(decoded)
+  const [searchParams] = useSearchParams()
+  // The hull whose large view is open (an entry of data.hull_renders), or null.
+  // A link with ?render=<variant> opens the first hull's view (FIRST_HULL until
+  // the paint has loaded); the viewer selects that variant from the URL.
+  const [viewerHull, setViewerHull] = useState(() => (searchParams.has('render') ? FIRST_HULL : null))
 
   if (loading) return <LoadingState message="Loading paint..." />
   if (error) return <ErrorState message={error} onRetry={refetch} />
@@ -33,6 +42,9 @@ export default function PaintDetail() {
   }
 
   const hero = data.image_url || data.image_url_large || data.image_url_medium || data.image_url_small
+  const hullRenders = data.hull_renders || []
+  const renderBySlug = new Map(hullRenders.map(h => [h.vehicle_slug, h.render]))
+  const openHull = viewerHull === FIRST_HULL ? hullRenders[0] ?? null : viewerHull
 
   return (
     <div className="space-y-5 animate-fade-in-up">
@@ -55,12 +67,14 @@ export default function PaintDetail() {
       <div className="grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6">
         {/* Hero image */}
         <div className="rounded-lg overflow-hidden border border-sc-border bg-sc-darker">
-          {hero ? (
-            <img
+          {hero || data.render ? (
+            <ItemImage
+              render={data.render}
+              size={2048}
               src={hero}
               alt={data.name}
-              className="w-full h-auto object-contain"
-              loading="lazy"
+              aspectRatio="landscape"
+              onOpen={hullRenders.length > 0 ? () => setViewerHull(hullRenders[0]) : undefined}
             />
           ) : (
             <div className="aspect-[4/3] flex items-center justify-center text-gray-600 text-xs font-mono uppercase tracking-wider">
@@ -78,6 +92,27 @@ export default function PaintDetail() {
             </section>
           )}
 
+          {hullRenders.length > 0 && (
+            <section>
+              <h2 className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-2">
+                On each hull
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {hullRenders.map(h => (
+                  <figure key={h.vehicle_slug} className="border border-sc-border rounded overflow-hidden bg-sc-darker">
+                    <ItemImage
+                      render={h.render}
+                      alt={`${data.name} on ${h.vehicle_name}`}
+                      aspectRatio="landscape"
+                      onOpen={() => setViewerHull(h)}
+                    />
+                    <figcaption className="px-2 py-1 text-[11px] text-gray-300 truncate">{h.vehicle_name}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="text-[10px] font-display uppercase tracking-widest text-gray-500 mb-2">
               Fits {data.vehicles.length} ship{data.vehicles.length !== 1 ? 's' : ''}
@@ -92,8 +127,9 @@ export default function PaintDetail() {
                     to={`/ships/${v.slug}`}
                     className="flex items-center gap-3 px-3 py-2 border border-sc-border rounded hover:border-sc-accent/40 hover:bg-white/5 transition-colors"
                   >
-                    {v.image_url ? (
+                    {v.image_url || renderBySlug.has(v.slug) ? (
                       <ShipImage
+                        render={renderBySlug.get(v.slug)}
                         src={v.image_url}
                         alt={v.name}
                         aspectRatio="thumbnail-sm"
@@ -123,6 +159,16 @@ export default function PaintDetail() {
           )}
         </div>
       </div>
+
+      {openHull && (
+        <RenderViewer
+          kind="vehicle"
+          itemKey={openHull.item_key}
+          initialVariant={data.class_name?.toLowerCase() ?? ''}
+          title={`${data.name} on ${openHull.vehicle_name}`}
+          onClose={() => setViewerHull(null)}
+        />
+      )}
     </div>
   )
 }

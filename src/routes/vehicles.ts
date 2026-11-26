@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 
 /** One structural hull part, as the tools pipeline writes it to vehicles.hull_parts_json. */
 export interface HullPart {
@@ -74,17 +75,19 @@ export function vehicleRoutes<E extends HonoEnv>() {
             v.is_pledgeable,
             m.name as manufacturer_name, m.code as manufacturer_code,
             CASE WHEN v.parent_vehicle_id IS NOT NULL AND pps.key IS NOT NULL
-              THEN pps.key ELSE ps.key END as production_status
+              THEN pps.key ELSE ps.key END as production_status,
+            ${renderCols("r")}
           FROM ${vehiclesT} v
           LEFT JOIN ${manufacturersT} m ON m.id = v.manufacturer_id
           LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
           LEFT JOIN ${vehiclesT} pv ON pv.id = v.parent_vehicle_id
           LEFT JOIN production_statuses pps ON pps.id = pv.production_status_id
+          ${renderJoin("r", "v.class_name")}
           WHERE ${whereClauses.join(" AND ")}
           ORDER BY v.name`,
         )
-        .all();
-      return result.results;
+        .all<RenderCols>();
+      return result.results.map(withRender);
     });
   });
 
@@ -122,20 +125,22 @@ export function vehicleRoutes<E extends HonoEnv>() {
             v.claim_time, v.expedited_claim_time, v.expedited_claim_cost,
             m.name as manufacturer_name, m.code as manufacturer_code,
             CASE WHEN v.parent_vehicle_id IS NOT NULL AND pps.key IS NOT NULL
-              THEN pps.key ELSE ps.key END as production_status
+              THEN pps.key ELSE ps.key END as production_status,
+            ${renderCols("r")}
           FROM ${vehiclesT} v
           LEFT JOIN ${manufacturersT} m ON m.id = v.manufacturer_id
           LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
           LEFT JOIN ${vehiclesT} pv ON pv.id = v.parent_vehicle_id
           LEFT JOIN production_statuses pps ON pps.id = pv.production_status_id
+          ${renderJoin("r", "v.class_name")}
           WHERE (v.slug = ? OR v.short_slug = ?) AND v.is_paint_variant = 0
           ORDER BY CASE WHEN v.slug = ? THEN 0 ELSE 1 END
           LIMIT 1`,
         )
         .bind(slug, slug, slug)
-        .first<Record<string, unknown>>();
+        .first<RenderCols & Record<string, unknown>>();
       if (!vehicle) return vehicle;
-      const { hull_parts_json, ...rest } = vehicle;
+      const { hull_parts_json, ...rest } = withRender(vehicle);
       return { ...rest, hull_parts: parseHullParts(hull_parts_json) };
     });
   });

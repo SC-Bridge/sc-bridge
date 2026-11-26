@@ -212,6 +212,7 @@ export default function ShipDB() {
         {paged.map((ship) => (
           <Link key={ship.slug} to={`/ships/${ship.slug}`} className="panel-hover group cursor-pointer overflow-hidden block">
             <ShipImage
+              render={ship.render}
               src={ship.image_url_small}
               fallbackSrc={ship.image_url_medium || ship.image_url}
               baseSrc={baseImageMap.get(ship.slug)}

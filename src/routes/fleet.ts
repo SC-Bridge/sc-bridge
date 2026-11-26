@@ -4,6 +4,7 @@ import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate, IntIdParam, OrgVisibility } from "../lib/validation";
 import { purgePublicFleetCache, resolveVerifiedHandle } from "../lib/publicFleet";
 import { ACCOUNTS_QUERY, parseAccountsParam, resolveAccountId } from "../lib/rsi-accounts";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 
 /**
  * /api/vehicles/* — User's fleet
@@ -451,7 +452,8 @@ async function getFleetList(
         -- pledge row behind it (in-game purchase, promo, manual add) — those are
         -- never meltable.
         up.is_reclaimable as pledge_is_reclaimable,
-        CASE WHEN v.replaced_by_vehicle_id IS NOT NULL THEN v.name END as original_vehicle_name
+        CASE WHEN v.replaced_by_vehicle_id IS NOT NULL THEN v.name END as original_vehicle_name,
+        ${renderCols("ir")}
       FROM user_fleet uf
       JOIN vehicles v ON v.id = uf.vehicle_id
       LEFT JOIN vehicles rv ON rv.id = v.replaced_by_vehicle_id
@@ -464,11 +466,14 @@ async function getFleetList(
       LEFT JOIN user_pledges up ON up.user_id = uf.user_id
         AND up.rsi_pledge_id = CAST(uf.pledge_id AS INTEGER)
         AND up.rsi_account_id = uf.rsi_account_id
+      -- The hull in its equipped paint, or stock when none is equipped. No
+      -- stock fallback for a painted ship: the page then shows the paint's art.
+      ${renderJoin("ir", "COALESCE(rv.class_name, v.class_name)", "COALESCE(p.class_name, '')")}
       WHERE uf.user_id = ?
       ORDER BY COALESCE(rv.name, v.name)`,
     )
     .bind(userID)
-    .all();
+    .all<RenderCols & Record<string, unknown>>();
 
   // Hydrate per-ship custom tags (#120) in one query, grouped by fleet entry.
   const tagRows = await db
@@ -486,9 +491,9 @@ async function getFleetList(
     tagsByFleet.set(row.user_fleet_id, list);
   }
 
-  const withTags = result.results.map((r: any) => ({
-    ...r,
-    tags: tagsByFleet.get(r.id) ?? [],
+  const withTags = result.results.map((r) => ({
+    ...withRender(r),
+    tags: tagsByFleet.get(r.id as number) ?? [],
   }));
 
   return c.json(withTags);
@@ -522,7 +527,8 @@ async function getFleetLoaners(
         ps.key AS production_status,
         1 AS is_derived_loaner,
         uf.rsi_account_id,
-        group_concat(DISTINCT owned.name) AS loaner_for
+        group_concat(DISTINCT owned.name) AS loaner_for,
+        ${renderCols("ir")}
       FROM user_fleet uf
       JOIN vehicles owned ON owned.id = uf.vehicle_id
       JOIN production_statuses ops ON ops.id = owned.production_status_id
@@ -530,6 +536,7 @@ async function getFleetLoaners(
       JOIN vehicles l ON l.id = vl.loaner_id
       LEFT JOIN manufacturers m ON m.id = l.manufacturer_id
       LEFT JOIN production_statuses ps ON ps.id = l.production_status_id
+      ${renderJoin("ir", "l.class_name")}
       WHERE uf.user_id = ?1
         AND uf.is_loaner = 0
         AND ops.key != 'flight_ready'
@@ -541,7 +548,7 @@ async function getFleetLoaners(
       ORDER BY l.name, uf.rsi_account_id`,
     )
     .bind(userID)
-    .all();
+    .all<RenderCols>();
 
-  return c.json(result.results);
+  return c.json(result.results.map(withRender));
 }
