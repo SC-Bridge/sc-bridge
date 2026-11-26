@@ -568,10 +568,12 @@ async function runScheduledSync(cron: string, env: Env): Promise<void> {
     case "0 4 * * *": {
       console.log("[cron] Fleetyards production status + loaner sync");
       logEvent("cron_trigger", { schedule: cron, task: "fleetyards_status" });
-      const { syncProductionStatuses, syncLoaners } = await import("./sync/fleetyards");
+      const { syncProductionStatuses, syncLoaners, syncPledgePrices } = await import("./sync/fleetyards");
       await syncProductionStatuses(env.DB);
       const loaners = await syncLoaners(env.DB);
       logEvent("cron_complete", { task: "fleetyards_loaners", ...loaners });
+      const prices = await syncPledgePrices(env.DB);
+      logEvent("cron_complete", { task: "fleetyards_pledge_prices", ...prices });
       break;
     }
     case "15 * * * *": {

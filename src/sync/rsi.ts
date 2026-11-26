@@ -21,6 +21,8 @@ import {
 import { delay, chunkArray } from "../lib/utils";
 import { SYNC_SOURCE } from "../lib/constants";
 import { logEvent } from "../lib/logger";
+import { shipNameMap } from "../lib/rsi-ship-names";
+import { foldDiacritics } from "../lib/slug";
 
 // --- Constants ---
 const PAGE_LIMIT = 100;
@@ -104,47 +106,6 @@ const browseQuery = `query GetBrowseItems($query: SearchQuery) {
 		__typename
 	}
 }`;
-
-// --- Ship name mapping (RSI name → DB name, both lowercased) ---
-
-export const shipNameMap: Record<string, string> = {
-  "600i explorer": "600i", // RSI calls it Explorer; our DB slug is just "600i"
-  "a2 hercules": "a2 hercules starlifter",
-  "c2 hercules": "c2 hercules starlifter",
-  "m2 hercules": "m2 hercules starlifter",
-  "ares inferno": "ares star fighter inferno",
-  "ares ion": "ares star fighter ion",
-  mercury: "mercury star runner",
-  m50: "m50 interceptor",
-  "85x": "85x limited",
-  scythe: "vanduul scythe",
-  stinger: "esperia stinger",
-  "dragonfly black": "dragonfly",
-  "c8r pisces": "c8r pisces rescue",
-  "anvil ballista dunestalker": "ballista dunestalker",
-  "anvil ballista snowblind": "ballista snowblind",
-  "argo mole carbon edition": "mole carbon",
-  "argo mole talus edition": "mole talus",
-  "caterpillar best in show edition 2949": "caterpillar 2949 best in show edition",
-  // DB has "Drake Cutlass 2949 Best In Show Edition" (no "Black" in middle)
-  "cutlass black best in show edition 2949": "cutlass 2949 best in show edition",
-  "hammerhead best in show edition 2949": "hammerhead 2949 best in show edition",
-  "reclaimer best in show edition 2949": "reclaimer 2949 best in show edition",
-  "valkyrie liberator edition": "valkyrie liberator",
-  "gladius pirate edition": "gladius pirate",
-  "caterpillar pirate edition": "caterpillar pirate",
-  "f7c-m super hornet heartseeker mk i": "f7c-m hornet heartseeker mk i",
-  "f7c-m super hornet heartseeker mk ii": "f7c-m hornet heartseeker mk ii",
-  "f7c-m super hornet mk i": "f7c-m super hornet mk i",
-  "f7c-m super hornet mk ii": "f7c-m super hornet mk ii",
-  "f8c lightning executive edition": "f8c lightning executive edition",
-  "constellation phoenix emerald": "constellation phoenix emerald",
-  "san\u2019tok.y\u0101i": "san\u2019tok.y\u0101i",
-  "carrack expedition w/c8x": "carrack expedition w/c8x",
-  "carrack w/c8x": "carrack w/c8x",
-  // UTV — RSI lists as just "UTV", DB has "Greycat UTV" (with manufacturer prefix)
-  utv: "greycat utv",
-};
 
 // --- GraphQL client ---
 
@@ -513,10 +474,19 @@ const MANUFACTURER_PREFIXES = [
   "grey's",
 ];
 
+/**
+ * Match key for a ship name: lowercased, whitespace collapsed, diacritics
+ * folded. RSI's ship-matrix titles the Gatac Hyun "Hyūn" while our row says
+ * "Gatac Hyun", so both sides of the match must fold or it never matches.
+ */
+function matchKey(name: string): string {
+  return foldDiacritics(name.toLowerCase().replace(/\s+/g, " ").trim());
+}
+
 /** Strip the leading manufacturer word(s) from a vehicle name. Returns the
- * stripped name (lowercased) + the original name lowercased. */
+ * stripped match key, or the whole name's match key when no prefix matches. */
 function stripManufacturerPrefix(name: string): string {
-  const lower = name.toLowerCase().replace(/\s+/g, " ").trim();
+  const lower = matchKey(name);
   for (const prefix of MANUFACTURER_PREFIXES) {
     if (lower.startsWith(prefix + " ")) {
       return lower.substring(prefix.length + 1).trim();
@@ -674,7 +644,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
     const slugToId = new Map<string, number>();
 
     for (const v of dbVehicles) {
-      const fullLower = v.name.toLowerCase().replace(/\s+/g, " ").trim();
+      const fullLower = matchKey(v.name);
       directNameToId.set(fullLower, v.id);
 
       const stripped = stripManufacturerPrefix(v.name);
@@ -753,7 +723,7 @@ export async function syncShipProductionStatus(db: D1Database): Promise<void> {
       }
 
       // Try each matching strategy in order
-      const lower = shipName.toLowerCase().replace(/\s+/g, " ").trim();
+      const lower = matchKey(shipName);
       let dbId: number | undefined;
 
       // 1. shipNameMap override (handles "600i explorer" → "600i" etc.)

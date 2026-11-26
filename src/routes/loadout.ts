@@ -6,7 +6,7 @@ import { validate } from "../lib/validation";
 import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
-import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets } from "../db/queries";
+import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets, getComponentShops } from "../db/queries";
 import { getOrCreatePrimaryAccountId, resolveAccountId } from "../lib/rsi-accounts";
 
 // D1 has a 100-parameter limit per prepared statement.
@@ -981,27 +981,10 @@ export function loadoutRoutes() {
   // GET /api/loadout/cart/shops?class_name=X — all shops selling a component
   app.get("/cart/shops", async (c) => {
     const isPTU = isPTUChannel(getActiveChannel(c));
-    const t = (n: string) => resolveTable(n, isPTU);
     const className = c.req.query("class_name");
     if (!className) return c.json({ error: "class_name required" }, 400);
 
-    const rows = await c.env.DB
-      .prepare(`SELECT t.shop_name_key AS location_key,
-                ROUND(${buyPriceSQL("ti")}) AS buy_price,
-                COALESCE(s.display_name, REPLACE(REPLACE(t.shop_name_key, 'Inv_', ''), '_', ' ')) AS shop_name,
-                s.location_label
-         FROM ${t("terminal_inventory")} ti
-         JOIN ${t("loot_map")} lm ON lm.uuid = ti.item_uuid
-         JOIN ${t("terminals")} t ON t.id = ti.terminal_id
-         LEFT JOIN ${t("shops")} s ON s.id = t.shop_id
-         WHERE ${buyablePricedSQL("ti")}
-           AND REPLACE(lm.class_name, 'EntityClassDefinition.', '') = ?
-         ORDER BY ${buyPriceSQL("ti")} ASC`,
-      )
-      .bind(className)
-      .all();
-
-    return c.json({ shops: rows.results });
+    return c.json({ shops: await getComponentShops(c.env.DB, className, isPTU) });
   });
 
   // POST /api/loadout/cart — add items to cart

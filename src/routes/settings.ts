@@ -98,6 +98,21 @@ export function settingsRoutes() {
       return c.json({ error: "Invalid provider" }, 400);
     }
 
+    // Clear key for this provider. Must run before the model-only branch:
+    // `!"".trim()` is true, so an empty key would otherwise be read as a
+    // model-only update and the key would never be removed.
+    if (body.api_key === "") {
+      await db.prepare("DELETE FROM user_llm_configs WHERE user_id = ? AND provider = ?")
+        .bind(userID, body.provider).run();
+      await logUserChange(db, userID, "llm_config_changed", {
+        fieldName: "provider",
+        oldValue: body.provider,
+        newValue: "[removed]",
+        ipAddress: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
+      });
+      return c.json({ ok: true, message: "Provider key removed" });
+    }
+
     // Model-only update (no new api_key) — just update the model column
     if (!body.api_key?.trim()) {
       const existing = await db
@@ -114,13 +129,6 @@ export function settingsRoutes() {
           .run();
       }
       return c.json({ ok: true, message: "Model updated" });
-    }
-
-    // Clear key for this provider
-    if (body.api_key === '') {
-      await db.prepare("DELETE FROM user_llm_configs WHERE user_id = ? AND provider = ?")
-        .bind(userID, body.provider).run();
-      return c.json({ ok: true, message: "Provider key removed" });
     }
 
     let encryptedKey = body.api_key;
