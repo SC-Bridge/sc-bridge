@@ -785,3 +785,32 @@ describe("render on FPS loadout slots holding a crafting blueprint", () => {
     expect(slot.render_item_key).toBe("lp_lmg_01");
   });
 });
+
+describe("render on mining equipment", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("GET /api/gamedata/mining gives each laser, module and gadget its render by class name", async () => {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO mining_lasers (name, class_name, size, game_version_id) VALUES ('Lp Arbor', 'Mining_Laser_LP_Arbor_S1', 1, 1)"),
+      env.DB.prepare("INSERT INTO mining_lasers (name, size, game_version_id) VALUES ('Lp Unlinked', 1, 1)"),
+      env.DB.prepare("INSERT INTO mining_modules (name, class_name, type, size, game_version_id) VALUES ('Lp Brandt', 'mining_modules_active_lp_brandt', 'active', 1, 1)"),
+      env.DB.prepare("INSERT INTO mining_gadgets (name, class_name, game_version_id) VALUES ('Lp Optimax', 'mining_gadget_lp_optimax', 1)"),
+      env.DB.prepare(INSERT_SQL).bind("vehicle_component", "mining_laser_lp_arbor_s1", "", "iso", "c1c1c1c1c1c1c1c1", 1024, 768, "4.10.3-live"),
+      env.DB.prepare(INSERT_SQL).bind("vehicle_component", "mining_modules_active_lp_brandt", "", "side", "c2c2c2c2c2c2c2c2", 1024, 768, "4.10.3-live"),
+      env.DB.prepare(INSERT_SQL).bind("fps_utility", "mining_gadget_lp_optimax", "", "iso", "c3c3c3c3c3c3c3c3", 1024, 768, "4.10.3-live"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/gamedata/mining");
+    expect(res.status).toBe(200);
+    type Row = Record<string, unknown>;
+    const body = (await res.json()) as { lasers: Row[]; modules: Row[]; gadgets: Row[] };
+    const by = (rows: Row[], name: string) => rows.find((r) => r.name === name)!;
+    expect(by(body.lasers, "Lp Arbor").render).toEqual({ hash: "c1c1c1c1c1c1c1c1", width: 1024, height: 768, view: "iso" });
+    expect(by(body.lasers, "Lp Arbor").render_item_key).toBe("mining_laser_lp_arbor_s1");
+    expect(by(body.lasers, "Lp Unlinked").render).toBeNull();
+    expect(by(body.modules, "Lp Brandt").render).toEqual({ hash: "c2c2c2c2c2c2c2c2", width: 1024, height: 768, view: "side" });
+    expect(by(body.gadgets, "Lp Optimax").render_variants_kind).toBe("fps_utility");
+    expect(by(body.lasers, "Lp Arbor")).not.toHaveProperty("render_hash");
+  });
+});
