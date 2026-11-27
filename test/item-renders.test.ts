@@ -785,3 +785,30 @@ describe("render on FPS loadout slots holding a crafting blueprint", () => {
     expect(slot.render_item_key).toBe("lp_lmg_01");
   });
 });
+
+describe("ship side renders for the size lineup", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("GET /api/ships returns side_render: the stock side view, beside the card render", async () => {
+    await seedShip("zzr-lineup-both", "Zzr Lineup Both", "zzr_lineup_both");
+    await seedShip("zzr-lineup-iso", "Zzr Lineup Iso", "zzr_lineup_iso");
+    await env.DB.batch([
+      renderRow("zzr_lineup_both", "", "iso", "f0f0f0f0f0f0f0f0"),
+      renderRow("zzr_lineup_both", "", "side", "f1f1f1f1f1f1f1f1"),
+      // A paint's side render is not the stock side view.
+      renderRow("zzr_lineup_iso", "", "iso", "f2f2f2f2f2f2f2f2"),
+      renderRow("zzr_lineup_iso", "paint_zzr_red", "side", "f3f3f3f3f3f3f3f3"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/ships");
+    expect(res.status).toBe(200);
+    type Ship = { slug: string; render: Render; side_render: Render };
+    const ships = (await res.json()) as Ship[];
+    const both = ships.find((s) => s.slug === "zzr-lineup-both")!;
+    expect(both.render?.view).toBe("iso");
+    expect(both.side_render).toEqual({ hash: "f1f1f1f1f1f1f1f1", width: 2048, height: 1536, view: "side" });
+    expect(ships.find((s) => s.slug === "zzr-lineup-iso")!.side_render).toBeNull();
+    expect(both).not.toHaveProperty("side_render_hash");
+  });
+});
