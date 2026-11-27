@@ -4,6 +4,7 @@ import StatCell from './StatCell'
 import { resolveStats } from './statConfig'
 import { formatCraftTime } from '../craftingUtils'
 import { getResourceColor } from './resourceGroups'
+import RenderThumb from '../../../components/RenderThumb'
 
 const TYPE_LABEL = { weapons: 'Weapon', armour: 'Armour', ammo: 'Ammo' }
 
@@ -100,7 +101,14 @@ export default function BlueprintCard({
           </span>
         </div>
 
-        <h3 className="text-[0.9375rem] font-semibold leading-[1.3] tracking-[-0.01em]">
+        <h3 className="flex items-center gap-[10px] text-[0.9375rem] font-semibold leading-[1.3] tracking-[-0.01em]">
+          <RenderThumb
+            render={blueprint.render}
+            kind={blueprint.render_variants_kind}
+            itemKey={blueprint.render_item_key}
+            variant={blueprint.render_variant ?? ''}
+            title={name}
+          />
           <button
             type="button"
             onClick={() => onOpen(blueprint)}

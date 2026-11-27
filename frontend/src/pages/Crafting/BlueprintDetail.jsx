@@ -4,6 +4,7 @@ import { ArrowLeft, Clock, Layers, FlaskConical, Crosshair, Zap, Target, MapPin,
 import { useCrafting } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
+import RenderThumb from '../../components/RenderThumb'
 import SlotCard from './SlotCard'
 import QualitySim from './QualitySim'
 import { TYPE_LABELS, SUBTYPE_LABELS, TYPE_COLORS, formatTime, humanizeLocationName } from './craftingUtils'
@@ -177,6 +178,19 @@ export default function BlueprintDetail() {
         <div className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-sc-accent/20 rounded-br-2xl" />
 
         <div className="flex items-start justify-between gap-6">
+          {blueprint.render && (
+            <div className="w-32 shrink-0">
+              <RenderThumb
+                render={blueprint.render}
+                kind={blueprint.render_variants_kind}
+                itemKey={blueprint.render_item_key}
+                variant={blueprint.render_variant ?? ''}
+                title={blueprint.base_stats?.item_name || blueprint.name}
+                aspectRatio="square"
+                className="rounded-lg"
+              />
+            </div>
+          )}
           <div className="flex-1">
             {/* Badges */}
             <div className="flex items-center gap-2 mb-3">
