@@ -20,7 +20,7 @@ import GadgetSlots from './GadgetSlots'
 import PaintsSection from './PaintsSection'
 import LocationPlanner from './LocationPlanner'
 import { hullTotal } from '../../lib/hullHp'
-import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape } from './loadoutHelpers'
+import { PORT_TYPE_ICONS, PORT_CATEGORY_ORDER, getPortCategory, getPrimaryStat, aggregateCombatStats, fmtInt, fmtCompact, fmtDec1, fmtSpeed, getDamageType, DmgShape, renderFields, SlotThumb } from './loadoutHelpers'
 
 export default function Loadout() {
   const { slug } = useParams()
@@ -172,6 +172,7 @@ export default function Loadout() {
           port_id: portId, component_id: component.id,
           child_name: component.name, component_name: component.name,
           component_uuid: component.uuid,
+          ...renderFields(component),
           shops: component.shops, // keep accurate buy locations for the Location Planner (#94)
           type: component.type, size: component.size, grade: component.grade,
           manufacturer_name: component.manufacturer_name,
@@ -751,6 +752,7 @@ function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategor
                   <span className="text-[12px] w-7 text-center flex-shrink-0 font-mono bg-white/[0.06] border border-white/[0.1] rounded px-1.5 py-px text-gray-400">
                     S{sz}
                   </span>
+                  <SlotThumb item={override ?? item} title={displayName} />
                   <span className={`text-sm truncate flex-1 ${isOverridden ? 'text-sc-accent font-medium' : 'text-gray-300'}`}
                     style={isOverridden ? { textShadow: '0 0 8px rgba(34,211,238,0.3)' } : undefined}>
                     {displayName || 'Empty'}
@@ -785,6 +787,7 @@ function SectionCard({ group, collapsed, setCollapsed, overrides, onResetCategor
                     <span className="text-[12px] w-7 text-center flex-shrink-0 font-mono bg-white/[0.06] border border-white/[0.1] rounded px-1.5 py-px text-gray-400">
                       S{jumpChild.component_size || jumpChild.size_max}
                     </span>
+                    <SlotThumb item={overrides[jumpChild.port_id] ?? jumpChild} title={jumpChild.child_name || jumpChild.component_name} />
                     <span className="text-sm text-gray-300">{jumpChild.child_name || jumpChild.component_name || 'Jump Drive'}</span>
                     {jumpChild.grade && (
                       <span className="font-mono text-[11px] px-1 py-px rounded flex-shrink-0 bg-gray-500/10 text-gray-400 border border-gray-500/20">

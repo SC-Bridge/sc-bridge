@@ -437,6 +437,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         -- Buyable item class for the Location Planner shop join (#94): prefer the
         -- deepest real component (the actual gun/shield), fall back to the mount.
         COALESCE(d.class_name, mount.class_name) AS class_name,
+        ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
         COALESCE(wc.cnt, 0) AS weapon_count,
         COALESCE(mc.cnt, 0) AS missile_count
       FROM ship_ports p
@@ -452,6 +453,7 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
       LEFT JOIN deepest d ON d.root_id = p.id AND d.rn = 1
       LEFT JOIN weapon_count wc ON wc.root_id = p.id
       LEFT JOIN missile_count mc ON mc.rack_id = p.id
+      ${renderJoin("r", "COALESCE(d.class_name, mount.class_name)")}
       WHERE p.category_label IS NOT NULL
         AND p.port_type IN ('weapon', 'turret', 'missile', 'shield', 'power', 'cooler',
             'quantum_drive', 'jump_drive', 'countermeasure', 'sensor', 'module',
@@ -492,9 +494,9 @@ export async function getShipLoadout(db: D1Database, slug: string): Promise<Reco
         p.max_size DESC, p.port_name`,
     )
     .bind(slug, slug)
-    .all();
+    .all<RenderCols>();
 
-  const components = result.results as Record<string, unknown>[];
+  const components = result.results.map(withRender) as Record<string, unknown>[];
 
   // Attach shop availability so the Location Planner (#94) can show where to buy
   // each installed component. Same join the component picker uses: loot_map.uuid
@@ -645,7 +647,8 @@ export async function getHeadGadgets(
   if (isMining) {
     const r = await db
       .prepare(
-        `SELECT mm.id, mm.name, mm.size, mm.grade, mm.type,
+        `SELECT g.*, ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
+           FROM (SELECT mm.id, mm.name, mm.size, mm.grade, mm.type,
                 mm.damage_multiplier, mm.mod_resistance, mm.mod_optimal_window_size, mm.mod_instability,
                 mm.mod_shatter_damage, mm.mod_cluster_factor, mm.mod_optimal_charge_rate,
                 mm.mod_catastrophic_charge_rate, mm.mod_filter, mm.charges, mm.lifetime,
@@ -653,11 +656,14 @@ export async function getHeadGadgets(
                 (SELECT ROUND(MIN(${buyPriceSQL("ti")})) FROM ${ti} ti
                    JOIN ${lm} lm ON lm.uuid = ti.item_uuid
                   WHERE lm.name = mm.name AND ${buyablePricedSQL("ti")}) AS price
-           FROM ${mm} mm WHERE mm.is_deleted = 0
-          ORDER BY mm.name`,
+           FROM ${mm} mm WHERE mm.is_deleted = 0) g
+           -- The render is the linked loot item's, found by its uuid.
+           LEFT JOIN ${lm} glm ON glm.uuid = g.loot_uuid
+           ${lootRenderJoin("r", "glm.class_name")}
+          ORDER BY g.name`,
       )
-      .all<Record<string, unknown>>();
-    candidates = r.results.map((m) => ({
+      .all<RenderCols & Record<string, unknown>>();
+    candidates = r.results.map(withRender).map((m) => ({
       ...m,
       uuid: (m.loot_uuid as string | null) ?? `mining-${m.id}`,
     }));
@@ -666,15 +672,17 @@ export async function getHeadGadgets(
       .prepare(
         `SELECT vc.uuid, vc.name, vc.size, vc.grade, vc.sub_type,
                 (SELECT ROUND(MIN(${buyPriceSQL("ti")})) FROM ${ti} ti
-                  WHERE ti.item_uuid = vc.uuid AND ${buyablePricedSQL("ti")}) AS price
+                  WHERE ti.item_uuid = vc.uuid AND ${buyablePricedSQL("ti")}) AS price,
+                ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
            FROM ${vc} vc
+           ${renderJoin("r", "vc.class_name")}
           WHERE vc.type = 'SalvageModifier' AND COALESCE(vc.sub_type, '') NOT LIKE '%TractorBeam%'
           ORDER BY vc.name`,
       )
-      .all<Record<string, unknown>>();
+      .all<RenderCols & Record<string, unknown>>();
     // Dedup by name (some scraper modules have duplicate component rows); keep a priced one.
     const byName = new Map<string, Record<string, unknown>>();
-    for (const g of r.results) {
+    for (const g of r.results.map(withRender)) {
       const prev = byName.get(g.name as string);
       if (!prev || (prev.price == null && g.price != null)) byName.set(g.name as string, g);
     }

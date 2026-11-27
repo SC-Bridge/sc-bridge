@@ -1,6 +1,6 @@
 import React from 'react'
 import { ShoppingCart, RotateCcw } from 'lucide-react'
-import { DmgShape, getDamageType, fmtDec1 } from './loadoutHelpers'
+import { DmgShape, getDamageType, fmtDec1, SlotThumb } from './loadoutHelpers'
 
 /** SVG └ bracket connector for parent→child */
 function Bracket() {
@@ -155,6 +155,7 @@ export default function WeaponBlock({ item, isCustomized, weaponGroups = [], onC
           <span className="text-[12px] w-7 text-center flex-shrink-0 font-mono bg-white/[0.06] border border-white/[0.1] rounded px-1.5 py-px text-gray-400">
             S{sz}
           </span>
+          <SlotThumb item={item} title={weaponName} />
           <span className={`text-[14px] font-medium ${isCustomized ? 'text-sc-accent' : 'text-gray-200'}`}
             style={isCustomized ? { textShadow: '0 0 8px rgba(34,211,238,0.3)' } : undefined}>
             {weaponPrefix}{weaponName || 'Empty'}
@@ -195,6 +196,7 @@ export default function WeaponBlock({ item, isCustomized, weaponGroups = [], onC
           S{sz}
         </span>
         <FixedIcon />
+        <SlotThumb item={item} title={weaponName} />
         <span className={`text-[14px] font-medium flex-1 min-w-0 ${isCustomized ? 'text-sc-accent' : 'text-gray-200'}`}
           style={isCustomized ? { textShadow: '0 0 8px rgba(34,211,238,0.3)' } : undefined}>
           {weaponName || 'Empty'}
