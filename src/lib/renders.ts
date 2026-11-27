@@ -102,6 +102,24 @@ export function lootRenderJoin(alias: string, classNameExpr: string): string {
       LIMIT 1))`;
 }
 
+/**
+ * LEFT JOIN of one item's stock render in one view (variant ''), whatever the
+ * view ranking would pick. The ship size lineup needs the side view even where
+ * the card shows iso. A correlated id lookup, like `renderJoin`, so it never
+ * multiplies rows.
+ */
+export function stockViewJoin(alias: string, itemKeyExpr: string, view: string): string {
+  return `LEFT JOIN item_renders ${alias} ON ${alias}.id = (
+    SELECT _irv.id FROM item_renders _irv
+    WHERE _irv.item_key = lower(${itemKeyExpr}) AND _irv.variant = '' AND _irv.view = '${view}'
+    LIMIT 1)`;
+}
+
+/** The view-joined row as a RenderRef; null when the item has no render in that view. */
+export function viewRenderRef(r: { hash: string | null; width: number | null; height: number | null; view: string | null }): RenderRef | null {
+  return toRenderRef({ render_hash: r.hash, render_width: r.width, render_height: r.height, render_view: r.view });
+}
+
 /** SELECT list for the row joined by `renderJoin(alias, …)`. */
 export function renderCols(alias: string): string {
   return `${alias}.hash AS render_hash, ${alias}.width AS render_width,

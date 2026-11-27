@@ -2,7 +2,15 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { cachedJson, cacheSlug } from "../lib/cache";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
-import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
+import { renderCols, renderJoin, stockViewJoin, viewRenderRef, withRender, type RenderCols } from "../lib/renders";
+
+/** The ships list's side-view columns (`stockViewJoin` aliased `sr`). */
+type SideRenderCols = {
+  side_render_hash: string | null;
+  side_render_width: number | null;
+  side_render_height: number | null;
+  side_render_view: string | null;
+};
 
 /** One structural hull part, as the tools pipeline writes it to vehicles.hull_parts_json. */
 export interface HullPart {
@@ -76,18 +84,25 @@ export function vehicleRoutes<E extends HonoEnv>() {
             m.name as manufacturer_name, m.code as manufacturer_code,
             CASE WHEN v.parent_vehicle_id IS NOT NULL AND pps.key IS NOT NULL
               THEN pps.key ELSE ps.key END as production_status,
-            ${renderCols("r")}
+            ${renderCols("r")},
+            sr.hash AS side_render_hash, sr.width AS side_render_width,
+            sr.height AS side_render_height, sr.view AS side_render_view
           FROM ${vehiclesT} v
           LEFT JOIN ${manufacturersT} m ON m.id = v.manufacturer_id
           LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
           LEFT JOIN ${vehiclesT} pv ON pv.id = v.parent_vehicle_id
           LEFT JOIN production_statuses pps ON pps.id = pv.production_status_id
           ${renderJoin("r", "v.class_name")}
+          -- The stock side view, for the Ship DB size lineup.
+          ${stockViewJoin("sr", "v.class_name", "side")}
           WHERE ${whereClauses.join(" AND ")}
           ORDER BY v.name`,
         )
-        .all<RenderCols>();
-      return result.results.map(withRender);
+        .all<RenderCols & SideRenderCols>();
+      return result.results.map(({ side_render_hash, side_render_width, side_render_height, side_render_view, ...row }) => ({
+        ...withRender(row),
+        side_render: viewRenderRef({ hash: side_render_hash, width: side_render_width, height: side_render_height, view: side_render_view }),
+      }));
     });
   });
 

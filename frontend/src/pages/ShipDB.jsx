@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useShips } from '../hooks/useAPI'
-import { Database, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Database, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Ruler, X } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import CommunityTools from '../components/CommunityTools'
 import LoadingState from '../components/LoadingState'
@@ -10,8 +10,11 @@ import FilterSelect from '../components/FilterSelect'
 import SearchInput from '../components/SearchInput'
 import ShipImage from '../components/ShipImage'
 import StatusBadge from '../components/StatusBadge'
+import SizeLineup from './Ships/SizeLineup'
 
 const PAGE_SIZE = 30
+/** The most ships the size lineup draws at once; picking another drops the oldest. */
+const MAX_COMPARE = 8
 
 export default function ShipDB() {
   const { data: ships, loading, error, refetch } = useShips()
@@ -24,6 +27,16 @@ export default function ShipDB() {
   const sortBy = searchParams.get('sort') || 'name'
   const sortDir = searchParams.get('dir') || 'asc'
   const page = parseInt(searchParams.get('page') || '1', 10)
+  // Ships picked for the size lineup, in the URL so a comparison can be shared.
+  const compareSlugs = (searchParams.get('cmp') || '').split(',').filter(Boolean)
+  const setCompare = (slugs) => setSearchParams((prev) => {
+    const next = new URLSearchParams(prev)
+    if (slugs.length) { next.set('cmp', slugs.join(',')) } else { next.delete('cmp') }
+    return next
+  }, { replace: true })
+  const toggleCompare = (slug) => setCompare(
+    compareSlugs.includes(slug) ? compareSlugs.filter((s) => s !== slug) : [...compareSlugs, slug].slice(-MAX_COMPARE),
+  )
 
   const setFilter = (val) => {
     setSearchParams((prev) => {
@@ -159,6 +172,8 @@ export default function ShipDB() {
   const handleFilterChange = (setter) => (e) => setter(e.target.value)
   const handleSearchChange = (val) => setFilter(val)
 
+  const compareShips = compareSlugs.map((slug) => ships?.find((s) => s.slug === slug)).filter(Boolean)
+
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -207,71 +222,101 @@ export default function ShipDB() {
         <span className="text-xs font-mono text-gray-500">{filtered.length} results</span>
       </div>
 
+      {compareShips.length > 0 && (
+        <section data-testid="size-compare" className="panel p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm uppercase tracking-wider text-gray-300 flex items-center gap-2">
+              <Ruler className="w-4 h-4 text-sc-accent" /> Compare sizes
+            </h2>
+            <button onClick={() => setCompare([])} className="btn-secondary flex items-center gap-1.5 text-xs">
+              <X className="w-3.5 h-3.5" /> Clear
+            </button>
+          </div>
+          <SizeLineup ships={compareShips} />
+        </section>
+      )}
+
       {/* Ship Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {paged.map((ship) => (
-          <Link key={ship.slug} to={`/ships/${ship.slug}`} className="panel-hover group cursor-pointer overflow-hidden block">
-            <ShipImage
-              render={ship.render}
-              src={ship.image_url_small}
-              fallbackSrc={ship.image_url_medium || ship.image_url}
-              baseSrc={baseImageMap.get(ship.slug)}
-              alt={ship.name}
-              aspectRatio="landscape"
-              hoverZoom
-            />
-            <div className="p-4">
-              <div className="flex items-start justify-between gap-2 min-h-[3.75rem] mb-2">
-                <div className="min-w-0">
-                  <h3 className="font-display font-semibold text-white text-sm line-clamp-2 leading-tight">{ship.name}</h3>
-                  <span className="text-xs text-gray-400 mt-1 block">{ship.manufacturer_name}</span>
-                </div>
-                <span className="badge badge-size shrink-0">{ship.size_label}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs font-mono text-gray-400 mt-3">
-                <div className="min-w-0">
-                  <span className="font-semibold text-sc-accent2 block">Role</span>
-                  <span className="block truncate">{ship.focus || '-'}</span>
-                </div>
-                <div className="min-w-0">
-                  <span className="font-semibold text-sc-accent2 block">Cargo</span>
-                  <span className="block truncate">{ship.cargo > 0 ? `${ship.cargo} SCU` : '-'}</span>
-                </div>
-                <div className="min-w-0">
-                  <span className="font-semibold text-sc-accent2 block">Crew</span>
-                  <span className="block truncate">{
-                    ship.crew_min != null && ship.crew_max != null
-                      ? (ship.crew_min === ship.crew_max ? `${ship.crew_min}` : `${ship.crew_min}-${ship.crew_max}`)
-                      : '-'
-                  }</span>
-                </div>
-              </div>
-              <div className="mt-3 pt-2 border-t border-sc-border/30">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {ship.pledge_price > 0 ? (
-                      <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
-                    ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
-                      <span className="text-xs text-sc-accent2">Quest Reward</span>
-                    ) : null}
-                    {ship.price_auec > 0 && ship.pledge_price > 0 && (
-                      <span className="text-xs text-gray-400">|</span>
-                    )}
-                    {ship.price_auec > 0 && (
-                      <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
-                    )}
+        {paged.map((ship) => {
+          const picked = compareSlugs.includes(ship.slug)
+          return (
+            <div key={ship.slug} className="relative">
+              {/* A sibling of the card link, not inside it: a button cannot sit in a link. */}
+              <button
+                type="button"
+                onClick={() => toggleCompare(ship.slug)}
+                aria-pressed={picked}
+                aria-label={`Compare size: ${ship.name}`}
+                title={picked ? 'Remove from size comparison' : 'Compare size'}
+                className={`absolute top-2 right-2 z-10 p-1.5 rounded border transition-colors ${picked ? 'bg-sc-accent/20 border-sc-accent/60 text-sc-accent' : 'bg-sc-darker/70 border-sc-border text-gray-400 hover:text-sc-accent'}`}
+              >
+                <Ruler className="w-3.5 h-3.5" />
+              </button>
+              <Link to={`/ships/${ship.slug}`} className="panel-hover group cursor-pointer overflow-hidden block">
+                <ShipImage
+                  render={ship.render}
+                  src={ship.image_url_small}
+                  fallbackSrc={ship.image_url_medium || ship.image_url}
+                  baseSrc={baseImageMap.get(ship.slug)}
+                  alt={ship.name}
+                  aspectRatio="landscape"
+                  hoverZoom
+                />
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2 min-h-[3.75rem] mb-2">
+                    <div className="min-w-0">
+                      <h3 className="font-display font-semibold text-white text-sm line-clamp-2 leading-tight">{ship.name}</h3>
+                      <span className="text-xs text-gray-400 mt-1 block">{ship.manufacturer_name}</span>
+                    </div>
+                    <span className="badge badge-size shrink-0">{ship.size_label}</span>
                   </div>
-                  <StatusBadge status={ship.production_status} size="sm" />
+                  <div className="grid grid-cols-3 gap-2 text-xs font-mono text-gray-400 mt-3">
+                    <div className="min-w-0">
+                      <span className="font-semibold text-sc-accent2 block">Role</span>
+                      <span className="block truncate">{ship.focus || '-'}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-semibold text-sc-accent2 block">Cargo</span>
+                      <span className="block truncate">{ship.cargo > 0 ? `${ship.cargo} SCU` : '-'}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-semibold text-sc-accent2 block">Crew</span>
+                      <span className="block truncate">{
+                        ship.crew_min != null && ship.crew_max != null
+                          ? (ship.crew_min === ship.crew_max ? `${ship.crew_min}` : `${ship.crew_min}-${ship.crew_max}`)
+                          : '-'
+                      }</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-sc-border/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {ship.pledge_price > 0 ? (
+                          <span className="text-xs font-mono text-sc-warn">${ship.pledge_price} USD</span>
+                        ) : (ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') ? (
+                          <span className="text-xs text-sc-accent2">Quest Reward</span>
+                        ) : null}
+                        {ship.price_auec > 0 && ship.pledge_price > 0 && (
+                          <span className="text-xs text-gray-400">|</span>
+                        )}
+                        {ship.price_auec > 0 && (
+                          <span className="text-xs font-mono text-sc-melt">{ship.price_auec.toLocaleString()} aUEC</span>
+                        )}
+                      </div>
+                      <StatusBadge status={ship.production_status} size="sm" />
+                    </div>
+                    <div className="mt-1 min-h-[1rem]">
+                      {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
+                        <span className="text-xs text-sc-accent2">{ship.acquisition_source_name}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1 min-h-[1rem]">
-                  {(ship.acquisition_type === 'ingame_quest' || ship.acquisition_type === 'ingame_cz') && ship.acquisition_source_name && (
-                    <span className="text-xs text-sc-accent2">{ship.acquisition_source_name}</span>
-                  )}
-                </div>
-              </div>
+              </Link>
             </div>
-          </Link>
-        ))}
+          )
+        })}
       </div>
 
       {/* Pagination */}
