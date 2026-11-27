@@ -13,6 +13,7 @@ import { Users, ChevronDown, ChevronRight, ChevronLeft, ArrowLeft, Shield, Shirt
 import { toWords } from '../lib/lootLocations'
 import { formatLoadoutName } from '../lib/npcNames'
 import DetailPanel from './LootDB/DetailPanel'
+import RenderThumb from '../components/RenderThumb'
 
 // Tags for cosmetic/body items that aren't real gear — filter from display
 const HIDDEN_TAGS = new Set([
@@ -143,7 +144,7 @@ function FactionCard({ faction, index, onClick }) {
   )
 }
 
-function LoadoutTree({ items, onSelectItem }) {
+export function LoadoutTree({ items, onSelectItem }) {
   if (!items || items.length === 0) return null
 
   // Filter out body/cosmetic items
@@ -167,6 +168,14 @@ function LoadoutTree({ items, onSelectItem }) {
           <span className="text-[10px] font-mono text-gray-600 uppercase shrink-0 w-24 truncate" title={item.port_name}>
             {toWords(item.port_name.replace('Armor_', '').replace('wep_stocked_', 'Weapon '))}
           </span>
+          <RenderThumb
+            render={item.render}
+            kind={item.render_variants_kind}
+            itemKey={item.render_item_key}
+            variant={item.render_variant ?? ''}
+            title={displayName}
+            aspectRatio="row-sm"
+          />
           {hasLootLink ? (
             <button
               onClick={() => onSelectItem(item.loot_uuid, item.loot_item_id)}

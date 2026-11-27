@@ -771,15 +771,19 @@ return cachedJson(c, `gd:loc-shops:${cacheSlug(slug)}`, async () => {
         const loadoutIds = loadouts.map((l) => l.id as number)
         const placeholders = loadoutIds.map(() => "?").join(",")
         const { results } = await db
-          .prepare(`SELECT nli.*, nli.loot_map_uuid as loot_uuid
+          .prepare(`SELECT nli.*, nli.loot_map_uuid as loot_uuid,
+               ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+               r.variant AS render_variant
              FROM ${t("npc_loadout_items")} nli
+             LEFT JOIN ${t("loot_map")} lm ON lm.uuid = nli.loot_map_uuid
+             ${lootRenderJoin("r", "lm.class_name")}
              WHERE nli.loadout_id IN (${placeholders})
                AND nli.is_hidden = 0
              ORDER BY nli.loadout_id, nli.id`,
           )
           .bind(...loadoutIds)
-          .all()
-        items = results
+          .all<RenderCols & Record<string, unknown>>()
+        items = results.map(withRender)
       }
 
       const itemsByLoadout = new Map<number, typeof items>()
