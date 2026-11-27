@@ -786,16 +786,11 @@ describe("render on FPS loadout slots holding a crafting blueprint", () => {
   });
 });
 
-<<<<<<< HEAD
 describe("ship side renders for the size lineup", () => {
-=======
-describe("render on mining equipment", () => {
->>>>>>> origin/feat/mining-renders
   beforeAll(async () => {
     await setupTestDatabase(env.DB);
   });
 
-<<<<<<< HEAD
   it("GET /api/ships returns side_render: the stock side view, beside the card render", async () => {
     await seedShip("zzr-lineup-both", "Zzr Lineup Both", "zzr_lineup_both");
     await seedShip("zzr-lineup-iso", "Zzr Lineup Iso", "zzr_lineup_iso");
@@ -815,7 +810,14 @@ describe("render on mining equipment", () => {
     expect(both.side_render).toEqual({ hash: "f1f1f1f1f1f1f1f1", width: 2048, height: 1536, view: "side" });
     expect(ships.find((s) => s.slug === "zzr-lineup-iso")!.side_render).toBeNull();
     expect(both).not.toHaveProperty("side_render_hash");
-=======
+  });
+});
+
+describe("render on mining equipment", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
   it("GET /api/gamedata/mining gives each laser, module and gadget its render by class name", async () => {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO mining_lasers (name, class_name, size, game_version_id) VALUES ('Lp Arbor', 'Mining_Laser_LP_Arbor_S1', 1, 1)"),
@@ -837,6 +839,5 @@ describe("render on mining equipment", () => {
     expect(by(body.modules, "Lp Brandt").render).toEqual({ hash: "c2c2c2c2c2c2c2c2", width: 1024, height: 768, view: "side" });
     expect(by(body.gadgets, "Lp Optimax").render_variants_kind).toBe("fps_utility");
     expect(by(body.lasers, "Lp Arbor")).not.toHaveProperty("render_hash");
->>>>>>> origin/feat/mining-renders
   });
 });
