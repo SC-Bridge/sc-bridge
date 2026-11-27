@@ -29,6 +29,7 @@ import { localizationRoutes } from "./routes/localization";
 import { publicOpsRoutes } from "./routes/ops";
 import { reputationRoutes } from "./routes/reputation";
 import { publicFleetRoutes } from "./routes/publicFleet";
+import { matchPreviewPath, previewFromPayload, renderLinkPreviewShell } from "./lib/linkPreview";
 import {
   loadPublicFleet,
   matchPublicFleetPath,
@@ -513,7 +514,22 @@ app.get("*", async (c) => {
   headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
   const shell = new Response(res.body, { status: res.status, headers });
 
-  const handle = matchPublicFleetPath(new URL(c.req.url).pathname);
+  const url = new URL(c.req.url);
+  const target = matchPreviewPath(url.pathname);
+  if (target) {
+    // Ship, paint, loot item and armour set pages get a link preview built
+    // from the page's own public API route (and its KV cache).
+    try {
+      const api = await app.fetch(new Request(new URL(target.api, url.origin)), c.env, c.executionCtx);
+      const preview = api.ok ? previewFromPayload(target.kind, await api.json<Record<string, unknown>>()) : null;
+      return preview ? renderLinkPreviewShell(shell, preview) : shell;
+    } catch (err) {
+      logEvent("link_preview_render_failed", { path: url.pathname, error: String(err) });
+      return shell;
+    }
+  }
+
+  const handle = matchPublicFleetPath(url.pathname);
   if (!handle) return shell;
   try {
     const fleet = await cachedJson(c, publicFleetCacheKey(handle), () =>
