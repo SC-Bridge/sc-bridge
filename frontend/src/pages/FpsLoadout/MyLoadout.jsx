@@ -238,7 +238,7 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
       aria-pressed={selected}
       className="relative flex flex-col items-center justify-center gap-1 rounded cursor-pointer text-left"
       style={{
-        height: 92,
+        height: 112,
         padding: '6px 6px',
         background: isOver && validTarget ? 'rgba(0,232,255,0.10)' : PANEL2,
         border: `1px solid ${isOver && validTarget ? CYAN : validTarget ? 'rgba(0,232,255,0.55)' : overflow ? WANT : selected ? CYAN : filled ? LINE2 : LINE}`,
@@ -252,7 +252,10 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
       <SlotBadge owned={owned} wishlisted={wishlisted} />
       {filled && entry.render ? (
         // The equipped item's render; not clickable, as the whole tile is a button.
-        <ItemImage render={entry.render} alt={entry.item_name} aspectRatio="row" />
+        // A soft light glow behind it, so dark armour stays visible on the dark tile.
+        <div className="rounded" style={{ background: 'radial-gradient(closest-side, rgba(192,246,254,0.16), transparent)' }}>
+          <ItemImage render={entry.render} alt={entry.item_name} aspectRatio="thumbnail" className="!bg-transparent" />
+        </div>
       ) : (
         <img
           src={ICON(`${iconForSlotKey(slotKey)}.svg`)}
