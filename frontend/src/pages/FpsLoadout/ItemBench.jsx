@@ -8,6 +8,7 @@ import { getBenchAdapter } from './benchAdapters'
 import { isCompatible, weaponAttachmentSlots, SLOT_LABEL } from './attachmentCompat'
 import { isValidTarget } from './dnd'
 import { resolveWeaponIcon } from './weaponIcon'
+import RenderThumb from '../../components/RenderThumb'
 
 // A bench attachment slot as a dnd-kit drop target. Highlights when it's a
 // valid target for the in-flight drag, and stronger when hovered.
@@ -35,7 +36,7 @@ function BenchDropZone({ slot, blueprint, activeDrag, equippedAtt, onToggle }) {
 // (weapon + slider qualities + equipped attachments): drag it onto a paperdoll
 // weapon slot to save the custom build into that slot. The container resolves
 // the live config on drop, so no payload is carried here beyond the kind.
-function BenchComboHandle({ url, displayName }) {
+function BenchComboHandle({ url, displayName, blueprint }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: 'bench-combo',
     data: { kind: 'bench-combo' },
@@ -50,7 +51,10 @@ function BenchComboHandle({ url, displayName }) {
       style={{ opacity: isDragging ? 0.35 : 1 }}
       title="Drag onto a loadout slot to save this build there"
     >
-      {url
+      {blueprint?.render
+        ? <RenderThumb render={blueprint.render} kind={blueprint.render_variants_kind} itemKey={blueprint.render_item_key}
+            variant={blueprint.render_variant ?? ''} title={displayName} aspectRatio="thumbnail" />
+        : url
         ? <img src={url} alt={displayName} className="w-16 h-10 object-contain" />
         : <span className="w-16 h-10 flex items-center justify-center text-[9px] uppercase tracking-wide text-gray-600 border border-dashed border-white/10 rounded">no icon</span>}
       <h3 className="text-lg font-semibold text-white">{displayName}</h3>
@@ -132,8 +136,8 @@ export default function ItemBench({ kind = 'weapon', blueprint, attachments = []
 
   const diverged = baseline.current && !sameQualities(qualities, baseline.current.qualities)
 
-  // Real loadout icon (if extracted) rides on base_stats.loadout_icon; else
-  // placeholder text. Armour has no extracted loadout icons yet.
+  // The item's render comes first (weapons and armour); without one, the
+  // weapon's loadout icon (base_stats.loadout_icon), else placeholder text.
   const { url } = kind === 'weapon' ? resolveWeaponIcon({ ...blueprint, icon_url: blueprint.base_stats?.loadout_icon }) : { url: null }
   // blueprint.name from useCrafting is the raw internal name (e.g. "Behr Lmg Ballistic 01");
   // the friendly, player-facing name lives at base_stats.item_name (e.g. "FS-9 LMG").
@@ -141,7 +145,7 @@ export default function ItemBench({ kind = 'weapon', blueprint, attachments = []
 
   return (
     <div className="space-y-5">
-      <BenchComboHandle url={url} displayName={displayName} />
+      <BenchComboHandle url={url} displayName={displayName} blueprint={blueprint} />
 
       {diverged && (
         <div className="text-xs rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 px-3 py-2">
