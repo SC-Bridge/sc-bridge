@@ -5,6 +5,7 @@ import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { validate } from "../lib/validation";
 import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson, cacheSlug } from "../lib/cache";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 import { buyPriceSQL, buyablePricedSQL } from "../lib/pricing-sql";
 import { getShipLoadout, getShipModules, getUserOwnedModuleTitles, getHeadGadgets, getComponentShops } from "../db/queries";
 import { getOrCreatePrimaryAccountId, resolveAccountId } from "../lib/rsi-accounts";
@@ -58,9 +59,11 @@ async function fetchLoadoutOverrides(
               cw.dps, cw.damage_per_shot, cw.damage_type, cw.rounds_per_minute, cw.effective_range,
               cw.damage_physical, cw.damage_energy, cw.damage_distortion, cw.damage_thermal,
               cr.radar_range, vc.power_draw, vc.power_draw_min, vc.thermal_output,
-              m.name AS manufacturer_name
+              m.name AS manufacturer_name,
+              ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
        FROM ${overrideTable} l
        JOIN ${t("vehicle_components")} vc ON vc.id = l.component_id
+       ${renderJoin("r", "vc.class_name")}
        LEFT JOIN ${t("manufacturers")} m ON m.id = vc.manufacturer_id
        LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
        LEFT JOIN ${t("component_coolers")} cc ON cc.component_id = vc.id
@@ -71,9 +74,9 @@ async function fetchLoadoutOverrides(
        WHERE l.user_id = ? AND l.${keyCol} = ?${accountId === null ? "" : " AND l.rsi_account_id = ?"}`,
     )
     .bind(...(accountId === null ? [userId, keyVal] : [userId, keyVal, accountId]))
-    .all<Record<string, unknown>>();
+    .all<RenderCols & Record<string, unknown>>();
 
-  const rows = overrides.results;
+  const rows: Record<string, unknown>[] = overrides.results.map(withRender);
   const classNames = [
     ...new Set(rows.map((r) => (r.class_name as string | null) ?? "").filter(Boolean)),
   ];
@@ -478,7 +481,8 @@ export function loadoutRoutes() {
                 cm.ammo_count, cm.missile_type,
                 vc.em_signature, vc.mass, vc.hp, cc.overheat_temperature,
                 vc.base_heat_generation, vc.distortion_max,
-                m.name AS manufacturer_name, m.code AS manufacturer_code
+                m.name AS manufacturer_name, m.code AS manufacturer_code,
+                ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
          FROM ${t("vehicle_components")} vc
          LEFT JOIN ${t("manufacturers")} m ON m.id = vc.manufacturer_id
          LEFT JOIN ${t("component_powerplants")} cp ON cp.component_id = vc.id
@@ -489,6 +493,7 @@ export function loadoutRoutes() {
          LEFT JOIN ${t("component_radar")} cr ON cr.component_id = vc.id
          LEFT JOIN ${t("component_qed")} ce ON ce.component_id = vc.id
          LEFT JOIN ${t("component_missiles")} cm ON cm.component_id = vc.id
+         ${renderJoin("r", "vc.class_name")}
          WHERE vc.type IN (${typePlaceholders})
            ${resolvedSizeMin === 0 && resolvedSizeMax === 0 ? "" : "AND vc.size BETWEEN ? AND ?"}
            AND vc.name NOT LIKE '%Template%'
@@ -496,7 +501,7 @@ export function loadoutRoutes() {
          ORDER BY ${sortKey} DESC NULLS LAST, vc.name`,
       )
       .bind(...componentTypes, ...(resolvedSizeMin === 0 && resolvedSizeMax === 0 ? [] : [resolvedSizeMin, resolvedSizeMax]))
-      .all();
+      .all<RenderCols & Record<string, unknown>>();
 
     // Fetch shop availability via loot_map → loot_item_locations (source_type='shop')
     const classNames = components.results.map((c: any) => c.class_name).filter(Boolean);
@@ -615,7 +620,7 @@ export function loadoutRoutes() {
     }
 
     // Merge shop + collection + fleet data into components
-    const enriched = components.results.map((comp: any) => ({
+    const enriched = components.results.map(withRender).map((comp: any) => ({
       ...comp,
       is_stock: comp.uuid === stockUuid,
       shops: shopMap[comp.class_name] || [],

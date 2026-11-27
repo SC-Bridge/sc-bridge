@@ -1,6 +1,6 @@
 import React from 'react'
 import { ShoppingCart } from 'lucide-react'
-import { DmgShape, getDamageType, fmtDec1 } from './loadoutHelpers'
+import { DmgShape, getDamageType, fmtDec1, SlotThumb } from './loadoutHelpers'
 
 /** SVG └ bracket connector */
 function Bracket() {
@@ -47,6 +47,7 @@ export default function MissileBlock({ item, onClick, onAddToCart }) {
           <span className="text-[12px] w-7 text-center flex-shrink-0 font-mono bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-px text-amber-400">
             {missileCount}×
           </span>
+          <SlotThumb item={item} title={missileName} />
           <span className="text-[14px] font-medium text-gray-200">{missileName}</span>
           <span className="text-[12px] text-gray-600 flex-shrink-0">S{missileSize}</span>
           <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">

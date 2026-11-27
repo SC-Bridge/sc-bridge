@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { useHeadGadgets } from '../../hooks/useAPI'
 import { computeEffectiveModifiers, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD, formatModPct } from '../Mining/miningUtils'
 import GadgetPicker from './GadgetPicker'
+import { SlotThumb } from './loadoutHelpers'
 
 /** └ bracket connector for parent→child rows (matches WeaponBlock). */
 function Bracket() {
@@ -65,6 +66,7 @@ export default function GadgetSlots({ headUuid, portName, selections, onSelect }
             </span>
             {installed ? (
               <>
+                <SlotThumb item={installed} title={installed.name} />
                 <span className="text-[13px] text-gray-300 truncate flex-1 min-w-0">{installed.name}</span>
                 {installed.price != null && (
                   <span className="text-[11px] text-amber-300/80 tabular-nums flex-shrink-0">{Math.round(installed.price).toLocaleString()} aUEC</span>

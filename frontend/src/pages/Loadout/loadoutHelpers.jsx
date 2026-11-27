@@ -3,6 +3,7 @@ import {
   RadarIcon, JumpDriveIcon, WeaponIcon, TurretIcon, MissileRackIcon,
   ElectromagneticIcon, MiningLaserIcon, CrossSectionIcon, UtilityIcon, QEDIcon,
 } from '../../assets/icons/index.js'
+import RenderThumb from '../../components/RenderThumb'
 
 // ─── Damage type shapes (SVG) ────────────────────────────────────────────────
 // Distinct shapes for colorblind accessibility:
@@ -391,4 +392,29 @@ export function groupLoadoutByLocation(components) {
     lootOnly: lootOnlyArr,
     totalCost: ordered.reduce((sum, g) => sum + g.subtotal, 0),
   }
+}
+
+/**
+ * The render fields a picked component carries into its slot override. A component
+ * without a render sets them to null, so the stock part's render does not show through.
+ */
+export function renderFields(component) {
+  return {
+    render: component?.render ?? null,
+    render_variants_kind: component?.render_variants_kind ?? null,
+    render_item_key: component?.render_item_key ?? null,
+  }
+}
+
+/** A loadout slot's small render, which opens the large view on click. */
+export function SlotThumb({ item, title, aspectRatio = 'row-sm' }) {
+  return (
+    <RenderThumb
+      render={item.render}
+      kind={item.render_variants_kind}
+      itemKey={item.render_item_key}
+      title={title}
+      aspectRatio={aspectRatio}
+    />
+  )
 }

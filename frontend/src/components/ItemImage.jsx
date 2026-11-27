@@ -8,9 +8,12 @@ const ASPECT_CLASSES = {
   'thumbnail-lg': 'w-28 h-16',
   // Square, for table rows and dense lists; its placeholder is blank so rows stay aligned.
   row: 'w-10 h-10 shrink-0 rounded',
+  // Smaller square for compact rows, such as Ship Loadout slots.
+  'row-sm': 'w-7 h-7 shrink-0 rounded',
 }
 
-const FIXED_SIZES = new Set(['thumbnail', 'thumbnail-lg', 'row'])
+const FIXED_SIZES = new Set(['thumbnail', 'thumbnail-lg', 'row', 'row-sm'])
+const BLANK_PLACEHOLDER = new Set(['row', 'row-sm'])
 
 // Build a chain of URLs to try in order, deduplicating identical values.
 function buildChain(urls) {
@@ -94,7 +97,7 @@ function ItemImageInner({
           role="img"
           aria-label={alt ? `${alt} — image unavailable` : (placeholderLabel || 'Image unavailable')}
         >
-          {placeholderContent || (aspectRatio !== 'row' && (
+          {placeholderContent || (!BLANK_PLACEHOLDER.has(aspectRatio) && (
             <span className={`text-sc-border/80 text-center px-2 ${isFixedSize ? 'text-[9px]' : 'text-xs'}`}>
               {placeholderText}
             </span>

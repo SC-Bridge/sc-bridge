@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { X, ShoppingCart, Star, Diamond, Package, Search, ArrowUpDown, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import { useCompatibleComponents } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
-import { getColumnsForPortType, getDefaultSortKey, PORT_TYPE_LABELS } from './loadoutHelpers'
+import { getColumnsForPortType, getDefaultSortKey, PORT_TYPE_LABELS, SlotThumb } from './loadoutHelpers'
 
 /**
  * Full-screen sortable data grid for selecting compatible components.
@@ -256,7 +256,10 @@ export default function ComponentPicker({ slug, portId, portType, currentOverrid
                               }`}
                           >
                             {isName ? (
-                              <span className="truncate block max-w-[280px]" title={display}>{display}</span>
+                              <span className="flex items-center gap-2">
+                                <SlotThumb item={comp} title={comp.name} aspectRatio="row" />
+                                <span className="truncate block max-w-[280px]" title={display}>{display}</span>
+                              </span>
                             ) : isMfr ? (
                               <span className="truncate block max-w-[180px]" title={display}>{display}</span>
                             ) : (

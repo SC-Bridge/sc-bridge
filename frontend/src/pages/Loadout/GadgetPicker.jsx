@@ -1,6 +1,7 @@
 import React from 'react'
 import { X, Check, Ban } from 'lucide-react'
 import { getStrongestMod, MOD_LABELS, formatModPct } from '../Mining/miningUtils'
+import { SlotThumb } from './loadoutHelpers'
 
 /**
  * Compact modal for choosing the gadget consumable in one head slot. Mirrors the
@@ -54,6 +55,7 @@ export default function GadgetPicker({ slotLabel, kind, compatible = [], install
                 {g.size != null && (
                   <span className="text-[10px] font-mono font-bold text-gray-500 bg-white/[0.05] px-1.5 py-0.5 rounded flex-shrink-0">S{g.size}</span>
                 )}
+                <SlotThumb item={g} title={g.name} />
                 <span className={`flex-1 truncate ${installed ? 'text-gray-100' : 'text-gray-300'}`}>{g.name}</span>
                 {dmg && <span className="text-[11px] text-emerald-400 tabular-nums flex-shrink-0" title="Power multiplier">×{dmg.toFixed(2)}</span>}
                 {mod && (
