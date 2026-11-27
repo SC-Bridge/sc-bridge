@@ -1105,8 +1105,10 @@ return cachedJson(c, `gd:missions`, async () => {
     const db = c.env.DB
 return cachedJson(c, `gd:crafting`, async () => {
       const [bpResult, slotResult, modResult, propResult, resResult] = await Promise.all([
-        db.prepare(`SELECT cb.id, cb.uuid, cb.tag, cb.name, cb.type, cb.sub_type, cb.craft_time_seconds, cb.is_default
+        db.prepare(`SELECT cb.id, cb.uuid, cb.tag, cb.name, cb.type, cb.sub_type, cb.craft_time_seconds, cb.is_default,
+                  ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant
            FROM ${t("crafting_blueprints")} cb
+           ${lootRenderJoin("r", "REPLACE(cb.tag, 'BP_CRAFT_', '')")}
 
            ORDER BY cb.type, cb.sub_type, cb.name`
         ).all(),
@@ -1346,7 +1348,7 @@ return cachedJson(c, `gd:crafting`, async () => {
           ? null
           : bp.sub_type
         return {
-          ...bp,
+          ...withRender(bp as RenderCols & typeof bp),
           sub_type: subType,
           slots: slotsByBp.get(bp.id as number) ?? [],
           ...(baseStats ? { base_stats: baseStats } : {}),
@@ -1623,7 +1625,8 @@ return cachedJson(c, `gd:crafting`, async () => {
                     rp.key as pool_key, rp.name as pool_name,
                     rpi.crafting_blueprint_id, cb.name as blueprint_name,
                     COALESCE(fw.name, fa.name, fh.name, fam.name) as item_name,
-                    cb.type as blueprint_type, cb.sub_type as blueprint_sub_type
+                    cb.type as blueprint_type, cb.sub_type as blueprint_sub_type,
+                    ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant
              FROM ${t("contract_generator_blueprint_pools")} cgbp
              JOIN ${t("crafting_blueprint_reward_pools")} rp ON rp.id = cgbp.crafting_blueprint_reward_pool_id
              JOIN ${t("crafting_blueprint_reward_pool_items")} rpi ON rpi.crafting_blueprint_reward_pool_id = rp.id
@@ -1632,9 +1635,22 @@ return cachedJson(c, `gd:crafting`, async () => {
              LEFT JOIN ${t("fps_armour")} fa ON fa.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '')
              LEFT JOIN ${t("fps_helmets")} fh ON fh.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '')
              LEFT JOIN ${t("fps_ammo_types")} fam ON fam.class_name = REPLACE(cb.tag, 'BP_CRAFT_', '')
+             ${lootRenderJoin("r", "REPLACE(cb.tag, 'BP_CRAFT_', '')")}
              WHERE cgbp.contract_generator_contract_id IN (${contractIds.join(",")})`
           ).all()
         : { results: [] }
+
+      // The output item's render for a reward blueprint row, in the fields RenderThumb takes.
+      type RewardBlueprint = { id: number; name: string; type: string; sub_type: string } & Record<string, unknown>
+      const rewardRender = (row: Record<string, unknown>) => {
+        const { render } = withRender(row as RenderCols & Record<string, unknown>)
+        return {
+          render,
+          render_variants_kind: row.render_variants_kind ?? null,
+          render_item_key: row.render_item_key ?? null,
+          render_variant: row.render_variant ?? null,
+        }
+      }
 
       // Group bp pools by contract
       const bpByContract = new Map<number, Record<string, unknown>[]>()
@@ -1671,7 +1687,7 @@ return cachedJson(c, `gd:crafting`, async () => {
       }
 
       // Collect all unique blueprints across all contracts
-      const allBlueprints = new Map<number, { id: number; name: string; type: string; sub_type: string }>()
+      const allBlueprints = new Map<number, RewardBlueprint>()
       for (const row of bpPools.results) {
         const id = row.crafting_blueprint_id as number
         if (!allBlueprints.has(id)) {
@@ -1680,6 +1696,7 @@ return cachedJson(c, `gd:crafting`, async () => {
             name: (row.item_name as string) || (row.blueprint_name as string),
             type: row.blueprint_type as string,
             sub_type: row.blueprint_sub_type as string,
+            ...rewardRender(row),
           })
         }
       }

@@ -2,6 +2,7 @@ import React from 'react'
 import { Star, SlidersHorizontal, Repeat, Clock, Box, Check } from 'lucide-react'
 import { resolveStats } from './statConfig'
 import { formatCraftTime } from '../craftingUtils'
+import RenderThumb from '../../../components/RenderThumb'
 
 // Two toggles in the leading column: Owned, Wishlist (each 22px wide).
 const GRID_TEMPLATE =
@@ -84,13 +85,23 @@ export default function BlueprintListRow({
       </div>
 
       {/* Name + meta column */}
-      <div className="flex flex-col justify-center items-start gap-[2px] px-2 py-3 min-w-0 overflow-hidden">
-        <div className="text-[13px] font-semibold text-white truncate max-w-full">{name}</div>
-        <div className="font-mono text-[9px] uppercase tracking-[0.05em] text-[var(--text-muted)] truncate max-w-full">
-          <span className={TYPE_TEXT[blueprint.type] || ''}>
-            {TYPE_LABEL[blueprint.type]} · {blueprint.sub_type}
-          </span>
-          {' · '}{blueprint.slots?.length || 0} slots
+      <div className="flex items-center gap-2 px-2 py-3 min-w-0 overflow-hidden">
+        <RenderThumb
+          render={blueprint.render}
+          kind={blueprint.render_variants_kind}
+          itemKey={blueprint.render_item_key}
+          variant={blueprint.render_variant ?? ''}
+          title={name}
+          aspectRatio="row-sm"
+        />
+        <div className="flex flex-col justify-center items-start gap-[2px] min-w-0">
+          <div className="text-[13px] font-semibold text-white truncate max-w-full">{name}</div>
+          <div className="font-mono text-[9px] uppercase tracking-[0.05em] text-[var(--text-muted)] truncate max-w-full">
+            <span className={TYPE_TEXT[blueprint.type] || ''}>
+              {TYPE_LABEL[blueprint.type]} · {blueprint.sub_type}
+            </span>
+            {' · '}{blueprint.slots?.length || 0} slots
+          </div>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import { useMissionDetail } from '../hooks/useAPI'
 import { useGoBack } from '../hooks/useGoBack'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
+import RenderThumb from '../components/RenderThumb'
 import { FACTION_LOGOS, GUILD_LABELS, RANKS, SYSTEM_COLORS, DIFF_COLORS, DIFF_BAR_COLORS, DIFF_BAR_GLOW, DIFF_LABELS, TYPE_COLORS, TYPE_LABELS } from '../lib/missionConstants'
 
 function formatRep(n) {
@@ -302,6 +303,14 @@ export default function MissionDetail() {
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider ${btc.bg} ${btc.text} border ${btc.border}`}>
                             {TYPE_LABELS[bp.type] || bp.type}
                           </span>
+                          <RenderThumb
+                            render={bp.render}
+                            kind={bp.render_variants_kind}
+                            itemKey={bp.render_item_key}
+                            variant={bp.render_variant ?? ''}
+                            title={bp.name}
+                            aspectRatio="row-sm"
+                          />
                           <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{bp.name}</span>
                         </Link>
                       )
