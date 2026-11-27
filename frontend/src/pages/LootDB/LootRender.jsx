@@ -1,6 +1,4 @@
-import { useState } from 'react'
-import ItemImage from '../../components/ItemImage'
-import RenderViewer from '../../components/RenderViewer'
+import RenderThumb from '../../components/RenderThumb'
 
 /**
  * A loot item's render with a click-through to the large view.
@@ -10,32 +8,17 @@ import RenderViewer from '../../components/RenderViewer'
  * (render_variant) selected.
  */
 export default function LootRender({ item, title, aspectRatio = 'landscape', size = 512, className = '' }) {
-  const [open, setOpen] = useState(false)
-  const canOpen = Boolean(item.render && item.render_variants_kind && item.render_item_key)
-
   return (
-    <div>
-      <ItemImage
-        render={item.render}
-        alt={title}
-        size={size}
-        aspectRatio={aspectRatio}
-        hoverZoom
-        className={className}
-        onOpen={canOpen ? (e) => { e.stopPropagation(); setOpen(true) } : undefined}
-      />
-      {open && canOpen && (
-        // The viewer is a React child of its card, so keep its clicks from selecting the card.
-        <div onClick={(e) => e.stopPropagation()}>
-          <RenderViewer
-            kind={item.render_variants_kind}
-            itemKey={item.render_item_key}
-            initialVariant={item.render_variant ?? ''}
-            title={title}
-            onClose={() => setOpen(false)}
-          />
-        </div>
-      )}
-    </div>
+    <RenderThumb
+      render={item.render}
+      kind={item.render_variants_kind}
+      itemKey={item.render_item_key}
+      variant={item.render_variant ?? ''}
+      title={title}
+      aspectRatio={aspectRatio}
+      size={size}
+      hoverZoom
+      className={className}
+    />
   )
 }

@@ -6,7 +6,11 @@ const ASPECT_CLASSES = {
   square: 'aspect-square',
   thumbnail: 'w-20 h-12',
   'thumbnail-lg': 'w-28 h-16',
+  // Square, for table rows and dense lists; its placeholder is blank so rows stay aligned.
+  row: 'w-10 h-10 shrink-0 rounded',
 }
+
+const FIXED_SIZES = new Set(['thumbnail', 'thumbnail-lg', 'row'])
 
 // Build a chain of URLs to try in order, deduplicating identical values.
 function buildChain(urls) {
@@ -60,7 +64,7 @@ function ItemImageInner({
   }
 
   const aspectClass = ASPECT_CLASSES[aspectRatio] || ASPECT_CLASSES.landscape
-  const isFixedSize = aspectRatio === 'thumbnail' || aspectRatio === 'thumbnail-lg'
+  const isFixedSize = FIXED_SIZES.has(aspectRatio)
   const placeholderText = placeholder === 'no-model' ? 'No image in game data' : 'No image yet'
 
   const img = currentSrc && status !== 'error' && (
@@ -90,11 +94,11 @@ function ItemImageInner({
           role="img"
           aria-label={alt ? `${alt} — image unavailable` : (placeholderLabel || 'Image unavailable')}
         >
-          {placeholderContent || (
+          {placeholderContent || (aspectRatio !== 'row' && (
             <span className={`text-sc-border/80 text-center px-2 ${isFixedSize ? 'text-[9px]' : 'text-xs'}`}>
               {placeholderText}
             </span>
-          )}
+          ))}
         </div>
       )}
 

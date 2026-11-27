@@ -29,6 +29,23 @@ describe('ItemImage', () => {
     expect(screen.getByText('No image yet')).toBeInTheDocument()
   })
 
+  it('has a square row size whose placeholder keeps the size and shows no text', () => {
+    const { container } = render(<ItemImage render={null} src={null} alt="Thing" aspectRatio="row" />)
+    const box = container.firstChild
+    expect(box.className).toMatch(/\bw-10\b/)
+    expect(box.className).toMatch(/\bh-10\b/)
+    expect(screen.queryByText('No image yet')).toBeNull()
+    expect(screen.getByRole('img', { name: /Thing — image unavailable/ })).toBeInTheDocument()
+  })
+
+  it('opens from a row-size render once loaded', () => {
+    const onOpen = vi.fn()
+    const { container } = render(<ItemImage render={R} alt="Thing" aspectRatio="row" onOpen={onOpen} />)
+    fireEvent.load(container.querySelector('img'))
+    fireEvent.click(screen.getByRole('button', { name: /Open large view of Thing/ }))
+    expect(onOpen).toHaveBeenCalled()
+  })
+
   it('uses the no-model placeholder text', () => {
     render(<ItemImage render={null} src={null} alt="Thing" placeholder="no-model" />)
     expect(screen.getByText('No image in game data')).toBeInTheDocument()
