@@ -7,6 +7,9 @@ import { lootRenderJoin, renderCols, withRender, type RenderCols } from "../lib/
 import { resolvePOISlug } from "../lib/poi"
 import { getPOIDetail, getPOIChildren } from "../db/queries"
 
+/** Render columns for mining equipment, linked by the row's class_name. */
+const MINING_RENDER_COLS = `${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant`
+
 /** SQL expression for shop display name — populated by extraction scripts */
 const SHOP_DISPLAY_NAME_EXPR = `COALESCE(s.display_name, REPLACE(REPLACE(REPLACE(s.name, 'Inv ', ''), '_', ' '), '  ', ' '))`
 
@@ -287,20 +290,23 @@ const [
           )
           .all(),
         db
-          .prepare(`SELECT * FROM ${t("mining_lasers")}
-             ORDER BY size, name`,
+          .prepare(`SELECT ml.*, ${MINING_RENDER_COLS} FROM ${t("mining_lasers")} ml
+             ${lootRenderJoin("r", "ml.class_name")}
+             ORDER BY ml.size, ml.name`,
           )
-          .all(),
+          .all<RenderCols & Record<string, unknown>>(),
         db
-          .prepare(`SELECT * FROM ${t("mining_modules")}
-             ORDER BY type, size, name`,
+          .prepare(`SELECT mm.*, ${MINING_RENDER_COLS} FROM ${t("mining_modules")} mm
+             ${lootRenderJoin("r", "mm.class_name")}
+             ORDER BY mm.type, mm.size, mm.name`,
           )
-          .all(),
+          .all<RenderCols & Record<string, unknown>>(),
         db
-          .prepare(`SELECT * FROM ${t("mining_gadgets")}
-             ORDER BY name`,
+          .prepare(`SELECT mg.*, ${MINING_RENDER_COLS} FROM ${t("mining_gadgets")} mg
+             ${lootRenderJoin("r", "mg.class_name")}
+             ORDER BY mg.name`,
           )
-          .all(),
+          .all<RenderCols & Record<string, unknown>>(),
         db
           .prepare(`SELECT * FROM ${t("mineable_rock_entities")}
              WHERE removed = 0 AND (is_deleted IS NULL OR is_deleted = 0)
@@ -334,9 +340,9 @@ const [
         deposits: deposits.results,
         quality_distributions: qualityDistributions.results,
         clustering_presets: presetsWithParams,
-        lasers: lasers.results,
-        modules: modules.results,
-        gadgets: gadgets.results,
+        lasers: lasers.results.map(withRender),
+        modules: modules.results.map(withRender),
+        gadgets: gadgets.results.map(withRender),
         rock_entities: rockEntities.results,
         global_params: globalParams.results,
       }

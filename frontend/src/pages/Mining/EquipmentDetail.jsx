@@ -4,6 +4,7 @@ import { ArrowLeft, Wrench } from 'lucide-react'
 import { useMining } from '../../hooks/useAPI'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
+import RenderThumb from '../../components/RenderThumb'
 import {
   EQUIPMENT_TYPE_COLORS, MOD_KEYS, MOD_LABELS, MOD_POSITIVE_IS_GOOD, formatModPct,
 } from './miningUtils'
@@ -106,6 +107,20 @@ export default function EquipmentDetail() {
         <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-sc-accent/20 rounded-tr-2xl" />
         <div className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-sc-accent/20 rounded-bl-2xl" />
         <div className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-sc-accent/20 rounded-br-2xl" />
+
+        {item.render && (
+          <div className="mb-5 max-w-xl">
+            <RenderThumb
+              render={item.render}
+              kind={item.render_variants_kind}
+              itemKey={item.render_item_key}
+              variant={item.render_variant}
+              title={item.name}
+              size={2048}
+              className="rounded-xl"
+            />
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mb-3">
           <span className={`px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${color.bg} ${color.text} border ${color.border}`}>

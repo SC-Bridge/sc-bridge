@@ -4,19 +4,25 @@ import { renderUrl } from '../../lib/renders'
 
 const formatLength = (m) => `${Number(m.toFixed(1))} m`
 
+// A ship's length and its image's share of the row. A render the publisher measured carries its
+// scale (metres per pixel of the large view) and the ship's drawn length: the image's real width
+// is then exact, whatever vehicles.length says (it is wrong for some ships). Without a scale the
+// site's length stands in, which leaves out the publisher's crop margin (2% a side).
+const measuredLength = (s) => s.side_render?.span_m ?? s.length
+const rowShare = (s) => (s.side_render?.metres_per_pixel ? s.side_render.width * s.side_render.metres_per_pixel : s.length)
+
 /**
  * Picked ships side by side at true relative size, on one baseline.
  *
- * Each ship's side render is a profile, nose to the right, cropped to the ship with the same
- * small pad on every image, so its width is the ship's length plus a fixed fraction. Giving
- * each ship a width share equal to its length therefore keeps the lengths in proportion, and
- * the heights follow from each image's own aspect ratio.
- * Ships without a side render or a length are listed by name instead.
+ * Each ship's side render is a near-orthographic profile, nose to the right. Giving each image
+ * a width share equal to the real-world width it shows (`rowShare`) keeps every ship to scale,
+ * and the heights follow from each image's own aspect ratio.
+ * Ships without a side render, or with neither a scale nor a length, are listed by name instead.
  */
 export default function SizeLineup({ ships }) {
   const drawable = ships
-    .filter((s) => s.side_render && s.length > 0)
-    .sort((a, b) => a.length - b.length)
+    .filter((s) => s.side_render && rowShare(s) > 0)
+    .sort((a, b) => measuredLength(a) - measuredLength(b))
   const missing = ships.filter((s) => !drawable.includes(s))
 
   if (ships.length === 0) {
@@ -33,7 +39,7 @@ export default function SizeLineup({ ships }) {
               data-testid="lineup-ship"
               data-slug={ship.slug}
               className="min-w-0 flex flex-col items-center"
-              style={{ flexGrow: ship.length, flexBasis: 0 }}
+              style={{ flexGrow: rowShare(ship), flexBasis: 0 }}
             >
               <img
                 src={renderUrl(ship.side_render, 2048)}
@@ -50,7 +56,7 @@ export default function SizeLineup({ ships }) {
               >
                 {ship.name}
               </Link>
-              <span className="text-[10px] font-mono text-gray-500 whitespace-nowrap">{formatLength(ship.length)}</span>
+              <span className="text-[10px] font-mono text-gray-500 whitespace-nowrap">{formatLength(measuredLength(ship))}</span>
             </div>
           ))}
         </div>
