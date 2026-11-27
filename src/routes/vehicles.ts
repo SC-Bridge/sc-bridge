@@ -10,6 +10,8 @@ type SideRenderCols = {
   side_render_width: number | null;
   side_render_height: number | null;
   side_render_view: string | null;
+  side_render_mpp: number | null;
+  side_render_span_m: number | null;
 };
 
 /** One structural hull part, as the tools pipeline writes it to vehicles.hull_parts_json. */
@@ -86,7 +88,8 @@ export function vehicleRoutes<E extends HonoEnv>() {
               THEN pps.key ELSE ps.key END as production_status,
             ${renderCols("r")},
             sr.hash AS side_render_hash, sr.width AS side_render_width,
-            sr.height AS side_render_height, sr.view AS side_render_view
+            sr.height AS side_render_height, sr.view AS side_render_view,
+            sr.metres_per_pixel AS side_render_mpp, sr.span_m AS side_render_span_m
           FROM ${vehiclesT} v
           LEFT JOIN ${manufacturersT} m ON m.id = v.manufacturer_id
           LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
@@ -99,10 +102,13 @@ export function vehicleRoutes<E extends HonoEnv>() {
           ORDER BY v.name`,
         )
         .all<RenderCols & SideRenderCols>();
-      return result.results.map(({ side_render_hash, side_render_width, side_render_height, side_render_view, ...row }) => ({
-        ...withRender(row),
-        side_render: viewRenderRef({ hash: side_render_hash, width: side_render_width, height: side_render_height, view: side_render_view }),
-      }));
+      return result.results.map(({ side_render_hash, side_render_width, side_render_height, side_render_view,
+        side_render_mpp, side_render_span_m, ...row }) => {
+        const side = viewRenderRef({ hash: side_render_hash, width: side_render_width, height: side_render_height, view: side_render_view });
+        // The real-world scale (migration 0292), only where the publisher measured it.
+        const scale = side && side_render_mpp != null ? { metres_per_pixel: side_render_mpp, span_m: side_render_span_m } : {};
+        return { ...withRender(row), side_render: side ? { ...side, ...scale } : null };
+      });
     });
   });
 

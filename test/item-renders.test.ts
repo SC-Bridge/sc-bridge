@@ -841,3 +841,30 @@ describe("render on mining equipment", () => {
     expect(by(body.lasers, "Lp Arbor")).not.toHaveProperty("render_hash");
   });
 });
+
+describe("ship side render scale", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("GET /api/ships gives side_render the render's metres per pixel and the ship's drawn length, when it has them", async () => {
+    await seedShip("zzr-scale", "Zzr Scale", "zzr_scale");
+    await seedShip("zzr-noscale", "Zzr No Scale", "zzr_noscale");
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO item_renders (kind, item_key, variant, view, hash, width, height, source_version, metres_per_pixel, span_m) VALUES ('vehicle', 'zzr_scale', '', 'side', 'a9a9a9a9a9a9a9a9', 2048, 512, '4.10.3-live', 0.0625, 123.5)",
+      ),
+      renderRow("zzr_noscale", "", "side", "b9b9b9b9b9b9b9b9"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/ships");
+    type Ship = { slug: string; side_render: Record<string, unknown> | null };
+    const ships = (await res.json()) as Ship[];
+    expect(ships.find((s) => s.slug === "zzr-scale")!.side_render).toEqual({
+      hash: "a9a9a9a9a9a9a9a9", width: 2048, height: 512, view: "side", metres_per_pixel: 0.0625, span_m: 123.5,
+    });
+    expect(ships.find((s) => s.slug === "zzr-noscale")!.side_render).toEqual({
+      hash: "b9b9b9b9b9b9b9b9", width: 2048, height: 1536, view: "side",
+    });
+    expect(ships.find((s) => s.slug === "zzr-noscale")!.side_render).not.toHaveProperty("metres_per_pixel");
+  });
+});

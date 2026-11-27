@@ -47,3 +47,32 @@ describe('SizeLineup', () => {
     expect(screen.getByText(/pick ships/i)).toBeTruthy()
   })
 })
+
+describe('SizeLineup with measured scale', () => {
+  // The site's length is wrong for some ships (the Reliant lists its wingspan); a measured render wins.
+  const scaled = (hash, width, mpp, span) => ({ hash, width, height: 400, view: 'side', metres_per_pixel: mpp, span_m: span })
+  const ships = [
+    { slug: 'reliant', name: 'Reliant Kore', length: 28.5, side_render: scaled('r1r1r1r1r1r1r1r1', 2048, 0.0081, 16.0) },
+    { slug: 'gladius', name: 'Gladius', length: 21, side_render: scaled('g1g1g1g1g1g1g1g1', 2048, 0.0108, 21.5) },
+  ]
+
+  it('sizes each ship by its image\'s real width and orders by measured length', () => {
+    render(<MemoryRouter><SizeLineup ships={ships} /></MemoryRouter>)
+    const items = screen.getAllByTestId('lineup-ship')
+    expect(items.map((el) => el.dataset.slug)).toEqual(['reliant', 'gladius'])
+    expect(Number(items[0].style.flexGrow)).toBeCloseTo(2048 * 0.0081)
+    expect(Number(items[1].style.flexGrow)).toBeCloseTo(2048 * 0.0108)
+  })
+
+  it('labels each ship with its measured length', () => {
+    render(<MemoryRouter><SizeLineup ships={ships} /></MemoryRouter>)
+    const [reliant] = screen.getAllByTestId('lineup-ship')
+    expect(within(reliant).getByText('16 m')).toBeTruthy()
+  })
+
+  it('draws a measured ship even when the site has no length for it', () => {
+    render(<MemoryRouter><SizeLineup ships={[{ slug: 'x', name: 'No Length', length: null, side_render: scaled('x1x1x1x1x1x1x1x1', 2048, 0.01, 20) }]} /></MemoryRouter>)
+    expect(screen.getAllByTestId('lineup-ship')).toHaveLength(1)
+    expect(screen.queryByTestId('lineup-missing')).toBeNull()
+  })
+})
