@@ -8,6 +8,7 @@ import RenderViewer from './RenderViewer'
  * set the large view loads. Without a render, or without kind and key, it cannot open.
  * A click that opens the viewer, and clicks inside the viewer, stop here, so a clickable
  * row or card around it is not triggered; a click on the placeholder still reaches it.
+ * The opening click is also cancelled, so a surrounding link is not followed.
  */
 export default function RenderThumb({
   render,
@@ -34,7 +35,7 @@ export default function RenderThumb({
         aspectRatio={aspectRatio}
         hoverZoom={hoverZoom}
         className={className}
-        onOpen={canOpen ? (e) => { e.stopPropagation(); setOpen(true) } : undefined}
+        onOpen={canOpen ? (e) => { e.preventDefault(); e.stopPropagation(); setOpen(true) } : undefined}
       />
       {open && canOpen && (
         // The viewer is portalled to <body> but is still a React child here, so its clicks

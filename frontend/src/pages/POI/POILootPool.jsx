@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Package } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
+import RenderThumb from '../../components/RenderThumb'
 import {
   RARITY_STYLES, RARITY_ORDER, CATEGORY_LABELS, CATEGORY_BADGE_STYLES, CATEGORY_ORDER,
   humanizeRawDisplayName,
@@ -161,14 +162,26 @@ export default function POILootPool({ envelope }) {
                     return (
                       <tr key={item.uuid || i} className="border-b border-sc-border/50 last:border-0 hover:bg-white/3">
                         <td className="px-3 py-1.5">
-                          <Link to={`/loot/${item.uuid}`} className="text-gray-200 hover:text-sc-accent transition-colors">
-                            {humanizeRawDisplayName(item.name)}
-                          </Link>
-                          {item.rarity && item.rarity !== 'N/A' && rs && (
-                            <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
-                              {item.rarity}
+                          <div className="flex items-center gap-2">
+                            <RenderThumb
+                              render={item.render}
+                              kind={item.render_variants_kind}
+                              itemKey={item.render_item_key}
+                              variant={item.render_variant ?? ''}
+                              title={humanizeRawDisplayName(item.name)}
+                              aspectRatio="row-sm"
+                            />
+                            <span>
+                              <Link to={`/loot/${item.uuid}`} className="text-gray-200 hover:text-sc-accent transition-colors">
+                                {humanizeRawDisplayName(item.name)}
+                              </Link>
+                              {item.rarity && item.rarity !== 'N/A' && rs && (
+                                <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${rs.badge}`}>
+                                  {item.rarity}
+                                </span>
+                              )}
                             </span>
-                          )}
+                          </div>
                         </td>
                         <td className="px-3 py-1.5">
                           {item.category && (

@@ -45,6 +45,20 @@ describe('RenderThumb', () => {
     expect(onRowClick).not.toHaveBeenCalled()
   })
 
+  it('opens the large view inside a link without following the link', () => {
+    render(
+      <MemoryRouter>
+        <a href="/loot/item-1">
+          <RenderThumb render={R} kind="vehicle_component" itemKey="shld_s1" title="Shield" />
+        </a>
+      </MemoryRouter>,
+    )
+    fireEvent.load(screen.getByAltText('Shield'))
+    const notCancelled = fireEvent.click(screen.getByRole('button', { name: /Open large view of Shield/ }))
+    expect(notCancelled).toBe(false)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   it('shows the placeholder and cannot open without a render', () => {
     const onRowClick = inRow(<RenderThumb render={null} kind="vehicle_component" itemKey="shld_s1" title="Shield" />)
     const placeholder = screen.getByRole('img', { name: /Shield — image unavailable/ })
