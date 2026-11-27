@@ -3,6 +3,7 @@ import type { HonoEnv } from "../lib/types"
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { cachedJson, cacheSlug } from "../lib/cache"
 import { buyPriceSQL, sellPriceSQL } from "../lib/pricing-sql"
+import { lootRenderJoin, renderCols, withRender, type RenderCols } from "../lib/renders"
 import { resolvePOISlug } from "../lib/poi"
 import { getPOIDetail, getPOIChildren } from "../db/queries"
 
@@ -409,20 +410,24 @@ const [
              ${buyPriceSQL("ti")} as buy_price,
              ${sellPriceSQL("ti")} as sell_price,
              ti.base_inventory, ti.max_inventory,
-             COALESCE(fi.name, v.name, ti.item_name) as resolved_name
+             COALESCE(fi.name, v.name, ti.item_name) as resolved_name,
+             ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+             r.variant AS render_variant
            FROM ${t("terminal_inventory")} ti
            JOIN ${t("terminals")} t ON t.id = ti.terminal_id
            JOIN ${t("shops")} s ON s.id = t.shop_id
            LEFT JOIN ${t("loot_map")} fi ON fi.uuid = ti.item_uuid
            LEFT JOIN ${t("vehicles")} v ON v.uuid = ti.item_uuid
+           -- A loot item's render (stock or finish), else a vehicle's stock render.
+           ${lootRenderJoin("r", "COALESCE(fi.class_name, v.class_name)")}
            WHERE s.slug = ?
            ORDER BY COALESCE(fi.name, v.name, ti.item_name),
                     ${buyPriceSQL("ti")} DESC`,
         )
         .bind(slug)
-        .all()
+        .all<RenderCols & Record<string, unknown>>()
 
-      return results
+      return results.map(withRender)
     })
   })
 

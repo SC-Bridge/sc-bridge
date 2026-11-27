@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import SearchInput from '../components/SearchInput'
+import RenderThumb from '../components/RenderThumb'
 import { RARITY_STYLES } from '../lib/lootDisplay'
 
 // ── Location group config ──────────────────────────────────────────────────
@@ -176,7 +177,7 @@ function ShopTreeNode({ node, depth = 0, search, onShopClick }) {
 }
 
 // ── Shop inventory panel (slide-over) ────────────────────────────────────
-function ShopInventoryPanel({ shop, onClose }) {
+export function ShopInventoryPanel({ shop, onClose }) {
   const { data: inventory, loading: invLoading } = useAPI(
     `/gamedata/shops/${shop.slug}/inventory`,
     { skip: !shop }
@@ -237,6 +238,13 @@ function ShopInventoryPanel({ shop, onClose }) {
               </div>
               {sorted.map((item) => (
                 <div key={item.id} className="flex items-center gap-3 px-3 py-2 rounded hover:bg-white/[0.03] transition-colors">
+                  <RenderThumb
+                    render={item.render}
+                    kind={item.render_variants_kind}
+                    itemKey={item.render_item_key}
+                    variant={item.render_variant ?? ''}
+                    title={item.resolved_name || item.item_uuid}
+                  />
                   <span className="flex-1 min-w-0 text-xs font-mono text-gray-200 truncate">
                     {item.resolved_name || item.item_uuid}
                   </span>

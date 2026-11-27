@@ -66,14 +66,19 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
     onClose?.()
   }, [setSearchParams, onClose])
 
+  // Captured on window so the viewer sees keys first; Escape stops there, so a
+  // panel or modal underneath that also closes on Escape stays open.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        close()
+      }
       else if (e.key === 'ArrowRight') select(Math.min(index + 1, items.length - 1))
       else if (e.key === 'ArrowLeft') select(Math.max(index - 1, 0))
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [index, items.length, select, close])
 
   useEffect(() => {
