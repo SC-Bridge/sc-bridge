@@ -29,6 +29,12 @@ function setup(entry = '/ships/x', onClose = vi.fn()) {
 }
 
 describe('RenderViewer', () => {
+  it('floats the render on a blurred page: the backdrop blurs and the panel has no solid fill', () => {
+    setup()
+    expect(screen.getByTestId('render-backdrop').className).toMatch(/\bbackdrop-blur/)
+    expect(screen.getByRole('dialog').className).not.toMatch(/\bbg-sc-darker\b/)
+  })
+
   it('renders into document.body so a blurred or transformed card cannot clip it', () => {
     // .panel uses backdrop-filter, which makes a card the containing block for a
     // position:fixed child: the full-screen overlay would be boxed inside the card.

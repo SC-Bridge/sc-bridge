@@ -92,7 +92,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
   return createPortal(
     <div
       data-testid="render-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-md"
       onClick={close}
     >
       <div
@@ -101,7 +101,7 @@ export default function RenderViewer({ kind, itemKey, initialVariant = '', title
         aria-modal="true"
         aria-label={title ? `${title} renders` : 'Renders'}
         tabIndex={-1}
-        className="relative flex max-h-full w-full max-w-5xl flex-col gap-3 rounded-lg bg-sc-darker p-4 outline-none"
+        className="relative flex max-h-full w-full max-w-5xl flex-col gap-3 rounded-lg p-4 outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <button
