@@ -2848,6 +2848,27 @@ interface LocationItem {
   sellPrice?: number;
   probability?: number;
   slot?: string;
+  render: RenderRef | null;
+  render_variants_kind: string | null;
+  render_item_key: string | null;
+  render_variant: string | null;
+}
+
+/** The render columns `lootRenderJoin` adds to a location's item rows. */
+interface LocationRenderRow extends RenderCols {
+  render_variants_kind: string | null;
+  render_item_key: string | null;
+  render_variant: string | null;
+}
+
+/** The render fields of a location item, from its row. */
+function locationRender(row: LocationRenderRow) {
+  return {
+    render: toRenderRef(row),
+    render_variants_kind: row.render_variants_kind,
+    render_item_key: row.render_item_key,
+    render_variant: row.render_variant,
+  };
 }
 
 interface LocationDetailResult {
@@ -2879,15 +2900,17 @@ export async function getLootLocationDetail(
 
   const sql = `SELECT DISTINCT
       lm.uuid, lm.name, lm.type, lm.sub_type, lm.rarity, lm.category
-      ${extraCols}
+      ${extraCols},
+      ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant
     FROM ${lil} lil
     JOIN ${lm} lm ON lm.id = lil.loot_map_id
+    ${lootRenderJoin("r", "lm.class_name")}
     WHERE lil.source_type = ?
       AND lil.location_key = ?
       AND ${LOOT_EXCLUSION_FILTER}
     ORDER BY lm.name`;
 
-  const result = await db.prepare(sql).bind(sourceType, slug).all<{
+  const result = await db.prepare(sql).bind(sourceType, slug).all<LocationRenderRow & {
     uuid: string;
     name: string;
     type: string | null;
@@ -2913,6 +2936,7 @@ export async function getLootLocationDetail(
       sub_type: row.sub_type,
       rarity: row.rarity,
       category: row.category,
+      ...locationRender(row),
     };
     if (locType === "container") {
       if (row.per_container != null) item.perContainer = row.per_container;
@@ -2943,16 +2967,18 @@ async function getShopLocationDetail(
       COALESCE(lm.uuid, ti.item_uuid) as uuid,
       COALESCE(lm.name, ti.item_name) as name,
       lm.type, lm.sub_type, lm.rarity, lm.category,
-      ${buyPriceSQL("ti")} as buy_price, ${sellPriceSQL("ti")} as sell_price
+      ${buyPriceSQL("ti")} as buy_price, ${sellPriceSQL("ti")} as sell_price,
+      ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant
     FROM ${ti} ti
     JOIN ${term} t ON t.id = ti.terminal_id
     JOIN ${shops} s ON s.id = t.shop_id
     LEFT JOIN ${lm} lm ON lm.uuid = ti.item_uuid
+    ${lootRenderJoin("r", "lm.class_name")}
     WHERE (s.slug = ? OR s.name = ?)
       AND ${pricedSQL("ti")}
     ORDER BY COALESCE(lm.name, ti.item_name)`;
 
-  const result = await db.prepare(sql).bind(slug, slug).all<{
+  const result = await db.prepare(sql).bind(slug, slug).all<LocationRenderRow & {
     uuid: string;
     name: string;
     type: string | null;
@@ -2978,6 +3004,7 @@ async function getShopLocationDetail(
       category: row.category || "unknown",
       buyPrice: row.buy_price ?? undefined,
       sellPrice: row.sell_price ?? undefined,
+      ...locationRender(row),
     });
   }
 
@@ -3132,6 +3159,10 @@ export interface POILootPool {
     rarity: string | null;
     per_roll: number;
     per_container_odds: number;
+    render: RenderRef | null;
+    render_variants_kind: string | null;
+    render_item_key: string | null;
+    render_variant: string | null;
   }>;
 }
 
@@ -3386,9 +3417,11 @@ async function getPOILootPools(
     const { results: itemRows } = await db
       .prepare(
         `SELECT lm.uuid, lm.name, lm.category, lm.rarity,
-           MAX(COALESCE(lil.per_roll, 0)) AS per_roll
+           MAX(COALESCE(lil.per_roll, 0)) AS per_roll,
+           ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key, r.variant AS render_variant
          FROM ${t("loot_item_locations")} lil
          JOIN ${t("loot_map")} lm ON lm.id = lil.loot_map_id
+         ${lootRenderJoin("r", "lm.class_name")}
          WHERE lil.source_type = 'container'
            AND lil.location_key = ?
            AND lil.loot_table = ?
@@ -3414,6 +3447,7 @@ async function getPOILootPools(
           rarity: i.rarity,
           per_roll: per,
           per_container_odds: perContainer,
+          ...locationRender(i),
         };
       }),
     });

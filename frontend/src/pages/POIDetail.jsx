@@ -9,6 +9,7 @@ import LoadingState from '../components/LoadingState'
 import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import SearchInput from '../components/SearchInput'
+import RenderThumb from '../components/RenderThumb'
 import {
   RARITY_STYLES, CATEGORY_LABELS, CATEGORY_BADGE_STYLES, CATEGORY_ORDER,
 } from '../lib/lootDisplay'
@@ -38,7 +39,7 @@ const SHOP_TYPE_STYLES = {
 // Shop + NPC sub-pages use the old flat-item list (nothing has changed for
 // those — they drill from a POI into a specific shop/faction and want the
 // flat view).
-function LegacyShopOrNPCDetail({ apiType, decodedSlug }) {
+export function LegacyShopOrNPCDetail({ apiType, decodedSlug }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const search = searchParams.get('q') || ''
   const activeCategory = searchParams.get('cat') || 'all'
@@ -185,6 +186,13 @@ function LegacyShopOrNPCDetail({ apiType, decodedSlug }) {
                   }`}>
                     {CATEGORY_LABELS[item.category] || item.category}
                   </span>
+                  <RenderThumb
+                    render={item.render}
+                    kind={item.render_variants_kind}
+                    itemKey={item.render_item_key}
+                    variant={item.render_variant ?? ''}
+                    title={item.name}
+                  />
                   <span className="text-xs text-gray-200 flex-1 min-w-0 truncate">{item.name}</span>
                   {item.sub_type && (
                     <span className="text-[10px] font-mono text-gray-500 shrink-0">{item.sub_type}</span>
