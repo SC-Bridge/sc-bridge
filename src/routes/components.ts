@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../lib/types";
 import { PORT_TYPE_TO_COMPONENT_TYPE, STAT_SORT_KEY } from "../lib/constants";
 import { cachedJson } from "../lib/cache";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 
 // Valid URL slugs → port_type keys used in PORT_TYPE_TO_COMPONENT_TYPE
 const VALID_TYPES = new Set([
@@ -54,7 +55,8 @@ export function componentRoutes() {
                   cm.ammo_count, cm.missile_type,
                   vc.em_signature, vc.mass, vc.hp, cc.overheat_temperature,
                   vc.base_heat_generation, vc.distortion_max,
-                  m.name AS manufacturer_name, m.code AS manufacturer_code
+                  m.name AS manufacturer_name, m.code AS manufacturer_code,
+                  ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key
            FROM vehicle_components vc
            LEFT JOIN manufacturers m ON m.id = vc.manufacturer_id
            LEFT JOIN component_powerplants cp ON cp.component_id = vc.id
@@ -65,14 +67,15 @@ export function componentRoutes() {
            LEFT JOIN component_radar cr ON cr.component_id = vc.id
            LEFT JOIN component_qed ce ON ce.component_id = vc.id
            LEFT JOIN component_missiles cm ON cm.component_id = vc.id
+           ${renderJoin("r", "vc.class_name")}
            WHERE vc.type IN (${typePlaceholders})
              AND vc.name NOT LIKE '%Template%'
            ORDER BY ${sortKey} DESC NULLS LAST, vc.name`,
         )
         .bind(...componentTypes)
-        .all();
+        .all<RenderCols>();
 
-      return { type, components: rows.results };
+      return { type, components: rows.results.map(withRender) };
     });
   });
 

@@ -1,4 +1,5 @@
 import { COMPARE_STATS } from './componentsConfig'
+import RenderThumb from '../../components/RenderThumb'
 import { fmtPct, fmtDec1, fmtInt } from '../Loadout/loadoutHelpers'
 
 function formatValue(val, stat) {
@@ -46,6 +47,14 @@ export default function CompareTable({ items, apiType }) {
         <div />
         {items.map(item => (
           <div key={item.id} className="panel p-3 text-center">
+            <RenderThumb
+              render={item.render}
+              kind={item.render_variants_kind}
+              itemKey={item.render_item_key}
+              title={item.name}
+              aspectRatio="square"
+              className="mb-2 rounded"
+            />
             <p className="text-sm font-medium text-white truncate">{item.name}</p>
             {item.manufacturer_name && (
               <p className="text-xs font-mono text-gray-400 mt-0.5 truncate">{item.manufacturer_name}</p>

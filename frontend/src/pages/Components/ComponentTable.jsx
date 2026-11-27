@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ChevronUp, ChevronDown, RotateCcw } from 'lucide-react'
 import { DmgShape, getDamageType } from '../Loadout/loadoutHelpers'
 import { reconcileColumns } from './useColumnOrder'
+import RenderThumb from '../../components/RenderThumb'
 
 export default function ComponentTable({
   components, columns, columnOrder, onReorderColumns, onResetColumns,
@@ -210,7 +211,17 @@ export default function ComponentTable({
                                 : 'text-right font-mono tabular-nums text-gray-200'
                         }`}
                       >
-                        {renderCell(comp, col)}
+                        {isNameCol ? (
+                          <span className="flex items-center gap-2">
+                            <RenderThumb
+                              render={comp.render}
+                              kind={comp.render_variants_kind}
+                              itemKey={comp.render_item_key}
+                              title={comp.name}
+                            />
+                            {renderCell(comp, col)}
+                          </span>
+                        ) : renderCell(comp, col)}
                       </td>
                     )
                   })}
