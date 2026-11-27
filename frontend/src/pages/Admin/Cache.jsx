@@ -36,6 +36,7 @@ const CACHE_PREFIXES = [
   { value: 'loot:',          label: 'Loot (items, sets, locations)' },
   { value: 'contracts:',     label: 'Contracts (Wikelo/GFS/Ruto)' },
   { value: 'components:',    label: 'Components' },
+  { value: 'renders:',       label: 'Renders (large view variants)' },
   { value: 'patches:',       label: 'Patches' },
   { value: 'localization:',  label: 'Localization' },
   { value: 'public-fleet:',  label: 'Public fleet share pages' },

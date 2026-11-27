@@ -49,6 +49,18 @@ describe('Admin Cache purge', () => {
     expect(bodies[2]).toEqual({ prefix: 'gd:', cursor: 'c2' })
   })
 
+  it('offers a Renders entry that purges the renders: prefix', async () => {
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { deleted: 12, complete: true, cursor: null }))
+    render(<AdminCache />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'renders:' } })
+    expect(screen.getByRole('combobox').value).toBe('renders:')
+    expect(screen.getByRole('option', { name: /renders/i })).toBeInTheDocument()
+    confirmPurge()
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ prefix: 'renders:' })
+  })
+
   it('shows the HTTP status and server reason when the purge fails', async () => {
     global.fetch.mockResolvedValueOnce(jsonResponse(500, { error: 'KV list failed' }))
     render(<AdminCache />)
