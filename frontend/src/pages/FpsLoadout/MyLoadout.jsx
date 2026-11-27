@@ -1,4 +1,5 @@
 import React from 'react'
+import ItemImage from '../../components/ItemImage'
 import { useDroppable } from '@dnd-kit/core'
 import { isValidTarget } from './dnd'
 import { SLOT_FAMILY, labelForSlotKey as sharedLabelForSlotKey } from './portCapacity'
@@ -249,16 +250,21 @@ function SlotTile({ slotKey, entry, selected, inert, onSelectSlot, activeDrag, d
       }}
     >
       <SlotBadge owned={owned} wishlisted={wishlisted} />
-      <img
-        src={ICON(`${iconForSlotKey(slotKey)}.svg`)}
-        alt=""
-        style={{
-          width: 30,
-          height: 30,
-          filter: selected || owned ? ICO_FILTER_ACTIVE : ICO_FILTER_DIM,
-          opacity: filled ? 1 : 0.5,
-        }}
-      />
+      {filled && entry.render ? (
+        // The equipped item's render; not clickable, as the whole tile is a button.
+        <ItemImage render={entry.render} alt={entry.item_name} aspectRatio="row" />
+      ) : (
+        <img
+          src={ICON(`${iconForSlotKey(slotKey)}.svg`)}
+          alt=""
+          style={{
+            width: 30,
+            height: 30,
+            filter: selected || owned ? ICO_FILTER_ACTIVE : ICO_FILTER_DIM,
+            opacity: filled ? 1 : 0.5,
+          }}
+        />
+      )}
       <div
         className="text-center leading-tight"
         style={{ fontSize: 11, color: overflow ? WANT : nameColor }}

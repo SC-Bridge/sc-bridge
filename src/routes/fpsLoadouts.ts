@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getAuthUser, type HonoEnv } from "../lib/types";
 import { validate } from "../lib/validation";
+import { lootRenderJoin, renderCols, toRenderRef, type RenderCols } from "../lib/renders";
 
 /** Known FPS loadout slot keys — mirrors the client-side slot layout. */
 const FpsSlotKey = z.enum([
@@ -51,6 +52,9 @@ interface LoadoutSlotRow {
   config_json: string | null;
   owned: number;
   wishlisted: number;
+  render_variants_kind: string | null;
+  render_item_key: string | null;
+  render_variant: string | null;
 }
 
 /**
@@ -71,16 +75,20 @@ export function fpsLoadoutRoutes() {
         `SELECT l.id AS loadout_id, l.name,
                 s.slot_key, s.item_uuid, s.item_name, s.item_build_id, s.config_json,
                 CASE WHEN ulc.id IS NOT NULL THEN 1 ELSE 0 END AS owned,
-                CASE WHEN ulw.id IS NOT NULL THEN 1 ELSE 0 END AS wishlisted
+                CASE WHEN ulw.id IS NOT NULL THEN 1 ELSE 0 END AS wishlisted,
+                ${renderCols("r")}, r.kind AS render_variants_kind, r.item_key AS render_item_key,
+                r.variant AS render_variant
          FROM user_fps_loadouts l
          LEFT JOIN user_fps_loadout_slots s ON s.loadout_id = l.id
          LEFT JOIN user_loot_collection ulc ON ulc.user_id = l.user_id AND ulc.loot_uuid = s.item_uuid
          LEFT JOIN user_loot_wishlist ulw ON ulw.user_id = l.user_id AND ulw.loot_uuid = s.item_uuid
+         LEFT JOIN loot_map lm ON lm.uuid = s.item_uuid
+         ${lootRenderJoin("r", "lm.class_name")}
          WHERE l.user_id = ?
          ORDER BY l.updated_at DESC, l.id, s.slot_key`,
       )
       .bind(userId)
-      .all<LoadoutSlotRow>();
+      .all<LoadoutSlotRow & RenderCols>();
 
     const loadouts = new Map<number, { id: number; name: string; slots: Record<string, unknown>[] }>();
     for (const r of results) {
@@ -100,6 +108,10 @@ export function fpsLoadoutRoutes() {
           config,
           owned: !!r.owned,
           wishlisted: !!r.wishlisted,
+          render: toRenderRef(r),
+          render_variants_kind: r.render_variants_kind,
+          render_item_key: r.render_item_key,
+          render_variant: r.render_variant,
         });
       }
     }

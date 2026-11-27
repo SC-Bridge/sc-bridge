@@ -717,3 +717,41 @@ describe("toRenderRef", () => {
     expect(toRenderRef({ render_hash: null, render_width: null, render_height: null, render_view: null })).toBeNull();
   });
 });
+
+describe("render on FPS loadout slots", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("GET /api/fps-loadouts gives each slot its item's render, and null when it has none", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = await authHeaders(sessionToken);
+    const json = { ...headers, "Content-Type": "application/json" };
+    const rifle = "0f5a0b6c-1111-4c3a-9d2e-aaaaaaaaaaaa";
+    const plain = "0f5a0b6c-2222-4c3a-9d2e-bbbbbbbbbbbb";
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO loot_map (uuid, name, class_name, type, category, game_version_id) VALUES (?, ?, ?, ?, ?, 1)")
+        .bind(rifle, "Lp Rifle", "lp_rifle_01", "WeaponPersonal", "weapon"),
+      env.DB.prepare("INSERT INTO loot_map (uuid, name, class_name, type, category, game_version_id) VALUES (?, ?, ?, ?, ?, 1)")
+        .bind(plain, "Lp Gadget", "lp_gadget_01", "Gadget", "utility"),
+      env.DB.prepare(INSERT_SQL).bind("fps_weapon", "lp_rifle_01", "", "side", "f1f1f1f1f1f1f1f1", 1024, 512, "4.10.3-live"),
+    ]);
+    const create = await SELF.fetch("http://localhost/api/fps-loadouts", { method: "POST", headers: json, body: JSON.stringify({ name: "Render Kit" }) });
+    const { id } = (await create.json()) as { id: number };
+    for (const [slot, uuid, name] of [["primary", rifle, "Lp Rifle"], ["util_gadget", plain, "Lp Gadget"]]) {
+      const put = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/${slot}`, {
+        method: "PUT", headers: json, body: JSON.stringify({ itemUuid: uuid, itemName: name }),
+      });
+      expect(put.status).toBe(200);
+    }
+
+    const res = await SELF.fetch("http://localhost/api/fps-loadouts", { headers });
+    const body = (await res.json()) as { items: Array<{ id: number; slots: Array<Record<string, unknown>> }> };
+    const slots = Object.fromEntries(body.items.find((l) => l.id === id)!.slots.map((s) => [s.slot_key, s]));
+    expect(slots.primary.render).toEqual({ hash: "f1f1f1f1f1f1f1f1", width: 1024, height: 512, view: "side" });
+    expect(slots.primary.render_variants_kind).toBe("fps_weapon");
+    expect(slots.primary.render_item_key).toBe("lp_rifle_01");
+    expect(slots.util_gadget.render).toBeNull();
+    expect(slots.primary).not.toHaveProperty("render_hash");
+  });
+});
