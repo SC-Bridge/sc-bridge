@@ -82,8 +82,12 @@ export function fpsLoadoutRoutes() {
          LEFT JOIN user_fps_loadout_slots s ON s.loadout_id = l.id
          LEFT JOIN user_loot_collection ulc ON ulc.user_id = l.user_id AND ulc.loot_uuid = s.item_uuid
          LEFT JOIN user_loot_wishlist ulw ON ulw.user_id = l.user_id AND ulw.loot_uuid = s.item_uuid
+         -- Grenades, mags and utility slots hold a loot uuid; weapon and armour
+         -- slots hold a crafting blueprint uuid (the bench catalog), mapped to
+         -- the item's class name the same way the crafting page does.
          LEFT JOIN loot_map lm ON lm.uuid = s.item_uuid
-         ${lootRenderJoin("r", "lm.class_name")}
+         LEFT JOIN crafting_blueprints cb ON cb.uuid = s.item_uuid
+         ${lootRenderJoin("r", "COALESCE(lm.class_name, REPLACE(cb.tag, 'BP_CRAFT_', ''))")}
          WHERE l.user_id = ?
          ORDER BY l.updated_at DESC, l.id, s.slot_key`,
       )

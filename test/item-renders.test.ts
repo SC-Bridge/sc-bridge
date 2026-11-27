@@ -755,3 +755,33 @@ describe("render on FPS loadout slots", () => {
     expect(slots.primary).not.toHaveProperty("render_hash");
   });
 });
+
+describe("render on FPS loadout slots holding a crafting blueprint", () => {
+  beforeAll(async () => {
+    await setupTestDatabase(env.DB);
+  });
+
+  it("maps a weapon or armour slot's blueprint uuid to its item's render", async () => {
+    const { sessionToken } = await createTestUser(env.DB);
+    const headers = await authHeaders(sessionToken);
+    const json = { ...headers, "Content-Type": "application/json" };
+    const bp = "0f5a0b6c-3333-4c3a-9d2e-cccccccccccc";
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO crafting_blueprints (uuid, tag, name, type, sub_type) VALUES (?, ?, ?, ?, ?)")
+        .bind(bp, "BP_CRAFT_lp_lmg_01", "Lp Lmg 01", "weapons", "lmg"),
+      env.DB.prepare(INSERT_SQL).bind("fps_weapon", "lp_lmg_01", "", "side", "e1e1e1e1e1e1e1e1", 1024, 512, "4.10.3-live"),
+    ]);
+    const create = await SELF.fetch("http://localhost/api/fps-loadouts", { method: "POST", headers: json, body: JSON.stringify({ name: "Bp Kit" }) });
+    const { id } = (await create.json()) as { id: number };
+    const put = await SELF.fetch(`http://localhost/api/fps-loadouts/${id}/slots/primary`, {
+      method: "PUT", headers: json, body: JSON.stringify({ itemUuid: bp, itemName: "Lp LMG" }),
+    });
+    expect(put.status).toBe(200);
+
+    const res = await SELF.fetch("http://localhost/api/fps-loadouts", { headers });
+    const body = (await res.json()) as { items: Array<{ id: number; slots: Array<Record<string, unknown>> }> };
+    const slot = body.items.find((l) => l.id === id)!.slots[0];
+    expect(slot.render).toEqual({ hash: "e1e1e1e1e1e1e1e1", width: 1024, height: 512, view: "side" });
+    expect(slot.render_item_key).toBe("lp_lmg_01");
+  });
+});
