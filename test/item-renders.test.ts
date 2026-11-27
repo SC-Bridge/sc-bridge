@@ -336,6 +336,54 @@ describe("render on ship, paint and fleet rows", () => {
     expect(byId.get(blueEntry)!.render).toBeNull();
   });
 
+  it("GET /api/analysis gives each insurance row its ship's render in the equipped paint", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const ship = await seedShip("zzr-insured", "Zzr Insured", "zzr_insured");
+    const red = await seedPaint("Zzr Insured Red", "zzr-insured-red", "paint_zzr_insured_red", [ship]);
+    await seedFleetEntry(env.DB, userId, ship, { custom_name: "stock" });
+    const redEntry = await seedFleetEntry(env.DB, userId, ship, { custom_name: "red" });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE user_fleet SET equipped_paint_id = ? WHERE id = ?").bind(red, redEntry),
+      renderRow("zzr_insured", "", "iso", "q0q0q0q0q0q0q0q0"),
+      renderRow("zzr_insured", "paint_zzr_insured_red", "iso", "q1q1q1q1q1q1q1q1"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/analysis", { headers: await authHeaders(sessionToken) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      insurance_summary: Record<string, Array<{ custom_name: string; render: Render; image_url: string | null }>>;
+    };
+    const rows = Object.values(body.insurance_summary).filter(Array.isArray).flat();
+    const byName = new Map(rows.map((r) => [r.custom_name, r]));
+    expect(byName.get("stock")!.render?.hash).toBe("q0q0q0q0q0q0q0q0");
+    expect(byName.get("stock")!.image_url).toBe("https://example.test/zzr-insured.jpg");
+    expect(byName.get("red")!.render?.hash).toBe("q1q1q1q1q1q1q1q1");
+  });
+
+  it("GET /api/hangar-cleanup gives each pledge ship its render in the equipped paint", async () => {
+    const { userId, sessionToken } = await createTestUser(env.DB);
+    const ship = await seedShip("zzr-cleanup", "Zzr Cleanup", "zzr_cleanup");
+    const entry = await seedFleetEntry(env.DB, userId, ship, { pledge_id: "770001" });
+    const fleet = await env.DB.prepare("SELECT rsi_account_id FROM user_fleet WHERE id = ?").bind(entry).first<{ rsi_account_id: number }>();
+    const sync = await env.DB
+      .prepare("INSERT INTO user_hangar_syncs (user_id, rsi_account_id, source, synced_at) VALUES (?, ?, 'extension', datetime('now')) RETURNING id")
+      .bind(userId, fleet!.rsi_account_id)
+      .first<{ id: number }>();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO user_pledges (user_id, sync_id, rsi_pledge_id, name, value_cents, currency, rsi_account_id)
+         VALUES (?, ?, 770001, 'Standalone Ship - Zzr Cleanup', 5000, 'New Money', ?)`,
+      ).bind(userId, sync!.id, fleet!.rsi_account_id),
+      renderRow("zzr_cleanup", "", "iso", "u0u0u0u0u0u0u0u0"),
+    ]);
+    const res = await SELF.fetch("http://localhost/api/hangar-cleanup", { headers: await authHeaders(sessionToken) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { pledges: Array<{ rsi_pledge_id: number; ships: Array<{ render: Render; image_url: string | null }> }> };
+    const pledge = body.pledges.find((p) => p.rsi_pledge_id === 770001)!;
+    expect(pledge.ships).toHaveLength(1);
+    expect(pledge.ships[0].render).toEqual({ hash: "u0u0u0u0u0u0u0u0", width: 2048, height: 1536, view: "iso" });
+    expect(pledge.ships[0].image_url).toBe("https://example.test/zzr-cleanup.jpg");
+  });
+
   it("GET /api/vehicles/loaners gives each loaner its stock render", async () => {
     const { userId, sessionToken } = await createTestUser(env.DB);
     const concept = await seedVehicle(env.DB, { slug: "zzr-concept", name: "Zzr Concept", production_status_id: 3 });

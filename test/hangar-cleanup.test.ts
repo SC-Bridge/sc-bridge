@@ -61,6 +61,8 @@ interface CleanupPayload {
       insurance_months: number | null;
       insurance_lifetime: boolean;
       warbond: boolean;
+      render: { kind: string; item_key: string; variant: string } | null;
+      image_url: string | null;
     }>;
   }>;
   buybacks: Array<{
@@ -313,6 +315,8 @@ describe("Hangar Cleanup API — /api/hangar-cleanup", () => {
           insurance_months: 120,
           insurance_lifetime: false,
           warbond: true,
+          render: null,
+          image_url: null,
         },
       ],
     });

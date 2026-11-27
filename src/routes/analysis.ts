@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { getAuthUser, type HonoEnv, type UserFleetEntry, type Vehicle, type FleetAnalysis } from "../lib/types";
+import { getAuthUser, type HonoEnv, type UserFleetEntry, type Vehicle, type FleetAnalysis, type RenderRef } from "../lib/types";
 import { getActiveChannel, isPTUChannel, resolveTable } from "../lib/ptu";
 import { decryptAPIKey, getDecryptedAPIKey } from "../lib/llm-keys";
 import { logEvent } from "../lib/logger";
@@ -458,6 +458,8 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], t
     is_lifetime: boolean;
     warbond: boolean;
     rsi_account_id?: number | null;
+    render: RenderRef | null;
+    image_url: string | null;
   }> = [];
   const nonLtiShips: typeof ltiShips = [];
   const unknownShips: typeof ltiShips = [];
@@ -514,6 +516,8 @@ export function analyzeFleet(fleet: UserFleetEntry[], _allVehicles: Vehicle[], t
       is_lifetime: entry.is_lifetime ?? false,
       warbond: entry.warbond,
       rsi_account_id: entry.rsi_account_id,
+      render: entry.render ?? null,
+      image_url: entry.image_url ?? null,
     };
 
     if (entry.is_lifetime) {

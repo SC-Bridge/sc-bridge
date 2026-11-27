@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoEnv } from "../lib/types";
+import type { HonoEnv, RenderRef } from "../lib/types";
+import { renderCols, renderJoin, withRender, type RenderCols } from "../lib/renders";
 import { getAuthUser } from "../lib/types";
 import { validate } from "../lib/validation";
 import {
@@ -167,6 +168,7 @@ interface ShipRow {
   duration_months: number | null;
   is_lifetime: number | null;
   warbond: number | null;
+  image_url: string | null;
 }
 interface BuybackRow {
   name: string;
@@ -278,10 +280,13 @@ export function hangarCleanupRoutes() {
           .prepare(
             `SELECT CAST(uf.pledge_id AS INTEGER) AS rsi_pledge_id, v.id AS vehicle_id, v.slug, v.name,
                v.focus, v.classification, v.pledge_price, v.price_auec,
-               it.label AS insurance_label, it.duration_months, it.is_lifetime, uf.warbond
+               it.label AS insurance_label, it.duration_months, it.is_lifetime, uf.warbond,
+               COALESCE(p.image_url, v.image_url) AS image_url, ${renderCols("ir")}
              FROM user_fleet uf
              JOIN vehicles v ON v.id = uf.vehicle_id
              LEFT JOIN insurance_types it ON it.id = uf.insurance_type_id
+             LEFT JOIN paints p ON p.id = uf.equipped_paint_id
+             ${renderJoin("ir", "v.class_name", "COALESCE(p.class_name, '')")}
              WHERE uf.user_id = ? AND uf.pledge_id IS NOT NULL AND uf.is_loaner = 0
                AND uf.rsi_account_id IN (SELECT value FROM json_each(?))
              ORDER BY uf.id`,
@@ -416,8 +421,8 @@ export function hangarCleanupRoutes() {
       list.push(row);
       upgradesByPledge.set(row.user_pledge_id, list);
     }
-    const shipsByRsiPledge = new Map<number, ShipRow[]>();
-    for (const row of shipRes.results as unknown as ShipRow[]) {
+    const shipsByRsiPledge = new Map<number, Array<ShipRow & { render: RenderRef | null }>>();
+    for (const row of (shipRes.results as unknown as Array<ShipRow & RenderCols>).map(withRender)) {
       const list = shipsByRsiPledge.get(row.rsi_pledge_id) ?? [];
       list.push(row);
       shipsByRsiPledge.set(row.rsi_pledge_id, list);
@@ -467,6 +472,8 @@ export function hangarCleanupRoutes() {
         insurance_months: s.duration_months,
         insurance_lifetime: !!s.is_lifetime,
         warbond: !!s.warbond,
+        render: s.render,
+        image_url: s.image_url,
       })),
     }));
 

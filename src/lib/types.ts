@@ -380,6 +380,8 @@ export interface UserFleetEntry {
   production_status?: string;
   speed_scm?: number;
   classification?: string;
+  /** The hull's render in its equipped paint (getFleetForAnalysis). */
+  render?: RenderRef | null;
 }
 
 export interface UserPaint {
@@ -555,6 +557,9 @@ export interface InsuranceEntry {
   is_lifetime: boolean;
   warbond: boolean;
   rsi_account_id?: number | null;
+  /** The hull's render in its equipped paint, and the picture to fall back to. */
+  render: RenderRef | null;
+  image_url: string | null;
 }
 
 /**
