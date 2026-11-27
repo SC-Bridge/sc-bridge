@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAnalysis, useStatus, useRsiAccounts } from '../hooks/useAPI'
 import PrivacyMask from '../components/PrivacyMask'
+import ShipImage from '../components/ShipImage'
 import { Shield, ShieldAlert, ShieldQuestion, Calendar, Tag, Rocket } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import LoadingState from '../components/LoadingState'
@@ -170,6 +171,7 @@ export default function Insurance() {
           <div className="divide-y divide-sc-border/50">
             {unknown.map((ship, i) => (
               <div key={i} className="relative px-5 py-3 flex items-center gap-3">
+                <ShipImage render={ship.render} src={ship.image_url} alt={ship.ship_name} aspectRatio="thumbnail" className="w-12 rounded border border-sc-border/50 shrink-0" />
                 <span className="text-sm text-gray-400">{ship.ship_name}</span>
                 {ship.custom_name && (
                   <span className="text-xs text-gray-400 italic">"{ship.custom_name}"</span>
@@ -187,6 +189,7 @@ export default function Insurance() {
 function InsuranceRow({ ship, accounts }) {
   return (
     <div className="relative px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+      <ShipImage render={ship.render} src={ship.image_url} alt={ship.ship_name} aspectRatio="thumbnail" className="w-12 rounded border border-sc-border/50 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-white">{ship.ship_name}</span>

@@ -1235,7 +1235,9 @@ export async function getFleetForAnalysis(
         COALESCE(rm.name, m.name) as manufacturer_name,
         COALESCE(rm.code, m.code) as manufacturer_code,
         it.label as insurance_label, it.duration_months, it.is_lifetime,
-        COALESCE(rps.key, ps.key) as production_status
+        COALESCE(rps.key, ps.key) as production_status,
+        COALESCE(p.image_url, rv.image_url, v.image_url) as image_url,
+        ${renderCols("ir")}
       FROM user_fleet uf
       JOIN vehicles v ON v.id = uf.vehicle_id
       LEFT JOIN vehicles rv ON rv.id = v.replaced_by_vehicle_id
@@ -1244,13 +1246,16 @@ export async function getFleetForAnalysis(
       LEFT JOIN insurance_types it ON it.id = uf.insurance_type_id
       LEFT JOIN production_statuses ps ON ps.id = v.production_status_id
       LEFT JOIN production_statuses rps ON rps.id = rv.production_status_id
+      LEFT JOIN paints p ON p.id = uf.equipped_paint_id
+      -- The hull in its equipped paint, as /api/vehicles shows it.
+      ${renderJoin("ir", "COALESCE(rv.class_name, v.class_name)", "COALESCE(p.class_name, '')")}
       WHERE uf.user_id = ?
         AND (? IS NULL OR uf.rsi_account_id IN (SELECT value FROM json_each(?)))
       ORDER BY COALESCE(rv.name, v.name)`,
     )
     .bind(userId, accountJson, accountJson)
-    .all();
-  return result.results as unknown as UserFleetEntry[];
+    .all<RenderCols & Record<string, unknown>>();
+  return result.results.map(withRender) as unknown as UserFleetEntry[];
 }
 
 // ============================================================

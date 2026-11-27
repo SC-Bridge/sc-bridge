@@ -5,6 +5,7 @@ import {
   usd, displayName, roleOf, rebuyPrice, iaeReasons, FLAGS, CATEGORIES, IAE_MONTHS, REBUY_DECISIONS,
 } from '../../lib/hangarCleanup'
 import AccountMarker from '../../components/AccountMarker'
+import ShipImage from '../../components/ShipImage'
 import { Pill, Chip, MoneyInput, DECISIONS, SUGGESTION_TONE } from './ui'
 
 const INS_TONE = { LTI: 'text-sc-lti', long: 'text-sc-warn', short: 'text-red-300', none: 'text-red-300' }
@@ -262,6 +263,7 @@ export default function Ledger({ rows, decisions, onDecide, onDecideMany, open, 
                     </td>
                     <td className="table-cell min-w-[14rem] relative">
                       <div className="flex items-center gap-2">
+                        {r.cat === 'Ship' && r.ships[0] && <ShipImage render={r.ships[0].render} src={r.ships[0].image_url} alt={r.ships[0].name} aspectRatio="thumbnail" className="w-12 rounded border border-sc-border/50 shrink-0" />}
                         <button type="button" onClick={() => onToggle(r.id)} className="text-left min-w-0 mr-auto">
                           <div className="font-display font-semibold text-white">{displayName(r)}</div>
                           <div className="text-[11px] font-mono text-gray-500">{sub}</div>

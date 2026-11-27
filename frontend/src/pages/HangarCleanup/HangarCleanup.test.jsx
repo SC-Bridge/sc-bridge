@@ -352,3 +352,13 @@ describe('HangarCleanup accounts', () => {
     await waitFor(() => expect(api.saveCleanupDecision).toHaveBeenCalledWith(5, { decision: 'melt', buy_ingame: false, iae_price_cents: null }))
   })
 })
+
+describe('HangarCleanup ship thumbnails', () => {
+  it('shows the ship render beside a ship pledge in the ledger', () => {
+    const render_ = { hash: 'hulld01', width: 512, height: 512, view: 'side', kind: 'vehicle', item_key: 'misc_hull_d', variant: '' }
+    api.payload = payload({ pledges: [{ ...pledgeHullD, ships: [{ ...pledgeHullD.ships[0], render: render_, image_url: null }] }, paint] })
+    renderPage()
+    const ledger = screen.getByRole('region', { name: 'Ledger' })
+    expect(within(ledger).getByAltText('MISC Hull D').getAttribute('src')).toBe('https://renders.scbridge.app/hulld01/512.webp')
+  })
+})
